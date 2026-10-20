@@ -70,7 +70,17 @@ def test_to_telegram_message_heartbeat():
 
 
 def test_to_telegram_message_routine():
-    n = Notification(type="routine", title="Morning", message="Good morning!")
+    # Pinned to the morning: the routine emoji follows the hour the notification
+    # was made (☀️ by day, 🌙 at night). Unpinned, this test asserted "always a
+    # sun" — the very bug — and would go red whenever the suite ran after 18:00.
+    from datetime import datetime
+
+    n = Notification(
+        type="routine",
+        title="Morning",
+        message="Good morning!",
+        created_at=datetime(2026, 9, 27, 8, 0),
+    )
     msg = n.to_telegram_message()
     assert "☀️" in msg
 

@@ -176,7 +176,7 @@ class NavigTray:
         self.settings = TraySettings.load()
         self.gateway = ProcessState(name="Gateway")
         self.agent = ProcessState(name="Agent")
-        self.daemon = ProcessState(name="Daemon")  # New: supervised daemon (bot+gateway+scheduler)
+        self.daemon = ProcessState(name="Daemon")  # New: supervised daemon (bot+gateway)
         self._icon = None
         self._health_thread: threading.Thread | None = None
         self._running = False
@@ -343,7 +343,7 @@ class NavigTray:
         return True
 
     def start_daemon(self):
-        """Start the NAVIG daemon supervisor (manages bot, gateway, scheduler).
+        """Start the NAVIG daemon supervisor (manages bot, gateway).
 
         Through the installed service when there is one: the daemon then has the
         Task Scheduler service as its parent — not the tray, whose close would leave

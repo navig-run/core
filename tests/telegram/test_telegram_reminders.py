@@ -50,6 +50,44 @@ def _make_dummy_bot():
     return DummyTelegram()
 
 
+def _make_channel_bot():
+    """A REAL TelegramChannel with only its network edge replaced.
+
+    ``DummyTelegram(TelegramCommandsMixin)`` INHERITS the mixin, so every sibling call
+    resolves on it -- the production channel does not inherit (MRO is
+    ``[TelegramChannel, object]``). /remindme, /space and /profile raised
+    AttributeError in production while passing here. Commands driven through this go
+    through ``_dispatch_registry_command``, the path a typed command takes.
+    """
+    from navig.gateway.channels.telegram import TelegramChannel
+
+    channel = TelegramChannel(bot_token="123:FAKE", allowed_users=[456])
+    channel.messages = []
+
+    async def send_message(chat_id, text, parse_mode="HTML", **kwargs):
+        channel.messages.append((chat_id, text, parse_mode, kwargs))
+        return {"ok": True}
+
+    async def _api_call(method, data=None, *args, **kwargs):
+        return {"ok": True}
+
+    async def send_typing(*_a, **_k):
+        return None
+
+    channel.send_message = send_message
+    channel._api_call = _api_call
+    channel.send_typing = send_typing
+    return channel
+
+
+async def _type(channel, text, *, chat_id=123, user_id=456, username="user456"):
+    """Send *text* the way dispatch does, and fail loudly if nothing handled it."""
+    handled = await channel._dispatch_registry_command(
+        chat_id=chat_id, user_id=user_id, text=text, username=username, metadata={},
+    )
+    assert handled, f"{text!r} reached no registry handler"
+
+
 class _FakeVault:
     """Minimal vault stub for provider tests.
 
@@ -194,8 +232,8 @@ class FakeStore:
         self.created.append((user_id, chat_id, message, remind_at))
         return 77
 
-    def get_user_reminders(self, user_id):
-        return list(self.user_rows)
+    def get_user_reminders(self, user_id, limit=20):
+        return list(self.user_rows)[:limit]
 
     def cancel_reminder(self, reminder_id, user_id):
         if reminder_id == 11:
@@ -246,7 +284,7 @@ class _FakeConfigManager:
 
 
 async def test_parse_remindme_relative_format():
-    bot = _make_dummy_bot()
+    bot = _make_channel_bot()
     remind_at, msg, err = bot._parse_remindme_request("/remindme in 10 minutes check logs")
 
     assert err is None
@@ -255,7 +293,7 @@ async def test_parse_remindme_relative_format():
 
 
 async def test_remindme_creates_runtime_store_reminder(monkeypatch):
-    bot = _make_dummy_bot()
+    bot = _make_channel_bot()
     fake_store = FakeStore()
 
     monkeypatch.setattr(
@@ -263,7 +301,7 @@ async def test_remindme_creates_runtime_store_reminder(monkeypatch):
         lambda: fake_store,
     )
 
-    await bot._handle_remindme(123, 456, "/remindme in 5 minutes restart service")
+    await _type(bot, "/remindme in 5 minutes restart service")
 
     assert len(fake_store.created) == 1
     assert fake_store.created[0][0] == 456
@@ -281,8 +319,17 @@ async def test_myreminders_and_cancel_flow(monkeypatch):
         lambda: fake_store,
     )
 
+    class _NoLinks:
+        def reminder_links(self, ids):
+            return {}
+
+    # The view names each ping's task through the board; a /remindme has none.
+    monkeypatch.setattr("navig.store.board.get_board_store", lambda: _NoLinks())
     await bot._handle_myreminders(123, 456)
-    assert any("Your Active Reminders" in m[1] for m in bot.messages)
+    text = bot.messages[-1][1]
+    assert "check deploy" in text
+    buttons = [b for row in bot.messages[-1][3]["keyboard"] for b in row]
+    assert any(b["callback_data"] == "rv:x:11" for b in buttons)  # a one-off can be cancelled
 
     await bot._handle_cancelreminder(123, 456, "/cancelreminder 11")
     assert (11, 456) in fake_store.cancelled
@@ -297,6 +344,17 @@ async def test_auto_state_start_status_stop_flow(monkeypatch):
         "navig.store.runtime.get_runtime_store",
         lambda: fake_store,
     )
+    # /auto_start now checks the persona exists before activating; "teacher" is a
+    # fixture persona, and the switch itself must not touch the real persona store.
+    monkeypatch.setattr(
+        "navig.personas.resolver.discover_persona_paths",
+        lambda cwd=None: {"assistant": Path("."), "teacher": Path(".")},
+    )
+
+    async def _switch(**_kw):
+        return None
+
+    monkeypatch.setattr("navig.personas.manager.switch_persona", _switch)
 
     await bot._handle_auto_start(123, 456, "/auto_start teacher")
     assert fake_store.state is not None
@@ -377,7 +435,7 @@ async def test_auto_status_shows_busy_suppression_metadata(monkeypatch):
 
 
 async def test_space_command_switches_and_prints_kickoff(monkeypatch, tmp_path):
-    bot = _make_dummy_bot()
+    bot = _make_channel_bot()
     fake_store = FakeContinuationStore()
     fake_cfg = _FakeConfigManager(tmp_path / "global")
 
@@ -400,7 +458,7 @@ async def test_space_command_switches_and_prints_kickoff(monkeypatch, tmp_path):
     (plans_dir / "DEV_PLAN.md").write_text("- [ ] A task from another folder\n", encoding="utf-8")
     monkeypatch.chdir(repo)
 
-    await bot._handle_space(123, 456, "/space devops")
+    await _type(bot, "/space devops")
 
     assert any("Active space: <code>devops</code>" in m[1] for m in bot.messages)
     assert any("Top next actions:" in m[1] for m in bot.messages)
@@ -409,7 +467,7 @@ async def test_space_command_switches_and_prints_kickoff(monkeypatch, tmp_path):
 
 
 async def test_space_command_bootstraps_missing_roadmap_when_vision_exists(monkeypatch, tmp_path):
-    bot = _make_dummy_bot()
+    bot = _make_channel_bot()
     fake_store = FakeContinuationStore()
     fake_cfg = _FakeConfigManager(tmp_path / "global")
 
@@ -427,7 +485,7 @@ async def test_space_command_bootstraps_missing_roadmap_when_vision_exists(monke
     (space_dir / "VISION.md").write_text("# Existing Vision\n", encoding="utf-8")
     (space_dir / "CURRENT_PHASE.md").write_text("# Existing Phase\n", encoding="utf-8")
 
-    await bot._handle_space(123, 456, "/space devops")
+    await _type(bot, "/space devops")
 
     assert (space_dir / "ROADMAP.md").exists()
     assert any("Active space: <code>devops</code>" in m[1] for m in bot.messages)

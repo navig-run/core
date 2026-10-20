@@ -51,19 +51,23 @@ _SKIP_PARTS = frozenset({"__pycache__", "build", "dist", "tests", "test", ".venv
 _HTTP_LIBS = frozenset({"httpx", "requests", "aiohttp"})
 
 # Tools that DO outbound HTTP but only ever to a FIXED provider host the caller cannot choose,
-# so the request target is not attacker-controlled and there is no SSRF surface. Keyed
-# "navig/tools/<relpath>" -> reason. Every entry is proven still-live by
+# so the request target is not attacker-controlled and there is no SSRF surface. Keyed by
+# `_key()` ("navig/…" for core, "plugins/…" for a plugin) -> reason. Every entry is proven still-live by
 # test_allowlist_has_no_stale_entries.
 _ALLOWLIST: dict[str, str] = {
-    "navig/tools/image_generation.py": (
-        "fixed provider hosts (OpenAI / Recraft / Stability / Gemini) + a provider-returned "
-        "download URL + an operator-set local_api_url — never a per-call caller-supplied host"
+    "plugins/navig-generate/navig_generate/tools/image_generation.py": (
+        "fixed provider hosts (OpenAI / Recraft / Stability / Gemini / ElevenLabs Flows) + a "
+        "provider-returned download URL + an operator-set local_api_url — never a per-call "
+        "caller-supplied host"
     ),
-    "navig/tools/video_generation.py": (
-        "fixed provider hosts (Gemini / Replicate / Runway / Luma) + provider-returned asset "
-        "and poll URLs — never a per-call caller-supplied host"
+    "plugins/navig-generate/navig_generate/tools/audio_generation.py": (
+        "fixed provider host api.elevenlabs.io — ids and form fields only, the host is never "
+        "caller-chosen"
     ),
-    "navig/tools/audio_generation.py": "fixed provider host api.elevenlabs.io",
+    "plugins/navig-generate/navig_generate/tools/media_library.py": (
+        "fixed provider host api.elevenlabs.io — history/voice/asset ids and query params only, "
+        "the host is never caller-chosen"
+    ),
     "navig/tools/telegram_approval_backend.py": "fixed host api.telegram.org (Bot API)",
 }
 
@@ -119,6 +123,19 @@ def _key(py: Path) -> str:
         return f"plugins/{py.relative_to(_PLUGINS_ROOT).as_posix()}"
 
 
+def _in_swept_tools_tree(py: Path) -> bool:
+    """Under ``navig/tools/`` or a plugin package's ``tools/`` (``navig_<x>/tools/``).
+
+    The media generators moved from ``navig/tools/`` into ``navig_generate/tools/``. They do
+    not subclass ``BaseTool`` — they fetch on a tool's behalf — so they were covered ONLY by
+    this wholesale sweep, and a sweep bound to core's directory would have dropped them
+    silently the moment they moved. A tools tree is a tools tree whichever package owns it.
+    """
+    if _TOOLS_ROOT in py.parents:
+        return True
+    return any(d.name == "tools" and d.parent.name.startswith("navig_") for d in py.parents)
+
+
 def _tool_files() -> list[Path]:
     """Every model-invoked tool file, DERIVED rather than hardcoded to one directory.
 
@@ -139,7 +156,7 @@ def _tool_files() -> list[Path]:
         for py in root.rglob("*.py"):
             if _SKIP_PARTS & set(py.parts):
                 continue
-            if _TOOLS_ROOT not in py.parents:
+            if not _in_swept_tools_tree(py):
                 try:
                     src = py.read_text(encoding="utf-8-sig")
                 except (OSError, UnicodeDecodeError):

@@ -16,6 +16,13 @@ from navig.commands.habit import _DAY_MAP, _build_schedule, habit_app
 from navig.spaces.health import BUILTIN_HABITS, get_habit_template
 
 
+@pytest.fixture(autouse=True)
+def _english_copy(monkeypatch):
+    """This file asserts the English copy. The wording is localized off the one
+    global language, so the operator's own `user.language` (or a test that set it
+    first in this worker) changes every string here. Pin it."""
+    monkeypatch.setattr("navig.core.language.resolve_language", lambda *a, **k: "en")
+
 @pytest.fixture()
 def runner():
     return CliRunner()

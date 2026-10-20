@@ -413,3 +413,122 @@ async def test_error_drop_clears_connected_at(monkeypatch):
     for status, connected_at in observed:
         assert status == "error"
         assert connected_at is None
+
+
+# ── NAVIG OS channel wiring (os_relay) ───────────────────────────────────────
+
+
+async def test_hello_declares_the_os_capability():
+    # The edge refuses OS connections (4426) to a brain whose hello lacks this, so an old
+    # brain gets a clear "update NAVIG" instead of a browser left hanging.
+    c = _client()
+    c._send = AsyncMock()  # type: ignore[method-assign]
+    await c._send_hello()
+    assert c._send.await_args.args[0]["caps"] == ["os1"]
+
+
+def test_os_frames_are_routed_to_the_relay_without_parsing_data():
+    c = _client()
+    calls: list[tuple] = []
+
+    class _Relay:
+        def on_open(self, frame):
+            calls.append(("open", frame["sid"]))
+
+        def on_close(self, sid, code, reason):
+            calls.append(("close", sid, code, reason))
+
+        def on_data(self, sid, payload):
+            calls.append(("data", sid, payload))
+
+    c.os_relay = _Relay()  # type: ignore[assignment]
+    sid = "0f8fad5b-d9cb-469f-a165-70867728950e"
+    c._on_frame(json.dumps({"t": "os_open", "sid": sid}))
+    c._on_frame(f"@{sid}:" + '{"type":"handshake"}\x1e{"x":1}')
+    c._on_frame(json.dumps({"t": "os_close", "sid": sid, "code": 1000, "reason": "bye"}))
+    c._on_frame("@short:ignored")  # malformed data frame: dropped, never parsed as JSON
+    assert calls == [
+        ("open", sid),
+        ("data", sid, '{"type":"handshake"}\x1e{"x":1}'),
+        ("close", sid, 1000, "bye"),
+    ]
+
+
+async def test_the_pairing_path_is_rewritten_to_the_public_redeem_route():
+    c = _client()
+    seen: list[str] = []
+
+    async def _loop(frame, path):
+        seen.append(path)
+        return 200, {}, "{}"
+
+    c._dispatch_loopback = _loop  # type: ignore[method-assign]
+    c._send = AsyncMock()  # type: ignore[method-assign]
+    tenant = "a" * 64
+    for path in (f"/os/{tenant}/pair", f"/os/{tenant}/connect", "/os/short/pair"):
+        await c._dispatch({"id": "i", "kind": "deck", "method": "POST", "path": path, "headers": {}, "body": "{}"})
+    # Only the exact pairing path is rewritten; anything else reaches the gateway as-is
+    # and 404s there, rather than being guessed into a route it was not meant for.
+    assert seen == ["/api/os/pair/redeem", f"/os/{tenant}/connect", "/os/short/pair"]
+
+
+async def test_stream_data_never_holds_up_a_reply():
+    """A busy remote session must not delay a Telegram/deck reply by more than one chunk."""
+    import asyncio
+
+    c = _client()
+    order: list[str] = []
+
+    class _Ws:
+        closed = False
+
+        async def send_str(self, text):
+            order.append("data" if text.startswith("@") else json.loads(text)["t"])
+            await asyncio.sleep(0)
+
+    c._ws = _Ws()  # type: ignore[assignment]
+    writer = asyncio.create_task(c._bulk_writer_loop())
+    sid = "0f8fad5b-d9cb-469f-a165-70867728950e"
+    for _ in range(20):
+        await c._send_os_data(sid, "x" * 10)
+    await asyncio.sleep(0)  # the writer has started on the data
+    await c._send({"t": "res", "id": "1", "status": 200, "headers": {}, "body": ""})
+    await asyncio.sleep(0.05)
+    writer.cancel()
+    assert "res" in order
+    assert order.index("res") <= 3, f"the reply waited behind {order.index('res')} data frames"
+
+
+async def test_retire_needs_a_live_socket():
+    c = _client()
+    assert await c.send_retire() is False
+    sent: list[str] = []
+
+    class _Ws:
+        closed = False
+
+        async def send_str(self, text):
+            sent.append(text)
+
+    c._ws = _Ws()  # type: ignore[assignment]
+    assert await c.send_retire() is True
+    assert json.loads(sent[0]) == {"t": "retire"}
+
+
+def test_the_os_remote_budget_has_one_default_everywhere(monkeypatch):
+    """The daily message budget used to be written three times (the relay, the uplink's
+    parameter, the config reader's fallback). Tuning one left the others behind; now the
+    relay's constant is the only number and both paths read it."""
+    from navig.cloud import manager as manager_mod
+    from navig.cloud.os_relay import DEFAULT_DAILY_MSG_BUDGET
+
+    assert _client().os_relay.daily_msg_budget == DEFAULT_DAILY_MSG_BUDGET
+    assert _client(os_remote_budget=5).os_relay.daily_msg_budget == 5
+    monkeypatch.setattr(manager_mod, "_os_remote_setting", lambda _key: None)
+    assert manager_mod._os_remote_budget() == DEFAULT_DAILY_MSG_BUDGET
+
+    def broken(_key):
+        raise RuntimeError("config unreadable")
+
+    monkeypatch.setattr(manager_mod, "_os_remote_setting", broken)
+    assert manager_mod._os_remote_budget() == DEFAULT_DAILY_MSG_BUDGET

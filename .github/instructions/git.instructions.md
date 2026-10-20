@@ -72,13 +72,14 @@ git config commit.template .gitmessage
 
 | Scenario | Strategy |
 |----------|----------|
-| `<type>/<slug>` → `main` | PR + **squash merge** + delete branch (`gh pr merge --squash --delete-branch`) |
+| `<type>/<slug>` → `main` | **`npm run land`**: rebase + gate once + fast-forward (a PR squashed as `<title> (#N)`), close the PR, delete the branch |
 
-Before merging: rebase onto `origin/main`, the local gate is green (`git push` runs it —
-lint · typecheck · source guards · a relevance-ranked test selection), and the diff is only
-your task. GitHub Actions is billing-blocked for this org, so **the local pre-push gate is
-the CI**; a red remote check whose jobs never started is an environment fact, not a
-failure.
+**Gate once, at landing (2026-10-10).** A push to a branch runs lint only (seconds, no queue);
+`npm run land` rebases onto `origin/main`, runs the local gate **once on exactly that tree** —
+lint · typecheck · source guards · a relevance-ranked test selection — and fast-forwards
+`main`. **Never `gh pr merge`** or the GitHub merge button: a server-side merge runs no gate.
+GitHub Actions is billing-blocked for this org, so **the local gate is the CI**; a red remote
+check whose jobs never started is an environment fact, not a failure.
 
 ---
 
@@ -182,11 +183,11 @@ git commit                                  # opens .gitmessage
 # 3. Keep up to date
 git fetch origin && git rebase origin/main
 
-# 4. Push (runs the gate), open the PR, squash-merge, delete the branch
-git push -u origin feat/my-feature
+# 4. Push (lint only), open the PR, then land it (gate once + fast-forward + cleanup)
+npm run push -- -u origin feat/my-feature
 gh pr create --fill --base main
-gh pr merge --squash --delete-branch
-git checkout main && git pull --ff-only && git branch -d feat/my-feature
+npm run land
+git checkout main && git pull --ff-only && git branch -D feat/my-feature
 ```
 
 ---

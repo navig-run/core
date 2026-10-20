@@ -1,0 +1,14 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: text/format/caption
+name: Caption
+tool: text
+layer: format
+category: Format
+description: One short, punchy caption.
+params:
+  kind: caption
+tags:
+- format
+- caption

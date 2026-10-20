@@ -52,13 +52,14 @@ CATALOG = {
 
 
 def _patch(monkeypatch, tmp_path, *, catalog=CATALOG, status=None, installed=frozenset(),
-           installed_plugins=frozenset(), installed_skills=frozenset()):
+           installed_plugins=frozenset(), installed_skills=frozenset(), installed_other=None):
     p = tmp_path / "bay-catalog.json"
     p.write_text(json.dumps(catalog), encoding="utf-8")
     monkeypatch.setattr(cat, "_bay_catalog_path", lambda: p)
     monkeypatch.setattr(cat, "_installed_space_ids", lambda: set(installed))
     monkeypatch.setattr(cat, "_installed_plugin_ids", lambda: set(installed_plugins))
     monkeypatch.setattr(cat, "_installed_skill_ids", lambda: set(installed_skills))
+    monkeypatch.setattr(cat, "_installed_other_ids", lambda: dict(installed_other or {}))
     import navig.license as lic
 
     monkeypatch.setattr(lic, "current_status", lambda: status or _FakeStatus())
@@ -100,14 +101,14 @@ async def test_covering_tier_unlocks(monkeypatch, tmp_path):
 async def test_installed_flag_on_spaces_plugins_and_skills(monkeypatch, tmp_path):
     _patch(
         monkeypatch, tmp_path, status=_FakeStatus(),
-        installed={"plus-space"}, installed_plugins={"social"}, installed_skills={"free-skill"},
+        installed={"plus-space"}, installed_plugins={"navig-social"}, installed_skills={"free-skill"},
     )
     by = {i["slug"]: i for i in _data(await cat.handle_deck_bay(_Req()))["items"]}
     assert by["plus-space"]["installed"] is True
     assert by["buy-space"]["installed"] is False
     # Skills: matched by slug against the loader's ids.
     assert by["free-skill"]["installed"] is True
-    # Plugins: the catalog slug is the package name; the host keys by bare id.
+    # Plugins: the catalog slug is the package name — the same name the host reports.
     assert by["navig-social"]["installed"] is True
     assert by["navig-download"]["installed"] is False
     # Kinds the daemon cannot enumerate carry NO flag (unknown is not "false").
@@ -160,9 +161,9 @@ async def test_items_carry_install_ready_spec(monkeypatch, tmp_path):
     catalog = {
         "items": [
             {"slug": "s", "kind": "space", "surfaces": ["cli"], "pricing": {"model": "free"},
-             "install": "navig space install github:navig-run/community/spaces/s"},
+             "install": "navig space install github:navig-run/registry/spaces/s"},
             {"slug": "w", "kind": "webapp", "surfaces": ["cli"], "pricing": {"model": "free"},
-             "install": "navig install webapp github:navig-run/community/library/apps/ai"},
+             "install": "navig install webapp github:navig-run/registry/library/apps/ai"},
             {"slug": "p", "kind": "persona", "surfaces": ["cli"], "pricing": {"model": "free"},
              "install": "navig persona use p"},
             {"slug": "b", "kind": "block", "surfaces": ["cli"], "pricing": {"model": "free"},
@@ -172,8 +173,8 @@ async def test_items_carry_install_ready_spec(monkeypatch, tmp_path):
     _patch(monkeypatch, tmp_path, catalog=catalog, status=_FakeStatus())
     by = {i["slug"]: i for i in _data(await cat.handle_deck_bay(_Req()))["items"]}
     # github-installable kinds get the bare spec the install endpoint accepts…
-    assert by["s"]["spec"] == "github:navig-run/community/spaces/s"
-    assert by["w"]["spec"] == "github:navig-run/community/library/apps/ai"
+    assert by["s"]["spec"] == "github:navig-run/registry/spaces/s"
+    assert by["w"]["spec"] == "github:navig-run/registry/library/apps/ai"
     # …persona (use) and block (apply) are acquired differently → no spec.
     assert by["p"]["spec"] is None
     assert by["b"]["spec"] is None
@@ -213,10 +214,10 @@ async def test_acquire_github_item_installs(monkeypatch):
     _patch_acquire(monkeypatch)
     data = _data(await cat.handle_deck_bay_acquire(_AcqReq(
         {"slug": "s", "kind": "space",
-         "install": "navig space install github:navig-run/community/spaces/s"}
+         "install": "navig space install github:navig-run/registry/spaces/s"}
     )))
     assert data["action"] == "install" and data["installed"] is True
-    assert calls == ["github:navig-run/community/spaces/s"]
+    assert calls == ["github:navig-run/registry/spaces/s"]
 
 
 async def test_acquire_plugin_installs_via_pluginhost(monkeypatch):
@@ -265,7 +266,7 @@ async def test_acquire_locked_priced_item_returns_402_and_never_installs(monkeyp
     priced = {
         "slug": "x", "kind": "space",
         "pricing": {"model": "buy_once", "includedInTier": "plus"},
-        "install": "navig space install github:navig-run/community/spaces/x",
+        "install": "navig space install github:navig-run/registry/spaces/x",
     }
     _patch_acquire(monkeypatch, item=priced, status=_FakeStatus())  # free tier → locked
     calls: list[str] = []
@@ -286,7 +287,7 @@ async def test_acquire_owned_priced_item_installs(monkeypatch):
     priced = {
         "slug": "x", "kind": "space",
         "pricing": {"model": "buy_once", "includedInTier": "plus"},
-        "install": "navig space install github:navig-run/community/spaces/x",
+        "install": "navig space install github:navig-run/registry/spaces/x",
     }
     owner = _FakeStatus(capabilities=["core_ops", "item:x"])  # owns it forever
     _patch_acquire(monkeypatch, item=priced, status=owner)
@@ -298,7 +299,7 @@ async def test_acquire_owned_priced_item_installs(monkeypatch):
         {"slug": "x", "kind": "space", "install": priced["install"]}
     )))
     assert data["action"] == "install"
-    assert calls == ["github:navig-run/community/spaces/x"]
+    assert calls == ["github:navig-run/registry/spaces/x"]
 
 
 async def test_acquire_requires_slug(monkeypatch):
@@ -346,7 +347,7 @@ async def test_acquire_github_install_rearms_and_emits(monkeypatch):
 
     data = _data(await cat.handle_deck_bay_acquire(_AcqReq(
         {"slug": "s", "kind": "space",
-         "install": "navig space install github:navig-run/community/spaces/s"}
+         "install": "navig space install github:navig-run/registry/spaces/s"}
     )))
     assert data["action"] == "install"
     assert rearms == [True]                      # discovery rearmed → no daemon restart
@@ -391,7 +392,7 @@ async def test_acquire_locked_neither_rearms_nor_emits(monkeypatch):
     priced = {
         "slug": "x", "kind": "space",
         "pricing": {"model": "buy_once", "includedInTier": "plus"},
-        "install": "navig space install github:navig-run/community/spaces/x",
+        "install": "navig space install github:navig-run/registry/spaces/x",
     }
     _patch_acquire(monkeypatch, item=priced, status=_FakeStatus())  # free tier → locked
     rearms = _spy_rearm(monkeypatch)
@@ -420,7 +421,7 @@ async def test_acquire_gates_the_spec_when_slug_lookup_misses(monkeypatch):
 
     resp = await cat.handle_deck_bay_acquire(_AcqReq(
         {"slug": "mismatch", "kind": "space",
-         "install": "navig space install github:navig-run/community/spaces/x"}
+         "install": "navig space install github:navig-run/registry/spaces/x"}
     ))
     assert resp.status == 402
     payload = json.loads(resp.body.decode())
@@ -444,3 +445,85 @@ async def test_acquire_foreign_spec_still_installs_on_slug_miss(monkeypatch):
     )))
     assert data["action"] == "install"
     assert calls == ["github:someone/repo/spaces/x"]
+
+
+def test_installed_plugin_ids_carry_both_forms(monkeypatch):
+    """The host keys a pip plugin by its DISTRIBUTION name ("navig-audio") — the shape a
+    real install returns. The old test fed bare ids ("social"), which hid that the Bay
+    compared "audio" against "navig-audio" and showed every installed plugin as Install."""
+    from types import SimpleNamespace
+
+    import navig.plugins.host as host
+
+    fake = SimpleNamespace(list_installed=lambda: [SimpleNamespace(id="navig-audio"), SimpleNamespace(id="mini")])
+    monkeypatch.setattr(host, "get_plugin_host", lambda: fake)
+    ids = cat._installed_plugin_ids()
+    assert {"navig-audio", "audio", "mini"} <= ids
+    item = cat._enrich_bay_item(
+        {"slug": "navig-audio", "kind": "plugin", "pricing": {"model": "free"}},
+        caps=[], tier_rank=0, installed_spaces=set(), fail_open=True, installed_plugins=ids,
+    )
+    assert item["installed"] is True
+
+
+def test_a_space_registered_under_another_id_is_installed_by_its_folder(monkeypatch, tmp_path):
+    """A space registered outside the Bay keeps its folder name (the catalog slug) but gets
+    a normalized or federated id — "homelab-system" for system-space, "human" for human-space."""
+    import navig.spaces.registry as reg
+
+    monkeypatch.setattr(reg, "load_registry", lambda: {"spaces": [
+        {"id": "homelab-system", "path": str(tmp_path / "system-space")},
+        {"id": "human", "path": str(tmp_path / "personal" / "human-space")},
+    ]})
+    names = cat._installed_space_ids()
+    for slug, expected in (("system-space", True), ("human-space", True), ("company-space", False)):
+        item = cat._enrich_bay_item(
+            {"slug": slug, "kind": "space", "pricing": {"model": "free"}},
+            caps=[], tier_rank=0, installed_spaces=names, fail_open=True,
+        )
+        assert item["installed"] is expected, slug
+
+
+async def test_personas_and_blocks_report_installed(monkeypatch, tmp_path):
+    _patch(monkeypatch, tmp_path, status=_FakeStatus(), installed_other={"persona": {"a-persona"}, "block": set()})
+    by = {i["slug"]: i for i in _data(await cat.handle_deck_bay(_Req()))["items"]}
+    assert by["a-persona"]["installed"] is True
+
+
+@pytest.mark.parametrize(
+    ("command", "package"),
+    [
+        ("pip install navig-audio", "navig-audio"),
+        ("navig store install pip:navig-calendar", "navig-calendar"),
+        ("pip install navig-vault   # also bundled with navig: navig vault --help", "navig-vault"),
+        ("pip install requests", None),
+        ("pip install navig-audio; rm -rf /", None),
+        ("navig telegram --help", None),
+        ("navig plugin install telegram", None),
+    ],
+)
+def test_pip_package_accepts_only_first_party_names(command, package):
+    assert cat._pip_package(command) == package
+
+
+def test_acquiring_a_pip_plugin_runs_pip_for_that_package(monkeypatch):
+    import navig.cli.providers as providers
+
+    calls = []
+    monkeypatch.setattr(cat, "_bay_item", lambda slug: None)
+    monkeypatch.setattr(providers, "pip_install", lambda pkg: calls.append(pkg))
+    out = cat.acquire_bay_item("navig-audio", kind="plugin", install="pip install navig-audio")
+    assert out == {"slug": "navig-audio", "action": "install", "installed": True}
+    assert calls == ["navig-audio"]
+
+
+def test_a_failed_pip_install_is_reported(monkeypatch):
+    import navig.cli.providers as providers
+
+    def fail(pkg):
+        raise ValueError("install of 'navig-audio' failed: no matching distribution")
+
+    monkeypatch.setattr(cat, "_bay_item", lambda slug: None)
+    monkeypatch.setattr(providers, "pip_install", fail)
+    out = cat.acquire_bay_item("navig-audio", kind="plugin", install="pip install navig-audio")
+    assert out["action"] == "error" and "no matching distribution" in out["error"]

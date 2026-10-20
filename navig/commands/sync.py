@@ -61,8 +61,10 @@ def sync_instructions(
 
     MASTER (``.github/instructions/MASTER.instructions.md``) is the single source of truth;
     this writes ``.cursorrules``, ``.github/copilot-instructions.md``, ``.cline/memory.md``,
-    ``.claude/CLAUDE.md``, ``.codex/AGENTS.md``, ``.gemini/GEMINI.md``, and injects the
-    Copilot key into ``.vscode/settings.json`` WITHOUT touching any other setting.
+    ``.codex/AGENTS.md``, ``.gemini/GEMINI.md``, and injects the Copilot key into
+    ``.vscode/settings.json`` WITHOUT touching any other setting. Claude Code reads MASTER
+    directly (the root ``CLAUDE.md`` imports it), so a stale generated ``.claude/CLAUDE.md``
+    is removed rather than rewritten.
 
     The Python equivalent of ``tools/sync-instructions.ps1`` — so it runs on macOS/Linux
     too. ``--check`` is the CI/pre-commit drift gate.
@@ -96,6 +98,9 @@ def sync_instructions(
     for rel, status, chars in sync.sync_all(root, dry_run=dry_run):
         if status == "unparseable":
             ch.warning(f"  SKIP    {rel} — unparseable JSON; backed up to {rel}.bak, left untouched")
+        elif status in ("retired", "would-retire"):
+            verb = "REMOVED" if status == "retired" else "WOULD REMOVE"
+            ch.success(f"  {verb}  {rel} (stale generated copy — CLAUDE.md now imports MASTER)")
         else:
             tag = "DRY" if status == "dry" else "WROTE"
             ch.success(f"  {tag:<5}  {rel} ({chars} chars)")

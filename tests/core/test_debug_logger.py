@@ -265,3 +265,96 @@ class TestGetDebugLogger:
         l1 = get_debug_logger()
         l2 = get_debug_logger()
         assert l1.name == l2.name
+
+
+# ──────────────────────────────────────────────────────────────
+# log_operation — honest status tag (derived from the payload)
+# ──────────────────────────────────────────────────────────────
+
+
+class TestLogOperationStatus:
+    def test_plain_success(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        dl.log_operation("goals", {"action": "save", "count": 3})
+        assert "OPERATION: goals [SUCCESS]" in _read_log(tmp_path)
+        dl.close()
+
+    def test_error_key_is_tagged_error_not_success(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        dl.log_operation("goals", {"action": "load", "error": "boom"})
+        out = _read_log(tmp_path)
+        assert "OPERATION: goals [ERROR]" in out
+        assert "[SUCCESS]" not in out, "a failure was stamped as a success"
+        dl.close()
+
+    def test_refused_key_is_tagged_refused(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        dl.log_operation("goals", {"action": "save", "refused": "goals.json could not be read"})
+        out = _read_log(tmp_path)
+        assert "OPERATION: goals [REFUSED]" in out
+        assert "[SUCCESS]" not in out
+        dl.close()
+
+    def test_explicit_success_false_still_honored(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        dl.log_operation("goals", {"action": "x"}, success=False)
+        assert "OPERATION: goals [FAILED]" in _read_log(tmp_path)
+        dl.close()
+
+
+# ──────────────────────────────────────────────────────────────
+# _setup_logger — one handler per path (no cross-instance churn)
+# ──────────────────────────────────────────────────────────────
+
+
+class TestHandlerReuse:
+    def test_two_loggers_same_path_share_one_handler(self, tmp_path):
+        import logging
+        from logging.handlers import RotatingFileHandler
+
+        log_file = tmp_path / "debug.log"
+        a = DebugLogger(log_path=log_file)
+        b = DebugLogger(log_path=log_file)
+
+        navig_debug = logging.getLogger("navig.debug")
+        import os
+
+        target = os.path.normcase(os.path.abspath(str(log_file)))
+        matching = [
+            h
+            for h in navig_debug.handlers
+            if isinstance(h, RotatingFileHandler)
+            and os.path.normcase(os.path.abspath(h.baseFilename)) == target
+        ]
+        assert len(matching) == 1, "a second DebugLogger for the same path added a 2nd handler"
+        assert a._handler is b._handler, "the handler was recreated instead of reused"
+
+        # The first instance can still write after the second was constructed.
+        a.log_operation("x", {"ok": 1})
+        assert (tmp_path / "debug.log").read_text(encoding="utf-8").strip() != ""
+        a.close()
+        b.close()
+
+    def test_closing_one_logger_does_not_silence_another_on_the_same_path(self, tmp_path):
+        """The shared handler is ref-counted: only the LAST close() detaches it.
+
+        `navig.debug` does not propagate, so a logger left with no handler drops every
+        write without an error — closing one instance must not do that to its peers.
+        """
+        log_file = tmp_path / "debug.log"
+        a = DebugLogger(log_path=log_file)
+        b = DebugLogger(log_path=log_file)
+
+        a.close()
+        b.log_operation("still-here", {"ok": 1})
+        assert "OPERATION: still-here" in log_file.read_text(encoding="utf-8"), (
+            "closing one DebugLogger silenced another logging to the same file"
+        )
+
+        b.close()
+        import logging
+
+        assert not any(
+            getattr(h, "baseFilename", None) == str(log_file.resolve())
+            for h in logging.getLogger("navig.debug").handlers
+        ), "the last close() left the handler attached — a file-handle leak"

@@ -216,7 +216,7 @@ def _format_detail(step_id: str, output: dict, error: str | None = None) -> str:
         packs = output.get("activatedPacks", "")
         if packs:
             return f"{_DIM}{packs}{_RESET}"
-        return f"{_DIM}{output.get('reason', 'configure with: navig skills activate')}{_RESET}"
+        return f"{_DIM}{output.get('reason', 'configure with: navig skill auto')}{_RESET}"
 
     if error:
         return error[:70]

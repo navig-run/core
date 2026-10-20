@@ -281,7 +281,10 @@ class TestGetThinkingParams:
         assert params == {}
 
     def test_unknown_provider_returns_empty_dict(self):
-        params = get_thinking_params(EffortLevel.MAXIMUM, provider="xai")
+        # xai is no longer the example: it now honours OpenAI-shaped
+        # reasoning_effort (TestXAIEffort). Groq has no reasoning knob on its
+        # OpenAI-compatible endpoint, so it stands in as the unsupported one.
+        params = get_thinking_params(EffortLevel.MAXIMUM, provider="groq")
         assert params == {}
 
     def test_provider_case_insensitive(self):
@@ -318,3 +321,27 @@ class TestBudgetTables:
         assert ANTHROPIC_THINKING_BUDGET[EffortLevel.ULTRATHINK] == max(
             ANTHROPIC_THINKING_BUDGET.values()
         )
+
+
+# ── xAI honours the OpenAI-shaped reasoning_effort ─────────────────────────
+
+class TestXAIEffort:
+    def test_xai_returns_openai_shaped_effort_for_every_level(self):
+        """Measured live 2026-10-12 on xai/grok-4.6: ``reasoning_effort`` low
+        and high both accepted (no 400). Without this, grok-4.6 ran with the
+        provider default thinking and short chats paid for it in TTFT."""
+        from navig.agent.effort import OPENAI_REASONING_EFFORT, get_thinking_params
+
+        for level in EffortLevel:
+            assert get_thinking_params(level, provider="xai") == (
+                {"reasoning_effort": OPENAI_REASONING_EFFORT[level]}
+            ), f"xai missing effort for {level}"
+
+    def test_xai_matches_openai_verbatim(self):
+        from navig.agent.effort import get_thinking_params
+
+        for level in EffortLevel:
+            assert (
+                get_thinking_params(level, provider="xai")
+                == get_thinking_params(level, provider="openai")
+            ), f"xai/openai diverge at {level}"

@@ -99,6 +99,7 @@ def _step_lighthouse(navig_dir: Path) -> OnboardingStep:
         try:
             token = typer.prompt(
                 "  Cloudflare API token — Workers Scripts: Edit + Account Settings: Read\n"
+                "  (+ Workers AI: Read if you want the Clef decision model — optional)\n"
                 "  (https://dash.cloudflare.com/profile/api-tokens; blank to skip)",
                 default="",
                 hide_input=True,
@@ -474,9 +475,14 @@ def _step_terminal_setup(navig_dir: Path) -> OnboardingStep:
             )
 
         # Interactive offer
-        ch.dim("  Nerd Font glyphs extend NAVIG icons (Powerline separators, provider icons).")
+        # Opt-in, default No: the installer also edits OTHER apps' settings
+        # (VS Code + Windows Terminal font), so Enter must never mean yes, and
+        # the prompt says so up front. NAVIG works fine without it.
+        ch.dim("  Optional: a Nerd Font adds extra icons to NAVIG's terminal output.")
+        if sys.platform == "win32":
+            ch.dim("  It also sets that font in VS Code and Windows Terminal.")
         try:
-            reply = input("  Install JetBrainsMono Nerd Font now? [Y/n] ").strip().lower()
+            reply = input("  Install JetBrainsMono Nerd Font? [y/N] ").strip().lower()
         except (EOFError, OSError):
             write_terminal_json(navig_dir, nerd_font=False)
             return StepResult(
@@ -484,7 +490,7 @@ def _step_terminal_setup(navig_dir: Path) -> OnboardingStep:
                 output={"nerd_font": False, "reason": "no-input"},
             )
 
-        if reply in ("", "y", "yes"):
+        if reply in ("y", "yes"):
             installed = try_install_nerd_font()
             write_terminal_json(navig_dir, nerd_font=installed)
             if installed:

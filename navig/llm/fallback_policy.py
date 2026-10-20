@@ -288,6 +288,34 @@ def cooldown_remaining(spec: str) -> float:
     return max(remaining) if remaining else 0.0
 
 
+def any_cooling() -> bool:
+    """True when at least one cooldown window is still open — a free check the
+    hot path makes before doing any per-account lookup."""
+    now = time.time()
+    with _lock:
+        return any(d > now for d in _cooldowns.values())
+
+
+def clear_cooldown(spec: str) -> int:
+    """Lift every cooldown that belongs to ``spec`` (a bare ``provider:model``):
+    the bare key, each ``spec@conn:<cid>`` account key, and the account-wide
+    ``@conn:<cid>`` key of each of those accounts. Returns how many keys were
+    removed. Used when a model is seen answering again (recovery) or its
+    credential was just replaced, so the next call goes straight back to it
+    instead of waiting out a stale window."""
+    base = spec.split("@conn:", 1)[0]
+    removed = 0
+    with _lock:
+        for key in list(_cooldowns):
+            if key == base or key.startswith(f"{base}@conn:"):
+                _cooldowns.pop(key, None)
+                removed += 1
+                ak = _account_key(key)
+                if ak and _cooldowns.pop(ak, None) is not None:
+                    removed += 1
+    return removed
+
+
 def reset_cooldowns() -> None:
     """Clear all cooldowns (test hook / manual reset)."""
     with _lock:

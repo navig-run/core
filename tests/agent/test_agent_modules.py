@@ -47,6 +47,8 @@ class TestToolsets:
             "remote",
             "lsp",
             "browser",
+            "prompts",
+            "search_all",
         }
         assert expected == set(TOOLSETS.keys())
 

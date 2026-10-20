@@ -128,3 +128,50 @@ def test_the_cli_renders_every_word():
     for state in _vocabulary():
         assert state in _PLUGIN_MARK, f"no glyph for {state}"
         assert state in _PLUGIN_COLOR, f"no colour for {state}"
+
+
+# ── an installed-but-missing pip plugin must not read as `wired` ─────────────
+
+
+def test_an_installed_but_missing_pip_plugin_reads_failed(monkeypatch):
+    """`navig-pentest` shipped exactly this shape.
+
+    An editable install, two entry points, a console script on PATH — and zero `.py`
+    files on disk. Discovery reads metadata only (right, for speed), so `health` was
+    None and `error` was empty, and `wire_state` fell through to `wired`. Every use
+    of the plugin failed while `navig plugin list` advertised it as usable; only
+    `navig doctor`, which force-loads, could see it.
+
+    "Never imports" must not become "never notices" — `find_spec` locates a
+    top-level module without executing it, so the check stays as cheap as the
+    metadata read it sits beside.
+    """
+    import importlib.util
+
+    from navig.plugins.host import PluginHost
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+
+    plugins = PluginHost()._pip_plugins()
+    assert plugins, "no pip plugins discovered — this would exercise nothing"
+    missing = [p for p in plugins if p.error]
+    assert missing, "an unresolvable module must be recorded on the plugin"
+    for p in missing:
+        assert "not importable" in p.error
+        assert wire_state(p) == "failed", f"{p.id} must not read as usable"
+    assert len(missing) == len(plugins), "every plugin was made unresolvable here"
+
+
+def test_a_resolvable_pip_plugin_is_not_flagged(monkeypatch):
+    """The other direction: a plugin whose module resolves must stay clean, or the
+    check is just noise that trains everyone to ignore `failed`."""
+    import importlib.util
+
+    from navig.plugins.host import PluginHost
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
+
+    plugins = PluginHost()._pip_plugins()
+    assert plugins, "no pip plugins discovered — this would exercise nothing"
+    flagged = [p.id for p in plugins if p.error]
+    assert not flagged, f"false positives: {flagged}"

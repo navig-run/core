@@ -130,6 +130,10 @@ ALLOWED: dict[str, str] = {
     "commands/doctor.py": "~/.navig/runtime — the bundled uv runtime (installer contract)",
     "commands/quickstart.py": "~/.navig/runtime/venv — the bundled uv runtime",
     "commands/update.py": "~/.navig/runtime — locating the bundled uv for self-update",
+    # The heavy-job slot dir is a cross-tool contract with scripts/heavy-slot-lib.mjs, which
+    # locates it at homedir()/.navig/slots (NAVIG_SLOT_DIR overrides, read first). config_dir()
+    # would diverge from the JS writers, so `navig repo gates` would read the wrong directory.
+    "commands/repo.py": "~/.navig/slots/heavy — cross-tool contract with heavy-slot-lib.mjs (NAVIG_SLOT_DIR overrides)",
     # Defensive last resort, only after paths.* and the config manager have both failed —
     # the logger must never be the thing that raises.
     "debug_logger.py": "last-resort fallback after paths.debug_log_path() and the config manager both fail",
@@ -253,6 +257,9 @@ ALLOWED_TESTS: dict[str, str] = {
         "exists()/stat() E2E smoke over the real workspace — never writes",
     "commands/test_commands_paths_cmd.py":
         "asserts the logs row is NOT ~/.navig/logs (i.e. uses log_dir()) — read-only",
+    "benchmarks/test_gateway_latency.py":
+        "`live` probe of the RUNNING gateway: reads gateway.json + config.yaml from the "
+        "real install (the isolated sandbox has no daemon) — never writes",
 }
 
 

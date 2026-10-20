@@ -467,6 +467,9 @@ async def _delete_business_trigger(channel: Any, bcid: str | None, mid: int | No
     ``deleteBusinessMessages`` (needs can_delete on the connection)."""
     if not (bcid and mid is not None):
         return
+    from navig.telegram.deletions import note_own_deletion  # noqa: PLC0415
+
+    note_own_deletion(bcid, [mid])  # our trigger — keep it out of the deletion digest
     try:
         await channel._api_call(
             "deleteBusinessMessages",

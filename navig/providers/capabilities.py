@@ -57,6 +57,56 @@ class ModelCapabilityEntry:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _CAPABILITY_REGISTRY: list[ModelCapabilityEntry] = [
+    # ── Current families (2026) — first, so they win over older patterns ─
+    # Measured 2026-10-15: every id the operator actually holds (claude-*-4-x,
+    # gpt-5*, grok-4*, gpt-oss-*) fell through to a bare TEXT guess, so nothing
+    # could be routed by speed. Tags follow the vendors' published model cards;
+    # marked "inferred" because NAVIG did not probe each capability itself.
+    ModelCapabilityEntry(
+        r"claude-(?:opus|sonnet)-4|claude-(?:opus|sonnet)-4[.-]\d",
+        (Capability.TEXT, Capability.VISION, Capability.CODE, Capability.REASONING),
+        source="inferred",
+    ),
+    ModelCapabilityEntry(
+        r"claude-haiku-4",
+        (Capability.TEXT, Capability.VISION, Capability.FAST),
+        source="inferred",
+    ),
+    ModelCapabilityEntry(
+        r"gpt-5[.\d]*-(?:mini|nano)",
+        (Capability.TEXT, Capability.VISION, Capability.FAST, Capability.REASONING),
+        source="inferred",
+    ),
+    ModelCapabilityEntry(
+        r"gpt-5[.\d]*-codex",
+        (Capability.TEXT, Capability.CODE, Capability.REASONING),
+        source="inferred",
+    ),
+    ModelCapabilityEntry(
+        r"gpt-5(?![.\d]*-(?:mini|nano|codex))",
+        (Capability.TEXT, Capability.VISION, Capability.CODE, Capability.REASONING),
+        source="inferred",
+    ),
+    ModelCapabilityEntry(
+        r"grok-4[.\d-]*(?:fast|non-reasoning|mini)",
+        (Capability.TEXT, Capability.VISION, Capability.FAST),
+        source="inferred",
+    ),
+    ModelCapabilityEntry(
+        r"grok-4",
+        (Capability.TEXT, Capability.VISION, Capability.CODE, Capability.REASONING),
+        source="inferred",
+    ),
+    ModelCapabilityEntry(
+        r"gpt-oss-(?:safeguard-)?20b",
+        (Capability.TEXT, Capability.REASONING, Capability.FAST),
+        source="inferred",
+    ),
+    ModelCapabilityEntry(
+        r"gpt-oss-120b",
+        (Capability.TEXT, Capability.CODE, Capability.REASONING),
+        source="inferred",
+    ),
     # ── OpenAI ───────────────────────────────────────────────────────────
     ModelCapabilityEntry(
         r"gpt-4\.1(?!-mini|-nano)",
@@ -350,6 +400,50 @@ def list_models_with_capability(
         if cap in caps:
             result.append((m, src))
     return result
+
+
+# Families a provider's ``GET /v1/models`` lists that cannot answer a chat turn:
+# speech (TTS/ASR), embeddings, rerankers/reward/safety classifiers, image/video
+# generators, realtime (websocket-only) and legacy completion-only ids. Measured
+# 2026-10-15 against the operator's live catalogs: OpenAI listed 137 ids incl.
+# tts-1 / whisper-1 / text-embedding-3-*; Groq listed orpheus (TTS) and
+# llama-prompt-guard (a classifier) — each one a picker entry that fails every turn.
+_NON_CHAT = re.compile(
+    # `guard` but not `safeguard`: groq's openai/gpt-oss-safeguard-20b answered a
+    # real 1-token chat call in the registry audit (2026-09-26) — it can chat.
+    r"embed|rerank|retriev|reward|moderation|(?<!safe)guard"
+    r"|(?<![a-z])tts(?![a-z])|text-to-speech|orpheus|whisper|transcrib|parakeet|canary"
+    r"|dall-e|gpt-image|imagen|stable-diffusion|sdxl|(?<![a-z])flux|(?<![a-z])sora"
+    r"|realtime|davinci-002|babbage-002|computer-use",
+    re.IGNORECASE,
+)
+
+
+def is_chat_model(model_id: str) -> bool:
+    """True unless *model_id* belongs to a family that cannot hold a chat turn.
+
+    A denylist on purpose: a provider's catalog grows faster than any allowlist,
+    and an unknown id is far more often a new chat model than a new TTS one.
+    Use it to filter DISCOVERED ids — never to drop an id a user or the
+    registry chose explicitly.
+    """
+    return bool(model_id) and not _NON_CHAT.search(model_id)
+
+
+def intent_models(saved: Sequence[str], default: str | None) -> dict[str, str]:
+    """Which model to use per intent when the user leaves the picker on Auto.
+
+    ``act`` — driving a page needs the strongest model: the connection's default
+    (the id that answered its connect-time probe), else the first saved id.
+    ``ask`` — answering about a page favours speed: the first SAVED id tagged
+    FAST, else ``act``. Saved ids only: they answered a real call when the
+    connection was made; a catalog id never has, and may need access the key
+    lacks.
+    """
+    ids = [m for m in saved if m and is_chat_model(m)]
+    act = default if default and is_chat_model(default) else (ids[0] if ids else "")
+    ask = next((m for m in ids if has_capability(m, Capability.FAST)), "") or act
+    return {"ask": ask, "act": act}
 
 
 def capabilities_label(model_name: str) -> str:

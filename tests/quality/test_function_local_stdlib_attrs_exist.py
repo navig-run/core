@@ -23,6 +23,7 @@ one real defect.
 from __future__ import annotations
 
 import ast
+import functools
 import importlib
 import sys
 from pathlib import Path
@@ -41,7 +42,15 @@ _PLATFORM_ONLY = {
 
 
 def _missing_attributes() -> list[str]:
+    return list(_scan()[0])
+
+
+# ONE whole-tree pass for both tests: the anti-vacuity count used to re-parse every file
+# (~6 s) just to count. Cached as (findings, count) — small values, no ASTs kept alive.
+@functools.lru_cache(maxsize=1)
+def _scan() -> tuple[tuple[str, ...], int]:
     found: list[str] = []
+    count = 0
     for path in sorted(CORE.rglob("*.py")):
         if "tests" in path.parts:
             continue
@@ -74,6 +83,22 @@ def _missing_attributes() -> list[str]:
                     else:
                         bound[alias.asname or alias.name] = alias.name
 
+            # The anti-vacuity count, defined exactly as its test always defined it.
+            names = {
+                (a.asname or a.name)
+                for n in ast.walk(fn)
+                if isinstance(n, ast.Import)
+                for a in n.names
+                if a.name.split(".")[0] in STDLIB
+            }
+            count += sum(
+                1
+                for n in ast.walk(fn)
+                if isinstance(n, ast.Attribute)
+                and isinstance(n.value, ast.Name)
+                and n.value.id in names
+            )
+
             if not bound:
                 continue
 
@@ -94,7 +119,7 @@ def _missing_attributes() -> list[str]:
                         f"{path.relative_to(CORE).as_posix()}:{node.lineno}  "
                         f"{node.value.id}.{node.attr}  ({real} has no such attribute)"
                     )
-    return found
+    return tuple(found), count
 
 
 def test_no_function_local_stdlib_call_targets_a_missing_attribute() -> None:
@@ -110,31 +135,7 @@ def test_no_function_local_stdlib_call_targets_a_missing_attribute() -> None:
 def test_the_scan_actually_inspects_a_meaningful_number_of_calls() -> None:
     """Anti-vacuity. Every filter here (stdlib membership, function-local imports,
     alias resolution) is a way for the scan to quietly match nothing and pass."""
-    count = 0
-    for path in sorted(CORE.rglob("*.py")):
-        if "tests" in path.parts:
-            continue
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8-sig"))
-        except (SyntaxError, UnicodeDecodeError):
-            continue
-        for fn in ast.walk(tree):
-            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            bound = {
-                (a.asname or a.name)
-                for n in ast.walk(fn)
-                if isinstance(n, ast.Import)
-                for a in n.names
-                if a.name.split(".")[0] in STDLIB
-            }
-            count += sum(
-                1
-                for n in ast.walk(fn)
-                if isinstance(n, ast.Attribute)
-                and isinstance(n.value, ast.Name)
-                and n.value.id in bound
-            )
+    count = _scan()[1]
     assert count > 800, (
         f"only {count} function-local stdlib attribute uses seen — there were 1554 "
         "when this guard was written, so the scan has stopped reaching the tree."

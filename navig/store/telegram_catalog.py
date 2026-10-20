@@ -120,6 +120,14 @@ class TelegramCatalogStore(BaseStore):
             conn.execute("ALTER TABLE tg_messages ADD COLUMN deleted_at TEXT")
         except sqlite3.OperationalError:
             pass  # column already present
+        # WHY it was deleted, when that can be told from the outside: "expired" (the
+        # chat's auto-delete timer) or "wiped" (a whole-history clear). NULL means
+        # an ordinary deletion — and every row recorded before this column existed.
+        # The digest stays quiet about the first two; the record keeps them all.
+        try:
+            conn.execute("ALTER TABLE tg_messages ADD COLUMN deleted_reason TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already present
         # Link index — tiktok/youtube/url pulled from messages.
         conn.executescript(
             """
@@ -378,23 +386,41 @@ class TelegramCatalogStore(BaseStore):
         if row and text:
             self._index_fts("message", local_id, int(row["chat_id"]), text)
 
-    def mark_message_deleted(self, chat_id: int, message_id: int) -> bool:
-        """Soft-delete a message, stamping WHEN.
+    def mark_message_deleted(
+        self, chat_id: int, message_id: int, *, reason: str | None = None,
+    ) -> bool:
+        """Soft-delete a message, stamping WHEN (and WHY, when known).
 
         ``deleted_at`` is only set on the first mark: Telegram can re-deliver a
         deletion, and refreshing the stamp would drag an old deletion back into a
-        digest window and report it twice."""
+        digest window and report it twice. ``deleted_reason`` follows the same
+        first-mark-wins rule, for the same reason."""
         cur = self._write(
             "UPDATE tg_messages SET deleted = 1, "
-            "deleted_at = COALESCE(deleted_at, ?) "
+            "deleted_at = COALESCE(deleted_at, ?), "
+            "deleted_reason = CASE WHEN deleted = 1 THEN deleted_reason ELSE ? END "
             "WHERE chat_id = ? AND message_id = ?",
-            (_utcnow(), chat_id, message_id),
+            (_utcnow(), reason, chat_id, message_id),
         )
         return cur.rowcount > 0
+
+    def live_message_count(self, chat_id: int, *, kind: str | None = None) -> int:
+        """How many cataloged messages in this chat are NOT deleted.
+
+        Zero right after a batch deletion is how a whole-history clear tells itself
+        apart from someone removing a few messages."""
+        sql = "SELECT COUNT(*) AS n FROM tg_messages WHERE chat_id = ? AND deleted = 0"
+        params: list[Any] = [chat_id]
+        if kind:
+            sql += " AND kind = ?"
+            params.append(kind)
+        row = self._read_one(sql, tuple(params))
+        return int((row["n"] if row else 0) or 0)
 
     def count_deleted_since(
         self, since: str, *, kind: str | None = None,
         exclude_chats: set[int] | frozenset[int] | None = None,
+        exclude_reasons: set[str] | frozenset[str] | None = None,
     ) -> dict[str, int]:
         """``{"messages": n, "chats": m, "latest": iso|None}`` deleted at or after *since*.
 
@@ -408,7 +434,8 @@ class TelegramCatalogStore(BaseStore):
         ``kind`` / ``exclude_chats`` take the SAME meaning as in
         :meth:`list_deleted`, so a caller can make the count and the list agree —
         the digest card's number and what its Show button reveals must match."""
-        where, params = _deleted_filters(since=since, kind=kind, exclude_chats=exclude_chats)
+        where, params = _deleted_filters(since=since, kind=kind, exclude_chats=exclude_chats,
+                                         exclude_reasons=exclude_reasons)
         row = self._read_one(
             "SELECT COUNT(*) AS messages, COUNT(DISTINCT m.chat_id) AS chats, "
             "MAX(m.deleted_at) AS latest "
@@ -424,6 +451,7 @@ class TelegramCatalogStore(BaseStore):
     def deleted_by_chat_since(
         self, since: str, *, owner_id: int | None = None, kind: str | None = None,
         exclude_chats: set[int] | frozenset[int] | None = None, limit: int = 50,
+        exclude_reasons: set[str] | frozenset[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Deleted rows since *since*, grouped per chat, biggest first.
 
@@ -431,7 +459,8 @@ class TelegramCatalogStore(BaseStore):
         owner's own messages, so a digest can say WHOSE messages went, not just how
         many. Same filters as :meth:`count_deleted_since` (the shared builder), so the
         per-chat lines always add up to the number on the card."""
-        where, params = _deleted_filters(since=since, kind=kind, exclude_chats=exclude_chats)
+        where, params = _deleted_filters(since=since, kind=kind, exclude_chats=exclude_chats,
+                                         exclude_reasons=exclude_reasons)
         rows = self._read_all(
             "SELECT m.chat_id AS chat_id, r.title AS title, COUNT(*) AS n, "
             "SUM(CASE WHEN m.sender_id = ? THEN 1 ELSE 0 END) AS mine "
@@ -495,6 +524,7 @@ class TelegramCatalogStore(BaseStore):
     def list_deleted(
         self, *, chat_id: int | None = None, limit: int = 100, since: str | None = None,
         kind: str | None = None, exclude_chats: set[int] | frozenset[int] | None = None,
+        exclude_reasons: set[str] | frozenset[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Deleted messages across every room, newest first, with the room title.
 
@@ -515,7 +545,8 @@ class TelegramCatalogStore(BaseStore):
         (the digest passes the muted set; the browse surfaces do not, because mute
         stops the announcing, not the record)."""
         where, params = _deleted_filters(
-            since=since, kind=kind, exclude_chats=exclude_chats, chat_id=chat_id)
+            since=since, kind=kind, exclude_chats=exclude_chats, chat_id=chat_id,
+            exclude_reasons=exclude_reasons)
         params.append(max(1, min(500, limit)))
         clauses = [where]
         rows = self._read_all(
@@ -729,6 +760,7 @@ class TelegramCatalogStore(BaseStore):
 def _deleted_filters(
     *, since: str | None = None, kind: str | None = None,
     exclude_chats: set[int] | frozenset[int] | None = None, chat_id: int | None = None,
+    exclude_reasons: set[str] | frozenset[str] | None = None,
 ) -> tuple[str, list[Any]]:
     """WHERE clause + params for "deleted rows", shared by the count and the list.
 
@@ -753,6 +785,13 @@ def _deleted_filters(
         ids = sorted(int(c) for c in exclude_chats)
         clauses.append(f"m.chat_id NOT IN ({', '.join('?' for _ in ids)})")
         params.extend(ids)
+    if exclude_reasons:
+        # NULL = an ordinary deletion, so it must survive a NOT IN (which drops NULLs).
+        reasons = sorted(str(r) for r in exclude_reasons)
+        clauses.append(
+            f"(m.deleted_reason IS NULL OR m.deleted_reason NOT IN "
+            f"({', '.join('?' for _ in reasons)}))")
+        params.extend(reasons)
     return " AND ".join(clauses), params
 
 
@@ -810,6 +849,7 @@ def _message_dict(row: sqlite3.Row) -> dict[str, Any]:
         # NULL for rows deleted before the column existed — "unknown when",
         # which readers must not render as "just now".
         "deleted_at": (row["deleted_at"] if "deleted_at" in row.keys() else None),
+        "deleted_reason": (row["deleted_reason"] if "deleted_reason" in keys else None),
     }
     if "raw_json" in keys:
         payload = safe_json_loads(row["raw_json"], None)

@@ -2,10 +2,10 @@
 over aiohttp: CRUD, the add-time schedule/field validation (#340) + required/empty/timeout
 guards, and lifecycle 404s / service-unavailable 503.
 
-Auth is bypassed by a fake gateway whose ``config.auth_token`` is None
-(``require_bearer_auth`` returns None → open); the real engine is a detached
-``CronService`` over a tmp dir. Run-now never spawns a subprocess:
-``_execute_job_command`` is monkeypatched.
+The fake gateway configures an auth token (``require_bearer_auth`` fails closed with
+503 when none is configured) and every request below authenticates with it; the real
+engine is a detached ``CronService`` over a tmp dir. Run-now never spawns a
+subprocess: ``_execute_job_command`` is monkeypatched.
 """
 
 from __future__ import annotations
@@ -24,12 +24,15 @@ from aiohttp.test_utils import TestClient, TestServer
 from navig.gateway.routes import cron as cron_routes
 from navig.scheduler.cron_service import CronService
 
+_TEST_TOKEN = "test-token"
+_AUTH = {"Authorization": f"Bearer {_TEST_TOKEN}"}
+
 
 def _app(cron_service) -> web.Application:
-    """A minimal app with the cron routes and a fake, unauthenticated gateway."""
+    """A minimal app with the cron routes and a fake, token-bearing gateway."""
     gw = types.SimpleNamespace(
         cron_service=cron_service,
-        config=types.SimpleNamespace(auth_token=None),  # → require_bearer_auth passes
+        config=types.SimpleNamespace(auth_token=_TEST_TOKEN),
     )
     app = web.Application()
     cron_routes.register(app, gw)
@@ -45,17 +48,17 @@ def cron_service(tmp_path, monkeypatch):
 
 
 async def _post(client: TestClient, path: str, body: dict | None = None):
-    res = await client.post(path, json=body or {})
+    res = await client.post(path, json=body or {}, headers=_AUTH)
     return res.status, await res.json()
 
 
 async def _get(client: TestClient, path: str):
-    res = await client.get(path)
+    res = await client.get(path, headers=_AUTH)
     return res.status, await res.json()
 
 
 async def _delete(client: TestClient, path: str):
-    res = await client.delete(path)
+    res = await client.delete(path, headers=_AUTH)
     return res.status, await res.json()
 
 

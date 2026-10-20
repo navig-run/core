@@ -280,6 +280,10 @@ class AgentToolRegistry:
 
     # ── Querying ─────────────────────────────────────────────
 
+    def entries(self) -> list[AgentToolEntry]:
+        """Every registered entry, in registration order — for listing surfaces."""
+        return list(self._entries.values())
+
     def get_entry(self, name: str) -> AgentToolEntry | None:
         """Look up a tool entry by name.  Returns ``None`` if not found."""
         return self._entries.get(name)
@@ -300,9 +304,10 @@ class AgentToolRegistry:
             Sorted list of tool names that pass their ``check_fn`` and are not blocked.
         """
         is_blocked = _operator_block_filter()
+        in_toolsets = _in_toolsets(toolsets)
         results: list[str] = []
         for name, entry in self._entries.items():
-            if toolsets is not None and entry.toolset not in toolsets:
+            if not in_toolsets(entry):
                 continue
             if _is_available(entry) and not is_blocked(name):
                 results.append(name)
@@ -364,9 +369,10 @@ class AgentToolRegistry:
         self, toolsets: list[str] | None, *, compact: bool
     ) -> str:
         is_blocked = _operator_block_filter()
+        in_toolsets = _in_toolsets(toolsets)
         seen: set[str] = set()
         for entry in self._entries.values():
-            if toolsets is not None and entry.toolset not in toolsets:
+            if not in_toolsets(entry):
                 continue
             # A toolset earns its line only if something in it can actually run. With
             # every tool in it blocked, claiming the capability is a lie to the operator
@@ -406,11 +412,12 @@ class AgentToolRegistry:
             for passing directly to any OpenAI-compatible LLM ``tools=`` param.
         """
         is_blocked = _operator_block_filter()
+        in_toolsets = _in_toolsets(toolsets)
 
         schemas: list[dict[str, Any]] = []
         for name, entry in self._entries.items():
             # Toolset filter
-            if toolsets is not None and entry.toolset not in toolsets:
+            if not in_toolsets(entry):
                 continue
             # Name filter
             if tool_names is not None and name not in tool_names:
@@ -520,9 +527,52 @@ class AgentToolRegistry:
 _AGENT_REGISTRY = AgentToolRegistry()
 
 
+def get_agent_tool_registry() -> AgentToolRegistry:
+    """The agent tool registry, for callers outside this module.
+
+    Public: a plugin registering its own toolset needs this, and the only way to reach
+    it was ``from navig.agent.agent_tool_registry import _AGENT_REGISTRY`` — a private
+    name, so renaming or re-homing the singleton would break ``navig-devnet`` and
+    ``navig-games`` at import time with no review signal.
+
+    Part of the documented extension surface (`docs/plugin-spec.md` → Extension API):
+    plugins reach core through named public entry points like this one, never through a
+    leading-underscore symbol.
+    """
+    return _AGENT_REGISTRY
+
+
 # ─────────────────────────────────────────────────────────────
 # Private helpers
 # ─────────────────────────────────────────────────────────────
+
+
+def _in_toolsets(toolsets: list[str] | None) -> Callable[[AgentToolEntry], bool]:
+    """Predicate: does an entry belong to any of *toolsets*?
+
+    An entry belongs to a toolset when it was registered under that tag OR the
+    toolset's :data:`navig.agent.toolsets.TOOLSETS` entry names it. Matching the
+    tag alone meant a toolset whose tools are registered under OTHER tags offered
+    nothing: ``research`` lists search/web_fetch/wiki/kb, all registered under
+    ``search``/``wiki``/``memory``, so the research tier — documented as "handed
+    the retrieval tools" — got none of them. Measured 2026-10-16: asked for a
+    domain's expiry, the research tier had no web tool, shelled out, and told the
+    operator RDAP was unreachable. ``full`` (``None`` in the table) adds no names.
+    """
+    if toolsets is None:
+        return lambda entry: True
+    listed: set[str] = set()
+    try:
+        from navig.agent.toolsets import TOOLSETS
+
+        for ts in toolsets:
+            names = TOOLSETS.get(ts)
+            if isinstance(names, list):
+                listed.update(names)
+    except Exception as exc:  # noqa: BLE001 — fall back to tag matching alone
+        logger.debug("toolset table unavailable: %s", exc)
+    tags = set(toolsets)
+    return lambda entry: entry.toolset in tags or entry.name in listed
 
 
 def _operator_block_filter() -> Callable[[str], bool]:

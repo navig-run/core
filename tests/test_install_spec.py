@@ -8,17 +8,17 @@ pytestmark = pytest.mark.integration
 
 
 def test_community_skill_path():
-    info = _parse_spec("github:navig-run/community/cli-skills/developer/git-ops")
+    info = _parse_spec("github:navig-run/registry/cli-skills/developer/git-ops")
     assert info["type"] == "skill"
     assert info["owner"] == "navig-run"
-    assert info["repo"] == "community"
+    assert info["repo"] == "registry"
     assert info["subpath"] == ["cli-skills", "developer", "git-ops"]
     assert info["id"] == "git-ops"
     assert info["ref"] == "main"
 
 
 def test_community_space_path_infers_space_type():
-    info = _parse_spec("github:navig-run/community/spaces/homelab-space")
+    info = _parse_spec("github:navig-run/registry/spaces/homelab-space")
     assert info["type"] == "space"
     assert info["id"] == "homelab-space"
 
@@ -47,3 +47,21 @@ def test_default_type_override():
 def test_invalid_spec_raises():
     with pytest.raises(ValueError):
         _parse_spec("not-a-valid-spec")
+
+
+def test_the_deleted_community_repo_resolves_to_the_registry():
+    """`navig-run/community` was deleted (no GitHub redirect) and replaced by
+    `navig-run/registry` on 2026-10-16; specs naming the old repo still install."""
+    for spec in (
+        "github:navig-run/community/spaces/homelab-space",
+        "block:navig-run/community/blocks/hello",
+        "github:Navig-Run/Community/cli-skills/developer/git-ops@v1",
+    ):
+        info = _parse_spec(spec)
+        assert info["repo"] == "registry", spec
+
+
+def test_a_third_party_repo_named_community_is_left_alone():
+    info = _parse_spec("github:someone/community/spaces/x")
+    assert info["owner"] == "someone"
+    assert info["repo"] == "community"

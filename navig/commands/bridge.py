@@ -182,7 +182,10 @@ def bridge_status(
 
         ch.info(f"  {status_icon} Gateway: {'enabled' if enabled else 'disabled'}")
         ch.info(f"  {secure_icon} Bind:    {host}:{port}")
-        ch.info(f"  {auth_icon} Auth:    {'configured' if token else 'NONE (open access!)'}")
+        ch.info(
+            f"  {auth_icon} Auth:    "
+            f"{'configured' if token else 'NONE (routes refuse — mint failed)'}"
+        )
 
         if host != "127.0.0.1":
             ch.warning("  Gateway is bound to a non-localhost address!")

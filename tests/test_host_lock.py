@@ -482,3 +482,59 @@ def test_describe_names_the_kind_and_its_ttl(lockdir, monkeypatch):
     st = host_lock.lock_state(host_lock.read_lock("vps-1"), alive=lambda s: True)
     text = host_lock.describe(st, "vps-1")
     assert f"implicit (frees after {host_lock.IMPLICIT_TTL_MINUTES}m idle)" in text
+
+
+# ── try_guard_remote (the deck HTTP sibling: returns, never raises) ──────────
+
+
+def test_try_guard_remote_claims_when_free(lockdir):
+    cfg = _FakeConfig(local_hosts={"localhost"})
+    assert host_lock.try_guard_remote(cfg, "vps-1", "deck remote: ls") is None
+    st = host_lock.lock_state(host_lock.read_lock("vps-1"))
+    assert st.state == "mine"
+
+
+def test_try_guard_remote_returns_the_conflict_instead_of_raising(lockdir, monkeypatch):
+    """The HTTP path must get a LockState back — no typer.Exit, no console print."""
+    host_lock.claim("vps-1", "session A work")
+    monkeypatch.setenv("NAVIG_SESSION_ID", "session-B")
+    st = host_lock.try_guard_remote(_FakeConfig(), "vps-1", "deck remote: rm -rf /")
+    assert st is not None
+    assert st.blocking is True
+    assert st.session == "session-A"
+    # Nothing was claimed by the loser, and the winner's lock is intact.
+    assert host_lock.lock_state(host_lock.read_lock("vps-1")).session == "session-A"
+
+
+def test_try_guard_remote_skips_local_host(lockdir):
+    cfg = _FakeConfig(local_hosts={"localhost"})
+    assert host_lock.try_guard_remote(cfg, "localhost", "navig run: ls") is None
+    assert host_lock.read_lock("localhost") is None
+
+
+def test_try_guard_remote_ignores_missing_host(lockdir):
+    assert host_lock.try_guard_remote(_FakeConfig(), None, "navig run: ls") is None
+
+
+def test_try_guard_remote_off_mode_is_inert(lockdir, monkeypatch):
+    monkeypatch.setenv("NAVIG_HOST_LOCK", "off")
+    host_lock.claim("vps-1", "session A work")
+    monkeypatch.setenv("NAVIG_SESSION_ID", "session-B")
+    assert host_lock.try_guard_remote(_FakeConfig(), "vps-1", "cmd") is None
+
+
+def test_try_guard_remote_warn_mode_proceeds_on_conflict(lockdir, monkeypatch):
+    monkeypatch.setenv("NAVIG_HOST_LOCK", "warn")
+    host_lock.claim("vps-1", "session A work")
+    monkeypatch.setenv("NAVIG_SESSION_ID", "session-B")
+    assert host_lock.try_guard_remote(_FakeConfig(), "vps-1", "cmd") is None
+
+
+def test_try_guard_remote_treats_unknown_host_as_remote(lockdir):
+    class Exploding:
+        def is_local_host(self, host):
+            raise RuntimeError("boom")
+
+    st = host_lock.try_guard_remote(Exploding(), "mystery", "cmd")
+    assert st is None  # free → claimed
+    assert host_lock.lock_state(host_lock.read_lock("mystery")).state == "mine"

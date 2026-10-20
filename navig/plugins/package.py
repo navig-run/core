@@ -200,13 +200,51 @@ def entry_point_plugin_capability_dirs(kind: str) -> list[Path]:
     returns its ``<kind>/`` subdir when present, deduped. Disabled plugins are
     excluded (same toggle as the package seam). Never raises; a broken dist is
     skipped so discovery degrades to whatever resolved.
-    """
-    import importlib.util
-    from importlib import metadata
 
+    The package scan itself (``metadata.entry_points`` + ``find_spec`` per entry
+    point, ~0.3 s) is memoised per process by :func:`_entry_point_package_roots`;
+    the disable toggle and the ``<kind>/`` check stay live on every call.
+    """
     disabled = disabled_plugin_ids()
     seen: set[Path] = set()
     out: list[Path] = []
+    for dist_name, pkg_root in _entry_point_package_roots():
+        if dist_name in disabled:
+            continue  # honor the disable toggle
+        try:
+            cap = pkg_root / kind
+            if not cap.is_dir():
+                continue  # stat first — resolve() costs ~4 ms per call on Windows
+            rc = cap.resolve()
+            if rc not in seen:
+                seen.add(rc)
+                out.append(cap)
+        except Exception:  # noqa: BLE001 — a broken dist must not kill discovery
+            continue
+    return out
+
+
+# Process-level memo of the entry-point package scan: [(dist_name, package_root)].
+# Populated on first use, dropped by invalidate_plugin_discovery_cache() — which
+# every install/uninstall path calls (PluginHost.install/uninstall and
+# navig.modules.registry.reset_entry_points, the hook the Bay/deck/store
+# installers already fire after a pip install).
+_EP_PACKAGE_ROOTS: list[tuple[str, Path]] | None = None
+
+
+def invalidate_plugin_discovery_cache() -> None:
+    """Forget the memoised entry-point package scan (next call rescans)."""
+    global _EP_PACKAGE_ROOTS
+    _EP_PACKAGE_ROOTS = None
+
+
+def _scan_entry_point_package_roots() -> list[tuple[str, Path]]:
+    """Resolve every navig entry point's top-level package dir — the slow part."""
+    import importlib.util
+    from importlib import metadata
+
+    seen: set[tuple[str, Path]] = set()
+    out: list[tuple[str, Path]] = []
     for group in ("navig.plugins", "navig.commands"):
         try:
             eps = list(metadata.entry_points(group=group))
@@ -216,8 +254,8 @@ def entry_point_plugin_capability_dirs(kind: str) -> list[Path]:
             try:
                 dist = getattr(ep, "dist", None)
                 dist_name = (getattr(dist, "name", None) or ep.name) if dist else ep.name
-                if dist_name == "navig" or dist_name in disabled:
-                    continue  # core never self-registers; honor the disable toggle
+                if dist_name == "navig":
+                    continue  # core never self-registers
                 top = ep.module.split(".", 1)[0]  # "navig_generate.plugin" -> "navig_generate"
                 if not top or top == "navig":
                     continue
@@ -225,14 +263,22 @@ def entry_point_plugin_capability_dirs(kind: str) -> list[Path]:
                 origin = getattr(spec, "origin", None) if spec else None
                 if not origin:
                     continue
-                cap = Path(origin).parent / kind
-                rc = cap.resolve()
-                if cap.is_dir() and rc not in seen:
-                    seen.add(rc)
-                    out.append(cap)
+                key = (dist_name, Path(origin).parent)
+                if key not in seen:
+                    seen.add(key)
+                    out.append(key)
             except Exception:  # noqa: BLE001 — a broken dist must not kill discovery
                 continue
     return out
+
+
+def _entry_point_package_roots() -> list[tuple[str, Path]]:
+    global _EP_PACKAGE_ROOTS
+    roots = _EP_PACKAGE_ROOTS
+    if roots is None:
+        roots = _scan_entry_point_package_roots()
+        _EP_PACKAGE_ROOTS = roots
+    return roots
 
 
 def plugin_capability_dirs(kind: str) -> list[Path]:

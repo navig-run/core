@@ -111,6 +111,132 @@ def connector_list(
     )
 
 
+# ── catalog ──────────────────────────────────────────────────────────────
+
+
+@connector_app.command("catalog")
+def connector_catalog(
+    batch: int | None = typer.Option(None, "--batch", "-b", help="Only this batch (1 = most important)"),
+    category: str | None = typer.Option(None, "--category", "-c", help="Category id, e.g. developer"),
+    country: str | None = typer.Option(None, "--country", help="ISO country code, e.g. FR"),
+    region: str | None = typer.Option(None, "--region", help="north-america · europe · asia-pacific · …"),
+    tier: str | None = typer.Option(None, "--tier", help="navig · official · desktop · community"),
+    status: str | None = typer.Option(None, "--status", "-s", help="planned · verified · live"),
+    search: str | None = typer.Option(None, "--search", "-q", help="Match name or vendor"),
+    limit: int = typer.Option(50, "--limit", "-n", help="Rows to show (0 = all)"),
+    summary_only: bool = typer.Option(False, "--summary", help="Counts per status, tier, category, region"),
+    json_output: bool = typer.Option(False, "--json", help="JSON output"),
+) -> None:
+    """Every service NAVIG knows about, ranked into batches of 25.
+
+    The catalog is the to-do list for new connectors: resolve one batch at a time
+    (verify how each service integrates, then wire it). `--summary` shows the next batch.
+    """
+    from navig.connectors import catalog
+
+    for label, value, allowed in (
+        ("category", category, catalog.CATEGORY_IDS),
+        ("tier", tier, catalog.TIERS),
+        ("status", status, catalog.STATUSES),
+        ("region", region, catalog.REGION_IDS),
+    ):
+        if value and value not in allowed:
+            ch.error(f"Unknown {label} {value!r} — one of: {', '.join(sorted(allowed))}")
+            raise typer.Exit(1)
+
+    try:
+        rows = catalog.query(
+            category=category, country=country, region=region, tier=tier,
+            status=status, batch=batch, text=search,
+        )
+    except catalog.CatalogError as exc:
+        ch.error(f"The connector catalog is malformed: {exc}")
+        raise typer.Exit(1) from None
+
+    if summary_only:
+        s = catalog.summary(rows)
+        if json_output:
+            ch.emit_json(s)
+            return
+        _print_catalog_summary(s)
+        return
+
+    shown = rows if limit <= 0 else rows[:limit]
+    if json_output:
+        ch.emit_json([e.to_dict() for e in shown])
+        return
+    if not rows:
+        ch.warning("No catalog entries match those filters.")
+        raise typer.Exit(1)
+
+    from navig.console_helper import Table
+
+    # Below ~100 columns the fixed columns alone overflow, and Rich then collapses Name —
+    # the one column that matters. Narrow terminals get the category as its icon only.
+    compact = ch.console.width < 100
+    labels = {c.id: c.icon if compact else f"{c.icon} {c.label}" for c in catalog.CATEGORIES}
+    table = Table(box=None, show_header=True, padding=(0, 2 if not compact else 1))
+    table.add_column("#", style="dim", justify="right", no_wrap=True)
+    table.add_column("Batch", style="dim", justify="right", no_wrap=True)
+    # Name is the one wrappable column, but never squeezed away: at 80 columns Rich
+    # shrank it to zero width and the listing showed batches of nameless rows.
+    table.add_column("Name", min_width=14, ratio=1)
+    table.add_column("Category", no_wrap=True)
+    table.add_column("Country", style="dim", no_wrap=True)
+    table.add_column("Via", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    status_style = {
+        "live": "[green]● live[/green]",
+        "verified": "[cyan]◐ verified[/cyan]",
+        "planned": "[dim]○ planned[/dim]",
+    }
+    for e in shown:
+        table.add_row(
+            str(e.rank), str(e.batch), e.name, labels.get(e.category, e.category),
+            e.country or "—", _via(e), status_style.get(e.status, e.status),
+        )
+    ch.console.print(table)
+    more = f" · showing {len(shown)} (--limit 0 for all)" if len(shown) < len(rows) else ""
+    live = sum(1 for e in rows if e.status == "live")
+    ch.dim(f"{len(rows)} entries · {live} live{more} · next: navig connector catalog --summary")
+
+
+def _via(e) -> str:
+    """How NAVIG reaches the service — and whether the vendor must approve the app first."""
+    if e.integration == "native":
+        return "[green]built-in[/green]"
+    if e.integration == "remote_mcp":
+        return "[yellow]MCP · approval[/yellow]" if "client-approval" in e.flags else "[cyan]MCP[/cyan]"
+    if e.integration:
+        return e.integration.replace("_", " ")
+    return "[dim]—[/dim]"
+
+
+def _print_catalog_summary(s: dict) -> None:
+    from navig.connectors import catalog
+    from navig.console_helper import Table
+
+    labels = {c.id: f"{c.icon} {c.label}" for c in catalog.CATEGORIES}
+    table = Table(box=None, show_header=True, padding=(0, 2))
+    table.add_column("Category")
+    table.add_column("Entries", justify="right", no_wrap=True)
+    for cid, n in sorted(s["by_category"].items(), key=lambda kv: -kv[1]):
+        table.add_row(labels.get(cid, cid), str(n))
+    ch.console.print(table)
+
+    def fmt(d: dict) -> str:
+        return " · ".join(f"{k} {v}" for k, v in sorted(d.items(), key=lambda kv: -kv[1]))
+
+    ch.info(f"Status   {fmt(s['by_status'])}")
+    ch.info(f"Tier     {fmt(s['by_tier'])}")
+    ch.info(f"Region   {fmt(s['by_region'])}")
+    nxt = s["next_batch"]
+    ch.dim(
+        f"{s['total']} entries in {s['batches']} batches"
+        + (f" · next to resolve: navig connector catalog --batch {nxt}" if nxt else " · all resolved")
+    )
+
+
 # ── status ───────────────────────────────────────────────────────────────
 
 
@@ -174,11 +300,70 @@ def connector_status(
 # ── connect ──────────────────────────────────────────────────────────────
 
 
+def _prompt_api_key_fields(connector, *, force: bool = False) -> None:
+    """The CLI half of an ``api_key`` Connect: prompt for key fields → vault.
+
+    The deck's Connect form renders the same ``key_fields``; without this the CLI
+    could only ever connect an api_key connector whose key was ALREADY in the
+    environment — `navig connector connect cyberaigen` would fail with "token not
+    found" and nothing to type it into. Fields that already resolve (env or vault)
+    are left alone — unless *force* (``--reconfigure``), which re-prompts every
+    field so a stored key can be ROTATED: a secret's prompt accepts Enter to keep
+    the current value, an empty answer never deletes what works.
+    """
+    from navig.connectors.secrets import resolve
+    from navig.connectors.secrets import store as store_key
+
+    for field in connector.manifest.key_fields:
+        current = resolve(field)
+        if current and not force:
+            continue
+        if field.secret:
+            # hide_input only on a real TTY: on Windows a hidden prompt reads via
+            # msvcrt and BLOCKS FOREVER when stdin is a pipe (scripted connects),
+            # and a pipe echoes nothing anyway — hiding matters only at a terminal.
+            import sys
+
+            prompt = (
+                f"{field.label} ({field.placeholder})"
+                if not current
+                else f"New {field.label} — Enter keeps the current one"
+            )
+            value = (
+                typer.prompt(
+                    prompt,
+                    default="" if (field.optional or (force and current)) else None,
+                    hide_input=sys.stdin.isatty(),
+                )
+                or ""
+            ).strip()
+        else:
+            value = (
+                typer.prompt(
+                    f"{field.label}", default=current or field.placeholder or None
+                )
+                or ""
+            ).strip()
+        if not value and not field.optional and not (force and current):
+            ch.error(f"{field.label} is required to connect this connector.")
+            raise typer.Exit(1)
+        if value:
+            store_key(field, value)
+            ch.info(f"Stored in the vault under '{field.vault_label}'.")
+        elif force and current:
+            ch.info(f"Kept the existing {field.label}.")
+
+
 @connector_app.command("connect")
 def connector_connect(
     connector_id: str = typer.Argument(help="Connector ID (e.g. gmail, google_calendar)"),
     account: str | None = typer.Option(
         None, "--account", help="Link a SECOND account of this connector (email); the first one is kept."
+    ),
+    reconfigure: bool = typer.Option(
+        False,
+        "--reconfigure",
+        help="Re-prompt api_key fields even if already stored — how you rotate a saved key.",
     ),
 ) -> None:
     """Authenticate and connect a service connector."""
@@ -200,6 +385,9 @@ def connector_connect(
     ch.info(f"Connecting {connector.manifest.icon}  {connector.manifest.display_name}…")
 
     auth = ConnectorAuthManager()
+
+    if connector.manifest.auth_mode == "api_key" and connector.manifest.key_fields:
+        _prompt_api_key_fields(connector, force=reconfigure)
 
     if connector.manifest.requires_oauth:
         # Register OAuth provider config
@@ -440,56 +628,29 @@ def _ensure_connectors_loaded() -> None:
 
 
 def _vault_connected_ids() -> dict[str, str]:
-    """Return ``{connector_id: account_email}`` for everything linked, from the **vault**.
+    """``{connector_id: account_email}`` from the vault — see navig.connectors.connected.
 
-    The vault is the durable source of truth for "is this connector connected".
-    ``registry.list_connected()`` is not: it filters ``_instances``, and instances are
-    created *lazily* on first ``registry.get()``. A fresh CLI process has created none,
-    so that set is always empty — which is why `navig connector status` and a
-    source-less `navig connector search` reported "No connectors connected" on a
-    perfectly healthy install, no matter what the user had linked.
+    The vault is the durable source of truth for "connected": ``registry.list_connected()``
+    only sees instances this process created, so a fresh CLI process reported
+    "No connectors connected" on a healthy install.
     """
-    try:
-        from navig.connectors.auth_manager import ConnectorAuthManager
+    from navig.connectors.connected import vault_connected_ids
 
-        return ConnectorAuthManager().list_connected_accounts()
-    except Exception as exc:  # noqa: BLE001 — a vault problem must not kill `list`
-        logger.warning("Could not read connected connectors from the vault: %s", exc)
-        return {}
+    return vault_connected_ids()
 
 
 def _resolve_connected(registry) -> list:
-    """Connector instances that are actually usable, vault first.
+    """Usable connector instances, vault first (shared with the agent's search_all)."""
+    from navig.connectors.connected import resolve_connected
 
-    Union of the vault-backed ids and any instance this process already marked
-    connected, so non-OAuth connectors (which keep no vault credential) are not
-    dropped from the list.
-    """
-    out: dict[str, object] = {}
-    for cid in _vault_connected_ids():
-        if registry.has(cid):
-            out[cid] = registry.get(cid)
-    for inst in registry.list_connected():
-        out.setdefault(inst.manifest.id, inst)
-    return list(out.values())
+    return resolve_connected(registry)
 
 
 async def _hydrate(connector) -> bool:
-    """Load *connector*'s stored vault token into the instance.
+    """Load *connector*'s vault token into the instance (a fresh one has none)."""
+    from navig.connectors.connected import hydrate
 
-    Connectors keep their access token in memory but the durable token lives in the
-    vault, so a freshly-created instance has none and ``_get_access_token()`` raises
-    ``RuntimeError: Connector 'x' has no access token``. Every CLI process builds
-    fresh instances, so search/fetch/health had to hydrate — and did not.
-    """
-    from navig.connectors.auth_manager import ConnectorAuthManager
-    from navig.connectors.types import ConnectorStatus
-
-    ok = await ConnectorAuthManager().inject_token(connector)
-    if ok:
-        # So list_connected() reflects reality for the rest of this process.
-        connector.status = ConnectorStatus.CONNECTED
-    return ok
+    return await hydrate(connector)
 
 
 def _register_oauth_config(connector_id: str, auth) -> None:

@@ -2,7 +2,7 @@
 #
 # Usage:
 #   iwr -useb https://navig.run/install.ps1 | iex
-#   .\install.ps1 [-Version <ver>] [-Action install|uninstall|reinstall] [-Verbose]
+#   .\install.ps1 [-Version <ver>] [-Action install|uninstall|reinstall] [-Profile <name>] [-Verbose]
 #
 
 if ($PSVersionTable.PSVersion.Major -lt 5) {
@@ -13,11 +13,15 @@ if ($PSVersionTable.PSVersion.Major -lt 5) {
 # Environment:
 #   NAVIG_VERSION      Pin version (e.g. "2.7.0")
 #   NAVIG_ACTION       install (default) | uninstall | reinstall
+#   NAVIG_PROFILE      Installation profile: cli | minimal | server | full
+#                      (the `irm | iex` one-liner takes no args — set this instead)
 #   NO_COLOR           Disable color output
 
 # ── Arg parsing (compatible with `irm | iex` pipe) ───────────
-$Version   = $env:NAVIG_VERSION
-$Action    = $env:NAVIG_ACTION
+$Version      = $env:NAVIG_VERSION
+$Action       = $env:NAVIG_ACTION
+# NOT $Profile — that is PowerShell's automatic $PROFILE variable.
+$NavigProfile = $env:NAVIG_PROFILE
 $DryRun    = $args -contains "-DryRun"    -or $args -contains "/DryRun"
 $NoConfirm = $args -contains "-NoConfirm" -or $args -contains "/NoConfirm"
 $Help      = $args -contains "-Help"      -or $args -contains "/Help"
@@ -27,6 +31,7 @@ for ($i = 0; $i -lt $args.Length - 1; $i++) {
     switch ($args[$i]) {
         { $_ -in "-Version", "-v" } { $Version = $args[$i + 1] }
         { $_ -in "-Action",  "-a" } { $Action  = $args[$i + 1] }
+        { $_ -in "-Profile", "-p", "--profile" } { $NavigProfile = $args[$i + 1] }
     }
 }
 
@@ -233,6 +238,8 @@ Usage:
 Options:
   -Version <ver>   Install specific version (e.g. 2.7.0)
   -Action <mode>   install (default) | uninstall | reinstall
+  -Profile <name>  Apply an installation profile after install
+                   (cli | minimal | server | full)
   -NoConfirm       Skip interactive prompts
   -DryRun          Preview actions without executing
   -Verbose         Show detailed output
@@ -241,6 +248,7 @@ Options:
 Environment:
   NAVIG_VERSION    Pin version
   NAVIG_ACTION     install | uninstall | reinstall
+  NAVIG_PROFILE    Same as -Profile <name>
   NO_COLOR         Disable color output
 "@
 }
@@ -380,7 +388,11 @@ function Add-NavigBinToPath { param([string]$BinDir)
 
 # ── Install navig into the managed runtime ────────────────────
 function Install-Navig { param([string]$PinVersion)
-    $spec = if ($PinVersion) { "navig[interactive]==$PinVersion" } else { "navig[interactive]" }
+    # NAVIG_INSTALL_SPEC: install THIS spec instead of the PyPI release — a local wheel
+    # (`...\navig-3.27.0-py3-none-any.whl[interactive]`) or a path. The clean-machine CI
+    # tier installs the tree under test this way; nothing else sets it.
+    $spec = if ($env:NAVIG_INSTALL_SPEC) { $env:NAVIG_INSTALL_SPEC }
+            elseif ($PinVersion) { "navig[interactive]==$PinVersion" } else { "navig[interactive]" }
     $r = Invoke-NavigUv -UvArgs @("pip", "install", "--python", $RUNTIME_VENV_PY, "--upgrade", $spec)
     if (-not $r.Ok) { $r.Tail | ForEach-Object { Write-NavHint $_ }; return $false }
     return $true
@@ -614,10 +626,32 @@ function Remove-NavigServiceArtifacts {
     }
 }
 
+# Which user-PATH entries survive an uninstall. Pure, so it is testable without touching the
+# registry. Only NAVIG's OWN entries go:
+#   - the shim dir (~\.local\bin), and only when NAVIG was its last occupant — uv, pipx and
+#     others install there too, and dropping the entry broke every one of them (this used to
+#     remove ANY entry matching '\.local\bin', and any entry merely CONTAINING "navig", which
+#     took out e.g. a developer's own <projects>\navig\tools dir);
+#   - anything under ~\.navig (the runtime);
+#   - a legacy installer's dir whose own name is navig\bin / navig\Scripts / navig\runtime.
+function Select-NavigPathKeep { param([string[]]$Entries, [string]$ShimDir, [string]$NavigHome, [bool]$ShimDirInUse)
+    $norm = { param($p) ([string]$p).Trim().TrimEnd('\', '/').ToLowerInvariant() }
+    $shim = & $norm $ShimDir
+    $home_ = & $norm $NavigHome
+    return @($Entries | Where-Object {
+        $e = & $norm $_
+        $isShim = ($e -eq $shim) -and -not $ShimDirInUse
+        $underHome = $home_ -and ($e -eq $home_ -or $e.StartsWith("$home_\"))
+        $legacy = $e -match '(?i)[\\/]\.?navig[\\/](bin|scripts|runtime)$'
+        -not ($isShim -or $underHome -or $legacy)
+    })
+}
+
 function Remove-NavigPathArtifacts {
     try {
         $raw  = [Environment]::GetEnvironmentVariable("PATH", "User")
-        $kept = @(Split-PathEntries $raw) | Where-Object { $_ -notmatch '(?i)navig' -and $_ -notmatch '(?i)\.local\\bin' }
+        $inUse = (Test-Path $SHIM_DIR) -and @(Get-ChildItem -Path $SHIM_DIR -Force -ErrorAction SilentlyContinue).Count -gt 0
+        $kept = Select-NavigPathKeep -Entries @(Split-PathEntries $raw) -ShimDir $SHIM_DIR -NavigHome $NAVIG_HOME -ShimDirInUse $inUse
         if ($kept.Count -lt @(Split-PathEntries $raw).Count) {
             [Environment]::SetEnvironmentVariable("PATH", ($kept -join ';'), "User")
             Write-NavVerbose "Removed NAVIG PATH entries"
@@ -681,6 +715,11 @@ function Main {
         $verTarget = if ($Version) { $Version } elseif ($env:NAVIG_VERSION) { $env:NAVIG_VERSION } else { "latest" }
         Write-Host "  Would install: NAVIG $verTarget"
         Write-Host "  Would configure: PATH, shell completions"
+        # Parsing only: the profile is validated and applied by
+        # `navig init --profile` (Python owns the valid-name list), which a
+        # dry run never reaches — a bogus name previews here, and fails
+        # loudly, nonzero, on a real run.
+        if ($NavigProfile) { Write-Host "  Would apply installation profile: $NavigProfile" }
         Write-Host ""
         Write-Host "  Dry run complete."
         return
@@ -812,12 +851,44 @@ function Main {
     try { Write-NavigInstallState -InstalledVersion $cleanVer } catch {}
 
     # ── Daemon ────────────────────────────────────────────────
-    Print-Section "Daemon"
-    Write-Step "service" "registering auto-start..."
-    if (Register-NavigDaemon) {
-        Write-Ok "service" "auto-start enabled (Task Scheduler)"
+    # Without -Profile the branch below is today's path, unchanged. With one,
+    # the PROFILE owns service registration — its `daemon` manifest is applied
+    # by `navig init --profile` (cli/minimal register nothing; server/full
+    # register with their flags) — so Register-NavigDaemon must not also run.
+    # NAVIG_NO_DAEMON wins in BOTH paths: checked inside Register-NavigDaemon
+    # for the base path, and before the profile init runs below.
+    if ($NavigProfile) {
+        if ($env:NAVIG_NO_DAEMON) { Write-Warn "service" "skipped (NAVIG_NO_DAEMON)" }
+        Print-Section "Profile"
+        $venvNavig = Join-Path $RUNTIME_VENV "Scripts\navig.exe"
+        # No stream redirection: `navig init` prints the valid-name list on
+        # stderr, and swallowing it would turn "unknown profile" into silence.
+        try {
+            $proc = Start-Process -FilePath $venvNavig `
+                                  -ArgumentList @("init", "--profile", $NavigProfile) `
+                                  -NoNewWindow -Wait -PassThru
+            $profileOk = ($proc.ExitCode -eq 0)
+        } catch {
+            Write-NavVerbose "Profile init failed: $($_.Exception.Message)"
+            $profileOk = $false
+        }
+        if (-not $profileOk) {
+            Print-Failure `
+                "installation profile failed" `
+                "navig init --profile $NavigProfile exited non-zero (unknown profile, or a step failed)." `
+                "Valid names are printed by init above; preview with the dry run." `
+                "navig init --profile full --dry-run"
+            exit 1
+        }
+        Write-Ok "profile" "$NavigProfile applied"
     } else {
-        Write-Warn "service" "skipped $(sym 'bullet') run 'navig service install --method task' later"
+        Print-Section "Daemon"
+        Write-Step "service" "registering auto-start..."
+        if (Register-NavigDaemon) {
+            Write-Ok "service" "auto-start enabled (Task Scheduler)"
+        } else {
+            Write-Warn "service" "skipped $(sym 'bullet') run 'navig service install --method task' later"
+        }
     }
 
     # ── NAVIG Anchor offer ────────────────────────────────────────────────────

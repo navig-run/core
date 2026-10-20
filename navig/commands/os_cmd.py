@@ -19,6 +19,7 @@ import os
 import secrets
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import typer
@@ -80,17 +81,88 @@ def find_os_dir(explicit: str = "") -> Path | None:
     return None
 
 
+# Where the Debian package (`navig-os-server`) puts the prebuilt server tree.
+INSTALLED_SERVER_DIRS: tuple[Path, ...] = (Path("/opt/navig-os/server"),)
+
+
+def find_installed_server(explicit: str = "") -> Path | None:
+    """A prebuilt server tree (``build-server.ts`` output), or ``None``.
+
+    This is how NAVIG OS runs on a machine with no source checkout and no bun: the tree
+    carries its own runtimes and, built with ``--with-webui``, its own web UI. A named
+    directory (``explicit`` / ``$NAVIG_OS_DIR``) is authoritative here exactly as it is
+    in :func:`find_os_dir`.
+    """
+    from navig.platform.paths import resolve_user_path
+
+    named = ""
+    if explicit:
+        named = str(resolve_user_path(explicit))
+    elif os.environ.get("NAVIG_OS_DIR"):
+        named = str(Path(os.environ["NAVIG_OS_DIR"]).expanduser())
+    if named:
+        path = Path(named)
+        return path.resolve() if _is_installed_tree(path) else None
+    for candidate in INSTALLED_SERVER_DIRS:
+        if _is_installed_tree(candidate):
+            return candidate
+    return None
+
+
+def _is_installed_tree(path: Path) -> bool:
+    """The launch manifest AND its launcher — what ``build-server.ts`` always writes."""
+    try:
+        return (path / "launch.json").is_file() and (path / "bin" / "navig-server").is_file()
+    except OSError:
+        return False
+
+
+def _stdout_is_the_journal() -> bool:
+    """True when stdout IS the systemd journal (``JOURNAL_STREAM``'s documented test).
+
+    The variable alone is not enough: it is inherited by children whose stdout is a pipe,
+    and leaks into terminal shells on some desktops. Its ``dev:inode`` must match stdout.
+    """
+    dev, _, ino = os.environ.get("JOURNAL_STREAM", "").partition(":")
+    if not (dev and ino):
+        return False
+    try:
+        st = os.fstat(sys.stdout.fileno())
+    except (OSError, ValueError, AttributeError):
+        return False
+    return str(st.st_dev) == dev and str(st.st_ino) == ino
+
+
+def _output_is_a_log() -> bool:
+    """True when stdout goes to a log rather than a person — a systemd service.
+
+    ``serve`` shows a new password and a link carrying the server token ONCE, at the
+    terminal, because the operator needs them. Under a unit those same lines land in the
+    system journal, which other accounts can read. navig's own units also say so outright
+    (``NAVIG_SERVICE=1``). A TTY check is the wrong test: a pipe or a test runner is not a
+    journal, and must still see the link.
+    """
+    return os.environ.get("NAVIG_SERVICE") == "1" or _stdout_is_the_journal()
+
+
 def _is_os_checkout(path: Path) -> bool:
     """The package.json AND the server entry point.
 
     A bare package.json would also match an unrelated directory called ``apps/os``, which
     would then be handed to ``bun run server:prod`` and fail in a way that points nowhere
     near the actual mistake.
+
+    An INSTALLED server tree has both files too — it is an assembled source tree run by
+    its own bundled bun — so it is excluded explicitly. Taken for a checkout, it was handed
+    to `bun run server:prod` and the packaged server crash-looped on "bun is not
+    installed" (measured on a real Debian install).
     """
     try:
-        return (path / "package.json").is_file() and (
-            path / "packages" / "server" / "src" / "index.ts"
-        ).is_file()
+        return (
+            (path / "package.json").is_file()
+            and (path / "packages" / "server" / "src" / "index.ts").is_file()
+            and not _is_installed_tree(path)
+        )
     except OSError:
         return False
 
@@ -161,6 +233,25 @@ def generate_password() -> str:
     return secrets.token_urlsafe(12)
 
 
+HOSTED_APP_URL = "https://os.navig.run/"
+
+
+def hosted_link(token: str, port: int, host: str = "127.0.0.1") -> str:
+    """The os.navig.run link that opens NAVIG OS already connected to this server.
+
+    Server and token ride in the URL FRAGMENT: browsers never send a fragment in a
+    request, so the token reaches the page's own script and not os.navig.run's logs, and
+    the page strips it from the address bar before doing anything else. A wildcard bind
+    is not an address a browser can dial, so it is rendered as loopback.
+    """
+    from urllib.parse import urlencode
+
+    dial = "127.0.0.1" if host in ("0.0.0.0", "::", "") else host
+    if ":" in dial and not dial.startswith("["):
+        dial = f"[{dial}]"
+    return f"{HOSTED_APP_URL}#" + urlencode({"server": f"http://{dial}:{port}", "token": token})
+
+
 def build_env(token: str, password: str, port: int, host: str) -> dict[str, str]:
     """The environment `bun run server:prod` needs, as a plain dict.
 
@@ -173,6 +264,9 @@ def build_env(token: str, password: str, port: int, host: str) -> dict[str, str]
         "NAVIG_WEBUI_PASSWORD": password,
         "NAVIG_RPC_PORT": str(port),
         "NAVIG_RPC_HOST": host,
+        # Announce this server to the NAVIG brain (<config>/run/os-server.json), so a
+        # phone paired in Settings → Remote access can reach it through the relay.
+        "NAVIG_OS_ANNOUNCE": "1",
     }
 
 
@@ -198,27 +292,37 @@ def serve(
     print_env: bool = typer.Option(False, "--print-env", help="Show what would run, and exit"),
 ) -> None:
     """Serve NAVIG OS to a browser from this machine."""
+    # A source checkout wins when there is one (that is a developer, who wants their own
+    # tree); otherwise the prebuilt tree a package installed.
     os_dir = find_os_dir(directory)
-    if os_dir is None:
+    installed = find_installed_server(directory) if os_dir is None else None
+    if os_dir is None and installed is None:
         named = directory or os.environ.get("NAVIG_OS_DIR", "")
         if named:
             # Say which directory was rejected and why. "Could not find it" would be a lie
             # when they told us exactly where to look.
             ch.error(
-                f"Not a NAVIG OS checkout: {named}",
-                "Expected a package.json and packages/server/src/index.ts inside it.",
+                f"Not a NAVIG OS checkout or server install: {named}",
+                "Expected packages/server/src/index.ts (a checkout) or launch.json + "
+                "bin/navig-server (an installed server) inside it.",
             )
         else:
             ch.error(
-                "Could not find the NAVIG OS source (apps/os).",
-                "The desktop build is not released yet, so this needs the monorepo checkout. "
-                "Point at it with --dir <path> or $NAVIG_OS_DIR.",
+                "Could not find NAVIG OS (no apps/os checkout, no installed server).",
+                "On Debian: sudo apt install navig-os-server. From source: point at the "
+                "checkout with --dir <path> or $NAVIG_OS_DIR.",
             )
         raise typer.Exit(1)
 
-    if shutil.which("bun") is None:
-        ch.error("bun is not installed.", "NAVIG OS is built with bun — install it from https://bun.sh")
-        raise typer.Exit(1)
+    if installed is not None:
+        argv = [str(installed / "bin" / "navig-server")]
+        run_dir = installed
+    else:
+        if shutil.which("bun") is None:
+            ch.error("bun is not installed.", "NAVIG OS is built with bun — install it from https://bun.sh")
+            raise typer.Exit(1)
+        argv = ["bun", "run", "server:prod"]
+        run_dir = os_dir
 
     stored = load_credentials()
     token = stored.get("token") or generate_token()
@@ -251,7 +355,7 @@ def serve(
         )
 
     if print_env:
-        ch.info("Would run: bun run server:prod", f"in {os_dir}")
+        ch.info(f"Would run: {' '.join(argv)}", f"in {run_dir}")
         table = ch.create_table("Environment", [
             {"name": "Variable", "style": "cyan"},
             {"name": "Value", "style": "white"},
@@ -263,7 +367,14 @@ def serve(
             ch.warning("A password would be generated and stored. Nothing was started.")
         return
 
-    if fresh_password:
+    secrets_to_log = _output_is_a_log()
+    if fresh_password and secrets_to_log:
+        ch.info(
+            "A web login password was generated and stored in the vault.",
+            "It is not printed here because this output goes to the system log. "
+            "Set your own: navig os serve --password <yours>",
+        )
+    elif fresh_password:
         # Shown ONCE, at the terminal, because it is the credential the operator needs to
         # log in with. It is never written to a log.
         ch.panel(
@@ -275,19 +386,26 @@ def serve(
 
     ch.success(f"Starting NAVIG OS at http://{host}:{port}")
     ch.info("From this machine", f"http://127.0.0.1:{port}")
-    ch.info(
-        "From your phone or another machine",
-        f"cloudflared tunnel --url http://127.0.0.1:{port}",
-        no_wrap=True,
-    )
-    ch.dim("The server detects the tunnel and configures the browser connection itself.")
-    ch.dim("Stop it with Ctrl-C.")
+    # From anywhere else, pairing is the way: it goes through the user's own Lighthouse
+    # relay, so there is no address to type and no token to copy.
+    ch.info("From your phone or anywhere", "run `navig os pair` and scan the code")
+    # The link carries this server's token — anyone holding it has this machine. It is
+    # printed to the operator's own terminal only (like the password above), never logged.
+    if not secrets_to_log:
+        ch.dim(f"Same network only: {hosted_link(token, port, host)}")
+        ch.dim("Stop it with Ctrl-C.")
 
     run_env = {**os.environ, **env}
+    if installed is not None and os.name == "posix" and secrets_to_log:
+        # Under a unit, BECOME the server: systemd then supervises the process that
+        # actually serves (its exit status, its restarts) instead of a Python parent that
+        # only waits on it.
+        os.chdir(run_dir)
+        os.execve(argv[0], argv, run_env)
     try:
         completed = subprocess.run(  # noqa: S603 — fixed argv, no shell
-            ["bun", "run", "server:prod"],
-            cwd=str(os_dir),
+            argv,
+            cwd=str(run_dir),
             env=run_env,
             check=False,
         )
@@ -301,6 +419,63 @@ def serve(
     # for a server that died on startup.
     if completed.returncode != 0:
         raise typer.Exit(completed.returncode)
+
+
+# ---------------------------------------------------------------------------
+# open
+# ---------------------------------------------------------------------------
+
+@app.command("open")
+def open_cmd(
+    kiosk: bool = typer.Option(False, "--kiosk", help="Full screen, no browser chrome"),
+    port: int = typer.Option(0, "--port", "-p", help=f"NAVIG OS port (default {DEFAULT_PORT})"),
+    socket_path: str = typer.Option("", "--socket", help="Launch socket (default /run/navig-os/launch.sock)"),
+    browser: str = typer.Option("", "--browser", help="Browser executable (default: Chromium)"),
+    print_url: bool = typer.Option(
+        False, "--print-url", help="Print the one-time URL instead of opening it (works once, for 60 s)",
+    ),
+) -> None:
+    """Open NAVIG OS from this machine's local server — no password to type.
+
+    Needs a Linux install whose server hands out launch codes (the navig-os packages
+    set that up) and an account in the navig-launch group.
+    """
+    from navig.os_host import launch
+
+    try:
+        code = launch.mint_code(socket_path or None)
+    except launch.LaunchError as exc:
+        ch.error("Could not open NAVIG OS.", str(exc))
+        raise typer.Exit(1) from exc
+
+    url = launch.launch_url(code, port or None)
+    if print_url:
+        # Printed to the caller's own terminal; the code is single-use and dies in 60 s.
+        typer.echo(url)
+        return
+
+    found = launch.find_browser(browser)
+    if found is None:
+        ch.error(
+            "No browser found.",
+            f"Looked for {browser or ', '.join(launch.BROWSERS)}. Install chromium, or pass --browser.",
+        )
+        raise typer.Exit(1)
+
+    argv = launch.browser_argv(found, url, kiosk=kiosk)
+    try:
+        # Detached: an app window outlives this command, and the terminal stays usable.
+        subprocess.Popen(  # noqa: S603 — fixed argv, no shell
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        ch.error("Could not start the browser.", str(exc))
+        raise typer.Exit(1) from exc
+    ch.success("Opened NAVIG OS" + (" (kiosk)" if kiosk else ""))
 
 
 # ---------------------------------------------------------------------------
@@ -375,3 +550,361 @@ def status(
 
     if not result.get("reachable"):
         ch.dim("Start it with: navig os serve")
+
+
+
+# ---------------------------------------------------------------------------
+# pair / devices — remote NAVIG OS through the Lighthouse relay
+# ---------------------------------------------------------------------------
+#
+# These talk to the RUNNING daemon over loopback (its /api/deck/os/* routes), never to the
+# store directly: the daemon owns the relay, so only it can say whether pairing will work
+# (relay online, new enough) and only it can end a revoked device's live session.
+
+
+class DaemonUnavailable(RuntimeError):
+    """The NAVIG daemon did not answer on loopback."""
+
+
+def _http(method: str, url: str, body: dict | None, timeout: float = 10.0) -> tuple[int, dict]:
+    """One loopback HTTP call: (status, JSON body). Raises DaemonUnavailable if nothing answers."""
+    import requests
+
+    try:
+        res = requests.request(method, url, json=body, timeout=timeout)
+    except requests.RequestException as exc:
+        raise DaemonUnavailable(str(exc)) from exc
+    try:
+        data = res.json()
+    except ValueError:
+        data = {}
+    return res.status_code, data if isinstance(data, dict) else {"data": data}
+
+
+def _daemon(path: str, method: str = "GET", body: dict | None = None) -> tuple[int, dict]:
+    """Call a daemon route as a local caller (no credential: the loopback path), or exit
+    clearly when NAVIG is not running.
+
+    Shaped for tests/quality/test_gateway_routes_called_exist.py (``path`` + ``method``
+    parameters, URL built from ``gateway_base_url``): every caller passes the literal route
+    and its verb, so a typo in either fails the build instead of 404ing at runtime.
+    """
+    from navig.gateway_client import gateway_base_url
+
+    try:
+        return _http(method, f"{gateway_base_url()}{path}", body)
+    except DaemonUnavailable:
+        ch.error("NAVIG is not running on this computer.", "Start it with: navig start")
+        raise typer.Exit(1) from None
+
+
+def terminal_qr(data: str) -> str | None:
+    """The QR code as half-block text, or None when the optional `qrcode` package is absent."""
+    try:
+        import qrcode  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    qr = qrcode.QRCode(border=2, error_correction=qrcode.constants.ERROR_CORRECT_M)
+    qr.add_data(data)
+    qr.make(fit=True)
+    matrix = qr.get_matrix()
+    if len(matrix) % 2:
+        matrix.append([False] * len(matrix[0]))
+    lines = []
+    for top, bottom in zip(matrix[0::2], matrix[1::2]):
+        # Dark modules print as spaces on a light background, so the code scans on any
+        # terminal theme: invert, and draw two rows per line with half blocks.
+        line = ""
+        for t, b in zip(top, bottom):
+            line += {(False, False): "█", (True, False): "▄", (False, True): "▀", (True, True): " "}[(t, b)]
+        lines.append(line)
+    return "\n".join(lines)
+
+
+@app.command("pair")
+def pair(
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Pair a phone or browser to use NAVIG OS here, through your own relay."""
+    status_code, data = _daemon("/api/deck/os/pair", method="POST")
+    if status_code != 200:
+        message = str(data.get("message") or data.get("error") or f"HTTP {status_code}")
+        if as_json:
+            ch.emit_json({"ok": False, "error": data.get("error", "failed"), "message": message})
+        else:
+            ch.error("Could not start pairing.", message)
+        raise typer.Exit(1)
+
+    link = str(data.get("link") or "")
+    if as_json:
+        ch.emit_json({"ok": True, "link": link, "expires_at": data.get("expires_at")})
+        return
+
+    qr = terminal_qr(link)
+    if qr:
+        ch.console.print(qr, highlight=False, markup=False)
+    ch.success("Scan this with the phone's camera, or open the link on the other device:")
+    ch.console.print(link, highlight=False, markup=False, soft_wrap=True)
+    ttl = int(data.get("ttl_s") or 120)
+    ch.dim(f"It works once, for {ttl // 60} minutes. The device appears in: navig os devices")
+    if qr is None:
+        ch.dim("No QR here (the optional qrcode package is not installed). "
+               "NAVIG OS → Settings → Remote access shows one.")
+
+
+@app.command("link")
+def link(
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Let ANOTHER NAVIG OS use this computer as its brain, through your own relay.
+
+    Prints a one-time link. Paste it into the other machine's NAVIG OS
+    (Settings → Connect to my NAVIG). It gets its own key, never this computer's, and
+    you can remove it any time: navig os devices revoke <id>
+    """
+    status_code, data = _daemon("/api/deck/os/link", method="POST")
+    if status_code != 200:
+        _fail(as_json, data, status_code, "Could not make a link.")
+
+    url = str(data.get("link") or "")
+    if as_json:
+        ch.emit_json({"ok": True, "link": url, "expires_at": data.get("expires_at")})
+        return
+    ch.success("Paste this into the other NAVIG OS (Settings → Connect to my NAVIG):")
+    ch.console.print(url, highlight=False, markup=False, soft_wrap=True)
+    ttl = int(data.get("ttl_s") or 600)
+    ch.dim(f"It works once, for {ttl // 60} minutes. Treat it like a password until it is used.")
+    ch.dim("The machine appears in: navig os devices")
+
+
+devices_app = typer.Typer(help="Phones, browsers and other NAVIG OS machines that use this computer")
+app.add_typer(devices_app, name="devices")
+
+
+def _ago(stamp: object) -> str:
+    from datetime import datetime, timezone
+
+    if not stamp:
+        return "never"
+    try:
+        then = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    except ValueError:
+        return str(stamp)
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=timezone.utc)
+    minutes = int((datetime.now(timezone.utc) - then).total_seconds() // 60)
+    if minutes < 1:
+        return "just now"
+    if minutes < 60:
+        return f"{minutes} min ago"
+    if minutes < 48 * 60:
+        return f"{minutes // 60} h ago"
+    return then.date().isoformat()
+
+
+@devices_app.callback(invoke_without_command=True)
+def devices(
+    ctx: typer.Context,
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """List paired devices."""
+    if ctx.invoked_subcommand is not None:
+        return
+    _, data = _daemon("/api/deck/os/devices", method="GET")
+    rows = data.get("devices") or []
+    if as_json:
+        ch.emit_json({"devices": rows})
+        return
+    if not rows:
+        ch.info("No paired devices.", "Pair a phone with: navig os pair · link a NAVIG OS with: navig os link")
+        return
+    table = ch.create_table("Paired devices", [
+        {"name": "ID", "style": "cyan"},
+        {"name": "Device", "style": "white"},
+        {"name": "Uses", "style": "white"},
+        {"name": "Paired", "style": "white"},
+        {"name": "Last seen", "style": "white"},
+        {"name": "Today", "style": "white", "justify": "right"},
+        {"name": "State", "style": "white"},
+    ])
+    for d in rows:
+        table.add_row(
+            str(d.get("id", "")),
+            str(d.get("name", "")),
+            "this brain" if d.get("kind") == "brain" else "NAVIG OS here",
+            _ago(d.get("created_at")),
+            _ago(d.get("last_seen")),
+            f"{int(d.get('msgs_today') or 0):,} msgs",
+            "[green]● connected[/green]" if d.get("connected") else "[dim]○ idle[/dim]",
+        )
+    ch.print_table(table)
+    ch.dim(f"{len(rows)} paired · remove one with: navig os devices revoke <id>")
+
+
+@devices_app.command("revoke")
+def devices_revoke(
+    device_id: str = typer.Argument(..., help="The device ID from `navig os devices`"),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Remove a device now. Its live session ends; it must pair again to come back."""
+    from urllib.parse import quote
+
+    status_code, data = _daemon(f"/api/deck/os/devices/{quote(device_id, safe='')}", method="DELETE")
+    if status_code == 404:
+        if as_json:
+            ch.emit_json({"ok": False, "error": "not_found"})
+        else:
+            ch.error(f"No paired device with ID {device_id}.", "See them with: navig os devices")
+        raise typer.Exit(1)
+    if status_code != 200:
+        if as_json:
+            ch.emit_json({"ok": False, "error": data.get("error", "failed")})
+        else:
+            ch.error("Could not remove the device.", str(data.get("message") or f"HTTP {status_code}"))
+        raise typer.Exit(1)
+    if as_json:
+        ch.emit_json({"ok": True, "sessions_ended": data.get("sessions_ended", 0)})
+        return
+    ended = int(data.get("sessions_ended") or 0)
+    ch.success(f"Removed {device_id}." + (" Its live session was ended." if ended else ""))
+
+
+account_app = typer.Typer(help="Link this computer to your navig.run account, so any browser can sign in to it")
+app.add_typer(account_app, name="account")
+
+
+def _fail(as_json: bool, data: dict, status_code: int, headline: str) -> None:
+    message = str(data.get("message") or data.get("error") or f"HTTP {status_code}")
+    if as_json:
+        ch.emit_json({"ok": False, "error": data.get("error", "failed"), "message": message})
+    else:
+        ch.error(headline, message)
+    raise typer.Exit(1)
+
+
+@account_app.callback(invoke_without_command=True)
+def account(
+    ctx: typer.Context,
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Show which navig.run account this computer is linked to."""
+    if ctx.invoked_subcommand is not None:
+        return
+    status_code, data = _daemon("/api/deck/os/account", method="GET")
+    if status_code != 200:
+        _fail(as_json, data, status_code, "Could not read the account link.")
+    if as_json:
+        ch.emit_json(data)
+        return
+    state, email = data.get("state"), data.get("email", "")
+    if state == "linked":
+        ch.success(f"Linked to {email}.")
+        ch.dim("Sign in at https://os.navig.run on any device; each new one asks you here or in Telegram.")
+    elif state == "waiting":
+        ch.warning(f"Waiting for {email} to confirm — click the link in the email from navig.run.")
+        if not data.get("reachable"):
+            ch.dim("navig.run could not be reached just now, so this is not confirmed either way.")
+    else:
+        ch.info("Not linked to a navig.run account.", "Link it with: navig os account link <email>")
+
+
+@account_app.command("link")
+def account_link(
+    email: str = typer.Argument(..., help="The email you use for navig.run"),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Link this computer to a navig.run email; nothing is linked until you click the emailed link."""
+    status_code, data = _daemon("/api/deck/os/account", method="POST", body={"email": email})
+    if status_code != 200:
+        _fail(as_json, data, status_code, "Could not link this computer.")
+    if as_json:
+        ch.emit_json({"ok": True, "email": data.get("email"), "dev_confirm_url": data.get("devConfirmUrl")})
+        return
+    ch.success(f"Check {data.get('email')} and click the link to finish.")
+    ch.dim("Then sign in at https://os.navig.run on any device. Check the link with: navig os account")
+
+
+@account_app.command("unlink")
+def account_unlink(
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Unlink this computer. Paired devices keep working; new ones need a QR code again."""
+    status_code, data = _daemon("/api/deck/os/account", method="DELETE")
+    if status_code != 200:
+        _fail(as_json, data, status_code, "Could not unlink this computer.")
+    if as_json:
+        ch.emit_json({"ok": True, "navig_run_updated": bool(data.get("navig_run_updated"))})
+        return
+    ch.success("Unlinked. No new device can sign in to this computer through navig.run.")
+    if not data.get("navig_run_updated"):
+        ch.dim("navig.run could not be told just now; it will still list this computer until it can.")
+
+
+requests_app = typer.Typer(help="Devices that signed in and wait for your approval")
+app.add_typer(requests_app, name="requests")
+
+
+@requests_app.callback(invoke_without_command=True)
+def requests_list(
+    ctx: typer.Context,
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """List devices waiting for your approval."""
+    if ctx.invoked_subcommand is not None:
+        return
+    _, data = _daemon("/api/deck/os/requests", method="GET")
+    rows = data.get("requests") or []
+    if as_json:
+        ch.emit_json({"requests": rows})
+        return
+    if not rows:
+        ch.info("No device is waiting for approval.")
+        return
+    table = ch.create_table("Waiting for your approval", [
+        {"name": "ID", "style": "cyan"},
+        {"name": "Device", "style": "white"},
+        {"name": "Signed in as", "style": "white"},
+        {"name": "Asked", "style": "white"},
+    ])
+    for r in rows:
+        table.add_row(str(r.get("id", "")), str(r.get("name", "")), str(r.get("email", "")), _ago(r.get("created_at")))
+    ch.print_table(table)
+    ch.dim("Allow one with: navig os requests allow <id> · refuse with: navig os requests deny <id>")
+
+
+def _decide(request_id: str, approve: bool, as_json: bool) -> None:
+    from urllib.parse import quote
+
+    rid = quote(request_id, safe="")
+    if approve:
+        status_code, data = _daemon(f"/api/deck/os/requests/{rid}/approve", method="POST")
+    else:
+        status_code, data = _daemon(f"/api/deck/os/requests/{rid}/deny", method="POST")
+    if status_code != 200:
+        _fail(as_json, data, status_code, "That request could not be answered.")
+    if as_json:
+        ch.emit_json({"ok": True, "approved": approve, "name": data.get("name")})
+        return
+    name = data.get("name") or "The device"
+    if approve:
+        ch.success(f"{name} can now use NAVIG OS. Remove it any time with: navig os devices revoke <id>")
+    else:
+        ch.success(f"{name} was denied.")
+
+
+@requests_app.command("allow")
+def requests_allow(
+    request_id: str = typer.Argument(..., help="The request ID from `navig os requests`"),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Let this device use NAVIG OS. Only allow a sign-in you made yourself, just now."""
+    _decide(request_id, True, as_json)
+
+
+@requests_app.command("deny")
+def requests_deny(
+    request_id: str = typer.Argument(..., help="The request ID from `navig os requests`"),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Refuse this device."""
+    _decide(request_id, False, as_json)

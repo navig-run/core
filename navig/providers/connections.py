@@ -50,6 +50,35 @@ def _ms() -> int:
     return int(time.time() * 1000)
 
 
+def _credentials_changed(conn: Connection | None = None) -> None:
+    """A connection (credential) was added or changed — e.g. Claude re-authed.
+    Lets the model-fallback policy lift cooldowns on any degraded primary and
+    re-check it in the background, so recovery is noticed now rather than at the
+    next heartbeat. A stat of one small file when nothing is degraded; never raises.
+
+    ``conn`` says WHICH provider changed and whether it now works: a stored
+    "key rejected" verdict is cleared only for that provider, and only when the
+    connection is routable. A write that merely records a broken state (a
+    revalidation landing on needs_reauth, a metadata tweak) must not erase the
+    verdict that is rerouting chats away from it."""
+    try:
+        from navig.llm.model_fallback import on_credentials_changed
+
+        provider: str | None = None
+        routable = False
+        if conn is not None:
+            try:
+                from navig.providers.inference import _provider_of
+
+                provider = _provider_of(conn.to_public_dict())
+                routable = bool(conn.is_routable)
+            except Exception:  # noqa: BLE001
+                provider = None
+        on_credentials_changed(provider=provider, routable=routable)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("model fallback credential hook skipped: %s", exc)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Store
 # ─────────────────────────────────────────────────────────────────────────────
@@ -287,6 +316,7 @@ class ConnectionStore(BaseStore):
         if self.get_default() is None:
             self.set_default(conn.connection_id)
             conn.is_default = True
+        _credentials_changed(conn)
         return self.get(conn.connection_id)
 
     def update(self, conn: Connection, *, expected_revision: int | None = None) -> Connection:
@@ -330,6 +360,7 @@ class ConnectionStore(BaseStore):
             raise RevisionConflict(
                 f"Connection {conn.connection_id} changed (expected rev {expected})"
             )
+        _credentials_changed(conn)
         return self.get(conn.connection_id)
 
     def set_default(self, connection_id: str) -> None:

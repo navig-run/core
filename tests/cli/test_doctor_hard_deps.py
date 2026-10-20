@@ -46,7 +46,10 @@ def test_a_missing_engine_is_named(monkeypatch):
     (row,) = doc.check_hard_dependencies()
     assert not row[1]
     assert "navig-vault" in row.detail
-    assert "pip install -e core" in row.detail
+    # The hint used to BE `pip install -e core`, which fetches a missing first-party
+    # engine from PyPI instead of installing your source. It must now steer away from it.
+    assert "plugins/" in row.detail
+    assert "would fetch them from PyPI" in row.detail
 
 
 def test_unreadable_declarations_render_a_warning_not_a_tick(monkeypatch):

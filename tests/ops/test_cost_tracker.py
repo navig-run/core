@@ -251,3 +251,119 @@ class TestSingleton:
 
     def teardown_method(self):
         reset_session_tracker()
+
+
+class TestExitFlush:
+    """`record()` ran on every LLM request but nothing ever called `save()`, so each
+    session's cost vanished at exit and `navig cost history` read a file that was
+    never written. get_session_tracker() now registers a one-shot exit flush."""
+
+    def _capture_atexit(self, monkeypatch):
+        import atexit
+
+        hooks: list = []
+        monkeypatch.setattr(atexit, "register", lambda fn, *a, **k: hooks.append(fn) or fn)
+        return hooks
+
+    def test_a_session_with_usage_is_persisted_at_exit(self, tmp_path: Path, monkeypatch):
+        import navig.cost_tracker as ct
+
+        history = tmp_path / "session_costs.jsonl"
+        monkeypatch.setattr(ct.SessionCostTracker, "_history_path_static", staticmethod(lambda: history))
+        monkeypatch.setattr(ct, "_load_tracker_config", lambda: {})
+        hooks = self._capture_atexit(monkeypatch)
+        reset_session_tracker()
+
+        tracker = get_session_tracker()
+        tracker.record(model="gpt-4o", input_tokens=150, output_tokens=80)
+        assert len(hooks) == 1, f"expected one exit flush registered, got {len(hooks)}"
+        assert not history.exists(), "nothing should be written before exit"
+
+        hooks[0]()  # simulate interpreter exit
+        loaded = ct.SessionCostTracker.load_history(last_n=5)
+        assert len(loaded) == 1, f"history after exit flush: {loaded}"
+        assert loaded[0].session_id == tracker.session_id
+        assert loaded[0].total_input_tokens == 150
+
+    def test_a_session_with_no_usage_writes_nothing(self, tmp_path: Path, monkeypatch):
+        import navig.cost_tracker as ct
+
+        history = tmp_path / "session_costs.jsonl"
+        monkeypatch.setattr(ct.SessionCostTracker, "_history_path_static", staticmethod(lambda: history))
+        monkeypatch.setattr(ct, "_load_tracker_config", lambda: {})
+        hooks = self._capture_atexit(monkeypatch)
+        reset_session_tracker()
+
+        get_session_tracker()
+        assert len(hooks) == 1
+        hooks[0]()
+        assert not history.exists(), "an idle session must not append an empty snapshot"
+
+    def test_the_flush_writes_where_the_path_pointed_at_creation(self, tmp_path: Path, monkeypatch):
+        """atexit runs after a test session restores its environment; an exit-time
+        lookup would append the suite's costs to the operator's REAL history."""
+        import navig.cost_tracker as ct
+
+        at_creation = tmp_path / "isolated" / "session_costs.jsonl"
+        later = tmp_path / "real-home" / "session_costs.jsonl"
+        current = {"path": at_creation}
+        monkeypatch.setattr(
+            ct.SessionCostTracker, "_history_path_static", staticmethod(lambda: current["path"])
+        )
+        monkeypatch.setattr(ct, "_load_tracker_config", lambda: {})
+        hooks = self._capture_atexit(monkeypatch)
+        reset_session_tracker()
+
+        get_session_tracker().record(model="gpt-4o", input_tokens=10, output_tokens=5)
+        current["path"] = later  # the environment changed before exit
+        hooks[0]()
+
+        assert at_creation.is_file(), "flush must use the path pinned at tracker creation"
+        assert not later.exists(), "flush followed the exit-time path — would hit the real home"
+
+    def test_a_disabled_tracker_registers_no_flush(self, monkeypatch):
+        import navig.cost_tracker as ct
+
+        monkeypatch.setattr(ct, "_load_tracker_config", lambda: {"enabled": False})
+        hooks = self._capture_atexit(monkeypatch)
+        reset_session_tracker()
+        get_session_tracker()
+        assert hooks == [], "a disabled tracker must not schedule any write"
+
+    def teardown_method(self):
+        reset_session_tracker()
+
+
+class TestCanonicalPricing:
+    """The pricing table in config/defaults.yaml never reached the tracker
+    (`cm.get("cost_tracker")` returns None — package defaults are not merged), so
+    with no operator table every session cost read $0.00. The tracker now falls
+    back to the agent's maintained PRICE_TABLE; an operator table still wins."""
+
+    def test_no_operator_table_uses_the_agent_price_table(self):
+        from navig.agent.usage_tracker import _lookup_price
+        from navig.cost_tracker import SessionCostTracker
+
+        t = SessionCostTracker("canon", config={})
+        t.record("gpt-4o", input_tokens=1_000_000, output_tokens=1_000_000)
+        per_m_in, per_m_out, _, _ = _lookup_price("gpt-4o")
+        assert per_m_in > 0, "precondition: the agent table prices gpt-4o"
+        assert t.total_cost_usd() == pytest.approx(per_m_in + per_m_out, rel=1e-6), (
+            f"session tracker priced 1M+1M gpt-4o at {t.total_cost_usd()}, "
+            f"agent table says {per_m_in + per_m_out}"
+        )
+
+    def test_an_operator_table_still_wins(self):
+        from navig.cost_tracker import SessionCostTracker
+
+        cfg = {"model_pricing": {"gpt-4o": {"input": 1.0, "output": 1.0, "cache_read": 0.0}}}
+        t = SessionCostTracker("op", config=cfg)
+        t.record("gpt-4o", input_tokens=1_000, output_tokens=1_000)
+        assert t.total_cost_usd() == pytest.approx(2.0)
+
+    def test_an_unknown_model_is_still_free(self):
+        from navig.cost_tracker import SessionCostTracker
+
+        t = SessionCostTracker("unk", config={})
+        t.record("some-local-model", input_tokens=5000, output_tokens=1000)
+        assert t.total_cost_usd() == 0.0

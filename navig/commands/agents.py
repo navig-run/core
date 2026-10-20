@@ -1,30 +1,38 @@
-"""navig agents — manage NAVIG sub-agents and formation agents."""
+"""navig agents — SUPERSEDED. Agents live in formations: `navig formation agents` lists
+them and `navig agent run <id> --task …` runs one.
+
+Neither verb here ever worked (`list` imported a function that does not exist and
+printed a warning with exit 0; `run` said "not implemented"). The group stays
+registered so old invocations get a pointer instead of "No such command" — each verb
+prints where the real command is and exits 1 (see ``navig.cli.superseded``).
+"""
+
 import typer
 
-app = typer.Typer(help="Manage NAVIG sub-agents", no_args_is_help=True)
+from navig.cli.superseded import moved
+
+app = typer.Typer(
+    help="Formation agents (moved → navig formation agents / navig agent run)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+# Accept whatever the old verbs accepted: the callback answers before any parsing.
+_ANY_ARGS = {"ignore_unknown_options": True, "allow_extra_args": True}
 
 
-@app.command("list")
-def agents_list():
-    """List registered agents."""
-    from navig import console_helper as ch
-
-    try:
-        from navig.agents import list_agents  # type: ignore[import]
-
-        for agent in list_agents():
-            typer.echo(f"  {agent}")
-    except Exception:
-        ch.warning("navig agents is not yet fully implemented in this build.")
+@app.callback()
+def _agents_callback(ctx: typer.Context) -> None:
+    moved(f"navig agents {ctx.invoked_subcommand}" if ctx.invoked_subcommand else "navig agents")
 
 
-@app.command("run")
-def agents_run(
-    name: str = typer.Argument(..., help="Agent name"),
-    task: str = typer.Argument("", help="Task description"),
-):
-    """Run a specific agent on a task."""
-    from navig import console_helper as ch
+@app.command("list", context_settings=_ANY_ARGS)
+def agents_list() -> None:
+    """Moved to `navig formation agents`."""
+    moved("navig agents list")
 
-    ch.warning("`agents run` is not implemented — use: navig agent run <agent_id>")
-    raise typer.Exit(1)
+
+@app.command("run", context_settings=_ANY_ARGS)
+def agents_run() -> None:
+    """Moved to `navig agent run <agent_id> --task <task>`."""
+    moved("navig agents run")

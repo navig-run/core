@@ -1060,9 +1060,9 @@ def get_llm_router(force_new: bool = False) -> LLMModeRouter:
 #: routing automatically narrows tool scope → cheaper schema, better
 #: tool selection, lower latency.
 MODE_TOOLSET_HINTS: dict[str, list[str]] = {
-    "big_tasks": ["core", "devops", "memory", "browser"],
+    "big_tasks": ["core", "devops", "memory", "browser", "search_all"],
     "coding": ["core", "code", "search"],
-    "research": ["search", "wiki", "memory", "browser"],
+    "research": ["search", "wiki", "memory", "browser", "search_all"],
     "small_talk": [],  # no tools for casual chat
     "summarize": ["memory"],
 }
@@ -1130,6 +1130,36 @@ _FAST_CHAT_PROVIDERS: tuple[tuple[str, str], ...] = (
     ("cerebras", "llama3.1-8b"),
 )
 
+#: Config key overriding the fast-chat precedence list, read as
+#: ``llm_router.fast_chat`` = ``[{"provider": "xai", "model": "grok-4.6"}, …]``.
+#: The hardcoded tuple above is the DEFAULT, not the law: a reasoning model
+#: (grok-3-mini thinks before answering — measured 4.8 s where grok-4.6 took
+#: 2.4 s for the same one-liner) or a provider's new lineup can make the
+#: default the SLOW option, and an operator who set it explicitly must not be
+#: trampled by a table they cannot see. Invalid entries fall back per-item.
+def _config_get(key: str, default: object = None) -> object:
+    """Indirection for testability: the fast-chat list must be patchable
+    without monkeypatching `navig.config.get` for the whole process."""
+    from navig.config import get as _get
+
+    return _get(key, default)
+
+
+def _fast_chat_overrides() -> tuple[tuple[str, str], ...]:
+    """The fast-chat precedence list: config ``llm_router.fast_chat`` when set,
+    else the hardcoded default. Never raises."""
+    try:
+        raw = _config_get("llm_router.fast_chat", None)
+    except Exception:  # noqa: BLE001 — an unreadable config is "no override"
+        return _FAST_CHAT_PROVIDERS
+    if not isinstance(raw, list):
+        return _FAST_CHAT_PROVIDERS
+    out: list[tuple[str, str]] = []
+    for entry in raw:
+        if isinstance(entry, dict) and entry.get("provider") and entry.get("model"):
+            out.append((str(entry["provider"]).strip(), str(entry["model"]).strip()))
+    return tuple(out) or _FAST_CHAT_PROVIDERS
+
 
 def _provider_is_local(provider: str) -> bool:
     """True when *provider* runs on this machine.
@@ -1151,7 +1181,7 @@ def _pick_fast_chat_provider(
     provider is configured so the caller falls back to the normal
     `LLMModeRouter.get_config` path.
     """
-    for provider, model in _FAST_CHAT_PROVIDERS:
+    for provider, model in _fast_chat_overrides():
         if _has_api_key(provider):
             # Visible log so the operator knows chat is routing via the
             # fast path. Fires once per call; rate is bounded by the

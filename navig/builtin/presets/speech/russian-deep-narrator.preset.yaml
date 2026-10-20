@@ -1,0 +1,18 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: speech/russian-deep-narrator
+name: Russian deep narrator
+tool: speech
+layer: style
+category: Voice
+tags:
+- russian
+- narration
+description: A low, steady Russian narrator.
+params:
+  provider: edge
+  voice: ru-RU-DmitryNeural
+  lang: ru
+  speed: 0.95
+  pitch_hz: -6

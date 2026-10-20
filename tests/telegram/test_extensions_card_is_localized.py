@@ -42,6 +42,8 @@ ALLOWED = frozenset(
         "dns", "ssl", "whois", "sql", "ssh", "docker", "tiktok", "telegram",
         "business", "navig", "csv", "metrics", "id",
         "courrier", "ocr", "paperwork",  # the /courrier command, an acronym, a space id
+        "prompt", "prompts", "os",  # the /prompt command, `navig prompts`, NAVIG OS
+        "read",  # the /read command (bedtime reader)
     }
 )
 

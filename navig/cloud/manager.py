@@ -223,6 +223,8 @@ class CloudManager:
             snapshot_provider=self._snapshot_provider,
             version=self.tunnel_label,
             connectivity_listener=self._connectivity.on_status,
+            os_remote_enabled=_os_remote_enabled(),
+            os_remote_budget=_os_remote_budget(),
         )
         try:
             await self._uplink.start()
@@ -711,3 +713,40 @@ def _connectivity_enabled() -> bool:
         return coerce_bool(cm.get("monitors.connectivity.enabled"), default=False)
     except Exception:  # noqa: BLE001 — a gate read must never take the uplink down
         return False
+
+
+def _os_remote_setting(key: str) -> Any:
+    from navig.config import get_config_manager
+
+    cm = get_config_manager()
+    cm.refresh_global_config()
+    return cm.get(key)
+
+
+def _os_remote_enabled() -> bool:
+    """``os.remote.enabled`` — may paired phones/browsers drive NAVIG OS here? Default on.
+
+    Pairing itself is the opt-in (nothing connects without a device the owner paired on
+    the desktop); this is the kill switch. Read through ``coerce_bool`` because
+    ``navig config set os.remote.enabled false`` stores the STRING "false".
+    """
+    try:
+        from navig.core.coerce import coerce_bool
+
+        return coerce_bool(_os_remote_setting("os.remote.enabled"), default=True)
+    except Exception:  # noqa: BLE001 — unreadable config must not take the uplink down
+        return True
+
+
+def _os_remote_budget() -> int:
+    """``os.remote.daily_msg_budget`` — Durable Object messages per UTC day (0 = no cap)."""
+    from navig.cloud.os_relay import DEFAULT_DAILY_MSG_BUDGET
+
+    try:
+        from navig.core.coerce import coerce_int
+
+        return coerce_int(
+            _os_remote_setting("os.remote.daily_msg_budget"), DEFAULT_DAILY_MSG_BUDGET, minimum=0
+        )
+    except Exception:  # noqa: BLE001
+        return DEFAULT_DAILY_MSG_BUDGET

@@ -40,6 +40,9 @@ from typer.main import get_command
 # removing a skill that documents one is a product decision, so the gap is recorded.
 KNOWN_MISSING_GROUPS = {
     "sys": "planned Windows-ops surface (defender/nssm/nvidia/procmon/screenshot/vivetool/perf) — 7 skills",
+    "disk": "disk-reclaim — the skill is the companion doc to the `navig disk` feature being "
+            "built on skill/disk-reclaim; the guard's staleness check below fails the day the "
+            "verb lands, so this entry cannot rot",
 }
 # Verbs under a group that DOES exist, but which were never implemented either.
 # ⚠ Four of these were first written as missing GROUPS and the staleness check below
@@ -269,3 +272,106 @@ def test_registry_spaces_use_real_plugin_commands(root) -> None:
         "registry spaces tell the operator to run plugin commands that do not exist:\n  "
         + "\n  ".join(broken)
     )
+
+
+# ── Registry spaces: EVERY command they name ────────────────────────────────────
+#
+# Measured 2026-09-27: 441 `navig …` references across the tracked spaces, 162 dead.
+# 50 had an exact real equivalent and were rewritten (`agent ask X "q"` → `agent run X
+# --task "q"`, `space load` → `space switch`, `flow run X --trip Y` → `--var trip=Y`,
+# `run --host H -- cmd` → `host use H` + `run "cmd"`, …). The other 112 describe
+# surfaces that were planned and never built. They are recorded below by FAMILY, with
+# the reason, NOT as 112 baseline rows. Rewriting them to some other command would
+# misrepresent what the space describes, and building them is feature work.
+#
+# The value is the floor, exactly as with KNOWN_MISSING above: any NEW dead reference
+# outside these families fails, and each family is checked for staleness in both
+# directions (it now exists → drop it; nothing references it any more → drop it).
+
+# Every family that used to be recorded here — pack, workflow, contact, graph, space
+# run/agent/clone/pack/import/system, skill test, memory edit/show — was REMOVED from the
+# spaces by the 2026-10-16 registry scrub (rewritten to real commands or dropped), so the
+# allowlists are empty. Keep them empty: a new dead reference should be fixed, not listed.
+SPACE_PLANNED_GROUPS: dict[str, str] = {}
+SPACE_PLANNED_VERBS: dict[tuple[str, str], str] = {}
+# `navig skill run SPEC [ARGS]` exists, but only for SKILL.md commands and script
+# entrypoints. The spaces' `.navig/skills/*.yaml` step-skills declare `parameters:`
+# and are documented as `skill run <id> --<param> <value>`; no runner executes them,
+# and Click rejects the flags. Executing scripts shipped in community YAML is a
+# security decision, not a docs fix.
+SPACE_PLANNED_FLAGS = {
+    ("skill", "run"): "YAML step-skill parameters (`--mode`, `--target` …) — no step-skill runner",
+}
+
+
+def _space_refs():
+    for rel, raw_text in _space_texts():
+        raws = [m.group(1) for m in _BACKTICKED.finditer(raw_text)]
+        raws += [m.group(1) for m in _SPACE_LINE.finditer(raw_text)]
+        for raw in raws:
+            words, flags = _parse(raw)
+            if words:
+                yield rel, raw.strip(), words, flags
+
+
+def _space_texts():
+    import subprocess
+
+    repo = Path(__file__).resolve().parents[3]
+    assert (repo / "registry" / "spaces").is_dir(), repo  # structural anchor
+    files = subprocess.run(
+        ["git", "-C", str(repo), "ls-files", "--", "registry/spaces"],
+        capture_output=True, text=True, encoding="utf-8", check=True,
+    ).stdout.split()
+    for rel in files:
+        if rel.endswith((".md", ".yaml", ".yml")):
+            yield rel, (repo / rel).read_text(encoding="utf-8", errors="replace")
+
+
+def _space_planned(root, words: list[str], flags: list[str]) -> str | None:
+    """Which planned family a dead reference belongs to, or None when it is a new one."""
+    if words[0] in SPACE_PLANNED_GROUPS:
+        return words[0]
+    key = tuple(words[:2])
+    if len(words) >= 2 and key in SPACE_PLANNED_VERBS:
+        return " ".join(key)
+    if key in SPACE_PLANNED_FLAGS and _resolve(root, words[:2])[0] is not None:
+        return " ".join(key) + " --flags"
+    return None
+
+
+def test_space_refs_are_found():
+    refs = list(_space_refs())
+    assert len(refs) >= 300, f"only {len(refs)} command refs in registry/spaces — has the shape moved?"
+
+
+def test_registry_spaces_name_only_real_or_recorded_commands(root) -> None:
+    broken = []
+    for rel, raw, words, flags in _space_refs():
+        if _known_missing(words):
+            continue
+        why = _check(root, words, flags)
+        if why and not _space_planned(root, words, flags):
+            broken.append(f"{rel}: `navig {raw}` — {why}")
+    assert not broken, (
+        "registry spaces name commands that do not exist (fix the reference, or — only "
+        "for a genuinely planned surface — record the family with its reason):\n  "
+        + "\n  ".join(broken)
+    )
+
+
+def test_space_planned_families_are_not_stale(root) -> None:
+    """Both directions: a family that now EXISTS silently exempts a real command, and one
+    nothing references any more exempts nothing and misleads the next reader."""
+    stale = []
+    for group, reason in SPACE_PLANNED_GROUPS.items():
+        if _resolve(root, [group])[0] is not None:
+            stale.append(f"group `{group}` now EXISTS — drop it ({reason})")
+    for (group, verb), reason in SPACE_PLANNED_VERBS.items():
+        if _resolve(root, [group, verb])[0] is not None:
+            stale.append(f"`{group} {verb}` now EXISTS — drop it ({reason})")
+    used = {_space_planned(root, w, f) for _r, _raw, w, f in _space_refs() if _check(root, w, f)}
+    every = ({g for g in SPACE_PLANNED_GROUPS} | {" ".join(k) for k in SPACE_PLANNED_VERBS}
+             | {" ".join(k) + " --flags" for k in SPACE_PLANNED_FLAGS})
+    stale += [f"`{fam}` is referenced by no space any more — drop it" for fam in sorted(every - used)]
+    assert not stale, "SPACE_PLANNED is out of date:\n  " + "\n  ".join(stale)

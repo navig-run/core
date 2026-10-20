@@ -197,11 +197,21 @@ class TestVaultListExternalCredentials:
 
         import navig.config as _cfg_mod
 
+        # Blank every env key the external-detection scan looks at: with
+        # clear=False the OPERATOR's real secrets (ANTHROPIC_API_KEY et al.)
+        # would keep this "no external creds" test red on any machine that
+        # actually has credentials — an environment fact, not a code failure.
+        _signal_env_keys = (
+            "OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "CLAUDE_API_KEY",
+            "GROQ_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "NVIDIA_API_KEY",
+            "NIM_API_KEY", "XAI_API_KEY", "GROK_KEY", "MISTRAL_API_KEY",
+            "DEEPGRAM_API_KEY", "DEEPGRAM_KEY", "ELEVENLABS_API_KEY", "XI_API_KEY",
+        )
         with (
             patch("navig.commands.vault._vault_mod") as vault_mod_patch,
             patch("navig.commands.vault.get_console", return_value=fake_console),
             patch("navig.commands.vault._ch"),  # silence warning/info calls
-            patch.dict("os.environ", env_vars, clear=False),
+            patch.dict("os.environ", {**dict.fromkeys(_signal_env_keys, ""), **env_vars}, clear=False),
             patch.object(_cfg_mod, "get_config_manager", return_value=fake_cfg_manager),
         ):
             vault_mod_patch.get_vault.return_value = fake_vault

@@ -887,6 +887,11 @@ class AutoHealMixin:
                             metadata=None,
                         )
                         if response:
+                            from navig.gateway.channels.telegram_keyboards import (
+                                strip_explore_marker,
+                            )
+
+                            response = strip_explore_marker(response)
                             rendered_response = (
                                 self._md_to_html(response)
                                 if hasattr(self, "_md_to_html")

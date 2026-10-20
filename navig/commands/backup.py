@@ -1098,6 +1098,16 @@ def backup_export(
     password: str | None = typer.Option(
         None, "--password", "-p", help="Encryption password (prompted if not provided)"
     ),
+    brain: bool = typer.Option(
+        False,
+        "--brain",
+        help=(
+            "Also carry this install's state — databases, memory, sessions, the cron "
+            "jobs, the agent workspace, approvals, license and .env — to move the whole "
+            "brain to another machine. Forces --include-secrets and REQUIRES --encrypt; "
+            "the vault travels separately (navig vault backup)."
+        ),
+    ),
 ):
     """
     Export NAVIG configuration to a backup file.
@@ -1109,6 +1119,7 @@ def backup_export(
         navig backup export
         navig backup export --format json --output ~/my-backup.json
         navig backup export --include-secrets --encrypt
+        navig backup export --brain --encrypt -o brain.tar.gz    # move this brain
     """
     from navig.commands.config_backup import export_config
 
@@ -1119,6 +1130,7 @@ def backup_export(
             "include_secrets": include_secrets,
             "encrypt": encrypt,
             "password": password,
+            "scope": "brain" if brain else "config",
             "yes": ctx.obj.get("yes", False),
             "confirm": ctx.obj.get("confirm", False),
             "json": ctx.obj.get("json", False),
@@ -1142,6 +1154,14 @@ def backup_import(
     password: str | None = typer.Option(
         None, "--password", "-p", help="Decryption password (prompted if needed)"
     ),
+    brain: bool = typer.Option(
+        False,
+        "--brain",
+        help=(
+            "Also restore this install's state (databases, memory, sessions, license) "
+            "from a --brain export. Refuses while the daemon is running."
+        ),
+    ),
 ):
     """
     Import NAVIG configuration from a backup file.
@@ -1152,6 +1172,7 @@ def backup_import(
         navig backup import navig-config-20241206.tar.gz
         navig backup import backup.json --replace
         navig backup import encrypted-backup.tar.gz.enc --password mypassword
+        navig backup import brain.tar.gz --brain --password mypassword
     """
     from navig.commands.config_backup import import_config
 
@@ -1160,6 +1181,7 @@ def backup_import(
             "file": file,
             "merge": merge,
             "password": password,
+            "scope": "brain" if brain else "config",
             "yes": ctx.obj.get("yes", False),
             "confirm": ctx.obj.get("confirm", False),
             "json": ctx.obj.get("json", False),
@@ -1386,3 +1408,52 @@ def backup_config_cmd(
             "json": obj.get("json", False),
         }
     )
+
+
+@backup_app.command("watch")
+def backup_watch(
+    path: str = typer.Argument(..., help="Folder the backups land in (a UNC share works, e.g. //nas/share/dir)."),
+    name: str = typer.Option("", "--name", help="Label for the alert (default: the folder name)."),
+    max_age_hours: float = typer.Option(30.0, "--max-age-hours", help="Older than this = stale."),
+    pattern: str = typer.Option("*", "--pattern", help="Only files matching this glob count."),
+    notify: bool = typer.Option(
+        False, "--notify", help="Send a system alert when it turns stale, and an all-clear when it recovers."),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Is the newest backup in PATH fresh? Exit 0 fresh, 1 stale/unreachable.
+
+    Catches every silent failure the same way — share not mounted, timer dead,
+    box off: no new file. With --notify it alerts once per edge (state in
+    <data_dir>/backup_watch.json), so a daily scheduled run never repeats itself.
+    """
+    import asyncio
+    from dataclasses import asdict
+
+    from navig import backup_watch as bw
+    from navig.platform import paths
+    from navig.platform.paths import resolve_user_path
+
+    folder = resolve_user_path(path)
+    label = name or folder.name or str(folder)
+    verdict = bw.check(folder, name=label, max_age_hours=max_age_hours, pattern=pattern)
+    edge = bw.latch(verdict, paths.data_dir() / "backup_watch.json") if notify else None
+    if edge:
+        from navig.notify.router import dispatch
+
+        if edge == "stale":
+            title, body, prio = f"Backup stale: {label}", f"{verdict.reason}\n{verdict.path}", "high"
+        else:
+            title, body, prio = (f"Backup fresh again: {label}",
+                                 f"newest: {verdict.newest} ({verdict.age_hours} h old)", "normal")
+        try:
+            asyncio.run(dispatch("system_alert", title, body, priority=prio))
+        except Exception as exc:  # noqa: BLE001 — the exit code still tells the truth
+            ch.warning(f"alert not sent: {exc}")
+    if json_out:
+        ch.console.print_json(json.dumps({**asdict(verdict), "edge": edge}))
+    elif verdict.ok:
+        ch.success(f"{label}: fresh — {verdict.newest} ({verdict.age_hours} h old)")
+    else:
+        ch.error(f"{label}: {verdict.reason}", verdict.path)
+    if not verdict.ok:
+        raise typer.Exit(1)

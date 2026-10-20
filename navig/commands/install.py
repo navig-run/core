@@ -18,7 +18,10 @@ import typer
 from navig import console_helper as ch
 
 # Asset-type prefixes we accept in a spec (`<type>:owner/repo`).
-_KNOWN_TYPES = {"skill", "space", "plugin", "formation", "prompt", "playbook", "workflow", "webapp", "block"}
+_KNOWN_TYPES = {
+    "skill", "space", "plugin", "formation", "prompt", "playbook", "workflow", "webapp", "block",
+    "lens",
+}
 
 # Legacy install types that normalize INTO the block format (no breaking rename —
 # a `playbook:`/`workflow:` spec installs as a block with a minimal generated manifest).
@@ -41,7 +44,7 @@ def _not_implemented(name: str):
 # Community asset installer (GitHub-backed)
 # ============================================================================
 # Resolves specs like:
-#   github:navig-run/community/cli-skills/developer/git-ops   (community pillar)
+#   github:navig-run/registry/cli-skills/developer/git-ops   (community pillar)
 #   skill:owner/repo[@ref]                                     (whole-repo asset)
 # and installs the folder into the local store so the loaders discover it.
 
@@ -70,6 +73,10 @@ def _parse_spec(spec: str, default_type: str = "skill") -> dict:
         raise ValueError(f"invalid spec '{spec}' — expected owner/repo[/path][@ref]")
 
     owner, repo = parts[0], parts[1]
+    # Our registry was `community` until 2026-10-16: an old command still installs.
+    from navig.registry_repo import canonical_repo
+
+    repo = canonical_repo(owner, repo)
     subpath = parts[2:]
     asset_id = subpath[-1] if subpath else repo
 
@@ -92,6 +99,8 @@ def _parse_spec(spec: str, default_type: str = "skill") -> dict:
             asset_type = "formation"
         elif "webapp" in head:
             asset_type = "webapp"
+        elif head in ("lens", "lenses"):
+            asset_type = "lens"
         elif "block" in head or "playbook" in head or "workflow" in head:
             asset_type = "block"
 
@@ -111,14 +120,22 @@ def _dest_for(asset_type: str, asset_id: str, install_root: Path | None = None) 
     if install_root is not None:
         return install_root / asset_id
 
-    from navig.platform.paths import config_dir, packages_dir, spaces_dir, store_dir
+    from navig.platform.paths import config_dir, spaces_dir, store_dir
 
     if asset_type == "space":
         return spaces_dir() / asset_id
     if asset_type == "persona":
         return config_dir() / "personas" / asset_id
-    if asset_type == "package":
-        return packages_dir() / asset_id
+    if asset_type in ("package", "plugin"):
+        # NOT packages_dir() — that is `~/.navig/packs`, retired with the handler-pack
+        # removal in 2026-07 and scanned by nothing, so a plugin "installed" here was
+        # silently unreachable. And NOT the fall-through to `skills/` that "plugin"
+        # used to take, which put a plugin where a skill loader would look for it.
+        # Plugins are installed through the plugin host; this branch exists only so a
+        # stray caller lands somewhere a loader actually scans.
+        from navig.platform.paths import plugins_dir
+
+        return plugins_dir() / asset_id
     if asset_type == "formation":
         return store_dir() / "formations" / asset_id
     if asset_type == "prompt":
@@ -133,6 +150,65 @@ def _dest_for(asset_type: str, asset_id: str, install_root: Path | None = None) 
         return store_dir() / "blocks" / asset_id
     # skills (and unknown types) live in the user content store under skills/
     return store_dir() / "skills" / asset_id
+
+
+def _install_package_via_host(info: dict, *, dry_run: bool) -> None:
+    """Install a plugin through the plugin host — the one place plugins are installed.
+
+    `navig install plugin:<spec>` used to fall through to the generic asset flow and
+    write into `packages_dir()` (`~/.navig/packs`), a directory nothing has scanned
+    since the handler-pack retirement in 2026-07. The command printed a success line
+    and installed nothing usable — the worst shape a bug can take, because nothing
+    looks wrong until someone looks for the plugin.
+
+    `navig store install` was already the canonical verb (`docs/plugin-spec.md` →
+    Naming: "Canonical verbs: `navig store install / remove`"), so this FORWARDS to the
+    same dispatcher rather than growing a second install path. Two install paths is
+    how the two end up disagreeing.
+
+    Two cases are refused instead of quietly doing something else: the host clones
+    `git clone --depth 1 <url>` and cannot honour a ref, and it installs a repository
+    root, so a sub-path spec would install the wrong thing. Installing the default
+    branch when a tag was asked for is not a partial success — it is the wrong version.
+    """
+    ref, subpath = info.get("ref") or "main", info.get("subpath")
+    owner, repo = info.get("owner"), info.get("repo")
+
+    if subpath:
+        ch.error(
+            f"'{info['id']}' is a sub-path of a larger repository; the plugin host "
+            "installs a repository root.\n"
+            "Use:  navig store install <local-dir | .zip | git-url | name>"
+        )
+        raise typer.Exit(2)
+    if ref not in ("main", "master", "HEAD"):
+        ch.error(
+            f"the plugin host installs the default branch, not '@{ref}'.\n"
+            "Use:  navig store install <path-or-git-url> once the branch exists, "
+            "or clone it yourself."
+        )
+        raise typer.Exit(2)
+    if not owner or not repo:
+        ch.error(
+            f"cannot derive a plugin source from '{info['id']}'.\n"
+            "Use:  navig store install <local-dir | .zip | git-url | name>"
+        )
+        raise typer.Exit(2)
+
+    source = f"https://github.com/{owner}/{repo}"
+    if dry_run:
+        ch.info(f"dry-run · would install plugin from {source}")
+        ch.info("          (validated through the plugin host, then wired)")
+        return
+
+    from navig.hub import apply_action
+
+    ch.info(f"Installing plugin from {source} ...")
+    result = apply_action(f"plugin:{source}", "install")
+    if not result.get("ok"):
+        ch.error(result.get("message", "plugin install failed"))
+        raise typer.Exit(1)
+    ch.success(result.get("message", "installed"))
 
 
 def _safe_extract(tar: tarfile.TarFile, dest: Path) -> None:
@@ -186,7 +262,22 @@ def _merge_additive(src: Path, dest: Path, *, capabilities_only: bool = False) -
         stats["refreshed" if exists else "added"] += 1
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(f, target)
+        # Published spaces ship state only as `<name>.example.<ext>` (no one's real memory
+        # or routes in a public repo). Seed the live file from it on install so inbox
+        # routing and memory work at once; an existing live file is never touched.
+        live = _live_name_for_example(target) if protected else None
+        if live is not None and not live.exists():
+            shutil.copy2(f, live)
+            stats["added"] += 1
     return stats
+
+
+def _live_name_for_example(path: Path) -> Path | None:
+    """``routes.example.yaml`` → ``routes.yaml``; None for a file that is not an example."""
+    stem, dot, ext = path.name.rpartition(".")
+    if not dot or not stem.endswith(".example") or stem == ".example":
+        return None
+    return path.with_name(f"{stem[: -len('.example')]}.{ext}")
 
 
 def _download_subtree(
@@ -258,6 +349,26 @@ def install_asset(
     project-local install.
     """
     info = _parse_spec(spec, default_type)
+    if info["type"] == "lens":
+        _install_lens(info, force=force or upgrade, dry_run=dry_run)
+        return
+    if info["type"] in ("package", "plugin"):
+        # BOTH spellings reach here. `plugin:owner/repo` parses to type "plugin"
+        # (explicit prefix), while `github:owner/repo/plugins/x` infers "package" —
+        # and `_dest_for` had a branch for neither, so they went to the skills store
+        # and the retired packs dir respectively. Two names for one asset type, two
+        # different wrong destinations.
+        if install_root is not None:
+            # The plugin host has one install root; a caller-chosen dir is not a thing
+            # it can do. Silently ignoring it would install somewhere the caller did not
+            # ask for, which for a plugin means commands appearing from nowhere.
+            ch.error(
+                "plugins cannot be installed to a custom root; the plugin host owns "
+                f"one install location.\nGot install_root={install_root}."
+            )
+            raise typer.Exit(2)
+        _install_package_via_host(info, dry_run=dry_run)
+        return
     dest = _dest_for(info["type"], info["id"], install_root=install_root)
     additive = info["type"] in _ADDITIVE_TYPES
 
@@ -353,6 +464,46 @@ def install_asset(
         ch.info(f"✓ Installed {info['type']} '{info['id']}' → {dest}")
 
 
+def _install_lens(info: dict, *, force: bool, dry_run: bool) -> None:
+    """A Lens is ONE file (``.user.js``), installed through the Lens store — not a folder
+    copied into ``store_dir()`` — so it gets the same parse/syntax/@require checks as
+    ``navig lens add`` and shows up in every browser host. ``…/<id>`` resolves to
+    ``…/<id>/lens.user.js``; a path ending in ``.user.js`` is taken as-is."""
+    from navig.lenses import LensFetchError, LensFormatError, LensStore, fetch_text
+
+    path = "/".join(info["subpath"])
+    if not path.endswith(".user.js"):
+        path = f"{path}/lens.user.js" if path else "lens.user.js"
+    refs = [info["ref"]] + (["master"] if info["ref"] == "main" else [])
+    urls = [f"https://raw.githubusercontent.com/{info['owner']}/{info['repo']}/{r}/{path}" for r in refs]
+    if dry_run:
+        ch.info(f"dry-run · would install lens from {urls[0]}")
+        return
+
+    store = LensStore()
+    last: Exception | None = None
+    for url in urls:
+        try:
+            source = fetch_text(url)
+        except LensFetchError as exc:
+            last = exc
+            continue
+        try:
+            existing = store.get(store.preview(source).id)
+            if existing is not None and not force:
+                ch.warning(f"Lens '{existing.id}' already installed. Use --force to update it.")
+                return
+            rec = store.save(source, origin="bay", install_url=url)
+        except LensFormatError as exc:
+            raise ValueError(f"not a valid lens: {exc}") from exc
+        ch.info(f"✓ Installed lens '{rec.name}' ({rec.id}) — {'on' if rec.enabled else 'off'}")
+        for w in rec.manifest.warnings if rec.manifest else []:
+            ch.warning(w)
+        return
+    ch.warning(f"Could not install lens from {urls[0]}: {last}")
+    raise ValueError(str(last))
+
+
 def _finalize_block_install(dest: Path, asset_id: str) -> None:
     """Post-install for blocks: normalize legacy assets, pin the digest in the
     project lockfile, and generate the SKILL.md shim so the block is discoverable
@@ -429,7 +580,7 @@ def list_assets(plain: bool = False):
                     found.append((typ, d.name, d))
 
     if not found:
-        ch.info("No community assets installed. Try: navig skill install github:navig-run/community/cli-skills/...")
+        ch.info("No community assets installed. Try: navig skill install github:navig-run/registry/cli-skills/...")
         return
 
     for typ, name, path in found:
@@ -455,7 +606,7 @@ def remove_asset(spec: str, force: bool = False):
 def update_assets(spec: str | None = None, dry_run: bool = False):
     """Update an installed asset by reinstalling it from source (requires full spec)."""
     if not spec:
-        ch.warning("Specify the asset spec to update, e.g. navig install update github:navig-run/community/cli-skills/...")
+        ch.warning("Specify the asset spec to update, e.g. navig install update github:navig-run/registry/cli-skills/...")
         return
     install_asset(spec, force=True, dry_run=dry_run)
 
@@ -494,7 +645,10 @@ def browse_assets(
 # ============================================================================
 
 install_app = typer.Typer(
-    help="Install community assets (skills, playbooks, workflows, …) from GitHub.",
+    help=(
+        "Install community assets (skills, playbooks, workflows, …) from GitHub. "
+        "(A package on a remote host: navig host maintenance install <package>.)"
+    ),
     invoke_without_command=True,
     no_args_is_help=False,
 )

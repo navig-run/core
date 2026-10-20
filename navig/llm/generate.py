@@ -109,7 +109,7 @@ def llm_generate(
             provider=provider,
             model=model,
             messages=messages,
-            temperature=temperature or _LLM_DEFAULT_TEMPERATURE,
+            temperature=_LLM_DEFAULT_TEMPERATURE if temperature is None else temperature,
             max_tokens=max_tokens or _LLM_DEFAULT_MAX_TOKENS,
             timeout=timeout,
         )
@@ -219,7 +219,7 @@ def run_llm(
         selection = ModelSelection(
             provider_name=provider,
             model_name=model,
-            temperature=temperature or _LLM_DEFAULT_TEMPERATURE,
+            temperature=_LLM_DEFAULT_TEMPERATURE if temperature is None else temperature,
             max_tokens=max_tokens or _LLM_DEFAULT_MAX_TOKENS,
             strategy_name="model_override",
         )
@@ -344,6 +344,12 @@ def run_llm(
             # mark cools the default account per-model AND account-wide (shared
             # with the connection-first paths); no separate bare-key mark needed.
             mark_cooldown(primary_spec, category)
+            try:
+                from navig.llm import model_fallback as _mf
+
+                _mf.note_primary_failed(selection.provider_name, selection.model_name, category)
+            except Exception:  # noqa: BLE001
+                pass
             if should_fallback(category) and _chain():
                 logger.warning(
                     "primary %s failed (%s: %s) — auto-falling back over %d model(s)",
@@ -364,6 +370,25 @@ def run_llm(
                     "primary %s failed (%s: %s) — no fallback available",
                     primary_spec, category, _short_err(result.finish_reason),
                 )
+
+    # Ledger / notify / recovery — a switch is recorded (and the operator told,
+    # deduped), and a primary that answers again clears its degraded state. Both
+    # calls are cheap and never raise.
+    try:
+        from navig.llm import model_fallback
+
+        if getattr(result, "is_fallback", False):
+            _fb = (result.raw or {}).get("fallback") or {}
+            model_fallback.note_fallback(
+                selection.metadata.get("mode") or ("--model" if model_override else None),
+                _fb.get("from") or f"{selection.provider_name}:{selection.model_name}",
+                _fb.get("to") or "",
+                _fb.get("reason"),
+            )
+        elif not str(getattr(result, "finish_reason", "") or "").startswith(("error", "all_")):
+            model_fallback.note_primary_ok(selection.provider_name, selection.model_name)
+    except Exception as _mf_exc:  # noqa: BLE001
+        logger.debug("model fallback bookkeeping skipped: %s", _mf_exc)
 
     # Stamp timing and selection
     if result.latency_ms == 0:
@@ -456,6 +481,48 @@ def _call_and_wrap(
             provider=selection.provider_name,
             finish_reason=f"error:{type(e).__name__}: {e}",
         )
+
+
+def complete_raw(
+    messages: list[dict[str, str]],
+    *,
+    provider: str,
+    model: str,
+    max_tokens: int = _LLM_DEFAULT_MAX_TOKENS,
+    temperature: float = 0.0,
+    timeout: float = _LLM_DEFAULT_TIMEOUT,
+) -> LLMResult:
+    """One direct provider call — no context assembly, no routing, no fallback.
+
+    For callers that must control exactly what leaves the machine (Recall extraction):
+    :func:`run_llm` enriches the messages with conversation history, KB snippets and key
+    facts, and may hop to another model; this sends *messages* to *provider*/*model* and
+    nothing else. Usage is recorded in the session cost tracker. When the provider path
+    reports no token counts, they are estimated from character counts and the result's
+    ``finish_reason`` says so, so a budget never reads a silent zero. Errors raise.
+    """
+    from navig.llm.types import LLMResult
+
+    t0 = time.monotonic()
+    content, prompt_tokens, completion_tokens, extra = _call_provider_rich(
+        provider=provider, model=model, messages=messages, temperature=temperature,
+        max_tokens=max_tokens, timeout=timeout,
+    )
+    finish = "stop"
+    if not prompt_tokens and content:
+        prompt_tokens = int(sum(len(m.get("content") or "") for m in messages) / 3.5) + 1
+        completion_tokens = int(len(content) / 3.5) + 1
+        finish = "stop:estimated_usage"
+    try:
+        from navig.cost_tracker import get_session_tracker  # noqa: PLC0415
+
+        get_session_tracker().record(model=model, input_tokens=prompt_tokens, output_tokens=completion_tokens,
+                                     cache_read_tokens=extra.get("cache_read_tokens", 0))
+    except Exception as exc:  # noqa: BLE001 — accounting must not fail the call
+        logger.debug("session cost_tracker.record failed (non-fatal): %s", exc)
+    return LLMResult(content=content, model=model, provider=provider, prompt_tokens=prompt_tokens,
+                     completion_tokens=completion_tokens, finish_reason=finish,
+                     latency_ms=int((time.monotonic() - t0) * 1000))
 
 
 def _prompt_cache_enabled() -> bool:
@@ -576,6 +643,28 @@ def _assemble_fallback_chain(
     # 3) Global agent.fallback_chain.
     raw.extend(global_chain or [])
 
+    # 4) The fallback POLICY (llm.fallback.*): a never_from mode keeps only the
+    #    sibling accounts above (same model — not a model switch) and fails loudly
+    #    otherwise; every other mode gets the operator's `prefer` list and, with
+    #    `auto`, the models the liveness cache last saw answering. Mode-routed
+    #    calls only — an explicit --model keeps exactly the chain it always had.
+    policy = None
+    try:
+        from navig.llm import model_fallback
+
+        policy = model_fallback.load_policy()
+        mode = selection.metadata.get("mode")
+        if not model_override:
+            if not model_fallback.fallback_allowed(mode, policy):
+                raw = [s for s in raw if "@conn:" in str(s)
+                       and _split_conn(str(s))[0] == primary_spec]
+            else:
+                raw.extend(model_fallback.extra_candidates(
+                    mode, primary_provider, selection.model_name, policy
+                ))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("fallback policy skipped (non-fatal): %s", exc)
+
     seen: set[str] = set()
     out: list[str] = []
     for spec in raw:
@@ -589,6 +678,11 @@ def _assemble_fallback_chain(
         norm = f"{provider}:{model}"
         full = f"{norm}@conn:{cid}" if cid else norm
         if full == primary_spec or full in seen:  # drop the primary's default account + dupes
+            continue
+        # never_to: a sibling account of the primary is the same model, so it is
+        # never "another model" the operator excluded.
+        if (policy is not None and norm != primary_spec
+                and model_fallback.blocked_target(norm, policy)):
             continue
         seen.add(full)
         out.append(full)
@@ -931,6 +1025,12 @@ def _call_with_fallback(
 
         category = categorize_error(res.finish_reason)
         mark_cooldown(cool_key, category)
+        try:
+            from navig.llm import model_fallback as _mf
+
+            _mf.note_primary_failed(provider, model, category)  # candidate health, too
+        except Exception:  # noqa: BLE001
+            pass
         tried.append(f"{label}({category})")
         last = res
         logger.warning("fallback candidate %s failed (%s)", label, category)

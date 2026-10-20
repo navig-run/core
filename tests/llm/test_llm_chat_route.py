@@ -16,6 +16,11 @@ import pytest
 
 pytestmark = pytest.mark.integration
 
+# The gateway fails closed with 503 when no token is configured (require_bearer_auth),
+# so the fixture configures a token and every request authenticates with it.
+TOKEN = "test-token"
+_AUTH = {"Authorization": f"Bearer {TOKEN}"}
+
 # ── Fixtures ────────────────────────────────────────────────────────
 
 
@@ -23,7 +28,7 @@ pytestmark = pytest.mark.integration
 def mock_gateway():
     """Minimal NavigGateway mock with a stubbed channel router."""
     gw = MagicMock()
-    gw.config = SimpleNamespace(auth_token=None)
+    gw.config = SimpleNamespace(auth_token=TOKEN)
     gw.router = MagicMock()
     gw.router.route_message = AsyncMock(return_value="Hello from NAVIG")
     return gw
@@ -56,7 +61,7 @@ async def test_llm_chat_basic(app, mock_gateway):
             "conversation": [],
             "scope": "personal",
         }
-        resp = await client.post("/llm/chat", json=payload)
+        resp = await client.post("/llm/chat", json=payload, headers=_AUTH)
         assert resp.status == 200
 
         body = await resp.json()
@@ -91,7 +96,7 @@ async def test_llm_chat_full_request(app, mock_gateway):
             "flags": {"autoEvolve": True, "includeWorkspaceContext": True},
             "workspaceContext": "src/main.py ...",
         }
-        resp = await client.post("/llm/chat", json=payload)
+        resp = await client.post("/llm/chat", json=payload, headers=_AUTH)
         assert resp.status == 200
 
     # Verify metadata propagation
@@ -114,7 +119,9 @@ async def test_llm_chat_missing_text(app):
     from aiohttp.test_utils import TestClient, TestServer
 
     async with TestClient(TestServer(app)) as client:
-        resp = await client.post("/llm/chat", json={"conversation": [], "scope": "personal"})
+        resp = await client.post(
+            "/llm/chat", json={"conversation": [], "scope": "personal"}, headers=_AUTH
+        )
         assert resp.status == 400
         body = await resp.json()
         assert "text" in body["error"].lower()
@@ -127,7 +134,9 @@ async def test_llm_chat_empty_text(app):
 
     async with TestClient(TestServer(app)) as client:
         resp = await client.post(
-            "/llm/chat", json={"text": "  ", "conversation": [], "scope": "personal"}
+            "/llm/chat",
+            json={"text": "  ", "conversation": [], "scope": "personal"},
+            headers=_AUTH,
         )
         assert resp.status == 400
 
@@ -141,7 +150,7 @@ async def test_llm_chat_invalid_json(app):
         resp = await client.post(
             "/llm/chat",
             data=b"not json",
-            headers={"Content-Type": "application/json"},
+            headers={**_AUTH, "Content-Type": "application/json"},
         )
         assert resp.status == 400
         body = await resp.json()
@@ -159,7 +168,9 @@ async def test_llm_chat_router_exception(app, mock_gateway):
 
     async with TestClient(TestServer(app)) as client:
         resp = await client.post(
-            "/llm/chat", json={"text": "test", "conversation": [], "scope": "personal"}
+            "/llm/chat",
+            json={"text": "test", "conversation": [], "scope": "personal"},
+            headers=_AUTH,
         )
         assert resp.status == 500
         body = await resp.json()
@@ -175,7 +186,7 @@ async def test_llm_chat_default_scope(app, mock_gateway):
     from aiohttp.test_utils import TestClient, TestServer
 
     async with TestClient(TestServer(app)) as client:
-        resp = await client.post("/llm/chat", json={"text": "hello"})
+        resp = await client.post("/llm/chat", json={"text": "hello"}, headers=_AUTH)
         assert resp.status == 200
 
     meta = mock_gateway.router.route_message.call_args.kwargs["metadata"]

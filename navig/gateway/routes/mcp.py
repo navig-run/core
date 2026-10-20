@@ -131,12 +131,12 @@ async def _authorize_registration(
     and keep it running" — strictly more powerful than ``bash_exec``, which the agent
     cannot invoke without asking. This route asked nobody.
 
-    It matters because bearer auth is not the boundary it looks like:
-    ``require_bearer_auth`` returns None — open access — when ``gateway.auth.token`` is
-    unset, and there is no default. The gateway binds to 127.0.0.1, so the exposure is
-    every local process rather than the network, which is still an escalation: a program
-    with no rights to the operator's vault or hosts can obtain them by POSTing a command
-    here.
+    It matters because bearer auth is not the boundary it looks like: this route needs
+    its own gate. ``require_bearer_auth`` failed open (None, open access) when
+    ``gateway.auth.token`` was unset — it now fails closed with 503 — but on any healthy
+    install the token exists and would happily authenticate a registration call. The
+    gateway binds to 127.0.0.1, so the audience is every local process: a program with
+    no rights to the operator's vault or hosts could obtain them by POSTing here.
 
     Returns ``None`` when the registration may proceed.
     """

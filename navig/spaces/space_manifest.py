@@ -144,6 +144,34 @@ class SpaceManifest:
             return v.strip()
         return None
 
+    @property
+    def module_overrides(self) -> dict[str, bool]:
+        """Per-space module on/off overrides, layered OVER the global
+        ``modules.overrides`` store (see ``modules/registry.py``).
+
+        Two list fields in ``space.json``::
+
+            modules_enabled:  [ids]   # force-ON in this space, even if globally off
+            modules_disabled: [ids]   # force-OFF in this space, even if globally on
+
+        Absent/empty ⇒ inherit the global state (full back-compat — a space that
+        names neither behaves exactly as before this field existed). Unlike
+        :attr:`app_allowlist` (a sidebar *view* filter), this is a real second
+        enablement layer: the registry, the route gate, the agent toolset filter
+        and the CLI all honour it, so a module can genuinely be live in one space
+        and absent in another.
+
+        ``modules_disabled`` WINS a conflict: an id named in both fields resolves
+        to OFF. Disabling is the fail-safe direction — a hand-edited manifest that
+        contradicts itself should withhold a capability, not grant it.
+        """
+        out: dict[str, bool] = {}
+        for mid in self._id_list("modules_enabled"):
+            out[mid] = True
+        for mid in self._id_list("modules_disabled"):
+            out[mid] = False  # disable wins a conflict (fail-safe)
+        return out
+
 
 def find_manifest_file(space_dir: Path) -> Path | None:
     """Return the manifest path for *space_dir*, or None for a bare ``.navig/``."""

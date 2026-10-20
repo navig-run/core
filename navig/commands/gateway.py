@@ -400,6 +400,12 @@ def gateway_start(
     """
     import asyncio
 
+    from navig.move.marker import moved_message, read_moved
+
+    if read_moved() is not None:
+        ch.error(moved_message())
+        raise typer.Exit(1)
+
     if background:
         # This used to print "Background mode not yet implemented" and run in the
         # FOREGROUND — the opposite of what the flag asked for. Same ladder as the
@@ -933,7 +939,7 @@ def gateway_test(
                     ch.warning("  --target required for Telegram (e.g. --target @username)")
                 results.append({"channel": "telegram", "ok": False, "reason": "no target"})
                 continue
-            from navig.commands.telegram import telegram_send as _tg_send
+            from navig.telegram.api import telegram_send as _tg_send
 
             try:
                 _tg_send(
@@ -1486,8 +1492,11 @@ def approve_list():
             "never": "bright_red",
         }.get(req.get("level", ""), "white")
 
+        # The route sends `command`; the old `req['action']` raised KeyError for any
+        # real pending request (the test fixture fed the wrong key, so it never showed).
+        what = req.get("command") or req.get("action") or "?"
         ch.console.print(
-            f"  \\[{req['id']}] {req['action']} ({req['level']}) - {req.get('description', '')}",
+            f"  \\[{req['id']}] {what} ({req['level']}) - {req.get('description', '')}",
             style=level_color,
         )
 
@@ -1530,10 +1539,15 @@ def approve_no(
 def approve_policy():
     """Show approval policy (patterns and levels)."""
     try:
-        from navig.approval import ApprovalPolicy
+        # The operator's CONFIGURED policy. This used `ApprovalPolicy.default()`, so a
+        # customised `approval.levels` (or a `low` security level) showed the shipped
+        # defaults — a view that answers "what is configured?" with what is not.
+        policy = _configured_policy()
 
-        policy = ApprovalPolicy.default()
-
+        ch.info(
+            f"Security level: {policy.security_level} — "
+            f"{_level_summary(policy.security_level)}"
+        )
         ch.info("Approval Policy Patterns:")
         ch.console.print("\n[bold green]SAFE (no approval needed):[/bold green]")
         for pattern in policy.patterns.get("safe", []):
@@ -1556,6 +1570,182 @@ def approve_policy():
     except Exception as e:
         ch.error(f"Could not read the approval policy: {type(e).__name__}: {e}")
         raise typer.Exit(1) from e
+
+
+def _level_summary(level: str) -> str:
+    from navig.approval.policies import LEVEL_SUMMARY
+
+    return LEVEL_SUMMARY.get(level, "")
+
+
+def _configured_policy():
+    """The policy the config FILE describes — what the gateway will load at its next start."""
+    from navig.approval.policies import ApprovalPolicy
+    from navig.config import ConfigManager
+
+    return ApprovalPolicy.from_config(ConfigManager().global_config or {})
+
+
+def _configured_posture() -> dict[str, Any]:
+    from navig.tools.approval import _auto_approve_read_only
+
+    return _configured_policy().posture(read_bypass=_auto_approve_read_only())
+
+
+def _live_posture() -> tuple[dict[str, Any] | None, str]:
+    """``(posture, state)`` from the RUNNING gateway. ``state`` is one of
+    ``live`` / ``stopped`` / ``outdated`` / ``unreadable``.
+
+    Never exits and never raises: a status view that dies when the daemon is down
+    is useless exactly when it is needed. ``outdated`` (a 404) means the gateway is
+    up but predates the ``/approval/policy`` route — i.e. it is running old code.
+    """
+    try:
+        resp = _gw_request("GET", "/approval/policy", timeout=3)
+    except Exception:  # noqa: BLE001 — connection refused / timeout / anything: not running
+        return None, "stopped"
+    if resp.status_code == 404:
+        return None, "outdated"
+    if resp.status_code != 200:
+        return None, "unreadable"
+    try:
+        payload = _unwrap(resp.json())
+    except Exception:  # noqa: BLE001
+        return None, "unreadable"
+    return (payload, "live") if isinstance(payload, dict) else (None, "unreadable")
+
+
+def _terminal_behaviour(p: dict[str, Any]) -> str:
+    if not p.get("enabled", True):
+        return "no approval flow at all (approval.enabled is false)"
+    if p.get("shell_exempt"):
+        return "never asks — reads AND writes run"
+    if p.get("read_bypass"):
+        return "proven reads run unasked · writes ask"
+    return "everything asks, even reads"
+
+
+def _timeout_behaviour(p: dict[str, Any]) -> str:
+    seconds = p.get("timeout_seconds", "?")
+    if p.get("fail_closed_timeout") or p.get("default_action") != "approve":
+        return f"{seconds}s, then denied"
+    return f"{seconds}s, then approved (dangerous still denied)"
+
+
+@approve_app.command("status")
+def approve_status(
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output"),
+):
+    """Show the security level and what it means — configured vs. what the gateway runs.
+
+    A view, not a gate: always exits 0. Reads the config file AND asks the running
+    gateway, because the policy is built once at gateway startup — setting a level
+    without restarting leaves the daemon on the old one, and this is the one place
+    that says so.
+    """
+    from navig.approval.policies import LEVEL_SUMMARY, SECURITY_LEVELS
+
+    configured = _configured_posture()
+    live, state = _live_posture()
+
+    drift = bool(live) and live.get("security_level") != configured["security_level"]
+    if json_out:
+        from navig.console_helper import emit_json
+
+        emit_json(
+            {
+                "configured": configured,
+                "gateway": live,
+                "gateway_state": state,
+                "restart_pending": drift or state == "outdated",
+            }
+        )
+        return
+
+    from navig.console_helper import Table
+
+    running = live if live else configured
+    table = Table(box=None, show_header=False, padding=(0, 2))
+    table.add_column(style="dim", no_wrap=True)
+    table.add_column()
+    table.add_row(
+        "Security level",
+        f"[bold]{configured['security_level']}[/bold]  [dim](configured)[/dim]",
+    )
+    if state == "live":
+        glyph = "[yellow]⚠ differs — restart pending[/yellow]" if drift else "[green]● same[/green]"
+        table.add_row("Running gateway", f"{live['security_level']}  {glyph}")
+    elif state == "stopped":
+        table.add_row("Running gateway", "[dim]○ not running — the level applies when it starts[/dim]")
+    elif state == "outdated":
+        table.add_row(
+            "Running gateway",
+            "[yellow]⚠ running older code (no /approval/policy) — restart pending[/yellow]",
+        )
+    else:
+        table.add_row("Running gateway", "[yellow]could not be read[/yellow]")
+    table.add_row("Terminal commands", _terminal_behaviour(running))
+    table.add_row("Unanswered ask", _timeout_behaviour(running))
+    table.add_row(
+        "Approvals", "[green]on[/green]" if running.get("enabled", True) else "[red]OFF[/red]"
+    )
+    ch.console.print(table)
+
+    ladder = Table(box=None, show_header=False, padding=(0, 2))
+    ladder.add_column(no_wrap=True)
+    ladder.add_column(no_wrap=True)
+    ladder.add_column()
+    for level in SECURITY_LEVELS:
+        mark = "[green]●[/green]" if level == configured["security_level"] else "[dim]○[/dim]"
+        ladder.add_row(mark, level, LEVEL_SUMMARY[level])
+    ch.console.print()
+    ch.console.print(ladder)
+
+    if drift or state == "outdated":
+        ch.dim("\nNext: navig service restart — the gateway is still on its old policy")
+    else:
+        ch.dim("\nNext: navig approve level <high|medium|low> to change it (applies on gateway restart)")
+
+
+@approve_app.command("level")
+def approve_level(
+    level: str = typer.Argument(
+        ..., help="high | medium | low  (aliases: strict, balanced, permissive)"
+    ),
+):
+    """Set the security level — one knob, three postures, like a router firewall.
+
+    high    nothing trusted: even proven reads ask; no answer = deny
+    medium  balanced (default): proven reads run unasked, writes ask
+    low     terminal free: shell never asks; db / cdp / connectors / missions still do
+
+    The gateway builds its policy at startup, so the change applies on its next
+    restart (`navig service restart`). A typo is refused, never stored.
+    """
+    from navig.approval.policies import SECURITY_LEVELS, parse_security_level
+    from navig.config import ConfigManager
+
+    parsed = parse_security_level(level)
+    if parsed is None:
+        ch.error(f"'{level}' is not a security level — choose one of: {', '.join(SECURITY_LEVELS)}")
+        raise typer.Exit(2)
+
+    before = _configured_policy().security_level
+    ConfigManager().set_global("approval.security_level", parsed)
+
+    # Read it back through a FRESH manager: a save that did not land must not print ✓.
+    after = _configured_policy().security_level
+    if after != parsed:
+        ch.error(f"The level was not saved (config still says '{after}')")
+        raise typer.Exit(1)
+
+    if before == parsed:
+        ch.info(f"Security level is already {parsed} — {_level_summary(parsed)}")
+    else:
+        ch.success(f"Security level: {before} → {parsed} — {_level_summary(parsed)}")
+    if parsed == "low":
+        ch.warning("Terminal commands — including writes — will no longer ask.")
+    ch.dim("Applies when the gateway restarts: navig service restart · check: navig approve status")
 
 
 # ============================================================================

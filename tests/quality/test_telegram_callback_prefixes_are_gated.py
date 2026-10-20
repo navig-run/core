@@ -384,3 +384,46 @@ def test_dead_on_purpose_entries_carry_a_reason() -> None:
             f"{prefix} is exempted with no real reason ({reason!r}). An entry here "
             "asserts a visible button is SUPPOSED to do nothing; say why."
         )
+
+
+#: A prefix tuple at least this long is edited piecemeal -- someone appends next to
+#: their own entry -- so a merge that resolves one shared line the wrong way drops
+#: every prefix on it. Measured 2026-10-15: 10 of 18 extensions share lines, but only
+#: `core` (25 entries) reaches this threshold. A 2-3 entry tuple is read whole and a
+#: rewrite of it shows in the diff either way, so it is left as it is.
+_LARGE_PREFIX_TUPLE = 4
+
+
+def test_a_large_prefix_tuple_keeps_one_prefix_per_source_line() -> None:
+    """A shared line is a multi-prefix blast radius.
+
+    #1817 landed on `main` without "hbhow:"/"hbchk:", which #1834 had added to the
+    same list minutes earlier; the guard below caught it only once main was already
+    red for every session. On separate lines two branches edit different lines and
+    merge cleanly, and a wrong resolution costs one prefix instead of ten.
+    """
+    path = CORE / "gateway" / "channels" / "telegram_extensions.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    shared: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        pref = next((k.value for k in node.keywords if k.arg == "callback_prefixes"), None)
+        if not isinstance(pref, ast.Tuple) or len(pref.elts) < _LARGE_PREFIX_TUPLE:
+            continue
+        lines = {elt.lineno for elt in pref.elts}
+        if len(lines) == len(pref.elts):
+            continue
+        ext_id = next((k.value for k in node.keywords if k.arg == "id"), None)
+        try:
+            label = str(ast.literal_eval(ext_id))
+        except Exception:  # noqa: BLE001 -- an id that is not a literal is not this test's subject
+            label = "?"
+        shared.append(
+            f"{label}: {len(pref.elts)} prefixes on {len(lines)} lines "
+            f"(lines {sorted(lines)})"
+        )
+    assert not shared, (
+        "Put each prefix on its own line — a shared line makes a bad merge drop "
+        "several prefixes at once: " + "; ".join(shared)
+    )

@@ -18,6 +18,7 @@ to ``navig.core.logging.get_logger`` so there is only one logging subsystem.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
@@ -91,14 +92,39 @@ class DebugLogger:
 
         logger = logging.getLogger("navig.debug")
         logger.setLevel(logging.DEBUG)
+        logger.propagate = False
 
-        # Close and remove any existing handlers to prevent file descriptor leaks.
+        target = os.path.normcase(os.path.abspath(str(self.log_path)))
+
+        # Reuse a handler already pointing at this file instead of closing and
+        # recreating it. ``navig.debug`` is a PROCESS-GLOBAL logger and a new
+        # DebugLogger is built often (every GoalPlanner / RemediationEngine makes
+        # one), so the old "close ALL handlers, add a fresh one" churned a shared
+        # resource: instance B's constructor closed instance A's handler, and A's
+        # next write hit a closed file. Under xdist that churn also raced
+        # RotatingFileHandler rollover (WinError 32). One handler per path, shared;
+        # only handlers for a DIFFERENT path (e.g. the log dir was redirected) are
+        # retired so nothing keeps writing to a stale location.
+        existing: RotatingFileHandler | None = None
         for h in list(logger.handlers):
+            if isinstance(h, RotatingFileHandler) and (
+                os.path.normcase(os.path.abspath(h.baseFilename)) == target
+            ):
+                existing = h
+                continue
             try:
                 h.close()
             except Exception:
                 pass
             logger.removeHandler(h)
+
+        if existing is not None:
+            # Count users, so one instance's close() cannot detach the handler out from
+            # under the others still logging through it.
+            existing._navig_users = getattr(existing, "_navig_users", 1) + 1  # type: ignore[attr-defined]
+            self._logger = logger
+            self._handler = existing
+            return
 
         handler = RotatingFileHandler(
             self.log_path,
@@ -109,17 +135,26 @@ class DebugLogger:
         handler.setLevel(logging.DEBUG)
         handler.setFormatter(logging.Formatter("%(message)s"))
 
+        handler._navig_users = 1  # type: ignore[attr-defined]
         logger.addHandler(handler)
-        logger.propagate = False
 
         self._logger = logger
         self._handler = handler
 
     def close(self) -> None:
-        """Close the file handler and release resources."""
+        """Release this instance's hold on the file handler.
+
+        The handler is shared by every instance logging to the same path (see
+        ``_setup_logger``), so it is only closed and detached when its LAST user closes —
+        otherwise one instance's close() would silently drop every other instance's writes
+        (``navig.debug`` does not propagate, so a logger with no handler logs nothing).
+        """
         if self._handler is not None and self._logger is not None:
-            self._handler.close()
-            self._logger.removeHandler(self._handler)
+            users = getattr(self._handler, "_navig_users", 1) - 1
+            self._handler._navig_users = users  # type: ignore[attr-defined]
+            if users <= 0:
+                self._handler.close()
+                self._logger.removeHandler(self._handler)
             self._handler = None
 
     # ------------------------------------------------------------------
@@ -264,9 +299,23 @@ class DebugLogger:
         details: dict[str, Any],
         success: bool = True,
     ) -> None:
-        """Log a general operation (file transfer, database query, etc.)."""
+        """Log a general operation (file transfer, database query, etc.).
+
+        The status tag reflects the real OUTCOME, derived from the payload: a details
+        dict carrying a truthy ``error`` renders ``[ERROR]`` and a truthy ``refused``
+        renders ``[REFUSED]``. This is the codebase-wide convention (stores log
+        ``{"action": ..., "error": ...}`` / ``{"refused": ...}``), so every existing
+        failure/refusal call site is tagged honestly without passing ``success=False``.
+        The old unconditional ``[SUCCESS]`` stamped refusals and exceptions as wins,
+        turning the audit trail into a liar.
+        """
         ts = self._timestamp()
-        status = "SUCCESS" if success else "FAILED"
+        if details.get("error"):
+            status = "ERROR"
+        elif details.get("refused"):
+            status = "REFUSED"
+        else:
+            status = "SUCCESS" if success else "FAILED"
 
         safe_details = {
             k: self._redact(str(v)) if isinstance(v, str) else v

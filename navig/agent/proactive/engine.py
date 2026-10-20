@@ -54,6 +54,46 @@ class ProactiveEngine:
         self._engagement_tick_counter = 0
         # Strong references to background tasks to prevent silent GC before completion.
         self._background_tasks: set = set()
+        # Which alerts already reached the operator (lazy: it touches config_dir()).
+        self._ledger = None
+
+    def has_real_provider(self) -> bool:
+        """True when at least one calendar or mailbox is actually configured.
+
+        With only the mock providers every check is skipped, so an engine started
+        without a real one would poll forever and find nothing.
+        """
+        if self.calendar is not None and not isinstance(self.calendar, MockCalendar):
+            return True
+        if self.email_providers:
+            return True
+        return self.email is not None and not isinstance(self.email, MockEmail)
+
+    async def _alert_once(
+        self, key: str, type_key: str, title: str, body: str, data: dict | None = None
+    ) -> bool:
+        """Push an alert through the notify router, once per ``key``. Never raises.
+
+        ``proactive:alert`` hooks fire on every poll but nothing listens to them, so
+        before this an upcoming meeting or a new email reached nobody. This is the
+        delivery; the ledger keeps a 60-second poll from repeating it.
+        """
+        try:
+            if self._ledger is None:
+                from navig.agent.proactive.alert_ledger import AlertLedger
+
+                self._ledger = AlertLedger()
+            if not self._ledger.claim(key):
+                return False
+            from navig.notify.router import dispatch
+
+            await dispatch(type_key, title, body, data={"source": "proactive", **(data or {})})
+            return True
+        except Exception:  # noqa: BLE001 — an alert must never break the check loop
+            import logging
+
+            logging.getLogger(__name__).debug("proactive alert failed: %s", key, exc_info=True)
+            return False
 
     def set_calendar_provider(self, provider: CalendarProvider):
         """Set real calendar provider (e.g., GoogleCalendar)."""
@@ -123,6 +163,14 @@ class ProactiveEngine:
                                     f"Upcoming event: {evt.title} at {evt.start.strftime('%H:%M')}"
                                 ],
                             )
+                            where = f" · {evt.location}" if evt.location else ""
+                            await self._alert_once(
+                                f"cal:{evt.id or evt.title}:{evt.start.isoformat()}",
+                                "reminder",
+                                f"Coming up at {evt.start.strftime('%H:%M')}: {evt.title}",
+                                f"{evt.start.strftime('%H:%M')}–{evt.end.strftime('%H:%M')}{where}",
+                                {"kind": "calendar", "event_id": evt.id},
+                            )
 
                             # 2. Fire TriggerManager event (for configured automation)
                             try:
@@ -177,6 +225,13 @@ class ProactiveEngine:
                                 messages=[
                                     f"[{label}] Unread email from {msg.sender}: {msg.subject}"
                                 ],
+                            )
+                            await self._alert_once(
+                                f"mail:{label}:{msg.id}",
+                                "email_new",
+                                f"New email from {msg.sender}",
+                                f"{msg.subject}\n{(msg.snippet or '')[:280]}".strip(),
+                                {"kind": "email", "account": label, "message_id": msg.id},
                             )
 
                             # 2. Fire TriggerManager event

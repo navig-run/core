@@ -129,11 +129,22 @@ async def handle_deck_reminders_create(request: "web.Request") -> "web.Response"
     message = (body.get("message") or "").strip()
     when_iso = (body.get("remind_at") or "").strip()
     minutes_from_now = body.get("in_minutes")
+    # Free text ("demain 10h", "in 30 min", "26 октября 10:30") through the SAME reader
+    # as /remindme, /todo and the chat capture — one grammar for every way in.
+    when_text = (body.get("when") or "").strip()
     if not message:
         return _err("'message' is required", status=400)
 
     try:
-        if when_iso:
+        if when_text:
+            from navig.pim.clock import local_now
+            from navig.pim.dates import parse_when
+
+            parsed = parse_when(when_text, local_now())
+            if parsed is None:
+                return _err(f"could not read a time in {when_text!r}", status=400)
+            remind_at = parsed.astimezone(timezone.utc)
+        elif when_iso:
             remind_at = datetime.fromisoformat(when_iso.replace("Z", "+00:00"))
             if remind_at.tzinfo is None:
                 remind_at = remind_at.replace(tzinfo=timezone.utc)
@@ -143,7 +154,7 @@ async def handle_deck_reminders_create(request: "web.Request") -> "web.Response"
         elif minutes_from_now:
             remind_at = datetime.now(timezone.utc) + timedelta(minutes=int(minutes_from_now))
         else:
-            return _err("either 'remind_at' (ISO) or 'in_minutes' is required", status=400)
+            return _err("one of 'when' (text), 'remind_at' (ISO) or 'in_minutes' is required", status=400)
     except Exception as exc:
         return _err(f"invalid time: {exc}", status=400)
 
@@ -228,12 +239,21 @@ def _cron_service(request: "web.Request"):
     return CronService(gateway, paths.config_dir() / "scheduler")
 
 
-def _schedule_error(schedule: str) -> str | None:
-    """None when *schedule* is honourable, else a human reason to show the user."""
+def _schedule_error(schedule: str, *, yearly: Any = False) -> str | None:
+    """None when *schedule* is honourable, else a human reason to show the user.
+
+    A schedule pinned to one calendar date is refused unless the body says
+    ``yearly: true`` — cron has no year, so "9 Oct 11:00" silently repeats every year.
+    """
+    from navig.core.coerce import coerce_bool  # noqa: PLC0415
     from navig.scheduler.cron_service import CronParser  # noqa: PLC0415
 
     ok, reason = CronParser.validate(schedule)
-    return None if ok else (reason or f"unparseable schedule: {schedule!r}")
+    if not ok:
+        return reason or f"unparseable schedule: {schedule!r}"
+    if coerce_bool(yearly, default=False):
+        return None
+    return CronParser.yearly_pin_error(schedule)
 
 
 async def handle_deck_crons_list(request: "web.Request") -> "web.Response":
@@ -253,7 +273,7 @@ async def handle_deck_crons_create(request: "web.Request") -> "web.Response":
     command = str(body.get("command") or "").strip()
     if not name or not schedule or not command:
         return _err("'name', 'schedule' and 'command' are required", status=400)
-    sched_err = _schedule_error(schedule)
+    sched_err = _schedule_error(schedule, yearly=body.get("yearly"))
     if sched_err:
         return _err(sched_err, status=400)
     timeout_raw = body.get("timeout_seconds")
@@ -290,7 +310,7 @@ async def handle_deck_cron_update(request: "web.Request") -> "web.Response":
         updates["name"] = name
     if "schedule" in body:
         schedule = str(body.get("schedule") or "").strip()
-        sched_err = _schedule_error(schedule)
+        sched_err = _schedule_error(schedule, yearly=body.get("yearly"))
         if sched_err:
             return _err(sched_err, status=400)
         updates["schedule"] = schedule
@@ -455,7 +475,7 @@ async def handle_deck_triggers_create(request: "web.Request") -> "web.Response":
         )
     schedule = str(body.get("schedule") or "").strip()
     if trigger_type == "schedule" and schedule:
-        sched_err = _schedule_error(schedule)
+        sched_err = _schedule_error(schedule, yearly=body.get("yearly"))
         if sched_err:
             return _err(sched_err, status=400)
     try:
@@ -516,7 +536,7 @@ async def handle_deck_trigger_update(request: "web.Request") -> "web.Response":
         if "schedule" in body:
             schedule = str(body.get("schedule") or "").strip()
             if schedule:
-                sched_err = _schedule_error(schedule)
+                sched_err = _schedule_error(schedule, yearly=body.get("yearly"))
                 if sched_err:
                     return _err(sched_err, status=400)
             trigger.schedule = schedule

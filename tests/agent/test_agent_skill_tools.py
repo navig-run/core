@@ -24,6 +24,9 @@ def _skill(name: str) -> MagicMock:
     s.priority = 1
     s.activation_paths = ["*.py"]
     s.activation_keywords = ["python"]
+    # ContextSkill grew per-language packs; a MagicMock invents any attribute it is asked
+    # for, and an invented one is not JSON-serialisable — so a fake must carry real data.
+    s.localized_keywords = {"ru": ["питон"]}
     s.summary = MagicMock(return_value="A test skill")
     return s
 
@@ -105,6 +108,12 @@ class TestListAction:
         names = [e["name"] for e in parsed]
         assert "skill-a" in names
         assert "skill-b" in names
+
+    def test_list_exposes_the_per_language_packs(self):
+        """The agent (and the operator) can see which languages a skill answers to."""
+        parsed = json.loads(handle_manage_skills("list"))
+        assert parsed[0]["activation_keywords_by_language"] == {"ru": ["питон"]}
+        assert parsed[0]["activation_keywords"] == ["python"], "the English list is untouched"
 
     def test_list_no_skills_message(self):
         _set_ctx(_ctx(skills=[]))

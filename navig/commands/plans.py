@@ -143,7 +143,7 @@ def plans_status(
     _console.print(table)
 
 
-@plans_app.command("run")
+@plans_app.command("run", hidden=True)  # deprecated → plans add (still works)
 def plans_run(
     goal: str = typer.Argument(..., help="Goal to add to plan"),
     file: str = typer.Option("DEV_PLAN.md", "--file", help="Target plan file"),
@@ -298,8 +298,10 @@ def plans_summary(
 
     rows: list[tuple[str, str, str, str, str, bool]] = []
     for space_name, cfg in discovered.items():
-        phase_file = cfg.path / "CURRENT_PHASE.md"
-        if not phase_file.is_file():
+        from navig.spaces.plan_files import plan_file
+
+        phase_file = plan_file(cfg.path, "CURRENT_PHASE.md")
+        if phase_file is None:
             rows.append((space_name, "—", "—", "—", "—", True))
             continue
 

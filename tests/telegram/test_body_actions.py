@@ -457,3 +457,213 @@ def test_a_superseded_prompt_cannot_file_a_weight_against_the_wrong_day(metrics)
     ba.consume_reply(CHAT, "87.4")
     dates = [r["date"] for r in bm.read_metrics(metrics)[1] if r.get("weight_kg")]
     assert dates == ["2026-09-06"], f"weight filed against {dates}, not the live day"
+
+
+# ── the weekly card shows what was chosen, and says when it is done ──────────
+#
+# Reported 2026-09-27 from the operator's phone: *"when I click here it doesn't
+# mark, it just says saved, so I can't see what I selected — and when all is
+# finished, it stays, no notification."* `handle_callback` wrote the tap to disk
+# and returned a toast; it never touched the card (the `message_id` it was handed
+# went unused), and nothing ever noticed that all three questions were answered.
+
+COMPACT = DAY.replace("-", "")
+
+
+def _edits(channel):
+    return [p for m, p in channel.calls if m == "editMessageText"]
+
+
+def _sends(channel):
+    return [p for m, p in channel.calls if m == "sendMessage"]
+
+
+def _labels(markup):
+    return [b["text"] for row in markup["inline_keyboard"] for b in row]
+
+
+async def _tap_on(metrics, cb_data, channel=None, message_id=77):
+    bm.remember_target(CHAT, metrics, message_id=1, day=DAY)
+    channel = channel or _Channel()
+    toast = await ba.handle_callback(channel, cb_data, CHAT, message_id, CHAT)
+    return toast, channel
+
+
+async def test_a_mood_tap_redraws_the_card_with_the_choice_marked(metrics):
+    """The report, at the layer it lives in: a tap must change the card."""
+    _, channel = await _tap_on(metrics, f"bm:m:8:{COMPACT}")
+
+    edits = _edits(channel)
+    assert edits, "the tap was saved but the card was never redrawn — nothing to see"
+    assert edits[0]["message_id"] == 77, "the redraw must target the card that was tapped"
+    labels = _labels(edits[0]["reply_markup"])
+    assert "✓ 🙂" in labels, f"the chosen face is not marked: {labels}"
+    assert labels.count("✓ 🙂") == 1 and not any(
+        lab.startswith("✓") for lab in labels if lab != "✓ 🙂"
+    ), "exactly the chosen button is marked"
+    assert "🙂" in edits[0]["text"], "the answer is also written next to its question"
+
+
+async def test_a_sleep_mark_matches_however_the_number_was_stored(metrics):
+    """The CSV holds strings — a value written as "7.0" is still the 7h button."""
+    bm.upsert(metrics, DAY, {"sleep_hours": "7.0"})
+    text, markup = ba.build_weekly_card(metrics, DAY, chat_id=CHAT)
+    assert f"✓ 7{ba.t('unit.h')}" in _labels(markup)
+
+
+async def test_tapping_the_same_answer_again_does_not_redraw(metrics):
+    """An identical redraw is refused by Telegram ("message is not modified"),
+    which would put a false failure in the log on every double-tap."""
+    channel = _Channel()
+    await _tap_on(metrics, f"bm:m:8:{COMPACT}", channel)
+    await _tap_on(metrics, f"bm:m:8:{COMPACT}", channel)
+    assert len(_edits(channel)) == 1
+
+
+async def test_all_fine_twice_records_it_once(metrics):
+    """Each tap used to append another "treatment: ok" to the day's notes."""
+    await _tap_on(metrics, f"bm:tx:ok:{COMPACT}")
+    await _tap_on(metrics, f"bm:tx:ok:{COMPACT}")
+    row = next(r for r in bm.read_metrics(metrics)[1] if r["date"] == DAY)
+    assert row["notes"].count("treatment: ok") == 1, row["notes"]
+
+
+async def test_answering_all_three_folds_the_card_and_notifies(metrics):
+    """The second half of the report: a finished check-in has to SAY it is done.
+
+    An edit raises no notification, so completion is a new message — and the card
+    itself folds to one ✎ button so it stops looking like an open question.
+    """
+    channel = _Channel()
+    await _tap_on(metrics, f"bm:m:8:{COMPACT}", channel)
+    await _tap_on(metrics, f"bm:sl:7:{COMPACT}", channel)
+    assert not _sends(channel), "nothing to announce until all three are answered"
+
+    await _tap_on(metrics, f"bm:tx:ok:{COMPACT}", channel)
+
+    sends = _sends(channel)
+    assert len(sends) == 1, f"expected one completion message, got {len(sends)}"
+    body = sends[0]["text"]
+    assert ba.t("week.done_title") in body
+    assert "🙂" in body and f"7{ba.t('unit.h')}" in body and ba.t("week.tx_ok") in body, body
+
+    folded = _edits(channel)[-1]["reply_markup"]
+    assert _labels(folded) == [ba.t("btn.edit")], f"the finished card did not fold: {folded}"
+
+
+async def test_the_completion_message_fires_once_per_week(metrics):
+    """Reopening the card to change one answer re-completes it. That must not
+    notify again — the operator already knows the week is done."""
+    channel = _Channel()
+    for cb in (f"bm:m:8:{COMPACT}", f"bm:sl:7:{COMPACT}", f"bm:tx:ok:{COMPACT}"):
+        await _tap_on(metrics, cb, channel)
+    await _tap_on(metrics, f"bm:ed:{COMPACT}", channel)
+    await _tap_on(metrics, f"bm:m:4:{COMPACT}", channel)
+
+    assert len(_sends(channel)) == 1
+
+
+async def test_edit_reopens_the_full_keyboard_with_the_answers_marked(metrics):
+    channel = _Channel()
+    for cb in (f"bm:m:8:{COMPACT}", f"bm:sl:7:{COMPACT}", f"bm:tx:ok:{COMPACT}"):
+        await _tap_on(metrics, cb, channel)
+
+    toast, _ = await _tap_on(metrics, f"bm:ed:{COMPACT}", channel)
+
+    reopened = _labels(_edits(channel)[-1]["reply_markup"])
+    assert "✓ 🙂" in reopened and f"✓ {ba.t('btn.fine')}" in reopened, reopened
+    assert len(reopened) == 12, "all three rows are back"
+    assert toast == "", "reopening is not a save — it should not claim one"
+
+
+async def test_asking_for_a_note_marks_that_the_answer_is_on_its_way(metrics):
+    _, channel = await _tap_on(metrics, f"bm:tx:no:{COMPACT}")
+
+    assert channel.calls[0][0] == "sendMessage", "the note prompt still goes first"
+    card = _edits(channel)[-1]
+    assert f"✓ {ba.t('btn.note')}" in _labels(card["reply_markup"])
+    assert ba.t("week.tx_pending") in card["text"]
+
+
+def test_the_latest_treatment_answer_wins():
+    """Notes accumulate; a later "all fine" supersedes an earlier note."""
+    assert ba._treatment_of("treatment: nausea monday; treatment: ok") == "ok"
+    assert ba._treatment_of("treatment: ok; treatment: tired") == "note"
+    assert ba._treatment_of("slept badly") is None
+
+
+async def test_a_typed_note_that_finishes_the_week_redraws_and_announces(metrics):
+    """The third answer can arrive as a typed reply, not a tap."""
+    channel = _Channel()
+    await _tap_on(metrics, f"bm:m:8:{COMPACT}", channel)
+    await _tap_on(metrics, f"bm:sl:7:{COMPACT}", channel)
+    await _tap_on(metrics, f"bm:tx:no:{COMPACT}", channel)
+    ba.consume_reply(CHAT, "less appetite this week")
+
+    finished = await ba.after_note(channel, CHAT, DAY)
+
+    assert finished and ba.t("week.done_title") in finished
+    assert ba.t("week.tx_note") in finished
+    assert _edits(channel)[-1]["message_id"] == 77, "the card that was tapped is redrawn"
+
+
+async def test_a_note_answered_after_the_morning_weigh_in_redraws_the_card(metrics):
+    """The daily weigh-in overwrites `last_card` every morning. A note typed the
+    day after the card must redraw the CARD, not the weigh-in prompt."""
+    channel = _Channel()
+    await _tap_on(metrics, f"bm:tx:no:{COMPACT}", channel, message_id=77)
+    bm.remember_target(CHAT, metrics, message_id=555, day="2026-09-07")  # next morning
+    bm.set_prompt(CHAT, "note", DAY, 4242)
+    ba.consume_reply(CHAT, "fine really")
+
+    await ba.after_note(channel, CHAT, DAY)
+
+    assert _edits(channel)[-1]["message_id"] == 77
+
+
+def test_the_edit_button_fits_the_callback_budget():
+    assert len(f"bm:ed:{COMPACT}".encode()) <= 64
+
+
+async def test_the_gateway_wires_a_finishing_note_into_one_completion_receipt(metrics):
+    """Drives the real reply handler, not `after_note` directly — the gateway
+    has to CALL it, and must send the completion instead of a bare "saved"."""
+    from navig.gateway.channels.telegram import TelegramChannel
+
+    class _Both(_Channel):
+        def __init__(self):
+            super().__init__()
+            self.sent: list[str] = []
+
+        async def send_message(self, chat_id, text, **_):
+            self.sent.append(text)
+            return {"result": {"message_id": 9}}
+
+    channel = _Both()
+    await _tap_on(metrics, f"bm:m:8:{COMPACT}", channel)
+    await _tap_on(metrics, f"bm:sl:7:{COMPACT}", channel)
+    await _tap_on(metrics, f"bm:tx:no:{COMPACT}", channel)
+    prompt_id = bm.pending_prompt(CHAT)[2]
+
+    handled = await TelegramChannel._handle_pending_body_input(
+        channel, chat_id=CHAT, text="appetite a bit lower", reply_to_message_id=prompt_id
+    )
+
+    assert handled is True
+    assert len(channel.sent) == 1, f"one receipt per answer, got {channel.sent}"
+    assert ba.t("week.done_title") in channel.sent[0], channel.sent[0]
+    assert _edits(channel)[-1]["message_id"] == 77, "and the card itself was redrawn"
+
+
+async def test_a_card_answered_before_the_redraw_existed_folds_on_its_next_tap(metrics):
+    """The operator's own card on the day this shipped: all three answers were
+    already on disk, written by the old code, so the next tap changes nothing.
+    It must still fold the card — not announce "done" under an open one."""
+    bm.upsert(metrics, DAY, {"mood_1_10": "8", "sleep_hours": "7", "notes": "treatment: ok"})
+
+    _, channel = await _tap_on(metrics, f"bm:m:8:{COMPACT}")
+
+    assert len(_sends(channel)) == 1, "the completion is announced"
+    edits = _edits(channel)
+    assert edits, "the card was left open under a 'done' announcement"
+    assert _labels(edits[-1]["reply_markup"]) == [ba.t("btn.edit")]

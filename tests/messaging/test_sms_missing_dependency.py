@@ -151,14 +151,31 @@ def test_the_gateway_actually_asks_before_registering() -> None:
     start = src.index("# ── SMS adapter ──")
     block = src[start : start + 2000]
 
-    assert "missing_dependency()" in block, (
-        "the gateway registers the SMS adapter without asking whether its SDK "
-        "is importable — every send will fail one at a time"
+    # The dependency check lives in adapter_setup.build — shared with on-demand
+    # setup in the Telegram worker / CLI processes — so the gateway must build
+    # THROUGH it, before registering, and warn when it refuses.
+    assert 'adapter_setup.build("sms"' in block, (
+        "the gateway constructs the SMS adapter itself instead of through "
+        "adapter_setup.build, so the missing-SDK refusal is skipped"
     )
-    assert block.index("missing_dependency()") < block.index("registry.register(adapter)"), (
-        "the dependency is checked AFTER registration, so the broken adapter is "
-        "registered anyway"
+    assert block.index('adapter_setup.build("sms"') < block.index("registry.register(adapter)"), (
+        "the adapter is registered before build() had a chance to refuse it"
     )
     assert "logger.warning(" in block, (
         "a channel the operator enabled was silently not registered"
     )
+
+    setup = (server.parents[1] / "messaging" / "adapter_setup.py").read_text(encoding="utf-8")
+    assert "missing_dependency()" in setup, (
+        "adapter_setup.build no longer asks whether the SMS SDK is importable"
+    )
+
+
+def test_build_refuses_an_sms_adapter_whose_sdk_is_missing(monkeypatch) -> None:
+    """Behaviour, not text: the shared builder returns no adapter and names the remedy."""
+    from navig.messaging import adapter_setup
+    from navig.messaging.adapters import sms
+
+    monkeypatch.setattr(sms.SmsAdapter, "missing_dependency", lambda self: "twilio")
+    adapter, why = adapter_setup.build("sms", {"sms": {"enabled": True, "provider": "twilio"}})
+    assert adapter is None and "pip install twilio" in why

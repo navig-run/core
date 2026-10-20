@@ -42,6 +42,20 @@ def _vault():
     return get_vault()
 
 
+def mask(api_key: str) -> str:
+    """The key as it may appear in a log: enough to tell two keys apart, never enough to use.
+
+    deck.api_key authenticates the whole public deck and names the Lighthouse tenant, so
+    a log line that prints it hands both to anyone who can read the log file.
+    """
+    key = (api_key or "").strip()
+    if not key:
+        return "<unset>"
+    if len(key) <= 12:
+        return "…" * 3
+    return f"{key[:8]}…{key[-4:]}"
+
+
 def backup(api_key: str) -> bool:
     """Mirror *api_key* into the vault so a config wipe can be undone.
 

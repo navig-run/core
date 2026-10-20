@@ -12,8 +12,10 @@ BUILTIN_PERSONAS: tuple[str, ...] = (
     "assistant",
     "tyler",
     "storyteller",
-    "philosopher",
-    "teacher",
+    # Craft stances: the same person, held to a design standard. The procedure lives in the
+    # `impeccable` / `design-taste-frontend` skills; these are who is speaking while it runs.
+    "impeccable",
+    "anti-slop",
 )
 
 # ---------------------------------------------------------------------------

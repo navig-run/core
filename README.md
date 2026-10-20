@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.navig-run/navig -->
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/navig-run/core/main/logo.svg" alt="NAVIG" width="100" />
 </p>
@@ -97,14 +99,13 @@ NAVIG ships in two layers with a deliberate split:
 - **NAVIG Deck** — the polished UI cockpit (proprietary; signed PyPI
   wheel installed via `pip install navig[deck]`). Hosts inventory,
   mesh topology, vault UI, mission queue, workflow runner, Telegram
-  Mini App. Free Solo tier (1 host); paid tiers and modules at
-  [navig.run/deck](https://navig.run/deck).
+  Mini App. Free on one host; Harbor Pass / Max add host scale and the
+  full operator module suite — see [navig.run/deck](https://navig.run/deck).
 
-The split is honest: the daemon is open and audit-able; the polished
-GUI is the paid product. Pack owners get the local app forever,
-self-hosted; subscribers add host scale and the hosted cloud relay we
-run on `relay.navig.run`. See [navig.run/pricing](https://navig.run/pricing)
-for the full pricing model.
+The split is honest: the daemon is open and audit-able, the Deck is free
+on one host, and Harbor subscriptions add host scale, every operator
+module and all of Harbor Bay. See [navig.run/buy](https://navig.run/buy)
+for the plans.
 
 **What's free, forever, no matter what**:
 - The entire CLI — unlimited `navig ssh`, unlimited hosts you connect to
@@ -114,8 +115,8 @@ for the full pricing model.
 - Vault, scheduler, mesh peer discovery
 - All updates, including major versions
 
-The Deck UI is what you pay for if you want it; **the daemon never
-will be**.
+What a Harbor subscription pays for is scale and the operator suite;
+**the daemon never will be paid**.
 
 ---
 
@@ -152,7 +153,7 @@ NAVIG is not a configuration management tool (not Ansible). It is not a deployme
 | **Mesh networking** | LAN peer-to-peer node discovery and command delegation |
 | **MCP integration** | Expose tools and resources to AI editors and compatible clients |
 | **Daemon & gateway** | Background service with Telegram and Matrix channel support |
-| **Telegram Manager** | Full-account Telegram organizer (MTProto): search/move/forward/dedupe + a business-conversation AI catcher, emoji-AI, deletion alerts, and rich-message replies — owner-only ([docs](docs/TELEGRAM_MANAGER.md) · [cheatsheet](docs/TELEGRAM_CHEATSHEET.md)) |
+| **Telegram Manager** | Full-account Telegram organizer (MTProto): search/move/forward/dedupe + a business-conversation AI catcher, reply-keyword actions, deletion alerts, and rich-message replies — owner-only ([docs](docs/TELEGRAM_MANAGER.md) · [cheatsheet](docs/TELEGRAM_CHEATSHEET.md)) |
 | **GitHub mirroring** | `navig github` — search, backup, and clone GitHub repos (flat or nested), token from the vault |
 | **TikTok** | `navig tiktok` — download videos, extract metadata + top comments, and AI-brief any link (via yt-dlp) |
 
@@ -348,29 +349,46 @@ navig install at all. Source and per-plugin docs: [navig-run/plugins](https://gi
 
 | Plugin | What it does | Runs on its own | Install |
 |---|---|---|---|
-| [**navig-antivirus**](https://github.com/navig-run/plugins/tree/main/navig-antivirus) | Browser-extension malware/PUP scanning, Chrome extension-registry auditing, Chrome profile-index recovery, and a… | — adds `navig antivirus` | `pip install "navig[antivirus]"` |
-| [**navig-audio**](https://github.com/navig-run/plugins/tree/main/navig-audio) | Voice (TTS/STT/wake-word/pipeline) + AI audio generation (music/SFX/TTS) | — adds `navig audio` | `pip install "navig[voice]"` |
-| [**navig-blackbox**](https://github.com/navig-run/plugins/tree/main/navig-blackbox) | A standalone flight-recorder & crash black-box for any Python app: append-only event log, sys.excepthook crash… | ✅ `nbb` | `pip install "navig[blackbox]"` |
-| [**navig-cabinet**](https://github.com/navig-run/plugins/tree/main/navig-cabinet) | Your documents in one plugin: an encrypted cabinet for important files (ID and passport scans, medical records,… | — adds `navig cabinet` | from source (not on PyPI yet) |
-| [**navig-calendar**](https://github.com/navig-run/plugins/tree/main/navig-calendar) | List/add/sync events (Google Calendar, CalDAV, ICS) | — adds `navig calendar` | `pip install navig-calendar` |
-| [**navig-contacts**](https://github.com/navig-run/plugins/tree/main/navig-contacts) | `navig contacts`: the address book and the alias-to-route table dispatch resolves against, in one store | — adds `navig contacts` | from source (not on PyPI yet) |
-| [**navig-dedupe**](https://github.com/navig-run/plugins/tree/main/navig-dedupe) | A free, standalone perceptual duplicate finder for photos, video, audio & any file | ✅ `ndup` | `pip install "navig[dedupe]"` |
-| [**navig-devhost**](https://github.com/navig-run/plugins/tree/main/navig-devhost) | Give any local dev server a real .test domain over trusted HTTPS in one command (hosts + mkcert + raw TLS relay),… | — adds `navig devhost` | `pip install navig-devhost` |
-| [**navig-download**](https://github.com/navig-run/plugins/tree/main/navig-download) | Universal media downloader (yt-dlp): video, audio & files from YouTube, TikTok and any supported site | — adds `navig download` | `pip install "navig[download]"` |
-| [**navig-ebay**](https://github.com/navig-run/plugins/tree/main/navig-ebay) | Sell on eBay via the official Sell APIs (draft, publish, price, orders) wired into `navig ebay` | — adds `navig ebay` | `pip install "navig[ebay]"` |
-| [**navig-email**](https://github.com/navig-run/plugins/tree/main/navig-email) | Gmail mailroom: rules→watch (labels/Telegram/run), stats, digests, spam-reply ledger, filter→notify triage & briefings | — adds `navig email` | `pip install navig-email` |
-| [**navig-explore**](https://github.com/navig-run/plugins/tree/main/navig-explore) | A universal local media/data explorer for ANY folder | — adds `navig explore` | `pip install navig-explore` |
-| [**navig-games**](https://github.com/navig-run/plugins/tree/main/navig-games) | Proactively find & auto-claim FREE games (Epic now; GOG/Amazon/Steam next) and manage your game library | — adds `navig games` | `pip install "navig[games]"` |
-| [**navig-generate**](https://github.com/navig-run/plugins/tree/main/navig-generate) | AI media generation (image/video/audio) deck surface | — a Deck surface | `pip install "navig[generate]"` |
-| [**navig-github**](https://github.com/navig-run/plugins/tree/main/navig-github) | The full GitHub toolbox (backup, mirror, export, manage) wired into `navig github` | — adds `navig github` | `pip install "navig[github]"` |
-| [**navig-menu**](https://github.com/navig-run/plugins/tree/main/navig-menu) | AI-first menu builder — auto-detects any project's stack and builds a premium interactive terminal menu with layouts,… | ✅ `nm` | `npm i -g navig-menu` |
+| [**navig-agentctl**](https://github.com/navig-run/plugins/tree/main/navig-agentctl) | Agent Control Center (devops section): sessions, worktrees, tasks and the Agent Monitor (runs, hooks, verified lands)… | — adds `navig agentctl` | `pip install "navig[agentctl]"` |
+| [**navig-ahk**](https://github.com/navig-run/plugins/tree/main/navig-ahk) | AutoHotkey v2 automation for navig — click, type, open, windows and AI-written scripts, as its own plugin | — a Deck surface | from source (not on PyPI yet) |
+| [**navig-antivirus**](https://github.com/navig-run/plugins/tree/main/navig-antivirus) | Browser-extension malware/PUP scanning, Chrome extension-registry auditing, Chrome profile-index recovery, and a… | ✅ `navig-antivirus` | `pip install navig-antivirus` (with navig: `navig[antivirus]`) |
+| [**navig-audio**](https://github.com/navig-run/plugins/tree/main/navig-audio) | Speak text, transcribe audio, generate music and sound effects, analyse beats and render podcasts — its own… | ✅ `navig-audio` | `pip install navig-audio` (with navig: `navig[voice]`) |
+| [**navig-blackbox**](https://github.com/navig-run/plugins/tree/main/navig-blackbox) | A standalone flight-recorder & crash black-box for any Python app: append-only event log, sys.excepthook crash… | ✅ `navig-blackbox` · `nbb` | `pip install navig-blackbox` (with navig: `navig[blackbox]`) |
+| [**navig-bookmarks**](https://github.com/navig-run/plugins/tree/main/navig-bookmarks) | A local bookmark manager: import from any browser or HTML export, full-text search, AI folder plans and tags with your… | ✅ `navig-bookmarks` | `pip install navig-bookmarks` (with navig: `navig[bookmarks]`) |
+| [**navig-browser**](https://github.com/navig-run/plugins/tree/main/navig-browser) | Launch an isolated Chrome/Edge/Brave or Electron app, drive it over CDP, keep named profiles and stop only what it… | ✅ `navig-browser` | `pip install navig-browser` (with navig: `navig[stealth]`) |
+| [**navig-cabinet**](https://github.com/navig-run/plugins/tree/main/navig-cabinet) | Your documents in one plugin: an encrypted cabinet for important files (ID and passport scans, medical records,… | ✅ `navig-cabinet` | `pip install navig-cabinet` (with navig: `navig[cabinet]`) |
+| [**navig-calendar**](https://github.com/navig-run/plugins/tree/main/navig-calendar) | List/add/sync events (Google Calendar, CalDAV, ICS) | ✅ `navig-calendar` | `pip install navig-calendar` |
+| [**navig-chats**](https://github.com/navig-run/plugins/tree/main/navig-chats) | A local library for your AI conversations: import your ChatGPT data export, save chats from the page with the NAVIG… | ✅ `navig-chats` | from source (not on PyPI yet) |
+| [**navig-contacts**](https://github.com/navig-run/plugins/tree/main/navig-contacts) | `navig contacts`: the address book and the alias-to-route table dispatch resolves against, in one store | ✅ `navig-contacts` | `pip install navig-contacts` |
+| [**navig-debrief**](https://github.com/navig-run/plugins/tree/main/navig-debrief) | Visual debrief of a work session: timeline, tool mix, mind map, files and UI mockups rendered to one navigable HTML… | ✅ `navig-debrief` | from source (not on PyPI yet) |
+| [**navig-dedupe**](https://github.com/navig-run/plugins/tree/main/navig-dedupe) | A free, standalone perceptual duplicate finder for photos, video, audio & any file | ✅ `navig-dedupe` · `ndup` | `pip install navig-dedupe` (with navig: `navig[dedupe]`) |
+| [**navig-devhost**](https://github.com/navig-run/plugins/tree/main/navig-devhost) | Give any local dev server a real .test domain over trusted HTTPS in one command (hosts + mkcert + raw TLS relay),… | ✅ `navig-devhost` | `pip install navig-devhost` |
+| [**navig-devnet**](https://github.com/navig-run/plugins/tree/main/navig-devnet) | Developer/ops network inspection: DNS/WHOIS/SSL lookups and an SSRF-guarded HTTP repeater — its own navig-devnet… | ✅ `navig-devnet` | `pip install navig-devnet` (with navig: `navig[devnet]`) |
+| [**navig-download**](https://github.com/navig-run/plugins/tree/main/navig-download) | Universal media downloader (yt-dlp): video, audio & files from YouTube, TikTok and any supported site | ✅ `navig-download` | `pip install navig-download` (with navig: `navig[download]`) |
+| [**navig-ebay**](https://github.com/navig-run/plugins/tree/main/navig-ebay) | Sell on eBay via the official Sell APIs (draft, publish, price, orders) wired into `navig ebay` | ✅ `navig-ebay` | `pip install navig-ebay` (with navig: `navig[ebay]`) |
+| [**navig-email**](https://github.com/navig-run/plugins/tree/main/navig-email) | Gmail mailroom: rules, watch, labels, stats, digests, drafts — its own navig-email command (Gmail app password over… | ✅ `navig-email` | `pip install navig-email` |
+| [**navig-explore**](https://github.com/navig-run/plugins/tree/main/navig-explore) | A universal local media/data explorer for ANY folder | ✅ `navig-explore` | `pip install navig-explore` |
+| [**navig-games**](https://github.com/navig-run/plugins/tree/main/navig-games) | Proactively find & auto-claim FREE games (Epic now; GOG/Amazon/Steam next) and manage your game library | ✅ `navig-games` | `pip install navig-games` (with navig: `navig[games]`) |
+| [**navig-generate**](https://github.com/navig-run/plugins/tree/main/navig-generate) | Generate images, video and audio with your own provider keys, keep the variants you like, and edit them: cut, fx,… | ✅ `navig-generate` | `pip install navig-generate` (with navig: `navig[generate]`) |
+| [**navig-github**](https://github.com/navig-run/plugins/tree/main/navig-github) | The full GitHub toolbox (backup, mirror, export, manage): its own navig-github command, and `navig github` inside navig | ✅ `navig-github` | `pip install navig-github` (with navig: `navig[github]`) |
+| [**navig-matrix**](https://github.com/navig-run/plugins/tree/main/navig-matrix) | Matrix messaging surface for navig — rooms, invites, tokens, admin and the inbox bridge, as its own plugin | — a Deck surface | from source (not on PyPI yet) |
+| [**navig-media**](https://github.com/navig-run/plugins/tree/main/navig-media) | The NAVIG media suite in one install: image and video generation, voice and music, writing, and the assembly line that… | ✅ `navig-media` | from source (not on PyPI yet) |
+| [**navig-media-core**](https://github.com/navig-run/plugins/tree/main/navig-media-core) | The shared media engine NAVIG's media packages run on — media types and the generator registry, the generation… | — a shared library | `pip install navig-media-core` |
+| [**navig-menu**](https://github.com/navig-run/plugins/tree/main/navig-menu) | AI-first menu builder — auto-detects any project's stack and builds a premium interactive terminal menu with layouts,… | ✅ `navig-menu` · `nm` | `npm i -g navig-menu` |
 | [**navig-mini**](https://github.com/navig-run/plugins/tree/main/navig-mini) | Lightweight AI agent daemon for Raspberry Pi, NAS boxes, and low-power devices | ✅ `navig-mini` | `pip install navig-mini` |
-| [**navig-mobile**](https://github.com/navig-run/plugins/tree/main/navig-mobile) | Pro-grade Android + iOS device operations: connect, device info, apps, file pull, screenshots, backups, plus forensics… | — adds `navig mobile` | `pip install "navig[mobile]"` |
-| [**navig-msstore**](https://github.com/navig-run/plugins/tree/main/navig-msstore) | Microsoft Store publishing verbs for NAVIG, wrapping the msstore-publish block | — adds `navig mstore` | `pip install navig-msstore` |
-| [**navig-pipeline**](https://github.com/navig-run/plugins/tree/main/navig-pipeline) | Composes navig-download/-audio/-text/-social into one flow (download → transcribe → script → narrate → fan-out) | — adds `navig pipeline` | `pip install navig-pipeline` |
-| [**navig-social**](https://github.com/navig-run/plugins/tree/main/navig-social) | Compose, schedule & publish across social networks (Studio + one-call fan-out) | — adds `navig social` | `pip install "navig[social]"` |
-| [**navig-text**](https://github.com/navig-run/plugins/tree/main/navig-text) | AI text generation (drafts/articles/captions/briefs) + `navig design` (agent HTML/CSS restyle + design tokens) for the… | — adds `navig text` | `pip install navig-text` |
-| [**navig-vault**](https://github.com/navig-run/plugins/tree/main/navig-vault) | A free, standalone, encrypted developer secrets manager (Doppler / 1Password-CLI / Infisical class) | ✅ `nv` | `pip install navig-vault` |
+| [**navig-mobile**](https://github.com/navig-run/plugins/tree/main/navig-mobile) | Pro-grade Android + iOS device operations: connect, device info, apps, file pull, screenshots, backups, plus forensics… | ✅ `navig-mobile` | `pip install navig-mobile` (with navig: `navig[mobile]`) |
+| [**navig-msstore**](https://github.com/navig-run/plugins/tree/main/navig-msstore) | Microsoft Store publishing verbs for NAVIG, wrapping the msstore-publish block | ✅ `navig-msstore` | `pip install navig-msstore` |
+| [**navig-notes**](https://github.com/navig-run/plugins/tree/main/navig-notes) | Your web sticky notes on this computer: the NAVIG Dock syncs every note you keep on a page, a site or everywhere, so… | ✅ `navig-notes` | from source (not on PyPI yet) |
+| [**navig-obs**](https://github.com/navig-run/plugins/tree/main/navig-obs) | Control OBS Studio from navig — scenes, sources, streams, recording, studio mode, whole obs-websocket v5 surface — its… | ✅ `navig-obs` | from source (not on PyPI yet) |
+| [**navig-pentest**](https://github.com/navig-run/plugins/tree/main/navig-pentest) | The authorized-only offensive-security toolkit: passive recon (RDAP/whois, DNS, crt.sh subdomains, HTTP fingerprint)… | ✅ `navig-pentest` · `navig-warroom` · `warroom-osint` | from source (not on PyPI yet) |
+| [**navig-perplexity**](https://github.com/navig-run/plugins/tree/main/navig-perplexity) | Delegate independent intellectual work — research, articles, marketing copy, naming, comparisons, critique,… | ✅ `navig-perplexity` | from source (not on PyPI yet) |
+| [**navig-pipeline**](https://github.com/navig-run/plugins/tree/main/navig-pipeline) | The content assembly line: short vertical clips cut to the beat, narrated reels, captions and hooks, and download →… | ✅ `navig-pipeline` · `navig-content` | `pip install navig-pipeline` |
+| [**navig-social**](https://github.com/navig-run/plugins/tree/main/navig-social) | Compose, schedule & publish across social networks (Studio + one-call fan-out) | ✅ `navig-social` | `pip install navig-social` (with navig: `navig[social]`) |
+| [**navig-telegram**](https://github.com/navig-run/plugins/tree/main/navig-telegram) | Telegram surface for navig — bot management, sessions, status and the MTProto user-account verbs, as its own plugin | — a Deck surface | from source (not on PyPI yet) |
+| [**navig-text**](https://github.com/navig-run/plugins/tree/main/navig-text) | AI text generation (drafts/articles/captions/briefs) + `navig design` (agent HTML/CSS restyle + design tokens) for the… | ✅ `navig-text` | `pip install navig-text` |
+| [**navig-vault**](https://github.com/navig-run/plugins/tree/main/navig-vault) | A free, standalone, encrypted developer secrets manager (Doppler / 1Password-CLI / Infisical class) | ✅ `navig-vault` · `nv` | `pip install navig-vault` |
+| [**navig-video**](https://github.com/navig-run/plugins/tree/main/navig-video) | Render a channel's video formats (kinetic episodes, bulletins, motion cards) from its workspace of texts, plates and… | ✅ `navig-video` | `pip install navig-video` (with navig: `navig[video]`) |
+| [**navig-vm**](https://github.com/navig-run/plugins/tree/main/navig-vm) | Local VMware Workstation VMs from verified cloud images, provisioned on first boot with cloud-init and driven from… | ✅ `navig-vm` | from source (not on PyPI yet) |
 
 <!-- navig:plugins-table:end -->
 
@@ -526,7 +544,7 @@ See [`docs/user/CONFIG_SCHEMA.md`](docs/user/CONFIG_SCHEMA.md) and [`docs/user/H
 | Agent runtime (`agent install`) | [`docs/agent/install.md`](docs/agent/install.md) |
 | Production deployment | [`docs/dev/PRODUCTION_DEPLOYMENT.md`](docs/dev/PRODUCTION_DEPLOYMENT.md) |
 | Migration guide | [`docs/dev/MIGRATION_GUIDE.md`](docs/dev/MIGRATION_GUIDE.md) |
-| Plugin / pack development | [navig-community](https://github.com/navig-run/community) |
+| Plugin / pack development | [navig-registry](https://github.com/navig-run/registry) |
 
 ---
 
@@ -583,7 +601,7 @@ navig/
 │   ├── daemon/          # Background service entry point
 │   ├── core/            # Config loader, migrations, crash handler
 │   └── resources/       # Default prompts, personas, assets
-├── sdk/                 # Pointer to the SDK in navig-run/community
+├── sdk/                 # Pointer to the SDK in navig-run/registry
 ├── scripts/             # Install and deployment scripts
 ├── deploy/              # Docker, systemd, hardening configs
 ├── docs/                # Documentation

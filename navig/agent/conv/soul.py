@@ -436,11 +436,13 @@ class SoulLoader:
         lang_instruction: str = "",
         awareness: str = "",
         capabilities: str = "",
+        style: tuple[tuple[str, str], ...] = (),
     ) -> str:
         """Memoised :meth:`build_system_prompt` for a resolved :class:`SoulContext`.
 
         Every argument is stable within a session, so the common case is a dict
         hit and the assembled bytes are provably identical turn over turn.
+        *style* is the user's answer-style dials (``navig.agent.conv.style``).
         """
         return self._build_prompt(
             ctx.cache_key,
@@ -450,6 +452,7 @@ class SoulLoader:
             lang_instruction,
             awareness,
             capabilities,
+            tuple(style),
         )
 
     def _build_prompt_impl(
@@ -461,6 +464,7 @@ class SoulLoader:
         lang_instruction: str,
         awareness: str,
         capabilities: str,
+        style: tuple[tuple[str, str], ...] = (),
     ) -> str:
         _revision, _source, _persona, tone, guardrails = cache_key
         return self.build_system_prompt(
@@ -472,6 +476,7 @@ class SoulLoader:
             tone=tone,
             banned_phrases=banned_phrases,
             truncation_note=truncation_note,
+            style=style,
         )
 
     # ── Backward-compat surface ───────────────────────────────────────────────
@@ -505,6 +510,7 @@ class SoulLoader:
         tone: str = "",
         banned_phrases: Sequence[str] | None = None,
         truncation_note: str = "",
+        style: tuple[tuple[str, str], ...] = (),
     ) -> str:
         """Assemble the STABLE system prompt, labelled so the LLM parses boundaries cleanly.
 
@@ -528,7 +534,7 @@ class SoulLoader:
         improvising a narrow list. Blank on the tool-less single-shot path.
 
         *tone* and *banned_phrases* come from the active persona and extend (never
-        replace) the house chat rules.
+        replace) the house chat rules; *style* (the user's dials) extends them after.
         """
         return "\n\n".join(
             body
@@ -541,6 +547,7 @@ class SoulLoader:
                 tone=tone,
                 banned_phrases=banned_phrases,
                 truncation_note=truncation_note,
+                style=style,
             )
         )
 
@@ -555,6 +562,7 @@ class SoulLoader:
         tone: str = "",
         banned_phrases: Sequence[str] | None = None,
         truncation_note: str = "",
+        style: tuple[tuple[str, str], ...] = (),
     ) -> list[tuple[str, str]]:
         """The system prompt as ``(header, body)`` pairs, in emission order.
 
@@ -597,6 +605,11 @@ class SoulLoader:
             joined = ", ".join(f"'{p}'" for p in banned_phrases if str(p).strip())
             if joined:
                 talk = f"{talk}- NEVER say: {joined}.\n"
+        if style:
+            from navig.agent.conv.style import style_rules  # noqa: PLC0415
+
+            for rule in style_rules(style):
+                talk = f"{talk}- {rule}\n"
         if talk:
             sections.append(("## How to Talk", f"## How to Talk\n{talk}"))
         if lang_instruction:
@@ -605,7 +618,12 @@ class SoulLoader:
             sections.append(("## Session Context", f"## Session Context\n{awareness}"))
         return sections
 
-    def build_minimal_prompt(self, lang_instruction: str = "", capabilities: str = "") -> str:
+    def build_minimal_prompt(
+        self,
+        lang_instruction: str = "",
+        capabilities: str = "",
+        style: tuple[tuple[str, str], ...] = (),
+    ) -> str:
         """Slim system prompt for short chat-feel messages.
 
         The full ``build_system_prompt`` returns ~2,900 chars (~725 tokens
@@ -644,6 +662,12 @@ class SoulLoader:
                 "if asked what you can do; describe them accurately and never invent "
                 "abilities you lack."
             )
+        if style:
+            # Short replies honour the user's dials too ("never use emoji" means never).
+            from navig.agent.conv.style import style_rules  # noqa: PLC0415
+
+            if rules := style_rules(style):
+                lines.append("Style: " + " ".join(rules))
         return "\n\n".join(lines)
 
     def _load_sync(self) -> str:

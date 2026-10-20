@@ -14,6 +14,11 @@ from aiohttp import web
 
 pytestmark = pytest.mark.integration
 
+# Direct handler calls go through require_bearer_auth, which fails closed (503) when
+# the gateway has no token — so the fixture configures one and DummyRequest sends it.
+_TEST_TOKEN = "test-token"
+_TEST_AUTH_HEADER = {"Authorization": f"Bearer {_TEST_TOKEN}"}
+
 
 class DummyRequest:
     def __init__(
@@ -35,7 +40,7 @@ class DummyRequest:
         self.path = path
         self.method = method
         self.can_read_body = can_read_body
-        self.headers = headers or {}
+        self.headers = dict(headers) if headers is not None else dict(_TEST_AUTH_HEADER)
 
     async def json(self):
         if self._json_exc:
@@ -66,6 +71,7 @@ def gateway(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setattr(sv, "get_config_manager", lambda: cm)
 
     gw = sv.NavigGateway()
+    gw.config.auth_token = _TEST_TOKEN
     gw.router = SimpleNamespace(route_message=AsyncMock(return_value="ok"))
     gw.system_events = SimpleNamespace(enqueue=AsyncMock())
     gw.event_queue = gw.system_events
@@ -209,10 +215,30 @@ async def test_process_queue_and_message(gateway):
 async def test_cors_and_core_handlers(gateway, monkeypatch: pytest.MonkeyPatch):
     gw, sv = gateway
 
-    deck_req = DummyRequest(path="/api/deck/status", method="OPTIONS")
+    # A real browser preflight always carries an Origin, and the embedded listener
+    # answers it with the daemon's allowlist — echoing THAT origin, never a blanket
+    # grant. (This used to assert `"*"` on a request with no Origin at all: the method
+    # handed every route to every page, which is how the unauthenticated routes became
+    # readable cross-origin. See test_embedded_gateway_cors.py for the full contract.)
+    deck_req = DummyRequest(
+        path="/api/deck/status",
+        method="OPTIONS",
+        headers={"Origin": "https://web.telegram.org"},
+    )
     deck_resp = await gw._cors_middleware(deck_req, lambda _req: web.Response(status=204))
     assert deck_resp.status == 200
-    assert deck_resp.headers["Access-Control-Allow-Origin"] == "*"
+    assert deck_resp.headers["Access-Control-Allow-Origin"] == "https://web.telegram.org"
+
+    hostile_req = DummyRequest(
+        path="/api/deck/status",
+        method="OPTIONS",
+        headers={"Origin": "https://evil.example"},
+    )
+    hostile_resp = await gw._cors_middleware(hostile_req, lambda _req: web.Response(status=204))
+    assert hostile_resp.status == 200
+    assert "Access-Control-Allow-Origin" not in hostile_resp.headers, (
+        "a non-allowlisted origin must leave the embedded listener with no CORS grant"
+    )
 
     plain_req = DummyRequest(path="/health", method="GET")
 
@@ -386,7 +412,10 @@ async def test_autonomous_init_and_comms(gateway, monkeypatch: pytest.MonkeyPatc
     gw.config_manager.global_config.update(
         {
             "browser": {"headless": False, "timeout": 12},
-            "mcp": {"servers": [{"name": "local", "command": "mcp"}]},
+            "mcp": {"servers": [
+                {"name": "local", "command": "mcp", "args": ["--serve"], "env": {"K": "v"}},
+                {"name": "off", "command": "mcp", "enabled": "false"},
+            ]},
             "webhooks": {"sources": {"github": {"secret": "sec", "provider": "github"}}},
             "comms": {"default_channel": "telegram", "matrix": {"enabled": True}},
         }
@@ -447,17 +476,21 @@ async def test_autonomous_init_and_comms(gateway, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setitem(sys.modules, "navig.browser", browser_mod)
 
     mcp_mod = ModuleType("navig.mcp")
+    # Mirror the REAL package surface: it exports the real MCPClientConfig, and
+    # add_client() takes one. (This fake used to model an `add_client(name, command=,
+    # url=)` fallback that the real package could never reach.)
+    from navig.mcp.client import MCPClientConfig
 
     class MCPClientManager:
         def __init__(self):
             self.clients = {}
 
-        async def add_client(self, name, command=None, url=None):
-            client = SimpleNamespace(connected=True, name=name, command=command, url=url)
-            self.clients[name] = client
-            return client
+        async def add_client(self, cfg):
+            self.clients[cfg.id] = cfg
+            return cfg
 
     mcp_mod.MCPClientManager = MCPClientManager
+    mcp_mod.MCPClientConfig = MCPClientConfig
     monkeypatch.setitem(sys.modules, "navig.mcp", mcp_mod)
 
     webhooks_mod = ModuleType("navig.webhooks")
@@ -511,6 +544,10 @@ async def test_autonomous_init_and_comms(gateway, monkeypatch: pytest.MonkeyPatc
     assert gw.approval_manager is not None
     assert gw.browser_controller is not None
     assert gw.mcp_client_manager is not None
+    # Boot keeps the entry's args/env (it used to drop them) and skips a disabled one.
+    assert set(gw.mcp_client_manager.clients) == {"local"}
+    assert gw.mcp_client_manager.clients["local"].args == ["--serve"]
+    assert gw.mcp_client_manager.clients["local"].env == {"K": "v"}
     assert gw.webhook_receiver is not None
     # The receiver is constructed WITH the global config (so it can load the operator's
     # `webhooks:` sources), not with no args + a broken configure_source loop.

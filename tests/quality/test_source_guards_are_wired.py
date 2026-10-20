@@ -159,11 +159,31 @@ def _subject_includes_plugins(text: str) -> bool:
 # Guards that are deliberately NOT in the fast gate, each with a reason. Keep this
 # empty unless there is a real one — an exception here is a guard that does not run.
 NOT_WIRED_ON_PURPOSE: dict[str, str] = {
+    "tests/core/test_instruction_sync.py": (
+        "wired by an INVARIANT_GUARDS edge instead (ci-local.mjs) keyed on its real subjects: "
+        "the root CLAUDE.md, MASTER.instructions.md and the tracked mirrors. It was flagged "
+        "because it reads from the repo root, but no navig/ asset is involved, and an edge "
+        "on exactly those files beats running it on every push."
+    ),
     "tests/blocks/test_blocks.py": (
         "not a guard: a 62-test Blocks feature suite (30.8s) in which ONE test happens to "
         "glob BLOCK.md files. The detector errs toward noise on purpose, and this is the "
         "noise — wiring it would put half a minute of feature tests in the always-on step "
         "for an invariant the rest of the file does not assert."
+    ),
+    "tests/browser/test_browser_engine_is_navig_browser.py": (
+        "wired by an INVARIANT_GUARDS edge instead (ci-local.mjs), which fires on any change "
+        "under core/navig/browser/ (the shims it reads) or plugins/navig-browser/navig_browser/ "
+        "(the modules they alias) — the only two places its subject can change. It imports "
+        "every engine module (~15s), too slow for the always-on sourceGuardArgs step."
+    ),
+    "tests/installer/test_install_profiles_public.py": (
+        "not a whole-tree guard: a 41-test installation-profile manifest suite whose only "
+        "navig/ reads are two subjects — core/navig/modes/builtin.yaml (a manifest's `mode` "
+        "must be a real mode) and the core/navig/installer/modules/ directory (its `modules` "
+        "must be real files) — plus core/pyproject.toml. All three are wired by "
+        "INVARIANT_GUARDS edges in ci-local.mjs instead, keyed on exactly those files; an "
+        "edge on the real subjects beats running the suite on every push."
     ),
 }
 

@@ -39,9 +39,10 @@ def _get_formations_roots() -> list[Path]:
     """Get all directories to scan for formations.
 
     Searches (in order):
-    1. <project-root>/store/formations/  (built-in content store)
-    2. <project-root>/formations/        (legacy fallback)
-    3. ~/.navig/formations/              (user-installed formations)
+    1. <workspace>/.navig/formations/    (the project's own, tracked in git)
+    2. builtin content store formations/ (ships with navig)
+    3. store_dir()/ + config_dir()/ formations/ (user-installed)
+    4. plugin capability dirs formations/
     """
     if _FORMATIONS_ROOTS:
         return _FORMATIONS_ROOTS
@@ -49,6 +50,20 @@ def _get_formations_roots() -> list[Path]:
     from navig.platform.paths import builtin_store_dir
 
     roots: list[Path] = []
+
+    # Workspace-local formations, WALKED UP from the invocation cwd (main.py
+    # chdirs into the active space, so cwd itself may be the space, not the
+    # project). First root wins on id collisions, so a project's formation
+    # overrides a same-id builtin — this is the real home of the
+    # "./formations/ (project)" line `formation list` has always printed.
+    from navig.platform.paths import invocation_cwd
+
+    start = invocation_cwd()
+    for base in (start, *start.parents):
+        ws_formations = base / ".navig" / "formations"
+        if ws_formations.is_dir():
+            roots.append(ws_formations)
+            break
 
     # Built-in store (canonical location). Resolve it through builtin_store_dir() — this
     # used to count .parents out to <repo>/core/store/formations, a path OUTSIDE the navig

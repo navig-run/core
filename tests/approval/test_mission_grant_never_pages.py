@@ -95,8 +95,16 @@ async def test_a_non_shell_destructive_tool_is_denied_inside_a_mission(_promptin
 
 
 async def test_without_a_grant_the_backend_is_consulted_as_before(_prompting_backend):
-    """Interactive chat keeps its prompts — the grant is scoped, not global."""
-    denial = await ap.gate_agent_tool_call("bash_exec", parameters={"command": "navig doctor"})
+    """Interactive chat keeps its prompts for MUTATING commands.
+
+    (Since 2026-10-13 a chat-path *read-only* command no longer pages — that is
+    `approval.auto_approve_read_only`, tested in
+    test_read_only_auto_approve.py. The grant stays scoped: what still pages in
+    chat is anything that changes state.)
+    """
+    denial = await ap.gate_agent_tool_call(
+        "bash_exec", parameters={"command": "navig mode set big_tasks --provider x"}
+    )
 
     assert denial is None and _prompting_backend == ["bash_exec"]
 
@@ -114,8 +122,10 @@ async def test_the_grant_follows_the_mission_task_and_not_its_siblings(_promptin
 
     async def chat():
         await asyncio.sleep(0.005)  # runs while the mission's grant is set
+        # A MUTATING chat command — a read-only one would not page even without
+        # the grant (auto_approve_read_only), making the sibling leak invisible.
         seen["chat"] = await ap.gate_agent_tool_call(
-            "bash_exec", parameters={"command": "git status"}
+            "bash_exec", parameters={"command": "navig mode set big_tasks --provider x"}
         )
 
     await asyncio.gather(mission(), chat())
@@ -185,3 +195,46 @@ def test_check_sync_without_a_loop_also_sees_the_grant(_prompting_backend):
         d = ap.check_sync("bash_exec", "dangerous", {"command": "navig service restart"})
 
     assert d == ap.ApprovalDecision.DENIED and _prompting_backend == []
+
+
+# ── generic POSIX commands through the same grant machinery ──────────────────
+
+
+async def test_a_read_only_posix_command_runs_and_a_mutating_one_is_denied(
+    _prompting_backend, audited
+):
+    """Plain `ls` goes through the read-only classifier, plain `rm` through the
+    deny branch — not the navig-verb commands the tests above use, so the classifier
+    itself is what is being exercised here, under the same grant."""
+    with ap.mission_grant(GRANT):
+        allowed = await ap.gate_agent_tool_call(
+            "bash_exec", parameters={"command": "ls /var/log"}
+        )
+        denied = await ap.gate_agent_tool_call(
+            "bash_exec", parameters={"command": "rm -rf /var/www"}
+        )
+
+    assert allowed is None, "a read-only command must run unprompted inside a mission"
+    assert audited and audited[0]["metadata"]["auto_approved"] is True
+    assert "cbad7281" in audited[0]["metadata"]["enabled_by"]
+
+    assert denied and "Denied inside mission" in denied
+    assert "Remediate health issues" in denied
+    assert "report this command" in denied, "the agent must be told to REPORT, not retry"
+    assert _prompting_backend == [], "the operator must not be paged inside a mission"
+
+
+async def test_remote_execute_is_denied_inside_a_mission_even_for_a_read_only_command(
+    _prompting_backend,
+):
+    """The remote executor is not a `_SHELL_TOOLS` tool: a mission may not reach
+    out to a remote host unasked, read-only or not. Pinned alongside Gate 0E, which
+    put `remote_execute` in DESTRUCTIVE_TOOLS — this is the grant-side counterpart."""
+    with ap.mission_grant(GRANT):
+        denial = await ap.gate_agent_tool_call(
+            "remote_execute", parameters={"command": "ls /var/log"}
+        )
+
+    assert denial and "Denied inside mission" in denial
+    assert "report this command" in denial
+    assert _prompting_backend == []

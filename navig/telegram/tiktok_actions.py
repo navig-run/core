@@ -145,7 +145,7 @@ def _unreadable_hint() -> str:
 #: five workers show it after one was, so it cannot say "tap Download".
 _LOGIN_HINT = (
     "🔒 TikTok only serves this post to a logged-in account (age-restricted "
-    "or private). Sign in once with `navig tt login`, then try again — if you have "
+    "or private). Sign in once with `navig download login`, then try again — if you have "
     "already signed in, your saved session has expired, so run it again."
 )
 

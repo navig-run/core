@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -195,3 +196,148 @@ def test_the_ttl_agrees_with_the_hook_that_enforces_it_and_the_cli(hook) -> None
     m = re.search(r"^LOCK_TTL_MINUTES\s*=\s*(\d+)", repo_py, re.M)
     assert m, "repo.py no longer declares LOCK_TTL_MINUTES at module level"
     assert int(m.group(1)) == hook.LOCK_TTL_MINUTES
+
+
+# ── lost-work radar: commits only a reflog still holds ───────────────────────
+#
+# 2026-10-13 a reset dropped seven unpushed Schema commits; reading the reflog by hand
+# three days later found two MORE nobody had noticed (a lost test file among them).
+# Each filter below is one shape of "not actually lost" measured in real reflogs.
+
+
+def _commit(repo: Path, name: str, body: str, message: str) -> str:
+    (repo / name).parent.mkdir(parents=True, exist_ok=True)
+    (repo / name).write_text(body, encoding="utf-8")
+    _git("add", name, cwd=repo)
+    _git("commit", "-m", message, cwd=repo)
+    return subprocess.run(
+        ["git", "rev-parse", "--short=10", "HEAD"], cwd=str(repo), capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+def _drop_last(repo: Path) -> None:
+    """What the 10-13 reset did: move the branch off its newest commit."""
+    _git("reset", "--hard", "HEAD~1", cwd=repo)
+
+
+def test_a_dropped_commit_is_named_with_its_rescue_line(hook, repo: Path) -> None:
+    sha = _commit(repo, "forgeFinish.test.ts", "the test nobody pushed\n", "every forged passport reaches the Grid")
+    _drop_last(repo)
+    lines = hook.lost_work_lines(repo, "main")
+    assert lines and "held by NO branch, tag or remote" in lines[0]
+    short = lines[1].split()[0]  # git abbreviates by repo size: 7 chars here, 10 on navig
+    assert sha.startswith(short)
+    assert lines[1].endswith(f"rescue: git branch rescue/{short} {short}")
+    assert "every forged passport reaches the Grid" in lines[1]
+    assert all(line.isascii() for line in lines)
+
+
+def test_a_kept_commit_is_silent(hook, repo: Path) -> None:
+    _commit(repo, "a.txt", "work\n", "work")
+    _git("branch", "keep/main", "main", cwd=repo)
+    _drop_last(repo)
+    assert hook.lost_work_lines(repo, "main") == []
+
+
+def test_a_rebased_or_amended_copy_is_silent(hook, repo: Path) -> None:
+    """The old copy's subject still lives on a ref -- the work moved, it was not lost."""
+    _commit(repo, "a.txt", "draft\n", "the board learns its name")
+    _git("commit", "--amend", "--no-edit", "--allow-empty", "-m", "the board learns its name", cwd=repo)
+    (repo / "a.txt").write_text("final\n", encoding="utf-8")
+    _git("commit", "-a", "--amend", "--no-edit", cwd=repo)
+    assert hook.lost_work_lines(repo, "main") == []
+
+
+def test_a_squash_landed_subject_is_silent(hook, repo: Path) -> None:
+    """A squash merge names it "<subject> (#123)" -- the suffix must not hide the match."""
+    _git("checkout", "-b", "feat/x", cwd=repo)
+    _commit(repo, "a.txt", "feature\n", "feat(guard): refuse a reset")
+    _git("checkout", "main", cwd=repo)
+    _commit(repo, "a.txt", "feature\n", "feat(guard): refuse a reset (#1981)")
+    _git("branch", "-D", "feat/x", cwd=repo)
+    assert hook.lost_work_lines(repo, "main") == []
+
+
+def test_work_on_base_under_another_subject_is_superseded(hook, repo: Path) -> None:
+    """Redone, squashed with more, or re-picked: every file it touched is on base."""
+    _commit(repo, "a.txt", "the fix\n", "fix: the first attempt")
+    _drop_last(repo)
+    _commit(repo, "a.txt", "the fix, better\n", "fix: the real one, later")
+    assert hook.lost_work_lines(repo, "main") == []
+
+
+def test_a_branch_its_own_session_rewrote_still_holding_the_work_is_silent(hook, repo: Path) -> None:
+    """feat/x@{1}: the old tip of a rewritten branch whose current tip carries the change."""
+    _git("checkout", "-b", "feat/x", cwd=repo)
+    _commit(repo, "n.txt", "notes core\n", "wip: notes core sync")
+    _drop_last(repo)
+    _commit(repo, "n.txt", "notes core\n", "notes: the core sync, finished")
+    _git("checkout", "main", cwd=repo)
+    assert hook.lost_work_lines(repo, "main") == []
+
+
+def test_a_dropped_stash_is_not_lost_work(hook, repo: Path) -> None:
+    (repo / "f.txt").write_text("scratch edit\n", encoding="utf-8")
+    _git("stash", "push", "-m", "scratch", cwd=repo)
+    _git("stash", "drop", cwd=repo)
+    assert hook.lost_work_lines(repo, "main") == []
+
+
+def test_a_subject_that_merely_starts_with_on_is_not_a_stash(hook, repo: Path) -> None:
+    _commit(repo, "m.txt", "map\n", "On the map, every city breathes")
+    _drop_last(repo)
+    assert any("On the map" in line for line in hook.lost_work_lines(repo, "main"))
+
+
+def test_a_non_ascii_subject_reaches_the_pipe_as_ascii(hook, repo: Path) -> None:
+    _commit(repo, "r.txt", "ru\n", "Страж на посту")
+    _drop_last(repo)
+    lines = hook.lost_work_lines(repo, "main")
+    assert lines and all(line.isascii() for line in lines)
+
+
+def test_the_briefing_carries_the_radar(hook, repo: Path) -> None:
+    _commit(repo, "lost.txt", "only here\n", "a commit only the reflog remembers")
+    _drop_last(repo)
+    assert "a commit only the reflog remembers" in hook.briefing(repo)
+
+
+# ── the rename rule#
+# Measured 2026-10-17: the radar's first real run was 2-for-2 false. A manual moved
+# blackbook/ -> cookbook/ WITH edits (path and blob both differ), and this repo renames
+# paths as a workflow -- so path-only supersession had to learn the move.
+
+
+
+
+def test_a_commit_whose_files_arrived_at_new_paths_is_superseded(hook, repo: Path) -> None:
+    _git("checkout", "-b", "feat/moved", cwd=repo)
+    _commit(repo, "docs/blackbook/lensManual.ts", "the lens page" + "\n", "the black book takes its name")
+    _drop_last(repo)
+    _git("checkout", "main", cwd=repo)
+    time.sleep(1.1)  # --since is second-granular: the rename must be AFTER the commit
+    _commit(
+        repo,
+        "docs/cookbook/lensManual.ts",
+        "the lens page, renamed and edited" + "\n",
+        "the cookbook takes its name",
+    )
+    assert hook.lost_work_lines(repo, "main") == []
+
+
+def test_a_new_file_that_reached_nothing_is_still_reported(hook, repo: Path) -> None:
+    _commit(repo, "brand/uniqueOrphan.ts", "nobody merged me" + "\n", "a file that reached nothing")
+    _drop_last(repo)
+    lines = hook.lost_work_lines(repo, "main")
+    assert lines and "a file that reached nothing" in lines[1]
+
+
+def test_a_generic_basename_never_masks_a_loss(hook, repo: Path) -> None:
+    """An unrelated index.ts on main must not make an unlanded index.ts vanish."""
+    _commit(repo, "index.ts", "root" + "\n", "root index")
+    _git("checkout", "-b", "feat/idx", cwd=repo)
+    _commit(repo, "other/place/index.ts", "feature" + "\n", "an index that never landed")
+    _drop_last(repo)
+    _git("checkout", "main", cwd=repo)
+    lines = hook.lost_work_lines(repo, "main")
+    assert lines and "an index that never landed" in lines[1]

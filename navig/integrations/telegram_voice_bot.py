@@ -627,6 +627,8 @@ class TelegramVoiceBot:
                 "edge": TTSProvider.EDGE,
                 "google_cloud": TTSProvider.GOOGLE_CLOUD,
                 "deepgram": TTSProvider.DEEPGRAM,
+                "openrouter": TTSProvider.OPENROUTER,
+                "mimo": TTSProvider.MIMO,
             }
             config = TTSConfig(
                 provider=_map.get(self.config.tts_provider, TTSProvider.EDGE),

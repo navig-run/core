@@ -73,16 +73,16 @@ def test_resolve_skills_registry_and_community(tmp_path: Path):
     specs = {p.spec for p in picks}
     # agent-skill resolves to the curated registry by NAME (owner/repo is attribution)
     assert "skill:midudev/autoskills/packages/autoskills/skills-registry/react-best-practices" in specs
-    # community CLI skill resolves to the navig-run/community path
-    assert "github:navig-run/community/cli-skills/docker/docker-ops" in specs
+    # community CLI skill resolves to the navig-run/registry path
+    assert "github:navig-run/registry/cli-skills/docker/docker-ops" in specs
     assert all(isinstance(p, SkillPick) for p in picks)
 
 
 def test_registry_override(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("NAVIG_SKILLS_REGISTRY", "navig-run/community/skills-registry")
+    monkeypatch.setenv("NAVIG_SKILLS_REGISTRY", "navig-run/registry/skills-registry")
     _write(tmp_path, "package.json", json.dumps({"dependencies": {"react": "19"}}))
     specs = {p.spec for p in resolve_skills(detect_stack(tmp_path))}
-    assert "skill:navig-run/community/skills-registry/react-best-practices" in specs
+    assert "skill:navig-run/registry/skills-registry/react-best-practices" in specs
 
 
 def test_walks_monorepo_workspaces(tmp_path: Path):

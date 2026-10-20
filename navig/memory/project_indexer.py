@@ -127,7 +127,6 @@ _CONFIG_EXTS: set[str] = {
     ".toml",
     ".xml",
     ".ini",
-    ".env",
 }
 
 _DOCS_EXTS: set[str] = {
@@ -147,7 +146,6 @@ _INDEXABLE_FILENAMES: set[str] = {
     "rakefile",
     "procfile",
     "vagrantfile",
-    ".env",
     ".gitignore",
     ".navigignore",
     ".editorconfig",
@@ -243,6 +241,10 @@ DEFAULT_EXCLUDES: list[str] = [
     ".venv",
     ".env.local",
     ".tsbuildinfo",
+    # The pills/water record (navig.checkins.records). Already not indexable by
+    # extension; named so that adding `.jsonl` to the indexable set can never pull
+    # a medication history into AI context by accident.
+    "checkins.jsonl",
 ]
 
 
@@ -289,9 +291,44 @@ def _is_ignored(rel_path: str, ignore_patterns: list[str], is_dir: bool = False)
     return False
 
 
+#: Files that hold credentials by convention. Indexed chunks reach AI prompts
+#: (``context_builder``), so these are never indexable — whatever the project's
+#: ignore files say, and even when their extension (``prod.env``, ``secrets.yaml``,
+#: ``service-account.json``) would otherwise qualify.
+_SECRET_FILE_PATTERNS: tuple[str, ...] = (
+    ".env",
+    ".env.*",
+    "*.env",
+    ".envrc",
+    ".dev.vars",
+    ".dev.vars.*",
+    "secrets.*",
+    "*.secrets.*",
+    "*credentials*.json",
+    "*credentials*.yaml",
+    "*credentials*.yml",
+    "service-account*.json",
+    "service-account*.yaml",
+    "service-account*.yml",
+    "*serviceaccount*.json",
+    "*serviceaccount*.yaml",
+    "*serviceaccount*.yml",
+    "service_account*.json",
+    "service_account*.yaml",
+    "service_account*.yml",
+)
+
+
+def _is_secret_file(basename: str) -> bool:
+    """True for a filename that holds credentials by convention (lower-cased basename)."""
+    return any(fnmatch.fnmatch(basename, pat) for pat in _SECRET_FILE_PATTERNS)
+
+
 def _is_indexable(rel_path: str) -> bool:
-    """Check if a file should be indexed based on extension."""
+    """Check if a file should be indexed based on extension. Secret files never are."""
     lower = os.path.basename(rel_path).lower()
+    if _is_secret_file(lower):
+        return False
     if lower in _INDEXABLE_FILENAMES:
         return True
     ext = os.path.splitext(lower)[1]

@@ -46,6 +46,17 @@ _TELEGRAM_BOOL_KEYS = frozenset(
         "stream_replies",
     }
 )
+# Flat deck field → nested telegram.* config path, for booleans that live in a
+# sub-block. Read with coerce_bool (`navig config set` stores strings), written as
+# a real bool.
+_TELEGRAM_NESTED_BOOL_KEYS: dict[str, str] = {
+    # Overnight tidy of yesterday's routine bot messages (navig/telegram/chat_tidy.py).
+    "daily_clean_enabled": "daily_clean.enabled",
+    # Daily sweep of SYSTEM cards (approval, config health, briefing, status,
+    # spaces, OCR) — independent switch, ON by default; its GET default is
+    # corrected from chat_tidy.settings() inside _daily_clean_payload().
+    "system_cleanup_enabled": "system_cleanup.enabled",
+}
 _TELEGRAM_INT_KEYS: frozenset[str] = frozenset()
 _TELEGRAM_STR_KEYS = frozenset({"mode", "typing_mode"})
 
@@ -217,6 +228,11 @@ async def handle_deck_social_status(request: "web.Request") -> "web.Response":
         "sms":      { "connected": bool, "enabled": bool }
     }
     """
+    return web.json_response(social_status_snapshot())
+
+
+def social_status_snapshot() -> dict[str, Any]:
+    """The body of ``GET /social/status`` — also read by ``GET /services``."""
     cfg = _get_config_manager()
     connected, username = _bot_connected(cfg)
     tg_mode = _cfg_get(cfg, "telegram.mode", "polling")
@@ -243,7 +259,7 @@ async def handle_deck_social_status(request: "web.Request") -> "web.Response":
                 pass
         result[network] = {"connected": net_connected, "enabled": enabled}
 
-    return web.json_response(result)
+    return result
 
 
 async def handle_deck_social_telegram_get(request: "web.Request") -> "web.Response":
@@ -292,7 +308,47 @@ async def handle_deck_social_telegram_get(request: "web.Request") -> "web.Respon
     payload.setdefault("disabled_commands", [])
     payload.setdefault("command_styles", {})
 
+    for field_name, path in _TELEGRAM_NESTED_BOOL_KEYS.items():
+        node: Any = tg
+        for part in path.split("."):
+            node = node.get(part) if isinstance(node, dict) else None
+        payload[field_name] = coerce_bool(node, default=False)
+
+    payload.update(_daily_clean_payload())
     return web.json_response(payload)
+
+
+def _daily_clean_payload() -> dict[str, Any]:
+    """The overnight tidy's schedule and per-kind choices, for the settings screens.
+
+    ``daily_clean_kinds`` lists every kind with whether it is kept and how many
+    messages of it wait for tomorrow's sweep, so the screen can say what a toggle
+    will actually do. Never raises: a broken ledger shows as nothing waiting."""
+    try:
+        from navig.telegram import chat_tidy  # noqa: PLC0415
+
+        cfg = chat_tidy.settings(fresh=True)
+        try:
+            waiting = chat_tidy.pending_by_kind()
+        except Exception:  # noqa: BLE001
+            waiting = {}
+        kept = set(cfg.get("keep_kinds") or ())
+        return {
+            # system_cleanup's TRUE default lives in chat_tidy.settings() (on) —
+            # this update() runs after the generic nested-bool loop, whose
+            # coerce default is False and would otherwise misreport "off".
+            "system_cleanup_enabled": bool(cfg.get("system_enabled", True)),
+            "system_cleanup_hour": int(cfg.get("system_hour", chat_tidy.DEFAULT_HOUR)),
+            "daily_clean_hour": int(cfg.get("hour", chat_tidy.DEFAULT_HOUR)),
+            "daily_clean_keep_kinds": sorted(kept),
+            "daily_clean_kinds": [
+                {"id": k, "label": label, "kept": k in kept, "waiting": int(waiting.get(k, 0))}
+                for k, label in chat_tidy.KINDS.items()
+            ],
+        }
+    except Exception:  # noqa: BLE001
+        logger.debug("daily clean payload unavailable", exc_info=True)
+        return {}
 
 
 async def handle_deck_social_telegram_post(request: "web.Request") -> "web.Response":
@@ -313,6 +369,59 @@ async def handle_deck_social_telegram_post(request: "web.Request") -> "web.Respo
     errors: list[str] = []
 
     for key, value in body.items():
+        if key in ("daily_clean_hour", "daily_clean_keep_kinds", "system_cleanup_hour"):
+            from navig.telegram import chat_tidy  # noqa: PLC0415
+
+            if key in ("daily_clean_hour", "system_cleanup_hour"):
+                # bool is an int subclass — `true` is not an hour.
+                if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 23:
+                    errors.append(f"{key}: expected an integer 0-23")
+                    continue
+                path = (
+                    "telegram.daily_clean.hour"
+                    if key == "daily_clean_hour"
+                    else "telegram.system_cleanup.hour"
+                )
+                stored = value
+            else:
+                if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+                    errors.append(f"{key}: expected a list of kind names")
+                    continue
+                unknown = sorted(set(value) - set(chat_tidy.KINDS))
+                if unknown:
+                    errors.append(f"{key}: unknown kind(s) {unknown}")
+                    continue
+                path, stored = "telegram.daily_clean.keep_kinds", sorted(set(value))
+            if cfg:
+                try:
+                    _cfg_set_path(cfg, path, stored)
+                except Exception as exc:
+                    errors.append(f"{key}: write error — {exc}")
+                    continue
+            updated.append(key)
+            chat_tidy._settings_cache = None  # take effect now, not in a minute
+            continue
+        if key in _TELEGRAM_NESTED_BOOL_KEYS:
+            if not isinstance(value, bool):
+                errors.append(f"{key}: expected bool")
+                continue
+            if cfg:
+                try:
+                    _cfg_set_path(cfg, f"telegram.{_TELEGRAM_NESTED_BOOL_KEYS[key]}", value)
+                    updated.append(key)
+                except Exception as exc:
+                    errors.append(f"{key}: write error — {exc}")
+                    continue
+            else:
+                updated.append(key)
+            if key in ("daily_clean_enabled", "system_cleanup_enabled"):
+                try:
+                    from navig.telegram import chat_tidy  # noqa: PLC0415
+
+                    chat_tidy._settings_cache = None  # take effect now, not in a minute
+                except Exception:  # noqa: BLE001
+                    pass
+            continue
         if key in _TELEGRAM_BOOL_KEYS:
             if not isinstance(value, bool):
                 errors.append(f"{key}: expected bool")
@@ -587,22 +696,37 @@ _BRIDGE_DEFS: list[dict] = [
 ]
 
 
+# The Matrix bot reads ``comms.matrix.*`` (gateway/server.py comms init, `navig matrix
+# setup`, docs/guides/MATRIX.md). These routes used to read and write a top-level
+# ``matrix.*`` that nothing starts the bot from, so the deck's Matrix switch changed a
+# key no reader consulted. Writes now go to the real section; reads fall back to the
+# legacy section so a value written by an older deck is still shown.
+_MATRIX_SECTION = "comms.matrix"
+_MATRIX_LEGACY_SECTION = "matrix"
+
+
+def _matrix_raw(cfg: object | None, field: str, default=None):
+    val = _cfg_get(cfg, f"{_MATRIX_SECTION}.{field}", None)
+    if val is None:
+        val = _cfg_get(cfg, f"{_MATRIX_LEGACY_SECTION}.{field}", None)
+    return default if val is None else val
+
+
 def _matrix_connected(cfg: object | None) -> bool:
     """Return True when Matrix is enabled and a homeserver_url is configured."""
-    if not _cfg_bool(cfg, "matrix.enabled"):
+    if not coerce_bool(_matrix_raw(cfg, "enabled", False), default=False):
         return False
-    url = _cfg_get(cfg, "matrix.homeserver_url", "")
-    return bool(url)
+    return bool(_matrix_raw(cfg, "homeserver_url", ""))
 
 
 async def handle_deck_social_matrix_get(request: "web.Request") -> "web.Response":
     """GET /api/deck/social/matrix — return current Matrix settings."""
     cfg = _get_config_manager()
     return web.json_response({
-        "homeserver_url": _cfg_get(cfg, "matrix.homeserver_url", ""),
-        "user_id": _cfg_get(cfg, "matrix.user_id", ""),
-        "server_name": _cfg_get(cfg, "matrix.server_name", ""),
-        "enabled": _cfg_bool(cfg, "matrix.enabled"),
+        "homeserver_url": _matrix_raw(cfg, "homeserver_url", ""),
+        "user_id": _matrix_raw(cfg, "user_id", ""),
+        "server_name": _matrix_raw(cfg, "server_name", ""),
+        "enabled": coerce_bool(_matrix_raw(cfg, "enabled", False), default=False),
         "connected": _matrix_connected(cfg),
     })
 
@@ -631,7 +755,7 @@ async def handle_deck_social_matrix_update(request: "web.Request") -> "web.Respo
             continue  # ignore unknown keys
         if cfg:
             try:
-                _cfg_set_path(cfg, f"matrix.{key}", value)
+                _cfg_set_path(cfg, f"{_MATRIX_SECTION}.{key}", value)
                 updated.append(key)
             except Exception as exc:
                 errors.append(f"{key}: write error — {exc}")

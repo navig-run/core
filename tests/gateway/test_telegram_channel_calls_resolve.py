@@ -412,3 +412,196 @@ def test_the_lazy_init_recogniser_actually_recognises_something() -> None:
             f"{method} is a bound METHOD, not a lazily-created store; the recogniser must "
             f"not exempt it or removing its binding would go unnoticed"
         )
+
+
+# ── Handler reachability: every slash command, walked transitively ─────────────────
+#
+# The scans above read ONE hop: ``self.channel._x`` from the callback layer. The other
+# door is a command handler itself. Dispatch hands it ``functools.partial(mixin_fn,
+# channel)``, so inside it ``self`` IS the channel, and every ``self._helper()`` it
+# makes -- and every one THOSE make -- must resolve on a bare TelegramChannel.
+#
+# Run against the tree before #1756, this walk reports /remindme
+# (``_parse_remindme_request``), /space(s) and the NL "switch to X space" path
+# (``_handle_space``), /profile (``_handle_user``), /start, /workout, /autoheal, /nodes,
+# /send, /reply, /thread and the journal reflection. When it was written it found two
+# more that #1756's same-mixin scan cannot see, because the call crosses modules: every
+# audio FILE sent to the bot (``_handle_audio_file_message``, voice mixin, called from
+# ``_process_update``) and the NL messaging intent (``_try_nl_messaging_intent``,
+# messaging mixin, called from the channel's NL delegate). Baseline: EMPTY.
+
+
+def _registry_owner_mixins() -> tuple[type, ...]:
+    """The mixins dispatch falls back to for a registry handler (telegram.py)."""
+    from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+    from navig.gateway.channels.telegram_mesh import TelegramMeshMixin
+    from navig.gateway.channels.telegram_messaging_mixin import TelegramMessagingMixin
+    from navig.gateway.channels.telegram_messengers_mixin import TelegramMessengersMixin
+
+    return (TelegramCommandsMixin, TelegramMessagingMixin, TelegramMessengersMixin,
+            TelegramMeshMixin)
+
+
+def _mixin_class_named(name: str):
+    import inspect
+    import sys
+
+    for mod_name, mod in list(sys.modules.items()):
+        if mod_name.startswith("navig.gateway.channels.") and mod is not None:
+            cls = getattr(mod, name, None)
+            if inspect.isclass(cls):
+                return cls
+    return None
+
+
+class _HandlerWalker:
+    """Follow ``self.X(...)`` and ``SomeMixin.X(self, ...)`` from each root handler."""
+
+    def __init__(self, channel_cls: type, attrs: set[str]) -> None:
+        self.channel_cls = channel_cls
+        self.attrs = attrs
+        self._trees: dict[str, ast.Module] = {}
+        self._seen: set[tuple[str, int]] = set()
+        self.findings: dict[str, str] = {}
+
+    @property
+    def walked(self) -> int:
+        return len(self._seen)
+
+    def _node(self, fn):
+        import inspect
+
+        fn = inspect.unwrap(fn)
+        code = getattr(fn, "__code__", None)
+        if code is None:
+            return None, None
+        path = code.co_filename
+        if path not in self._trees:
+            self._trees[path] = ast.parse(Path(path).read_text(encoding="utf-8"))
+        for n in ast.walk(self._trees[path]):
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == fn.__name__:
+                lines = {n.lineno, *(d.lineno for d in n.decorator_list)}
+                if code.co_firstlineno in lines:
+                    return n, path
+        return None, path
+
+    def channel_impl(self, name: str):
+        import inspect
+
+        v = inspect.getattr_static(self.channel_cls, name, None)
+        if isinstance(v, (staticmethod, classmethod)):
+            v = v.__func__
+        return v if inspect.isfunction(v) else None
+
+    @staticmethod
+    def _hasattr_guarded(node: ast.AST) -> set[str]:
+        """Names a call is deliberately optional on: ``if hasattr(self, "X"):``."""
+        out: set[str] = set()
+        for n in ast.walk(node):
+            if not isinstance(n, ast.If):
+                continue
+            for t in ast.walk(n.test):
+                if (isinstance(t, ast.Call) and isinstance(t.func, ast.Name)
+                        and t.func.id in {"hasattr", "getattr"} and len(t.args) >= 2
+                        and isinstance(t.args[0], ast.Name) and t.args[0].id == "self"
+                        and isinstance(t.args[1], ast.Constant)):
+                    out.add(t.args[1].value)
+        return out
+
+    def walk(self, fn, chain: list[str]) -> None:
+        node, path = self._node(fn)
+        if node is None or (path, node.lineno) in self._seen:
+            return
+        self._seen.add((path, node.lineno))
+        optional = self._hasattr_guarded(node)
+        where = Path(path).name
+        for n in ast.walk(node):
+            if not isinstance(n, ast.Call) or not isinstance(n.func, ast.Attribute):
+                continue
+            f = n.func
+            if not isinstance(f.value, ast.Name):
+                continue
+            if f.value.id == "self":
+                if f.attr not in self.attrs:
+                    if f.attr not in optional:
+                        self.findings.setdefault(
+                            f.attr,
+                            f"{' -> '.join(chain)} -> self.{f.attr}()  ({where}:{n.lineno})",
+                        )
+                    continue
+                impl = self.channel_impl(f.attr)
+                if impl is not None:
+                    self.walk(impl, [*chain, f.attr])
+            elif (f.value.id.endswith("Mixin") and n.args and isinstance(n.args[0], ast.Name)
+                  and n.args[0].id == "self"):
+                cls = _mixin_class_named(f.value.id)
+                target = getattr(cls, f.attr, None) if cls is not None else None
+                if target is None:
+                    self.findings.setdefault(
+                        f"{f.value.id}.{f.attr}",
+                        f"{' -> '.join(chain)} -> {f.value.id}.{f.attr}(self) does not exist "
+                        f"({where}:{n.lineno})",
+                    )
+                else:
+                    self.walk(target, [*chain, f"{f.value.id}.{f.attr}"])
+
+
+def _walk_every_command(channel_cls=None, attrs: set[str] | None = None) -> _HandlerWalker:
+    from navig.gateway.channels.telegram import TelegramChannel
+    from navig.gateway.channels.telegram_commands import _SLASH_REGISTRY
+
+    channel_cls = channel_cls or TelegramChannel
+    walker = _HandlerWalker(channel_cls, attrs if attrs is not None else _channel_attributes())
+    roots: list[tuple[str, object]] = []
+    for entry in _SLASH_REGISTRY:
+        if not entry.handler:
+            continue
+        # The resolution order dispatch uses: the channel first, then the owner mixins.
+        fn = walker.channel_impl(entry.handler)
+        if fn is None:
+            fn = next(
+                (getattr(m, entry.handler) for m in _registry_owner_mixins()
+                 if getattr(m, entry.handler, None) is not None),
+                None,
+            )
+        if fn is None:
+            walker.findings.setdefault(
+                entry.handler,
+                f"/{entry.command} -> {entry.handler}: defined nowhere dispatch looks",
+            )
+            continue
+        roots.append((f"/{entry.command}", fn))
+    # The hardcoded routes (/status /start /help /briefing /deck /ping /debug /trace
+    # /restart /skill), the natural-language path and media handling all live in
+    # _process_update, so it is a root too.
+    roots.append(("_process_update", walker.channel_impl("_process_update")))
+    for label, fn in roots:
+        walker.walk(fn, [label])
+    return walker
+
+
+def test_every_command_handler_resolves_transitively() -> None:
+    walker = _walk_every_command()
+    assert not walker.findings, (
+        "a command handler (or something it calls) reaches a method the channel does not "
+        "have -- an AttributeError the moment a user sends it. Bind it in telegram.py's "
+        "_MIXIN_BINDINGS:\n  " + "\n  ".join(sorted(walker.findings.values()))
+    )
+
+
+def test_the_handler_walk_reaches_deep() -> None:
+    """Anti-vacuity: the walk must cover the dispatch surface, not just its roots."""
+    walker = _walk_every_command()
+    assert walker.walked >= 200, f"walked only {walker.walked} functions -- the walk is broken"
+
+
+def test_the_handler_walk_has_teeth(monkeypatch) -> None:
+    """Unbind the three helpers the audit reproduced; the walk must name each one."""
+    from navig.gateway.channels.telegram import TelegramChannel
+
+    for name in ("_parse_remindme_request", "_handle_space", "_handle_user"):
+        monkeypatch.delattr(TelegramChannel, name)
+    found = _walk_every_command(TelegramChannel, _channel_attributes()).findings
+    assert {"_parse_remindme_request", "_handle_space", "_handle_user"} <= set(found), found
+    assert "/remindme" in found["_parse_remindme_request"]
+    assert "/profile" in found["_handle_user"]

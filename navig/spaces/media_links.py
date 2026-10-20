@@ -4,7 +4,7 @@ A space or project stays small enough to clone by keeping its heavy assets
 (renders, footage, stems, exports) somewhere else entirely, and attaching them
 back through a **directory link** named ``.media``:
 
-    E:\\projects\\apps\\schema\\.media  ->  C:\\studio\\schema
+    C:\\projects\\apps\\schema\\.media  ->  C:\\studio\\schema
 
 A **junction** on Windows, because junctions cross drive letters with no admin
 rights and no Developer Mode; a **directory symlink** on POSIX.

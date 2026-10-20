@@ -58,7 +58,9 @@ class TaskAddTool(BaseTool):
     description = (
         "Add a task to the operator's personal task list. The date may be part of the "
         "text ('Dentist tomorrow 10:30', 'Renew the domain next friday') or left out "
-        "entirely, in which case it lands in the inbox. " + _SHARED_NOTE
+        "entirely, in which case it lands in the inbox. When the date is readable from "
+        "the request or its context, create the task instead of asking the operator to "
+        "repeat it. " + _SHARED_NOTE
     )
     parameters: dict[str, Any] = {
         "title": {
@@ -71,13 +73,33 @@ class TaskAddTool(BaseTool):
         },
         "category": {
             "type": "string",
-            "description": "life · business · project · rendezvous, or any the operator uses.",
+            "description": "work · project · life · business, or any the operator uses. (Appointments are not a category — use the agenda.)",
         },
         "space": {
             "type": "string",
             "description": "The space this came from, when it came from one.",
         },
         "notes": {"type": "string", "description": "Anything the title cannot hold."},
+        "due_at": {
+            "type": "string",
+            "description": (
+                "The exact due moment, e.g. '2026-10-12 09:00' (operator's local time). "
+                "Given this, the title is kept WORD FOR WORD and is not searched for a "
+                "date — use it whenever the title mentions other dates ('bring the scan "
+                "from 30/09'), and for every one-off reminder. This is how to remind the "
+                "operator of something once: never a cron job, which repeats every year."
+            ),
+        },
+        "remind_before": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "Extra reminders ahead of the due moment, e.g. ['3d', '1d', '1h'] for "
+                "3 days, 1 day and 1 hour before. Units: m, h, d, w. A reminder at the "
+                "due moment itself is always scheduled. For an appointment, default to "
+                "['3d', '1d', '1h'] unless the operator asked for something else."
+            ),
+        },
         "source": {
             "type": "string",
             "description": (
@@ -106,9 +128,23 @@ class TaskAddTool(BaseTool):
             from navig.pim.clock import local_now, to_utc_iso  # noqa: PLC0415
             from navig.pim.dates import (  # noqa: PLC0415
                 format_local,
+                parse_at,
+                parse_lead,
                 split_due,
                 split_recurrence,
             )
+
+            raw_leads = args.get("remind_before") or []
+            if isinstance(raw_leads, str):
+                raw_leads = [raw_leads]
+            leads = [str(x).strip().lower() for x in raw_leads if str(x).strip()]
+            bad = [x for x in leads if parse_lead(x) is None]
+            if bad:
+                return ToolResult(
+                    name=self.name,
+                    success=False,
+                    error=f"unreadable remind_before {bad} — use tokens like 3d, 1d, 1h, 15m",
+                )
 
             store = _store()
             source = str(args.get("source") or "").strip() or None
@@ -122,9 +158,27 @@ class TaskAddTool(BaseTool):
                 )
 
             now = local_now()
-            rest, recur = split_recurrence(title)
-            clean_title, due = split_due(rest, now)
-            clean_title = clean_title.strip() or title
+            explicit = str(args.get("due_at") or "").strip()
+            if explicit:
+                # The moment is known: the title is not parsed, so a date it merely
+                # mentions can neither become the due date nor be cut out of it.
+                due, recur, clean_title = parse_at(explicit, now), None, title
+                if due is None:
+                    return ToolResult(
+                        name=self.name,
+                        success=False,
+                        error=f"unreadable due_at {explicit!r} — use 'YYYY-MM-DD HH:MM'",
+                    )
+                if due <= now:
+                    return ToolResult(
+                        name=self.name,
+                        success=False,
+                        error=f"due_at {explicit!r} is in the past — a reminder there never fires",
+                    )
+            else:
+                rest, recur = split_recurrence(title)
+                clean_title, due = split_due(rest, now)
+                clean_title = clean_title.strip() or title
 
             todo = store.create_todo(
                 clean_title,
@@ -132,6 +186,7 @@ class TaskAddTool(BaseTool):
                 due_at=to_utc_iso(due) if due else None,
                 recur=recur,
                 notes=str(args.get("notes") or ""),
+                remind_before=tuple(dict.fromkeys(leads)),
                 space=str(args.get("space") or "") or None,
                 origin="agent",
                 origin_ref=source,
@@ -142,6 +197,9 @@ class TaskAddTool(BaseTool):
             from navig.pim.reminders import sync_for_operator  # noqa: PLC0415
 
             sync_for_operator(store, todo, now=now)
+            from navig.pim.service import _emit  # noqa: PLC0415 — refresh open Planner UIs
+
+            _emit("task", todo["id"], todo.get("list_id"))
         except Exception as exc:  # noqa: BLE001 — a tool must never raise into the agent loop
             logger.exception("task_add failed")
             return ToolResult(

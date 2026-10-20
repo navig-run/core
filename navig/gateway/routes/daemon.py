@@ -29,7 +29,7 @@ async def _run_service_action(action: str, *, timeout_seconds: float = 30.0) -> 
     process = await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",
-        "navig.cli",
+        "navig",
         "service",
         action,
         stdout=asyncio.subprocess.PIPE,
@@ -102,6 +102,59 @@ def _daemon_start(gw):
     return h
 
 
+def _engine_facts() -> dict:
+    """What a manager surface needs to show and control the engine.
+
+    Additive to the original status body. Every field is best-effort and ``None``
+    means "could not tell" — never a guessed healthy value.
+    """
+    facts: dict = {
+        "version": None,
+        "uptimeSeconds": None,
+        "supervisesBot": None,
+        "supervisesGateway": None,
+        "serviceInstalled": None,
+        "restartAvailable": None,
+        "platform": sys.platform,
+    }
+    try:
+        from navig import __version__
+
+        facts["version"] = __version__
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from navig.daemon.supervisor import NavigDaemon
+
+        pid = NavigDaemon.read_pid()
+        if pid:
+            import time
+
+            import psutil
+
+            facts["uptimeSeconds"] = max(0, int(time.time() - psutil.Process(pid).create_time()))
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from navig.daemon import launch
+
+        facts["supervisesBot"] = launch.supervisor_runs_the_bot() is not None
+        facts["supervisesGateway"] = launch.supervisor_runs_the_gateway() is not None
+        facts["serviceInstalled"] = launch.service_is_installed()
+    except Exception:  # noqa: BLE001
+        pass
+    if sys.platform == "win32":
+        try:
+            from navig.daemon.service_manager import task_scheduler_restart_task_installed
+
+            facts["restartAvailable"] = task_scheduler_restart_task_installed()
+        except Exception:  # noqa: BLE001
+            pass
+    else:
+        facts["restartAvailable"] = True
+    return facts
+
+
 def _daemon_status(gw):
     async def h(request):
         daemon_status_value = "UNKNOWN"
@@ -144,12 +197,15 @@ def _daemon_status(gw):
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
+        engine = await asyncio.to_thread(_engine_facts)
+
         # To ensure we have CORS enabled for Deck / Bridge if they hit it directly from browser
         resp = json_ok(
             {
                 "daemonStatus": daemon_status_value,
                 "activeFormation": active_formation,
                 "nodes": nodes,
+                **engine,
             }
         )
         resp.headers["Access-Control-Allow-Origin"] = "*"
@@ -183,7 +239,7 @@ def _daemon_stop(gw):
         async def _d():
             await asyncio.sleep(0.25)
             subprocess.Popen(
-                [sys.executable, "-m", "navig.cli", "service", "stop"],
+                [sys.executable, "-m", "navig", "service", "stop"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
@@ -193,6 +249,62 @@ def _daemon_stop(gw):
         return resp
 
     return h
+
+
+_RESTART_TASK_REMEDY = (
+    "Register it once with `navig service install`, or restart from a "
+    "terminal: `navig service restart`"
+)
+
+
+async def request_daemon_restart(cause: str, *, actor: str = "unknown") -> dict:
+    """Restart the daemon the one safe way — shared by every surface.
+
+    The deck route, the Telegram ``/restart`` command and NAVIG OS all land here,
+    so none of them can drift into spawning ``navig service restart`` from inside
+    the daemon's own tree (on Windows that restarter dies mid-stop — measured —
+    leaving the daemon dead and autostart off).
+
+    Returns ``{ok, status, message, result_code, http_status}``; never raises.
+    """
+    # This process is about to be killed, so its own log line is lost to the
+    # next boot. Leave the cause where the next supervisor will read it.
+    try:
+        from navig.daemon.restart_cause import record as _record_cause
+
+        _record_cause(cause, actor=actor)
+    except Exception:  # noqa: BLE001 — a breadcrumb must never block the restart
+        logger.debug("restart cause not recorded", exc_info=True)
+
+    if sys.platform == "win32":
+        # The restart must run from outside the tree; on Windows that is the
+        # on-demand scheduled task, whose parent is the Task Scheduler service.
+        ok, message = await asyncio.to_thread(_run_restart_task)
+        if ok:
+            return {
+                "ok": True,
+                "status": "restarting",
+                "message": "Restart handed to the scheduled task; the daemon will be replaced in a few seconds",
+                "result_code": "restart_requested_via_task",
+                "http_status": 200,
+            }
+        # Refuse rather than half-do it: killing the daemon from in here leaves
+        # nothing to bring it back.
+        return {
+            "ok": False,
+            "status": "refused",
+            "message": f"the on-demand restart task is not available ({message}). {_RESTART_TASK_REMEDY}",
+            "result_code": "restart_task_unavailable",
+            "http_status": 409,
+        }
+    ok, message, result_code = await _run_service_action("restart")
+    return {
+        "ok": ok,
+        "status": "restarted" if ok else "failed",
+        "message": message,
+        "result_code": result_code,
+        "http_status": 200 if ok else 500,
+    }
 
 
 def _daemon_restart(gw):
@@ -207,50 +319,29 @@ def _daemon_restart(gw):
             return block
 
         logger.info("Daemon restart requested via /api/daemon/restart by actor=%s", actor)
-        if sys.platform == "win32":
-            # This process is INSIDE the daemon's tree, and `navig service restart`
-            # kills that tree with `taskkill /T` — a restarter spawned from here dies
-            # mid-stop (measured), after disabling autostart and before re-enabling
-            # it: daemon dead, autostart off, no response. The restart must run from
-            # outside the tree; on Windows that is the on-demand scheduled task.
-            ok, message = await asyncio.to_thread(_run_restart_task)
-            if ok:
-                resp = json_ok(
-                    {
-                        "ok": True,
-                        "status": "restarting",
-                        "message": "Restart handed to the scheduled task; the daemon will be replaced in a few seconds",
-                        "result_code": "restart_requested_via_task",
-                    }
-                )
-                resp.headers["Access-Control-Allow-Origin"] = "*"
-                return resp
-            # Refuse rather than half-do it: killing the daemon from in here leaves
-            # nothing to bring it back.
+        out = await request_daemon_restart("api /api/daemon/restart", actor=actor)
+        if out["ok"]:
+            resp = json_ok(
+                {
+                    "ok": True,
+                    "status": out["status"],
+                    "message": out["message"],
+                    "result_code": out["result_code"],
+                }
+            )
+        elif out["http_status"] == 409:
             resp = json_error_response(
                 "Cannot restart the daemon from inside its own process tree",
                 status=409,
                 code="daemon_restart_needs_task",
-                details={
-                    "message": (
-                        f"the on-demand restart task is not available ({message}). "
-                        "Register it once with `navig service install`, or restart from a "
-                        "terminal: `navig service restart`"
-                    ),
-                    "result_code": "restart_task_unavailable",
-                },
+                details={"message": out["message"], "result_code": out["result_code"]},
             )
-            resp.headers["Access-Control-Allow-Origin"] = "*"
-            return resp
-        ok, message, result_code = await _run_service_action("restart")
-        if ok:
-            resp = json_ok({"ok": True, "status": "restarted", "message": message, "result_code": result_code})
         else:
             resp = json_error_response(
                 "Failed to restart daemon",
                 status=500,
                 code="daemon_restart_failed",
-                details={"message": message, "result_code": result_code},
+                details={"message": out["message"], "result_code": out["result_code"]},
             )
         resp.headers["Access-Control-Allow-Origin"] = "*"
         return resp
@@ -292,7 +383,7 @@ def _formation_start(gw):
                 [
                     sys.executable,
                     "-m",
-                    "navig.cli",
+                    "navig",
                     "formation",
                     "start",
                     formation_name,

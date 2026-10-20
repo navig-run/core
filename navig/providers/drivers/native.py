@@ -184,14 +184,27 @@ class NativeDriver(ProviderDriver):
         expires_at = bundle.get("expires_at")  # seconds
         needs = force_refresh or (expires_at and _time.time() > float(expires_at) - 300)
         if needs and refresh:
-            try:
-                from navig.providers import claude_oauth
+            from navig.providers import claude_oauth
 
-                fresh = await claude_oauth.refresh_tokens(refresh)
-                await self._store(secret_ref, json.dumps(fresh))
-                return fresh.get("access_token") or access
-            except Exception:  # noqa: BLE001 — fall back to the current token
-                return access
+            async with claude_oauth.refresh_lock():
+                # Another refresher (the OS token lease, a parallel dispatch) may
+                # have rotated the bundle while we waited: refreshing with the
+                # token we read before the lock would spend a retired one.
+                try:
+                    latest = json.loads((await self._secret(secret_ref) or "").strip() or "{}")
+                except Exception:  # noqa: BLE001
+                    latest = bundle
+                if latest.get("access_token") and latest.get("access_token") != access and not force_refresh:
+                    return latest["access_token"]
+                refresh = latest.get("refresh_token") or refresh
+                try:
+                    fresh = await claude_oauth.refresh_tokens(refresh)
+                    # Keep identity fields (account_uuid/email) a refresh response omits.
+                    merged = {**latest, **{k: v for k, v in fresh.items() if v}}
+                    await self._store(secret_ref, json.dumps(merged))
+                    return fresh.get("access_token") or access
+                except Exception:  # noqa: BLE001 — fall back to the current token
+                    return access
         return access
 
     async def _probe_walk(self, client, config, candidates: list[str]) -> ValidationResult:
@@ -313,3 +326,80 @@ class NativeDriver(ProviderDriver):
                     await close()
                 except Exception:  # noqa: BLE001
                     pass
+
+    # ── live model catalog ──────────────────────────────────────────────────
+    async def list_models(self, *, secret_ref: str | None, endpoint: str | None = None) -> list[ModelInfo]:
+        """GET the provider's full model catalog.
+
+        OpenAI-compatible ``{base}/models`` for every API-key provider (OpenAI,
+        Groq, xAI, NVIDIA, OpenRouter, custom endpoints); Anthropic ``/v1/models``
+        for the OAuth subscription path. The connection's stored ``models`` list
+        only holds the handful of probe candidates recorded at connect time —
+        this is where "all the models" comes from.
+
+        Best-effort by contract: ANY failure (network, auth shape, pagination)
+        returns ``[]`` so the caller keeps the stored list rather than emptying
+        the picker.
+        """
+        import aiohttp
+
+        from navig.providers.types import ModelApi
+
+        cfg = self._resolve_config(endpoint=endpoint, model=None)
+        if cfg is None or not cfg.base_url:
+            return []
+        base = str(cfg.base_url).rstrip("/")
+        if base.startswith(("local://", "file:")):
+            return []
+        if base.endswith("/models"):
+            url = base
+        elif cfg.api == ModelApi.ANTHROPIC_MESSAGES:
+            # The anthropic builtin base has no /v1 (the chat client appends
+            # /v1/messages itself); OpenAI-style bases already include /v1.
+            url = f"{base}/models" if base.endswith("/v1") else f"{base}/v1/models"
+        else:
+            url = f"{base}/models"
+
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if self._oauth:
+            token = await self._oauth_access_token(secret_ref)
+            if not token:
+                return []
+            headers["Authorization"] = f"Bearer {token}"
+            headers["anthropic-version"] = "2023-06-01"
+        else:
+            api_key = await self._secret(secret_ref)
+            if api_key:
+                if cfg.api == ModelApi.ANTHROPIC_MESSAGES:
+                    headers["x-api-key"] = api_key
+                    headers["anthropic-version"] = "2023-06-01"
+                else:
+                    headers["Authorization"] = f"Bearer {api_key}"
+
+        ids: list[str] = []
+        seen: set[str] = set()
+        params: dict[str, str] = {"limit": "100"}
+        try:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                # Anthropic paginates with has_more/last_id; OpenAI-style
+                # catalogs answer in one page (the loop exits on the first turn).
+                for _ in range(6):
+                    async with session.get(url, headers=headers, params=params) as resp:
+                        if resp.status != 200:
+                            logger.debug("list_models %s -> HTTP %s", url, resp.status)
+                            return []
+                        data = await resp.json(content_type=None)
+                    for item in data.get("data") or []:
+                        mid = (item or {}).get("id") if isinstance(item, dict) else None
+                        if isinstance(mid, str) and mid and mid not in seen:
+                            seen.add(mid)
+                            ids.append(mid)
+                    if data.get("has_more") and data.get("last_id"):
+                        params = {"limit": "100", "after_id": str(data["last_id"])}
+                    else:
+                        break
+        except Exception:  # noqa: BLE001 — catalog is best-effort by contract
+            logger.debug("list_models failed for %s", base, exc_info=True)
+            return []
+        return [ModelInfo(id=m) for m in ids]

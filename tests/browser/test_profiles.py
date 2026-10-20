@@ -18,6 +18,11 @@ def cfg(tmp_path, monkeypatch):
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
     # keep port allocation offline/deterministic (no live browsers)
     monkeypatch.setattr("navig.browser.targets.probe_port", lambda *a, **k: None)
+    # …and independent of what THIS machine has bound: allocate_port() also runs a real
+    # bind() check (port_is_bindable), so any process holding a port in the band — another
+    # session's debug browser on 9281 — shifted every allocation and failed the sequential
+    # test on a busy box only. Tests that exercise the bind check stub it themselves.
+    monkeypatch.setattr("navig.browser.targets.port_is_bindable", lambda *a, **k: True)
     return tmp_path
 
 

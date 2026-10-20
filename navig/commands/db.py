@@ -60,6 +60,28 @@ def _detect_db_type(discovery, container: str | None = None) -> str | None:
     return None
 
 
+def _postgres_has_database(discovery, database: str) -> bool:
+    """
+    True when the host's native PostgreSQL holds a database named ``database``.
+
+    A host can run more than one engine: cybesis-vps declares
+    ``database.type: mariadb`` (one site's MariaDB) while ``schema_core`` lives
+    in PostgreSQL on the same box. The host-level type is a default, not a
+    fact about every database, so a named database is asked of PostgreSQL
+    first. One SSH round-trip; any failure (no psql, no sudo, no such
+    database) reads as False and the caller falls back to the declared type.
+    """
+    sql = "SELECT 1 FROM pg_database WHERE datname = '{}'".format(
+        database.replace("'", "''")
+    )
+    cmd = (
+        "command -v psql >/dev/null 2>&1 && cd /tmp && "
+        f"sudo -n -u postgres psql -Atqc {_escape_for_shell(sql)} 2>/dev/null"
+    )
+    success, stdout, _ = discovery._execute_ssh(cmd)
+    return bool(success and stdout and stdout.strip() == "1")
+
+
 def _list_docker_db_containers(discovery) -> list[dict[str, str]]:
     """
     List Docker containers running database services.
@@ -136,12 +158,23 @@ def _get_db_credentials_from_config(
     resolved_password = password
     resolved_db_type = db_type
 
+    def _same_engine(configured: str | None) -> bool:
+        # A login belongs to ONE engine. MariaDB's root password handed to
+        # psql (or a postgres login to mysql) can only fail, and it hides the
+        # real error behind "Access denied". mysql/mariadb share logins.
+        if not db_type or not configured:
+            return True
+        family = {"mysql": "mysql", "mariadb": "mysql", "postgresql": "postgresql", "postgres": "postgresql"}
+        return family.get(configured, configured) == family.get(db_type, db_type)
+
     # Try to get credentials from active app config
     try:
         active_app = config_manager.get_active_app()
         if active_app:
             app_config = config_manager.load_app_config(host_name, active_app)
             db_config = app_config.get("database", {})
+            if not _same_engine(db_config.get("type")):
+                db_config = {}
 
             # Use app credentials if not provided via command-line
             if not resolved_user or resolved_user == "root":
@@ -158,6 +191,8 @@ def _get_db_credentials_from_config(
         try:
             host_config = config_manager.load_host_config(host_name)
             host_db_config = host_config.get("database", {})
+            if not _same_engine(host_db_config.get("type")):
+                host_db_config = {}
 
             # Use host root credentials if user is 'root' and no password provided
             if (not resolved_user or resolved_user == "root") and host_db_config.get(
@@ -171,9 +206,18 @@ def _get_db_credentials_from_config(
         except FileNotFoundError:
             pass  # Host not found
 
-    # Default to 'root' if no user specified
-    if not resolved_user:
-        resolved_user = "root"
+    # Default user per engine: PostgreSQL's superuser is `postgres`, not `root`
+    # (there is no `root` role, so the old default could never connect).
+    if not resolved_user or (
+        resolved_user == "root"
+        and not resolved_password
+        and (resolved_db_type or db_type) in ("postgresql", "postgres")
+    ):
+        resolved_user = (
+            "postgres"
+            if (resolved_db_type or db_type) in ("postgresql", "postgres")
+            else "root"
+        )
 
     return resolved_user, resolved_password, resolved_db_type
 
@@ -199,6 +243,36 @@ def _escape_for_shell(value: str) -> str:
     return shlex.quote(value)
 
 
+def _db_password_var(db_type: str) -> str:
+    """The environment variable the engine's client reads its password from."""
+    return "MYSQL_PWD" if db_type in ("mysql", "mariadb") else "PGPASSWORD"
+
+
+def _with_db_password(
+    db_cmd: str, db_type: str, password: str | None, container: str | None = None
+) -> tuple[str, str | None]:
+    """Wrap *db_cmd* so *password* reaches the client through stdin + env, never argv.
+
+    ``mysql -p'<pw>'`` and ``PGPASSWORD=<pw> psql`` put the password in the ssh
+    command line (local argv + navig's debug log) and in the server's process list.
+    The client reads ``MYSQL_PWD`` / ``PGPASSWORD`` from its environment instead,
+    and ``with_secret_env`` fills that from stdin. ``docker exec -e VAR`` forwards
+    the variable by NAME, so the value never appears in the docker argv either.
+
+    Returns ``(remote_command, stdin_text)`` — send the second as ``stdin=``.
+    """
+    from navig.core.remote_secret_env import with_secret_env  # noqa: PLC0415
+
+    var = _db_password_var(db_type)
+    if container:
+        forward = f"-e {var} " if password else ""
+        db_cmd = (
+            f"docker exec {forward}{_escape_for_shell(container)} "
+            f"sh -c {_escape_for_shell(db_cmd)}"
+        )
+    return with_secret_env(db_cmd, {var: password})
+
+
 def _build_db_command(
     db_type: str,
     query: str,
@@ -206,11 +280,12 @@ def _build_db_command(
     password: str | None = None,
     database: str | None = None,
     container: str | None = None,
-) -> str:
+) -> tuple[str, str | None]:
     """
-    Build database command string for execution.
+    Build the remote database command and the stdin that carries its password.
 
-    Uses proper shell escaping for passwords with special characters.
+    Returns ``(command, stdin_text)``. The password is NEVER in ``command`` —
+    pass ``stdin_text`` to ``_execute_ssh(command, stdin=...)``.
 
     Args:
         db_type: mysql, mariadb, or postgresql
@@ -220,22 +295,14 @@ def _build_db_command(
         database: Database name (optional)
         container: Docker container name (optional)
     """
-    # Escape user and password for shell safety
     escaped_user = _escape_for_shell(user)
-    escaped_password = _escape_for_shell(password) if password else None
     escaped_query = _escape_for_shell(query)
 
     if db_type in ("mysql", "mariadb"):
         # Build MySQL/MariaDB command
         # Use mariadb command for MariaDB to avoid deprecation warnings
         cmd_name = "mariadb" if db_type == "mariadb" else "mysql"
-
-        # Use -p with password attached (no space) for MySQL compatibility
-        if password:
-            # Format: mysql/mariadb -u'user' -p'password' [database] -e 'query'
-            db_cmd = f"{cmd_name} -u{escaped_user} -p{escaped_password}"
-        else:
-            db_cmd = f"{cmd_name} -u{escaped_user}"
+        db_cmd = f"{cmd_name} -u{escaped_user}"
 
         if database:
             db_cmd += f" {_escape_for_shell(database)}"
@@ -243,24 +310,23 @@ def _build_db_command(
         db_cmd += f" -e {escaped_query}"
     else:
         # PostgreSQL
-        # PostgreSQL uses PGPASSWORD env var for password
         cmd = f"psql -U {escaped_user}"
         if database:
             cmd += f" -d {_escape_for_shell(database)}"
         cmd += f" -c {escaped_query}"
 
         if password:
-            # Set PGPASSWORD env var before command
-            db_cmd = f"PGPASSWORD={escaped_password} {cmd}"
+            db_cmd = cmd
+        elif user == "postgres" and not container:
+            # Stock PostgreSQL authenticates the local socket by PEER: the OS
+            # user must be the role. SSH lands as root, so `psql -U postgres`
+            # was refused ("Peer authentication failed") — run it AS postgres.
+            # `cd /tmp`: postgres cannot read root's home (a noisy warning).
+            db_cmd = f"cd /tmp && sudo -n -u postgres {cmd}"
         else:
             db_cmd = cmd
 
-    if container:
-        # Wrap in docker exec - need to escape the entire command for sh -c
-        # The inner command is already escaped, so we just wrap it
-        db_cmd = f"docker exec {_escape_for_shell(container)} sh -c {_escape_for_shell(db_cmd)}"
-
-    return db_cmd
+    return _with_db_password(db_cmd, db_type, password, container)
 
 
 def _execute_db_query(
@@ -273,8 +339,10 @@ def _execute_db_query(
     container: str | None = None,
 ) -> tuple[bool, str, str]:
     """Execute a database query via SSH."""
-    cmd = _build_db_command(db_type, query, user, password, database, container)
-    return discovery._execute_ssh(cmd)
+    cmd, stdin = _build_db_command(db_type, query, user, password, database, container)
+    if stdin is None:
+        return discovery._execute_ssh(cmd)
+    return discovery._execute_ssh(cmd, stdin=stdin)
 
 
 def _resolve_host_discovery(
@@ -402,6 +470,12 @@ def db_query_cmd(
     Usage: navig db query "SELECT 1" --container mysql_db --user root
     """
     host_name, config_manager, discovery = _resolve_host_discovery(options)
+
+    # A named database decides its own engine: the host's declared type is a
+    # default, and a host may run both (see _postgres_has_database).
+    if not db_type and database and not container:
+        if _postgres_has_database(discovery, database):
+            db_type = "postgresql"
 
     # Resolve credentials from app/host config
     # Only use CLI-provided credentials if they differ from defaults
@@ -820,27 +894,18 @@ def db_dump_cmd(
             ch.error("Could not detect database type.")
             raise typer.Exit(1)
 
-    # Build dump command with proper shell escaping
+    # Build dump command with proper shell escaping; the password travels on stdin.
     escaped_user = _escape_for_shell(resolved_user)
-    escaped_password = (
-        _escape_for_shell(resolved_password) if resolved_password else None
-    )
     escaped_database = _escape_for_shell(database)
 
     if resolved_db_type in ("mysql", "mariadb"):
-        if resolved_password:
-            dump_cmd = (
-                f"mysqldump -u{escaped_user} -p{escaped_password} {escaped_database}"
-            )
-        else:
-            dump_cmd = f"mysqldump -u{escaped_user} {escaped_database}"
+        dump_cmd = f"mysqldump -u{escaped_user} {escaped_database}"
     else:
         dump_cmd = f"pg_dump -U {escaped_user} {escaped_database}"
-        if resolved_password:
-            dump_cmd = f"PGPASSWORD={escaped_password} {dump_cmd}"
 
-    if container:
-        dump_cmd = f"docker exec {_escape_for_shell(container)} sh -c {_escape_for_shell(dump_cmd)}"
+    dump_cmd, dump_stdin = _with_db_password(
+        dump_cmd, resolved_db_type, resolved_password, container
+    )
 
     # Determine output path
     if not output:
@@ -855,7 +920,10 @@ def db_dump_cmd(
 
     # Execute dump and save locally
     with ch.create_spinner("Creating backup..."):
-        success, stdout, stderr = discovery._execute_ssh(dump_cmd)
+        if dump_stdin is None:
+            success, stdout, stderr = discovery._execute_ssh(dump_cmd)
+        else:
+            success, stdout, stderr = discovery._execute_ssh(dump_cmd, stdin=dump_stdin)
 
     if success:
         # A dump succeeds on the command's EXIT CODE, not on whether it produced output.
@@ -926,18 +994,19 @@ def db_shell_cmd(
     ssh_port = host_config.get("port", 22)
     ssh_key = host_config.get("ssh_key")
 
-    # Build the database client command with proper shell escaping
+    # Build the database client command with proper shell escaping.
+    #
+    # An interactive shell owns the terminal's stdin, so the password cannot be
+    # piped in the way the one-shot commands do — and putting it on the ssh
+    # command line exposed it in the local argv and the server's process list
+    # for the whole session. The client prompts for it instead.
     escaped_user = _escape_for_shell(resolved_user)
-    escaped_password = (
-        _escape_for_shell(resolved_password) if resolved_password else None
-    )
     escaped_database = _escape_for_shell(database) if database else None
 
     if resolved_db_type in ("mysql", "mariadb"):
+        db_cmd = f"mysql -u{escaped_user}"
         if resolved_password:
-            db_cmd = f"mysql -u{escaped_user} -p{escaped_password}"
-        else:
-            db_cmd = f"mysql -u{escaped_user}"
+            db_cmd += " -p"
         if database:
             db_cmd += f" {escaped_database}"
     else:
@@ -945,7 +1014,12 @@ def db_shell_cmd(
         if database:
             db_cmd += f" -d {escaped_database}"
         if resolved_password:
-            db_cmd = f"PGPASSWORD={escaped_password} {db_cmd}"
+            db_cmd += " -W"
+    if resolved_password:
+        ch.dim(
+            "  The client will ask for the password (it is not put on the command line). "
+            "Reveal it with `navig vault get <ref> --reveal` if needed."
+        )
 
     if container:
         db_cmd = f"docker exec -it {_escape_for_shell(container)} sh -c {_escape_for_shell(db_cmd)}"

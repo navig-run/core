@@ -57,7 +57,7 @@ def _patch(monkeypatch, tmp_path, *, marketplace, status: _FakeStatus, installed
     return calls
 
 
-SPEC = "github:navig-run/community/spaces/homelab-space"
+SPEC = "github:navig-run/registry/spaces/homelab-space"
 PRICED = {"pricing_model": "buy_once", "included_in_tier": "plus", "price_cents": 1900}
 
 
@@ -160,3 +160,20 @@ async def test_locked_install_fires_no_contract(monkeypatch, tmp_path):
     resp = await cat.handle_deck_catalog_install(_FakeRequest({"spec": SPEC}))
     assert resp.status == 402
     assert rearms == [] and events == []                      # gate blocked → nothing refreshed
+
+
+@pytest.mark.parametrize("variant", [
+    "github:NAVIG-RUN/registry/spaces/homelab-space",           # GitHub names are case-insensitive
+    "github:navig-run/Registry/spaces/homelab-space",
+    "space:navig-run/registry/spaces/homelab-space",            # explicit type scheme
+    "navig-run/registry/spaces/homelab-space",                  # bare owner/repo/path
+    "github:navig-run/community/spaces/homelab-space",          # the pre-2026-10-16 repo name
+    "github:navig-run/registry/spaces/homelab-space@main",      # pinned ref
+])
+async def test_every_spelling_of_a_priced_registry_item_is_gated(monkeypatch, tmp_path, variant):
+    """The gate matched a literal `github:navig-run/community/` prefix, so any other
+    spelling the installer accepts installed a locked priced item without paying."""
+    calls = _patch(monkeypatch, tmp_path, marketplace=PRICED, status=_FakeStatus())
+    resp = await cat.handle_deck_catalog_install(_FakeRequest({"spec": variant}))
+    assert resp.status == 402, variant
+    assert calls == []

@@ -46,11 +46,15 @@ def test_rows_honour_env_overrides(monkeypatch, tmp_path):
     assert rows["plugins"] == tmp_path / "C" / "plugins"
 
 
-def test_config_logs_row_surfaces_the_second_log_dir():
+def test_config_logs_row_surfaces_the_second_log_dir(monkeypatch, tmp_path):
     """Half the tree writes to config_dir()/logs (agent.log, tray.log, router traces);
     `navig paths` used to hide it. It must be shown, and distinct from the OS log dir."""
     from navig.platform import paths as p
 
+    # Set both roots: the suite's isolation puts NAVIG_LOG_DIR at <config>/logs, which is
+    # the collapse case below, not the split this test is about.
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setenv("NAVIG_LOG_DIR", str(tmp_path / "oslogs"))
     rows = dict(_path_rows())
     assert rows["logs (config)"] == p.config_dir() / "logs"
     assert rows["logs (config)"] != rows["logs"]  # genuinely a different directory

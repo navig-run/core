@@ -259,3 +259,80 @@ class TestCompatibilityMode:
         resp = _run(handler(req))
         # Compatibility mode: return 200 so Telegram doesn't retry
         assert resp.status == 200
+
+
+# ── Channel-level update-id dedup (the lighthouse path bypasses the route LRU) ──
+
+
+class TestChannelLevelUpdateDedupe:
+    """``handle_webhook_update`` must dedup on its own.
+
+    The lighthouse uplink calls the channel DIRECTLY, so the route-level
+    ``seen_update_ids`` LRU never sees those deliveries. Without channel dedup
+    the edge's 30s timeout → Telegram retry → full reprocessing produced the
+    triple vision/OCR loop (2026-10-13).
+    """
+
+    def _make_channel(self, store_path):
+        from navig.gateway.channels.telegram import TelegramChannel
+        from navig.gateway.dedupe import UpdateDedupe
+
+        ch = TelegramChannel("test-token", require_auth=False)
+        ch._update_dedupe = UpdateDedupe(store_path=store_path)
+        ch._running = True
+        ch._process_update = AsyncMock()
+        return ch
+
+    def test_duplicate_update_id_processes_once(self, tmp_path):
+        ch = self._make_channel(tmp_path / "dedupe.json")
+        update = {"update_id": 7, "message": {"text": "hi"}}
+
+        assert _run(ch.handle_webhook_update(dict(update))) is True
+        assert _run(ch.handle_webhook_update(dict(update))) is True
+
+        assert ch._process_update.await_count == 1
+
+    def test_different_update_ids_both_process(self, tmp_path):
+        ch = self._make_channel(tmp_path / "dedupe.json")
+
+        _run(ch.handle_webhook_update({"update_id": 1}))
+        _run(ch.handle_webhook_update({"update_id": 2}))
+
+        assert ch._process_update.await_count == 2
+
+    def test_duplicate_survives_restart_via_the_disk_layer(self, tmp_path):
+        store = tmp_path / "dedupe.json"
+        ch1 = self._make_channel(store)
+        _run(ch1.handle_webhook_update({"update_id": 9}))
+        assert ch1._process_update.await_count == 1
+
+        # Fresh channel over the same store file = a restarted process with an
+        # empty in-memory cache but the disk ledger intact.
+        ch2 = self._make_channel(store)
+        _run(ch2.handle_webhook_update({"update_id": 9}))
+        assert ch2._process_update.await_count == 0
+
+    def test_missing_update_id_never_dedups(self, tmp_path):
+        ch = self._make_channel(tmp_path / "dedupe.json")
+
+        _run(ch.handle_webhook_update({"message": {"text": "a"}}))
+        _run(ch.handle_webhook_update({"message": {"text": "b"}}))
+
+        assert ch._process_update.await_count == 2
+
+    def test_dedup_sits_after_the_secret_check(self, tmp_path):
+        """An unauthenticated POST must not poison the durable ledger: a wrong
+        secret is rejected before recording, so the correct delivery of the
+        SAME id still processes exactly once."""
+        ch = self._make_channel(tmp_path / "dedupe.json")
+        ch.webhook_secret = "s3cret"
+        update = {"update_id": 5}
+
+        assert _run(ch.handle_webhook_update(dict(update), "wrong")) is False
+        assert ch._process_update.await_count == 0
+
+        assert _run(ch.handle_webhook_update(dict(update), "s3cret")) is True
+        assert ch._process_update.await_count == 1
+
+        assert _run(ch.handle_webhook_update(dict(update), "s3cret")) is True
+        assert ch._process_update.await_count == 1

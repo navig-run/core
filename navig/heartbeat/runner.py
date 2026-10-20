@@ -29,6 +29,36 @@ logger = get_debug_logger()
 _ISSUE_DEDUPE_S = 6 * 60 * 60.0
 
 
+def _fallback_note(modes: list[str]) -> str:
+    """Say where replies go while a mode's model is down, or ``""`` when nowhere.
+
+    The runtime already hops to another model on a 401 (model_fallback), but the
+    alert never said so. An operator reading "key rejected" could not tell
+    "the bot is answering with something else" from "the bot is mute".
+    """
+    if not modes:
+        return ""
+    try:
+        from navig.llm.model_fallback import policy_chain
+        from navig.llm.router import get_llm_router
+
+        router = get_llm_router()
+        lines = []
+        for mode in modes:
+            cfg = router.modes.get_mode(router.resolve_mode(mode))
+            provider = getattr(cfg, "provider", "") or ""
+            model = getattr(cfg, "model", "") or ""
+            chain = policy_chain(mode, provider, model)
+            if chain:
+                lines.append(f"`{mode}` replies fall back to `{chain[0]}` meanwhile.")
+            else:
+                lines.append(f"`{mode}` has no working fallback, so its replies fail until it is fixed.")
+        return "\n".join(lines)
+    except Exception as exc:  # noqa: BLE001 — a note must never block the alarm
+        logger.debug("fallback note skipped: %s", exc)
+        return ""
+
+
 @dataclass
 class HeartbeatConfig:
     """Heartbeat configuration."""
@@ -73,6 +103,53 @@ class HeartbeatResult:
         # Check for HEARTBEAT_OK pattern
         if self.success and "HEARTBEAT_OK" in self.response:
             self.suppressed = True
+
+
+def _probe_day_path() -> Path:
+    from navig.platform.paths import config_dir
+
+    return config_dir() / "perf" / "llm_probe_day.txt"
+
+
+def _health_cache_empty() -> bool:
+    """True when the runtime-fallback health cache holds no verdict at all. Never raises."""
+    try:
+        from navig.llm import model_health
+
+        return not model_health.load()
+    except Exception:  # noqa: BLE001 — unknown is not "empty": do not force a probe
+        return False
+
+
+def _sustained_rate_limits() -> list[dict]:
+    """Providers whose 429s are sustained (rate_limit_watch), or []. Never raises."""
+    try:
+        from navig.llm.rate_limit_watch import sustained
+
+        return sustained()
+    except Exception as exc:  # noqa: BLE001 — never break the beat
+        logger.debug("sustained rate-limit check skipped: %s", exc)
+        return []
+
+
+def _read_probe_day() -> str | None:
+    """The ISO date of the last completed LLM-mode probe, or None. Never raises."""
+    try:
+        return _probe_day_path().read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def _write_probe_day(day: str) -> None:
+    """Record that today's probe ran. Best-effort — a lost marker costs one probe."""
+    try:
+        from navig.core.yaml_io import atomic_write_text
+
+        path = _probe_day_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(path, day)
+    except Exception as exc:  # noqa: BLE001 — never break the beat over a marker
+        logger.debug("probe-day marker not written: %s", exc)
 
 
 class HeartbeatRunner:
@@ -260,10 +337,29 @@ class HeartbeatRunner:
         # report + notify path, instead of when a real run hits it.
         await self._maybe_probe_llm_modes(result)
 
+        # Every beat: re-check each primary model the fallback policy is standing
+        # in for (one 1-token call each, only while something is degraded), so a
+        # repaired credential is noticed within one interval and the operator is
+        # told "it's back".
+        await self._recheck_degraded_models()
+
         # Handle result
         await self._handle_result(result)
 
         return result
+
+    async def _recheck_degraded_models(self) -> list[str]:
+        """Probe degraded primaries (navig.llm.model_fallback) off the loop and
+        recover the ones that answer. Free when nothing is degraded; never raises."""
+        try:
+            from navig.llm import model_fallback
+
+            if not model_fallback.degraded():
+                return []
+            return await asyncio.to_thread(model_fallback.recheck_degraded)
+        except Exception as exc:  # noqa: BLE001 — never break the beat
+            logger.debug("degraded-model re-check skipped: %s", exc)
+            return []
 
     async def _maybe_probe_llm_modes(self, result: HeartbeatResult) -> None:
         """Once per day, probe every LLM routing mode's model with a 1-token call.
@@ -276,7 +372,27 @@ class HeartbeatRunner:
         if not cfg.get("check_llm_modes", True):
             return
         today = date.today()
-        if getattr(self, "_last_mode_probe_day", None) == today:
+        # The throttle below assumes the verdicts persist in model_health. When that
+        # cache is EMPTY (a first run, or a stale branch's test reset deleted the live
+        # file — measured twice on 2026-10-10) the runtime fallback has no proven-healthy
+        # stand-in to pick, so re-probe now instead of tomorrow. Once per process, so an
+        # install whose probes record nothing cannot spend a probe on every beat.
+        if not getattr(self, "_reseeded_empty_health", False) and _health_cache_empty():
+            self._reseeded_empty_health = True
+            logger.info("model health cache is empty — re-probing the routes now")
+            self._last_mode_probe_day = None
+            _force = True
+        else:
+            _force = False
+        if not _force and getattr(self, "_last_mode_probe_day", None) == today:
+            return
+        # The day is ALSO persisted: the gateway restarts many times a day (measured:
+        # ~19 in 24h on a dev box), and an in-memory throttle re-ran the whole probe —
+        # 8+ real 1-token calls, and the back-to-back bursts that free tiers answer
+        # with 503 — on every restart. The verdicts themselves already persist
+        # (model_health), so skipping a same-day re-probe loses nothing.
+        if not _force and _read_probe_day() == today.isoformat():
+            self._last_mode_probe_day = today
             return
 
         try:
@@ -327,6 +443,7 @@ class HeartbeatRunner:
             return
 
         self._last_mode_probe_day = today
+        _write_probe_day(today.isoformat())
 
         # OpenRouter's prices, once a day in the same beat — the cost tracker
         # reads them from a local cache and never goes online itself.
@@ -337,10 +454,12 @@ class HeartbeatRunner:
         except Exception as exc:  # noqa: BLE001 — never break the beat over pricing
             logger.debug("openrouter price refresh skipped: %s", exc)
         bad = dead_modes(results)
-        if not bad:
+        limited = _sustained_rate_limits()
+        if not bad and not limited:
             return
 
-        # A dead model is a real, actionable problem — force this beat to notify.
+        # A dead model OR a sustained rate limit is a real, actionable problem —
+        # force this beat to notify.
         result.suppressed = False
         if result.issues_found is None:
             result.issues_found = []
@@ -365,9 +484,35 @@ class HeartbeatRunner:
             else:
                 subject = f"LLM mode '{name}'"
                 fix = f"navig mode set {name} --provider <p> --model <m>"
+            if b.get("status") in ("auth", "nokey") and kind != "catalog":
+                # The MODEL is fine — the credential is not. Re-pointing the mode
+                # throws away a working route to dodge a login that takes 30s to
+                # fix; chats already fall back meanwhile (model_fallback reads
+                # this same verdict), so the fix to name is the reconnect.
+                try:
+                    from navig.providers.inference import reconnect_hint
+
+                    fix = reconnect_hint(b.get("provider")) or "navig connect"
+                except Exception:  # noqa: BLE001 — never break the alarm over advice
+                    fix = "navig connect"
             result.issues_found.append(
                 f"[HIGH] {subject} → {b['provider']}:{b['model']} is "
                 f"{b['status']} ({b['detail']}). Fix: {fix}"
+            )
+        for row in limited:
+            # A sustained rate limit — the seam between "the provider is busy"
+            # (transient, never alarms) and "the quota is gone for a week"
+            # (measured 2026-10: a capped subscription answered chats with the
+            # small model for days and nothing told the operator). MEDIUM, not
+            # HIGH: chats still get replies, and the fix may simply be waiting.
+            since = datetime.fromtimestamp(row["first_seen"]).strftime("%Y-%m-%d %H:%M")
+            span_h = max(0.0, (row["last_seen"] - row["first_seen"]) / 3600.0)
+            result.issues_found.append(
+                f"[MEDIUM] {row['provider']}:{row['model']} has been rate-limited at "
+                f"{row['count']} calls since {since} ({span_h:.0f}h) — replies are "
+                f"falling back to another model without telling you. Fix: point the "
+                f"modes that use it elsewhere (`navig mode set <mode> --provider <p> "
+                f"--model <m>`) until the quota resets."
             )
 
     def _build_heartbeat_prompt(self) -> str:
@@ -533,7 +678,10 @@ Begin the health check now. Be thorough but efficient.
             logger.error("Heartbeat failed: %s", result.error)
 
             # Notify about failure
-            await self._notify_issue(f"[!] Heartbeat check failed: {result.error}")
+            from navig.heartbeat.alert_text import failure_alert  # noqa: PLC0415
+
+            _title, _body = failure_alert(result.error)
+            await self._notify_issue(f"{_title}\n{_body}")
 
             if self.gateway.event_queue:
                 from navig.gateway.system_events import EventTypes
@@ -561,9 +709,22 @@ Begin the health check now. Be thorough but efficient.
                 preview,
             )
 
-            # Format and send notification
-            issue_text = "\n".join(f"- {i}" for i in result.issues_found)
-            await self._notify_issue(f"[!] Health check found issues:\n{issue_text}")
+            # Format and send notification. `issues_found` stays the machine record
+            # (triage, `heartbeat history` and the deck route parse it); only the
+            # alert gets the human wording — see heartbeat.alert_text.
+            from navig.heartbeat.alert_text import (  # noqa: PLC0415
+                alert_keyboard,
+                issues_alert,
+                repairable_modes,
+            )
+
+            _title, _body = issues_alert(result.issues_found)
+            _note = _fallback_note(repairable_modes(result.issues_found))
+            if _note:
+                _body = f"{_body}\n\n{_note}"
+            await self._notify_issue(
+                f"{_title}\n{_body}", keyboard=alert_keyboard(result.issues_found)
+            )
 
             # Call issue callbacks
             for callback in self._on_issue_callbacks:
@@ -599,7 +760,9 @@ Begin the health check now. Be thorough but efficient.
             except Exception as e:
                 logger.error("Complete callback error: %s", e)
 
-    async def _notify_issue(self, message: str) -> None:
+    async def _notify_issue(
+        self, message: str, keyboard: list[list[dict[str, str]]] | None = None
+    ) -> None:
         """Tell the operator their daemon found something. Best-effort, never raises.
 
         ⚠ This is the alarm for "NAVIG itself is broken", and it could not ring.
@@ -656,6 +819,13 @@ Begin the health check now. Be thorough but efficient.
         if not throttle.allow(key, now):
             logger.debug("heartbeat issues unchanged since the last alert — not resending")
             return
+        # The in-memory throttle forgets on restart and is per process, so the same
+        # finding went out 5× in one afternoon. The persistent claim is the real gate.
+        from navig.notify import dedupe  # noqa: PLC0415
+
+        if not await asyncio.to_thread(dedupe.claim, f"heartbeat:{key}", _ISSUE_DEDUPE_S, now=now):
+            logger.debug("heartbeat issues already announced (another process / before a restart)")
+            return
 
         # A suppressed count rides along with the next alert that does go out:
         # a reporter that quietly drops records looks exactly like a system with
@@ -668,12 +838,13 @@ Begin the health check now. Be thorough but efficient.
             from navig.notify.delivery import all_channels_failed  # noqa: PLC0415
             from navig.notify.router import dispatch  # noqa: PLC0415
 
-            outcome = await dispatch("system_alert", title, body)
+            outcome = await dispatch("system_alert", title, body, keyboard=keyboard)
             if all_channels_failed(outcome):
                 # Nothing was delivered, so give the budget back: otherwise this
                 # alert burns the cooldown AND a window slot, and the next
                 # identical occurrence is suppressed too — losing the event twice.
                 throttle.rollback(key)
+                dedupe.release(f"heartbeat:{key}")
                 logger.warning(
                     "heartbeat issues reached NO channel (every configured one "
                     "failed): %s",

@@ -25,6 +25,11 @@ import pytest
 
 pytestmark = pytest.mark.integration
 
+# require_bearer_auth fails closed (503) when the gateway has no token, so the default
+# gateway carries one and TestClient sends it as a session-wide default header.
+_TEST_TOKEN = "test-token"
+_AUTH = {"Authorization": f"Bearer {_TEST_TOKEN}"}
+
 # ---------------------------------------------------------------------------
 # Builders
 # ---------------------------------------------------------------------------
@@ -70,7 +75,7 @@ def _build_gateway(
     *,
     with_cron: bool = False,
     with_heartbeat: bool = False,
-    auth_token: str | None = None,
+    auth_token: str | None = _TEST_TOKEN,
 ):
     now = datetime.now()
     session = SimpleNamespace(messages=["hi"], created_at=now, updated_at=now)
@@ -155,7 +160,7 @@ async def test_gateway_health_contract():
     gw = _build_gateway()
     app = _build_app(gw, routes=("core",))
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         resp = await client.get("/health")
         assert resp.status == 200
         body = await resp.json()
@@ -171,7 +176,7 @@ async def test_gateway_status_contract():
     gw = _build_gateway()
     app = _build_app(gw, routes=("core",))
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         resp = await client.get("/status")
         assert resp.status == 200
         body = await resp.json()
@@ -194,7 +199,7 @@ async def test_cron_list_when_service_disabled_returns_503():
     gw = _build_gateway(with_cron=False)
     app = _build_app(gw, routes=("cron",))
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         resp = await client.get("/cron/jobs")
         assert resp.status == 503
         body = await resp.json()
@@ -210,7 +215,7 @@ async def test_cron_list_returns_empty_when_no_jobs():
     gw = _build_gateway(with_cron=True)
     app = _build_app(gw, routes=("cron",))
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         resp = await client.get("/cron/jobs")
         assert resp.status == 200
         body = await resp.json()
@@ -227,7 +232,7 @@ async def test_cron_list_returns_configured_jobs():
     gw.cron_service = _make_cron_service(jobs=[_make_cron_job()])
     app = _build_app(gw, routes=("cron",))
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         resp = await client.get("/cron/jobs")
         assert resp.status == 200
         body = await resp.json()
@@ -252,7 +257,7 @@ async def test_cron_add_job_returns_id_and_name():
         "enabled": True,
     }
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         resp = await client.post("/cron/jobs", json=payload)
         assert resp.status == 200
         body = await resp.json()
@@ -272,7 +277,7 @@ async def test_cron_add_missing_field_returns_400():
     app = _build_app(gw, routes=("cron",))
 
     # Missing 'schedule' key → KeyError → 400
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         resp = await client.post("/cron/jobs", json={"name": "bad"})
         assert resp.status == 400
         body = await resp.json()
@@ -289,7 +294,7 @@ async def test_cron_delete_existing_job():
     gw.cron_service = _make_cron_service(jobs=[_make_cron_job(job_id="job-001")])
     app = _build_app(gw, routes=("cron",))
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         resp = await client.delete("/cron/jobs/job-001")
         assert resp.status == 200
         body = await resp.json()
@@ -305,7 +310,7 @@ async def test_cron_delete_unknown_job_returns_404():
     gw = _build_gateway(with_cron=True)
     app = _build_app(gw, routes=("cron",))
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         resp = await client.delete("/cron/jobs/no-such-job")
         assert resp.status == 404
         body = await resp.json()
@@ -326,7 +331,7 @@ async def test_heartbeat_trigger_when_disabled_returns_503():
     gw = _build_gateway(with_heartbeat=False)
     app = _build_app(gw, routes=("heartbeat",))
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         resp = await client.post("/heartbeat/trigger")
         assert resp.status == 503
         body = await resp.json()
@@ -342,7 +347,7 @@ async def test_heartbeat_trigger_contract():
     gw = _build_gateway(with_heartbeat=True)
     app = _build_app(gw, routes=("heartbeat",))
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         resp = await client.post("/heartbeat/trigger")
         assert resp.status == 200
         body = await resp.json()
@@ -363,7 +368,7 @@ async def test_heartbeat_history_when_disabled_returns_503():
     gw = _build_gateway(with_heartbeat=False)
     app = _build_app(gw, routes=("heartbeat",))
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         resp = await client.get("/heartbeat/history")
         assert resp.status == 503
         body = await resp.json()
@@ -378,7 +383,7 @@ async def test_heartbeat_history_contract():
     gw = _build_gateway(with_heartbeat=True)
     app = _build_app(gw, routes=("heartbeat",))
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         resp = await client.get("/heartbeat/history?limit=5")
         assert resp.status == 200
         body = await resp.json()

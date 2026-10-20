@@ -217,3 +217,42 @@ def test_list_shows_the_job_id_rich_markup_used_to_eat():
     assert "nightly" in res.output
     # The enabled/disabled distinction survives too.
     assert "●" in res.output and "○" in res.output
+
+
+# ── `cron add --exec --timeout`: a local program, with room to finish ──
+
+
+def test_add_exec_sends_the_prefixed_program_and_its_timeout():
+    with _patch_request(return_value=_response(200, {"id": "j1"})) as req:
+        result = runner.invoke(
+            cron_app,
+            [
+                "add",
+                "nightly gates",
+                "30 3 * * *",
+                "node scripts/nightly-gates.mjs",
+                "--exec",
+                "--timeout",
+                "3600",
+            ],
+        )
+    assert result.exit_code == 0, result.output
+    body = req.call_args.kwargs["json"]
+    assert body["command"] == "NAVIG_EXEC:node scripts/nightly-gates.mjs"
+    assert body["timeout"] == 3600
+
+
+def test_add_without_exec_leaves_the_command_and_the_default_timeout_alone():
+    with _patch_request(return_value=_response(200, {"id": "j1"})) as req:
+        result = runner.invoke(cron_app, ["add", "disk", "hourly", "navig host monitor disk"])
+    assert result.exit_code == 0, result.output
+    body = req.call_args.kwargs["json"]
+    assert body["command"] == "navig host monitor disk"
+    assert "timeout" not in body
+
+
+def test_add_exec_with_nothing_to_run_is_refused():
+    with _patch_request(return_value=_response(200, {"id": "j1"})) as req:
+        result = runner.invoke(cron_app, ["add", "empty", "hourly", "   ", "--exec"])
+    assert result.exit_code == 2
+    req.assert_not_called()

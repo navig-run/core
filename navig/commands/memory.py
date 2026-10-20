@@ -868,7 +868,7 @@ def memory_facts_list(
                     f.id[:8],
                     f.category,
                     f"[{conf_color}]{f.confidence:.2f}[/{conf_color}]",
-                    f.content[:60],
+                    ("📌 " if getattr(f, "pinned", False) else "") + f.content[:60],
                     ", ".join(f.tags[:3]),
                 )
             ch.console.print(table)
@@ -919,8 +919,15 @@ def memory_remember(
         ch.console.print(
             f"  ID: [dim]{result.id[:8]}[/dim]  Category: [cyan]{result.category}[/cyan]"
         )
+        if result.metadata.get("redacted"):
+            ch.warning("Saved with the secret removed — keep the value itself in `navig vault`.")
 
     except Exception as e:
+        from navig.memory.fact_redaction import SensitiveContentError
+
+        if isinstance(e, SensitiveContentError):
+            ch.error("Not saved: that is only a secret. Store it with `navig vault` instead.")
+            raise typer.Exit(1) from e
         ch.error(f"Error: {e}")
         raise typer.Exit(1) from e
 
@@ -1024,6 +1031,184 @@ def memory_fact_stats(
     except Exception as e:
         ch.error(f"Error: {e}")
         raise typer.Exit(1) from e
+
+
+@memory_app.command("scan-secrets")
+def memory_scan_secrets(
+    apply: bool = typer.Option(
+        False, "--apply", help="Redact/remove what was found (default: report only)"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """Find secrets stored in memory before the write filter existed.
+
+    Every new fact is filtered on save; this checks the facts already stored — pending,
+    deleted and superseded ones too. Report-only unless --apply. The original text is
+    never printed.
+
+    Examples:
+        navig memory scan-secrets
+        navig memory scan-secrets --apply
+    """
+    import json as json_module
+
+    try:
+        from navig.memory.key_facts import get_key_fact_store
+
+        findings = get_key_fact_store().scrub_secrets(apply=apply)
+    except Exception as e:  # noqa: BLE001
+        ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
+
+    if json_output:
+        print(json_module.dumps({"applied": apply, "findings": findings}, indent=2))
+        return
+    if not findings:
+        ch.success("No secrets found in stored memories.")
+        return
+
+    from navig.console_helper import Table
+
+    table = Table(box=None, show_header=True, padding=(0, 2))
+    table.add_column("ID", style="dim", no_wrap=True)
+    table.add_column("State", no_wrap=True)
+    table.add_column("Action", no_wrap=True)
+    table.add_column("Fact after redaction")
+    for f in findings:
+        action = (
+            "[yellow]● redact[/yellow]" if f["action"] == "redact" else "[red]✗ remove[/red]"
+        )
+        preview = f["preview"] or "[dim](only a secret — text overwritten)[/dim]"
+        table.add_row(f["id"][:8], f["state"], action, preview)
+    ch.console.print(table)
+    if apply:
+        ch.success(f"Cleaned {len(findings)} stored fact(s).")
+    else:
+        ch.warning(f"{len(findings)} stored fact(s) hold a secret.")
+        ch.info("Next step: navig memory scan-secrets --apply")
+
+
+def _resolve_fact_id(store, prefix: str) -> str:
+    """Resolve an id prefix to exactly one active fact id, or exit with a clear error."""
+    prefix = (prefix or "").strip()
+    matches = [f.id for f in store.get_active(limit=100_000) if f.id.startswith(prefix)]
+    if not prefix or not matches:
+        ch.error(f"No memory found matching '{prefix}'.")
+        ch.info("Next step: navig memory facts")
+        raise typer.Exit(2)
+    if len(matches) > 1:
+        ch.error(f"'{prefix}' matches {len(matches)} memories — use more of the id.")
+        raise typer.Exit(2)
+    return matches[0]
+
+
+def _set_pin(fact_id: str, pinned: bool) -> None:
+    from navig.memory.key_facts import get_key_fact_store
+
+    store = get_key_fact_store()
+    full = _resolve_fact_id(store, fact_id)
+    if not store.set_pinned(full, pinned):
+        ch.error(f"Couldn't {'pin' if pinned else 'unpin'} {full[:8]}.")
+        raise typer.Exit(1)
+    fact = store.get(full)
+    if pinned:
+        ch.success(f"Pinned: {fact.content if fact else full[:8]}")
+        if fact is not None and fact.approved != 1:
+            ch.warning("It is still pending review — approve it to use it: "
+                       f"navig memory approve {full[:8]}")
+    else:
+        ch.success(f"Unpinned: {fact.content if fact else full[:8]}")
+
+
+@memory_app.command("pin")
+def memory_pin(fact_id: str = typer.Argument(..., help="Fact ID (prefix) to pin")):
+    """Pin a memory so the agent keeps it in mind in every conversation.
+
+    Examples:
+        navig memory pin abc12345
+    """
+    _set_pin(fact_id, True)
+
+
+@memory_app.command("unpin")
+def memory_unpin(fact_id: str = typer.Argument(..., help="Fact ID (prefix) to unpin")):
+    """Unpin a memory (it is still recalled when relevant).
+
+    Examples:
+        navig memory unpin abc12345
+    """
+    _set_pin(fact_id, False)
+
+
+@memory_app.command("edit")
+def memory_edit(
+    fact_id: str = typer.Argument(..., help="Fact ID (prefix) to edit"),
+    content: str = typer.Argument(..., help="The corrected fact"),
+):
+    """Correct a saved memory in place.
+
+    Examples:
+        navig memory edit abc12345 "Prefers Python 3.13"
+    """
+    from navig.memory.fact_redaction import SensitiveContentError
+    from navig.memory.key_facts import get_key_fact_store
+
+    store = get_key_fact_store()
+    full = _resolve_fact_id(store, fact_id)
+    if not content.strip():
+        ch.error("The new text is empty — use `navig memory forget` to remove a memory.")
+        raise typer.Exit(2)
+    try:
+        fact = store.update_content(full, content.strip())
+    except SensitiveContentError:
+        ch.error("Not saved: that is only a secret. Store it with `navig vault` instead.")
+        raise typer.Exit(1) from None
+    if fact is None:
+        ch.error(f"No memory found matching '{fact_id}'.")
+        raise typer.Exit(2)
+    ch.success(f"Updated: {fact.content}")
+    if fact.metadata.get("redacted"):
+        ch.warning("Saved with the secret removed — keep the value itself in `navig vault`.")
+
+
+@memory_app.command("summary")
+def memory_summary(
+    refresh: bool = typer.Option(False, "--refresh", help="Rewrite it now (calls the model)"),
+    json_output: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """What NAVIG knows about you — a short profile written from your approved memories.
+
+    Cached; it is rewritten when your memories change (or with --refresh).
+
+    Examples:
+        navig memory summary
+        navig memory summary --refresh
+    """
+    import asyncio
+    import json as json_module
+
+    from navig.agent.memory_summary import generate_summary, read_summary
+    from navig.memory.key_facts import get_key_fact_store
+
+    store = get_key_fact_store()
+    try:
+        current = read_summary(store)
+        data = (
+            asyncio.run(generate_summary(store, force=refresh))
+            if refresh or current["stale"]
+            else current
+        )
+    except Exception as e:  # noqa: BLE001
+        ch.error(f"Couldn't write the summary: {e}")
+        raise typer.Exit(1) from e
+    if json_output:
+        print(json_module.dumps(data, indent=2))
+        return
+    if not data["summary"]:
+        ch.info("No approved memories yet — nothing to summarise.")
+        ch.info("Next step: navig memory pending")
+        return
+    ch.panel(data["summary"], title=f"What NAVIG knows about you · {data['fact_count']} memories")
 
 
 @memory_app.command("pending")

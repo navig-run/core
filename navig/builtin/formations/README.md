@@ -20,7 +20,7 @@ navig formation init navig_app
 navig formation agents
 
 # Run a council deliberation
-navig council run "Should we refactor the database layer?"
+navig formation council "Should we refactor the database layer?"
 ```
 
 ## Directory Structure
@@ -86,13 +86,13 @@ The Council Engine runs multi-agent discussions:
 
 ```bash
 # Basic deliberation
-navig council run "What's our go-to-market strategy?"
+navig formation council "What's our go-to-market strategy?"
 
 # Multi-round deliberation
-navig council run "Database migration approach" --rounds 3
+navig formation council "Database migration approach" --rounds 3
 
 # JSON output for automation
-navig council run "Sprint priorities" --json
+navig formation council "Sprint priorities" --json
 ```
 
 Each agent responds from their specialized perspective, and the

@@ -1,5 +1,0 @@
-{
-  "name": "restic-backup",
-  "description": "Fast, encrypted, deduplicated backups using Restic.",
-  "id": "skill:backup"
-}

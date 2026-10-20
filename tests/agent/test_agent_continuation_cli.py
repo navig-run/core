@@ -20,12 +20,20 @@ class _FakeStore:
             return self.state
         return None
 
-    def set_ai_state(self, user_id, chat_id, mode, persona=None, context=None):
+    def set_ai_state(
+        self, user_id, chat_id, mode, persona=None, context=None, persona_explicit=None
+    ):
+        prev = self.state or {}
+        # Mirrors RuntimeStore: None keeps the stored persona / explicit flag.
         self.state = {
             "user_id": user_id,
             "chat_id": chat_id,
             "mode": mode,
-            "persona": persona,
+            "persona": persona if persona is not None else prev.get("persona"),
+            "persona_explicit": (
+                persona_explicit if persona_explicit is not None
+                else prev.get("persona_explicit", False)
+            ),
             "context": context or {},
         }
 
@@ -50,6 +58,7 @@ def test_agent_continuation_continue_and_status(monkeypatch):
     assert "Policy: cooldown=10s, max_turns=3" in result.stdout
     assert "suppression(wait=30s, blocked=90s)" in result.stdout
     assert "decision=standard" in result.stdout
+    assert store.state["persona"] is None  # no persona invented on a policy update
 
     status = runner.invoke(agent_app, ["continuation", "status"])
     assert status.exit_code == 0
@@ -77,6 +86,7 @@ def test_agent_continuation_pause_and_skip(monkeypatch):
     skipped = runner.invoke(agent_app, ["continuation", "skip"])
     assert skipped.exit_code == 0
     assert "skipped" in skipped.stdout.lower()
+    assert store.state["persona"] == "assistant"  # kept, not re-written
 
 
 def test_agent_continuation_start_alias(monkeypatch):

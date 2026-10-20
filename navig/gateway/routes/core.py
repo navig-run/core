@@ -115,9 +115,43 @@ def _root_handler(gw):
     return h
 
 
+def _identity(gw) -> dict:
+    """What a /health probe needs to tell two local gateways apart.
+
+    One config dir can run TWO processes that both answer ``/health`` on the
+    configured port: the dedicated gateway child (self-healing bind — it records the
+    port it actually landed on to ``~/.navig/gateway.json``) and the telegram
+    worker's embedded copy (binds the CONFIGURED port, survives EADDRINUSE, and
+    never records). Both serve ``/api/deck/*`` from the same data, but only one of
+    them is running the build a surface fast-forwarded to — so a client that just
+    takes the first 200 can hit a route the other process does not have.
+
+    ``canonical`` is true for the process ``gateway.json`` names (and for everyone
+    when nothing has been recorded, so a single-server install stays unambiguous).
+    ``port`` is the port this process is actually serving — not the configured one.
+
+    Cheap: one tiny file read on a path the extension already polls every 30 s.
+    """
+    try:
+        port = int(gw.config.port)
+    except Exception:  # noqa: BLE001 — identity is never worth failing health over
+        return {}
+    recorded: int | None = None
+    try:
+        from navig.gateway_client import read_gateway_discovery  # noqa: PLC0415
+
+        disc = read_gateway_discovery()
+        recorded = int(disc[0]) if disc else None
+    except Exception:  # noqa: BLE001
+        recorded = None
+    return {"port": port, "canonical": recorded is None or recorded == port}
+
+
 def _health(gw):
     async def h(r):
-        return json_ok({"status": "ok", "timestamp": datetime.now().isoformat()})
+        payload = {"status": "ok", "timestamp": datetime.now().isoformat()}
+        payload.update(_identity(gw))
+        return json_ok(payload)
 
     return h
 

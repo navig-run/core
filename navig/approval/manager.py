@@ -192,12 +192,18 @@ class ApprovalManager:
         channel: str = "cli",
         user_id: str = "anonymous",
         description: str | None = None,
+        on_created: Callable[[str], None] | None = None,
     ) -> bool:
         """
         Request approval for a command.
 
         Returns True if approved, False if denied/expired.
         Blocks until user responds or timeout.
+
+        *on_created* is called with the request id once a request is actually
+        pending (never for a short-circuit decision) — so a caller that cannot hold
+        a connection open for the whole wait (the deck) can answer "pending" with
+        that id while this coroutine keeps waiting in the background.
         """
         if not self.policy.enabled:
             return True
@@ -301,6 +307,11 @@ class ApprovalManager:
                     callback(request)
             except Exception as e:
                 logger.error("Approval callback error: %s", e)
+        if on_created is not None:
+            try:
+                on_created(request_id)
+            except Exception as e:  # noqa: BLE001 — the wait below still decides
+                logger.error("Approval on_created callback error: %s", e)
 
         try:
             # Wait for response or timeout
@@ -322,6 +333,11 @@ class ApprovalManager:
 
             if level == ApprovalLevel.DANGEROUS:
                 # Dangerous commands default to deny on timeout
+                default_approve = False
+            if self.policy.fail_closed_timeout:
+                # security_level=high: an unanswered question is a blocked
+                # packet — EVERY level denies on timeout, whatever
+                # default_action says.
                 default_approve = False
 
             logger.info(

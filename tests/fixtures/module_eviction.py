@@ -43,9 +43,27 @@ def evicted_modules(
     Restores the original ``sys.modules`` entries and parent-package attributes on exit,
     and drops anything imported while inside.
     """
+    # Two attribute-leak shapes neither monkeypatch tracks, and both must come back as they
+    # were — a leak here is not cosmetic: it is the exact orphan
+    # `test_no_module_imported_inside_outlives_the_no_plugins_world` reports
+    # (`navig.commands.voice` sitting in sys.modules while `navig.commands` disowns it,
+    # red and order-dependent under xdist):
+    #   A) the entry exists but its parent attribute does not (a prior test popped it) —
+    #      the block re-binds the attribute; restoring only the entry re-diverges the pair.
+    #   B) the entry does not exist — the block BIRTHS entry and attribute together. The
+    #      entry is dropped in the finally below, but nothing ever saw the attribute, so it
+    #      dangles; the next cycle then registers that stale object as the value to restore
+    #      and the end state is (entry restored, attribute stale).
+    pre_existing: set[str] = set()
+    absent_attrs: list[tuple[object, str]] = []
     for mod in list(sys.modules):
         if not matches(mod, prefixes):
             continue
+        pre_existing.add(mod)
+        parent_name, _, leaf = mod.rpartition(".")
+        parent = sys.modules.get(parent_name)
+        if parent is not None and not hasattr(parent, leaf):
+            absent_attrs.append((parent, leaf))
         monkeypatch.delitem(sys.modules, mod, raising=False)
         # `import a.b` binds `b` as an ATTRIBUTE on package `a` as well, and delitem does
         # not track that. Re-importing inside rebinds it to a NEW module object which
@@ -72,4 +90,21 @@ def evicted_modules(
         # parent package disowns it. This runs first because the `with` closes before the
         # caller's `monkeypatch` fixture finalises.
         for mod in [m for m in sys.modules if matches(m, prefixes)]:
+            parent_name, _, leaf = mod.rpartition(".")
+            parent = sys.modules.get(parent_name)
+            obj = sys.modules[mod]
             del sys.modules[mod]
+            # B) born inside this block → restore absence of the attribute too (monkeypatch
+            # never saw it; only remove it if it still points at the object we just dropped).
+            if mod not in pre_existing and parent is not None and getattr(parent, leaf, None) is obj:
+                try:
+                    delattr(parent, leaf)
+                except AttributeError:
+                    pass
+        # A) attribute missing before the block → still missing after (see the header note).
+        for parent, leaf in absent_attrs:
+            if hasattr(parent, leaf):
+                try:
+                    delattr(parent, leaf)
+                except AttributeError:
+                    pass

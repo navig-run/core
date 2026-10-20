@@ -85,6 +85,8 @@ def find_best_destination(
     content_terms: list[str],
     source_space_root: Path,
     spaces_root: Path,
+    *,
+    text: str = "",
 ) -> Path | None:
     """
     Scan all sibling spaces under `spaces_root`, score each against `content_terms`,
@@ -93,12 +95,14 @@ def find_best_destination(
 
     Ignores the source space itself (to avoid self-routing).
     Returns None if no suitable destination is found.
-    """
-    siblings = scan_sibling_spaces(spaces_root)
-    best_path: Path | None = None
-    best_score = MIN_ATTRACTION_SCORE  # must beat the threshold to qualify
 
-    for sibling_root in siblings:
+    When *text* is given and the decision model is switched on for ``inbox_space``
+    (`navig decider on`), the model picks among the same siblings — or "none" — first,
+    using each space's channel names and descriptions; keyword scoring remains the
+    fallback whenever it is off, unsure or unavailable.
+    """
+    candidates: list[tuple[Path, RoutesConfig]] = []
+    for sibling_root in scan_sibling_spaces(spaces_root):
         # Skip the space the file came from
         try:
             if sibling_root.resolve() == source_space_root.resolve():
@@ -108,13 +112,18 @@ def find_best_destination(
 
         config = load(sibling_root)
         if config is None:
-            # No routes.yaml → no scoring data. Fall back to any sibling that
-            # has an inbox dir, with a minimal score.
-            inbox_path = sibling_root / ".navig" / "inbox"
-            if inbox_path.is_dir() and MIN_ATTRACTION_SCORE < best_score:
-                continue  # already have something better
-            continue
+            continue  # no routes.yaml → no scoring data, never a destination
+        candidates.append((sibling_root, config))
 
+    if text and candidates:
+        decided = _decide_destination(text, candidates)
+        if decided is not None:
+            return decided or None  # "" = the model is sure no sibling fits
+
+    best_path: Path | None = None
+    best_score = MIN_ATTRACTION_SCORE  # must beat the threshold to qualify
+
+    for sibling_root, config in candidates:
         score = score_against_space(content_terms, config)
         logger.debug(
             "Space %s scored %.3f for %d terms",
@@ -133,6 +142,64 @@ def find_best_destination(
         logger.debug("No sibling space reached attraction threshold %.3f", MIN_ATTRACTION_SCORE)
 
     return best_path
+
+
+#: The decision-model option meaning "no sibling space fits".
+_NONE_OPTION = "none"
+
+
+def _describe_space(root: Path, config: RoutesConfig) -> str:
+    parts = []
+    for ch in config.channels[:8]:
+        bit = ch.name or ch.id
+        if ch.description:
+            bit += f" — {ch.description}"
+        elif ch.keywords:
+            bit += f" ({', '.join(ch.keywords[:8])})"
+        parts.append(bit)
+    return f"space '{root.name}': " + ("; ".join(parts) if parts else "no channels described")
+
+
+def _decide_destination(text: str, candidates: list[tuple[Path, RoutesConfig]]) -> Path | str | None:
+    """Ask the decision model which sibling fits.
+
+    Returns the sibling's inbox path, ``""`` when the model is confident none fits, or
+    ``None`` to fall back to keyword scoring (off, unsure, unavailable, or an option
+    name that cannot be told apart).
+    """
+    from navig.agent import decide
+
+    if not decide.is_active("inbox_space"):
+        return None
+    by_option: dict[str, Path] = {}
+    options: dict[str, str] = {}
+    for root, config in candidates:
+        name = root.name
+        if name == _NONE_OPTION or name in by_option:
+            return None  # ambiguous option ids — let the keyword scorer decide
+        by_option[name] = root
+        options[name] = _describe_space(root, config)
+    options[_NONE_OPTION] = "none of these spaces fits this document; leave it where it is"
+    answers = decide.decide(
+        text,
+        [decide.choice("space", "Which space does this document belong in?", options)],
+        use="inbox_space",
+    )
+    if not answers or "space" not in answers:
+        return None
+    pick = answers["space"].answer
+    if pick == _NONE_OPTION:
+        logger.info("Decision model: no sibling space fits (%.0f%% sure)", answers["space"].confidence * 100)
+        return ""
+    root = by_option.get(pick)
+    if root is None:
+        return None
+    logger.info(
+        "Best destination (decision model): %s (%.0f%% sure)",
+        root,
+        answers["space"].confidence * 100,
+    )
+    return root / ".navig" / "inbox"
 
 
 def extract_terms(text: str, max_terms: int = 200) -> list[str]:

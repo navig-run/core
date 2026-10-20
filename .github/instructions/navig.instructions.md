@@ -152,8 +152,8 @@ navig run --b64 $b64
 - Prefer this to discover the canonical noun-verb actions quickly
 
 ### Skills Inventory (AI Skill Files)
-- List skills: `navig skills list` (add `--plain` or `--json` for automation)
-- Grouped view: `navig skills tree` to see categories
+- List skills: `navig skill list` (add `--plain` or `--json` for automation)
+- Grouped view: `navig skill tree` to see categories
 - If skills are missing, pass `--dir` with the skills/ path
 
 - **AVAILABLE OPTIONS**:

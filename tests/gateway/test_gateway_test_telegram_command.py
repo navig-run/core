@@ -14,7 +14,7 @@ def test_gateway_test_telegram_success(monkeypatch):
     def _fake_send(**kwargs):
         return 42
 
-    monkeypatch.setattr("navig.commands.telegram.telegram_send", _fake_send)
+    monkeypatch.setattr("navig.telegram.api.telegram_send", _fake_send)
 
     result = runner.invoke(
         gateway_app,
@@ -29,7 +29,7 @@ def test_gateway_test_telegram_failure(monkeypatch):
     def _fake_send(**kwargs):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr("navig.commands.telegram.telegram_send", _fake_send)
+    monkeypatch.setattr("navig.telegram.api.telegram_send", _fake_send)
 
     result = runner.invoke(
         gateway_app,
@@ -45,7 +45,7 @@ def test_gateway_test_telegram_failure_strict(monkeypatch):
     def _fake_send(**kwargs):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr("navig.commands.telegram.telegram_send", _fake_send)
+    monkeypatch.setattr("navig.telegram.api.telegram_send", _fake_send)
 
     result = runner.invoke(
         gateway_app,
@@ -59,7 +59,7 @@ def test_gateway_test_telegram_json(monkeypatch):
     def _fake_send(**kwargs):
         return 42
 
-    monkeypatch.setattr("navig.commands.telegram.telegram_send", _fake_send)
+    monkeypatch.setattr("navig.telegram.api.telegram_send", _fake_send)
 
     result = runner.invoke(
         gateway_app,
@@ -79,7 +79,7 @@ def test_gateway_test_all_json_includes_all_channels(monkeypatch):
     def _fake_matrix_test(**kwargs):
         return None
 
-    monkeypatch.setattr("navig.commands.telegram.telegram_send", _fake_send)
+    monkeypatch.setattr("navig.telegram.api.telegram_send", _fake_send)
     monkeypatch.setattr("navig.commands.matrix.send", _fake_matrix_test)
 
     result = runner.invoke(
@@ -101,7 +101,7 @@ def test_gateway_test_all_uppercase_alias(monkeypatch):
     def _fake_matrix_test(**kwargs):
         return None
 
-    monkeypatch.setattr("navig.commands.telegram.telegram_send", _fake_send)
+    monkeypatch.setattr("navig.telegram.api.telegram_send", _fake_send)
     monkeypatch.setattr("navig.commands.matrix.send", _fake_matrix_test)
 
     result = runner.invoke(

@@ -96,12 +96,57 @@ async def _handler(request: "web.Request") -> "web.Response":
             {"ok": False, "error": result.error}, status=result.http_status
         )
 
-    # Replay defence #2: drop a re-fired identical signature inside the window.
+    # A verified provider event we don't announce (an unticked Stripe type, an
+    # unpaid async checkout): ack 200 so the provider doesn't retry it for days.
+    if result.ignored:
+        return web.json_response(
+            {"ok": True, "ignored": (result.data or {}).get("event_type") or True}
+        )
+
+    # Replay defence #2: drop a re-fired identical event.
     # (Marked BEFORE dispatch so a concurrent duplicate is caught; rolled back
     # below on any failure so a retry of a FAILED delivery isn't lost as a dupe.)
-    replay_key = f"{source_name}:{result.signature}"
-    if _seen(replay_key):
-        return web.json_response({"ok": True, "duplicate": True})
+    # Provider events dedupe on the provider's own event id, DURABLY — Stripe
+    # re-signs every retry (a new signature each time) and retries for days,
+    # past both the in-memory window and any daemon restart.
+    if result.event_id:
+        if not signals.claim_event(source_name, result.event_id):
+            return web.json_response({"ok": True, "duplicate": True})
+        # One payment can arrive as two event types (a Checkout session completes
+        # AND its PaymentIntent succeeds). Claim the payment too, so an endpoint
+        # ticking both announces it once. The event id stays claimed either way,
+        # so Stripe's retries of the losing event dedupe as well.
+        payment_key = str((result.data or {}).get("payment_key") or "")
+        pay_claim = f"pay:{payment_key}" if payment_key else ""
+        if pay_claim and not signals.claim_event(source_name, pay_claim):
+            return web.json_response({"ok": True, "duplicate": True})
+
+        def _unmark() -> None:
+            signals.release_event(source_name, result.event_id)
+            if pay_claim:
+                signals.release_event(source_name, pay_claim)
+    else:
+        replay_key = f"{source_name}:{result.signature}"
+        if _seen(replay_key):
+            return web.json_response({"ok": True, "duplicate": True})
+
+        def _unmark() -> None:
+            _SEEN.pop(replay_key, None)
+
+    # A source a plugin claimed for an ACTION (e.g. a voice assistant driving
+    # OBS) runs it instead of ringing. Same checks above; only the sink differs.
+    from navig.gateway import ingest_actions
+
+    action = ingest_actions.get(source_name)
+    if action is not None:
+        try:
+            reply = await action(dict((result.data or {}).get("payload") or {}))
+        except Exception:  # noqa: BLE001 — the action failed; let a retry re-attempt
+            _unmark()
+            logger.warning("signal '%s': action failed", source_name, exc_info=True)
+            return web.json_response({"ok": False, "error": "action_failed"}, status=502)
+        signals.record_hit(source_name)
+        return web.json_response({"ok": True, **(reply or {})})
 
     try:
         from navig.notify import dispatch as notify_dispatch
@@ -114,7 +159,7 @@ async def _handler(request: "web.Request") -> "web.Response":
             data=result.data,
         )
     except Exception:  # noqa: BLE001 — dispatch blew up before delivering anything
-        _SEEN.pop(replay_key, None)  # not delivered → let a retry re-attempt
+        _unmark()  # not delivered → let a retry re-attempt
         logger.debug("signal dispatch failed for %s", source_name, exc_info=True)
         return web.json_response({"ok": False, "error": "dispatch_failed"}, status=502)
 
@@ -125,7 +170,7 @@ async def _handler(request: "web.Request") -> "web.Response":
     # replay dedupe: roll the mark back and return a retryable 502 so the signed
     # sender re-fires instead of silently losing the event.
     if (outcome.get("channels") or []) and not channels:
-        _SEEN.pop(replay_key, None)
+        _unmark()
         logger.warning("signal '%s': every channel failed to deliver", source_name)
         return web.json_response(
             {"ok": False, "error": "delivery_failed"}, status=502

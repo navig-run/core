@@ -12,6 +12,39 @@ def test_resolve_root_under_space(tmp_path):
     assert root == tmp_path / ".navig" / "refs"
 
 
+def _space_config(space, text):
+    (space / ".navig").mkdir(parents=True, exist_ok=True)
+    (space / ".navig" / "space.config.json").write_text(text, encoding="utf-8")
+
+
+def test_resolve_root_follows_relative_refs_dir(tmp_path):
+    _space_config(tmp_path, json.dumps({"id": "persona", "refs_dir": ".media/refs"}))
+    assert rl.resolve_refs_root(tmp_path) == tmp_path / ".media" / "refs"
+
+
+def test_resolve_root_follows_absolute_refs_dir(tmp_path):
+    studio = tmp_path / "studio" / "refs"
+    space = tmp_path / "space"
+    _space_config(space, json.dumps({"refs_dir": str(studio)}))
+    assert rl.resolve_refs_root(space) == studio
+
+
+def test_resolve_root_ignores_config_without_refs_dir(tmp_path):
+    _space_config(tmp_path, json.dumps({"id": "persona", "refs_dir": "  "}))
+    assert rl.resolve_refs_root(tmp_path) == tmp_path / ".navig" / "refs"
+
+
+def test_resolve_root_survives_a_broken_config(tmp_path):
+    _space_config(tmp_path, "{not json")
+    assert rl.resolve_refs_root(tmp_path) == tmp_path / ".navig" / "refs"
+
+
+def test_resolve_root_reads_a_bom_config(tmp_path):
+    (tmp_path / ".navig").mkdir()
+    (tmp_path / ".navig" / "space.config.json").write_text('{"refs_dir": "media/refs"}', encoding="utf-8-sig")
+    assert rl.resolve_refs_root(tmp_path) == tmp_path / "media" / "refs"
+
+
 def test_stage_writes_file_sidecar_and_ledger(tmp_path):
     root = rl.resolve_refs_root(tmp_path)
     staged = rl.stage(root, media_id="m1", modality="image", ext=".png",

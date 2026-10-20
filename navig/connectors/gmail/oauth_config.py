@@ -6,7 +6,7 @@ Scopes and endpoint URLs for Google Gmail API v1.
 Registration path (neither of the two names this docstring used to give exists —
 there is no ``GMAIL_OAUTH_CONFIG`` constant and no ``register_gmail_oauth``):
 :func:`get_gmail_oauth_config` is called by ``connectors.bootstrap``, which walks
-its ``_oauth_loaders`` table and hands the result to
+its ``OAUTH_LOADERS`` table and hands the result to
 ``ConnectorAuthManager.register_provider("gmail", config)`` — that is what
 populates the global ``OAUTH_PROVIDERS`` dict. Returning ``None`` (no
 ``GOOGLE_CLIENT_ID`` in the environment) skips registration silently, which is
@@ -49,6 +49,29 @@ GMAIL_SCOPES = [
 ]
 
 
+#: Opt-in only: reading and creating Gmail FILTERS (``settings/filters``) needs this scope.
+#: Requested when ``connectors.gmail.filters`` is true, so nobody is asked to grant filter
+#: management unless they turned on the mailroom's filter organisation. Takes effect at the
+#: next connect (``navig connector connect gmail``); existing tokens keep their old scopes.
+GMAIL_SETTINGS_SCOPE = "https://www.googleapis.com/auth/gmail.settings.basic"
+
+
+def gmail_scopes() -> list[str]:
+    """The scopes a new Gmail connection asks for."""
+    scopes = list(GMAIL_SCOPES)
+    try:
+        from navig.config import get_config_manager
+        from navig.core.coerce import coerce_bool
+
+        cfg = get_config_manager().get_global_config() or {}
+        wanted = ((cfg.get("connectors") or {}).get("gmail") or {}).get("filters")
+        if coerce_bool(wanted, default=False):
+            scopes.append(GMAIL_SETTINGS_SCOPE)
+    except Exception:  # noqa: BLE001 — an unreadable config asks for the default scopes, never more
+        pass
+    return scopes
+
+
 def build_gmail_oauth_config(
     client_id: str,
     client_secret: str | None = None,
@@ -67,7 +90,7 @@ def build_gmail_oauth_config(
         client_id=client_id,
         client_secret=client_secret,
         redirect_uri=connector_redirect_uri(),
-        scopes=GMAIL_SCOPES,
+        scopes=gmail_scopes(),
         userinfo_url=_GOOGLE_USERINFO_URL,
         # Without these Google returns NO refresh token: the connection then dies
         # one hour after linking, which is fatal for unattended cron/daemon use.

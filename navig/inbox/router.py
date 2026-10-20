@@ -277,7 +277,7 @@ class InboxRouter:
 
         # Rule fired — find the best sibling space
         spaces_root = config.spaces_root or space_root.parent
-        dest_inbox = find_best_destination(terms, space_root, spaces_root)
+        dest_inbox = find_best_destination(terms, space_root, spaces_root, text=raw_text)
 
         is_dry = dry_run or rule.dry_run
         reason = f"exclude rule matched {rule.min_hits}+ keywords from {rule.keywords[:4]}"

@@ -14,6 +14,15 @@ import pytest
 
 from navig.spaces import habit_tracker, sparks
 
+
+@pytest.fixture(autouse=True)
+def _english_copy(monkeypatch):
+    """These assertions are written against the English copy ("Wake", "Paused").
+    The cards are localized off the single global language, so a test elsewhere in
+    the gate's selection (or the operator's own `user.language: Russian`) changes
+    every string here. Pin it: the subject is the wording, not the language."""
+    monkeypatch.setattr("navig.core.language.resolve_language", lambda *a, **k: "en")
+
 MONDAY = date(2026, 8, 17)
 SATURDAY = date(2026, 8, 22)
 

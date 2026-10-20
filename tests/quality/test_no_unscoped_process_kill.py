@@ -65,10 +65,6 @@ _ALLOWLIST: dict[str, str] = {
         "_kill_orphan_daemons enumerator (_enumerate_navig_pids) — its results are scoped "
         "by config_dir_of before any kill (#669); _verify_daemon_pid reads a specific PID"
     ),
-    "browser/targets.py": (
-        "kills BROWSER processes by image name (chrome/edge/brave/electron), never a navig "
-        "brain — a different domain (see the no-chrome-kill rule)"
-    ),
     "builtins/mini_control/plugin.py": (
         "a REMOTE `navig run --host <ssh>` pkill of the deployed agent.py on the SSH target "
         "— not a local navig process, cannot reach the operator's brain"

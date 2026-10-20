@@ -1,8 +1,9 @@
 """A default install must not let any local process answer the agent's approvals.
 
-`require_bearer_auth` opens with `if not token: return None` — **no token means open
-access** — and `gateway.auth.token` had no default. Seventeen route modules sit behind
-it, and one of them is `POST /approval/{id}/respond`.
+Historically `require_bearer_auth` returned None (open access) when `gateway.auth.token`
+was unset; it now fails closed with 503, but a default install must still MINT the
+token so clients are not simply locked out. Seventeen route modules sit behind this
+key, and one of them is `POST /approval/{id}/respond`.
 
 So on a default install a local process could enumerate the agent's pending approvals
 (`GET /approval/pending`, which includes the rendered description) and answer them. An

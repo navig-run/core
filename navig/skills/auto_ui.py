@@ -67,7 +67,7 @@ def _label(pick: SkillPick) -> str:
     """`author › skill` for owner/repo/skill refs; community skills flagged."""
     ref = pick.ref
     if ref.startswith("community:"):
-        return f"[magenta]navig-community[/] [dim]›[/] [cyan]{ref.split('/')[-1]}[/]"
+        return f"[magenta]navig-registry[/] [dim]›[/] [cyan]{ref.split('/')[-1]}[/]"
     parts = ref.split("/")
     if len(parts) == 3:
         return f"[dim]{parts[0]}[/] [dim]›[/] [cyan]{parts[2]}[/]"

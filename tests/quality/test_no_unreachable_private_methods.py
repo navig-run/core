@@ -60,7 +60,7 @@ import pytest
 # this guard parses the whole tree, and eight workers each holding a whole-tree AST
 # at the same moment is what crashes workers on a shared box and fakes a red gate.
 # Lane assignment is declared in tests/quality/test_heavy_tree_guards_are_pinned.py.
-pytestmark = pytest.mark.xdist_group("whole_tree_ast_1")
+pytestmark = [pytest.mark.xdist_group("whole_tree_ast_1"), pytest.mark.timeout(300)]
 
 CORE = Path(__file__).resolve().parents[2] / "navig"
 REPO = Path(__file__).resolve().parents[3]

@@ -331,8 +331,68 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
                 context_window=64000,
                 max_tokens=_STANDARD_MAX_OUTPUT_TOKENS,
             ),
+            # Xiaomi MiMo (audited live 2026-10-13 — see registry.py)
+            ModelDefinition(
+                id="xiaomi/mimo-v2.6-flash",
+                name="MiMo V2.6 Flash (OpenRouter)",
+                input=[ModelInput.TEXT],
+                context_window=1050000,
+                max_tokens=_STANDARD_MAX_OUTPUT_TOKENS,
+                cost=ModelCost(input=0.14, output=0.28, cache_read=0.0028),
+            ),
+            ModelDefinition(
+                id="xiaomi/mimo-v2.6-pro",
+                name="MiMo V2.6 Pro (OpenRouter)",
+                input=[ModelInput.TEXT],
+                context_window=1050000,
+                max_tokens=_STANDARD_MAX_OUTPUT_TOKENS,
+                cost=ModelCost(input=0.435, output=0.87, cache_read=0.0036),
+            ),
+            ModelDefinition(
+                id="xiaomi/mimo-v2.6-pro-ultraspeed",
+                name="MiMo V2.6 Pro UltraSpeed (OpenRouter)",
+                input=[ModelInput.TEXT],
+                context_window=1048000,
+                max_tokens=_STANDARD_MAX_OUTPUT_TOKENS,
+                cost=ModelCost(input=4.35, output=8.7, cache_read=0.036),
+            ),
         ],
         priority=30,
+    ),
+    # Official Xiaomi endpoint — Anthropic-shape path (/anthropic/v1/messages).
+    # Audited live 2026-10-13 (see registry.py); prices equal OpenRouter's
+    # pass-through, so the direct route buys latency stability, not discount.
+    "mimo": ProviderConfig(
+        name="mimo",
+        base_url="https://api.xiaomimimo.com/anthropic",
+        api=ModelApi.ANTHROPIC_MESSAGES,
+        models=[
+            ModelDefinition(
+                id="mimo-v2.6-flash",
+                name="MiMo V2.6 Flash",
+                input=[ModelInput.TEXT],
+                context_window=1050000,
+                max_tokens=_STANDARD_MAX_OUTPUT_TOKENS,
+                cost=ModelCost(input=0.14, output=0.28, cache_read=0.0028),
+            ),
+            ModelDefinition(
+                id="mimo-v2.6-pro",
+                name="MiMo V2.6 Pro",
+                input=[ModelInput.TEXT],
+                context_window=1050000,
+                max_tokens=_STANDARD_MAX_OUTPUT_TOKENS,
+                cost=ModelCost(input=0.435, output=0.87, cache_read=0.0036),
+            ),
+            ModelDefinition(
+                id="mimo-v2.6-pro-ultraspeed",
+                name="MiMo V2.6 Pro UltraSpeed",
+                input=[ModelInput.TEXT],
+                context_window=1048000,
+                max_tokens=_STANDARD_MAX_OUTPUT_TOKENS,
+                cost=ModelCost(input=4.35, output=8.7, cache_read=0.036),
+            ),
+        ],
+        priority=35,
     ),
     "ollama": ProviderConfig(
         name="ollama",

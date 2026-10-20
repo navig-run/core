@@ -14,7 +14,7 @@ ch = lazy_import("navig.console_helper")
 
 council_app = typer.Typer(
     name="council",
-    help="Multi-agent council deliberation",
+    help="Multi-agent council deliberation (superseded → navig formation council)",
     invoke_without_command=True,
     no_args_is_help=False,
 )
@@ -22,7 +22,15 @@ council_app = typer.Typer(
 
 @council_app.callback()
 def council_callback(ctx: typer.Context):
-    """Council commands - run without subcommand for help."""
+    """Council commands - run without subcommand for help.
+
+    Superseded by `navig formation council` (same implementation); `navig council run`
+    keeps working and says so.
+    """
+    if ctx.invoked_subcommand == "run":
+        from navig.cli.superseded import hint  # noqa: PLC0415
+
+        hint("navig council run")
     if ctx.invoked_subcommand is None:
         import os as _os  # noqa: PLC0415
 
@@ -52,9 +60,9 @@ def council_run(
     The default agent synthesizes all responses into a final decision.
 
     Examples:
-        navig council run "Should we invest in a new CRM system?"
-        navig council run "Best approach for scaling the database?" --rounds 2
-        navig council run "Transfer budget allocation" --json
+        navig formation council "Should we invest in a new CRM system?"
+        navig formation council "Best approach for scaling the database?" --rounds 2
+        navig formation council "Transfer budget allocation" --json
     """
     from navig.formations.council import run_council
     from navig.formations.loader import get_active_formation

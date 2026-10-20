@@ -266,8 +266,14 @@ class CapabilityPromoter:
         return scored
 
     def _build_promotion_message(self, feature: FeatureInfo) -> str:
-        """Build a natural promotion message for a feature."""
-        return f"💡 <b>{feature.name}</b>: {feature.description}\nTry: <code>{feature.example_command}</code>"
+        """Build a natural promotion message for a feature.
+
+        Markdown, not HTML: the body travels as a ``Notification.message``, which
+        ``to_telegram_message`` renders through ``md_to_html`` — and that ESCAPES
+        any HTML already in it. Pre-rendered ``<b>``/``<code>`` therefore reached
+        the chat as literal tags.
+        """
+        return f"💡 **{feature.name}**: {feature.description}\nTry: `{feature.example_command}`"
 
     def get_all_feature_keys(self) -> list[str]:
         """Get all registered feature keys (for underused feature detection)."""

@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 _MAX_FILE_BYTES = 256 * 1024          # cap any single metadata file we read
 _README_EXCERPT_CHARS = 4000          # cap README slice fed to the LLM
 _MAX_TREE_ENTRIES = 80                # shallow top-level listing cap
-_MAX_COMMANDS = 100
+_MAX_COMMANDS = 400  # grabnite alone has 157 root scripts; 100 silently dropped a third
 
 # Frameworks/tools inferred from package.json dependency names (substring match
 # on the dependency key) → display tag.

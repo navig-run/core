@@ -77,10 +77,10 @@ async def switch_persona(
     from navig.personas.assets import deliver  # noqa: PLC0415
     from navig.personas.loader import load_persona  # noqa: PLC0415
     from navig.personas.resolver import resolve_persona  # noqa: PLC0415
-    from navig.personas.store import get_active_persona, set_active_persona  # noqa: PLC0415
+    from navig.personas.store import get_persona_choice, set_active_persona  # noqa: PLC0415
 
     # ── Step 1: save rollback point ───────────────────────────────────────────
-    previous_name = get_active_persona(user_id, chat_id)
+    previous_name, previous_explicit = get_persona_choice(user_id)
 
     # ── Step 2: validate persona exists ──────────────────────────────────────
     if resolve_persona(name, cwd=cwd) is None:
@@ -97,7 +97,7 @@ async def switch_persona(
         # The persisted store is the source of truth; the live per-session agents
         # pick up the new persona on their next construction (persona application
         # is channel_router's responsibility, not this function's).
-        set_active_persona(user_id, chat_id, name)
+        set_active_persona(user_id, chat_id, name, explicit=True)  # the user chose it
 
         # ── Step 5: deliver assets (wallpaper + sound) ────────────────────────
         if deliver_assets and bot_client is not None:
@@ -106,7 +106,7 @@ async def switch_persona(
     except Exception as exc:
         # ── Rollback ─────────────────────────────────────────────────────────
         try:
-            set_active_persona(user_id, chat_id, previous_name)
+            set_active_persona(user_id, chat_id, previous_name, explicit=previous_explicit)
         except Exception as rollback_exc:  # noqa: BLE001
             logger.error("Store rollback failed for user %s: %s", user_id, rollback_exc)
 

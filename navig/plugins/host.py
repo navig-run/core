@@ -34,6 +34,16 @@ logger = logging.getLogger(__name__)
 DISABLED_COMMANDS_FILE = "disabled_commands.json"
 
 
+def _invalidate_discovery() -> None:
+    """Drop the memoised plugin capability-dir scan after an install/uninstall."""
+    try:
+        from navig.plugins.package import invalidate_plugin_discovery_cache
+
+        invalidate_plugin_discovery_cache()
+    except Exception:  # noqa: BLE001 — cache invalidation is best-effort
+        pass
+
+
 @dataclass
 class InstalledPlugin:
     id: str
@@ -151,11 +161,34 @@ class PluginHost:
 
     def _pip_plugins(self) -> list[InstalledPlugin]:
         from importlib import metadata
+        from importlib.util import find_spec
 
         from navig.plugins.package import disabled_plugin_ids
 
+        def _module_resolvable(value: str) -> bool:
+            """Can the entry point's top-level module actually be found?
+
+            Metadata is not the package. A dist can be registered with entry points
+            while its source is gone — `navig-pentest` shipped exactly that way: an
+            editable install, two entry points, a console script, and zero `.py`
+            files, so `navig plugin list` called it *wired* while every use of it
+            failed. Discovery alone never imports, which is right for speed, but
+            "never imports" must not become "never notices".
+
+            `find_spec` on a top-level name locates it WITHOUT executing it, so this
+            stays as cheap as the metadata read it sits beside.
+            """
+            top = (value or "").split(":")[0].split(".")[0]
+            if not top:
+                return True  # nothing to judge
+            try:
+                return find_spec(top) is not None
+            except Exception:  # noqa: BLE001 — an unresolvable finder is the failure
+                return False
+
         disabled = disabled_plugin_ids()
         by_dist: dict[str, InstalledPlugin] = {}
+        roots: dict[str, list[str]] = {}
 
         def _dist_of(ep) -> tuple[str, str, str]:
             dist = getattr(ep, "dist", None)
@@ -168,11 +201,17 @@ class PluginHost:
                 (meta.get("Summary") or "") if meta else "",
             )
 
+        def _note_root(dist_name: str, value: str) -> None:
+            top = (value or "").split(":")[0].split(".")[0]
+            if top and top not in roots.setdefault(dist_name, []):
+                roots[dist_name].append(top)
+
         try:
             for ep in metadata.entry_points(group="navig.plugins"):
                 dist_name, version, summary = _dist_of(ep)
                 if dist_name == "navig":  # core never self-registers; be safe
                     continue
+                _note_root(dist_name, ep.value)
                 by_dist.setdefault(dist_name, InstalledPlugin(
                     id=dist_name, format="pip", path=None, version=version,
                     description=summary, enabled=dist_name not in disabled, source="pip",
@@ -181,6 +220,7 @@ class PluginHost:
                 dist_name, version, summary = _dist_of(ep)
                 if dist_name == "navig":
                     continue
+                _note_root(dist_name, ep.value)
                 plugin = by_dist.setdefault(dist_name, InstalledPlugin(
                     id=dist_name, format="pip", path=None, version=version,
                     description=summary, enabled=dist_name not in disabled, source="pip",
@@ -189,6 +229,17 @@ class PluginHost:
                     plugin.commands.append(ep.name)
         except Exception as exc:  # noqa: BLE001 — a broken dist must not kill discovery
             logger.debug("pip plugin discovery failed: %s", exc)
+
+        # Populate `error` for installed-but-missing packages, so `wire_state` reports
+        # `failed` instead of `wired` — a ghost must be visible in `navig plugin list`,
+        # not only in `navig doctor` (which is the one place that force-loads).
+        for name, plugin in by_dist.items():
+            missing = [r for r in roots.get(name, []) if not _module_resolvable(r)]
+            if missing:
+                plugin.error = (
+                    "installed but not importable: " + ", ".join(sorted(missing))
+                    + " (stale dist-info or missing source)"
+                )
         return list(by_dist.values())
 
     def _legacy_plugins(self, *, refresh: bool = False) -> list[InstalledPlugin]:
@@ -319,14 +370,17 @@ class PluginHost:
         Returns the installed plugin's directory. Raises ValueError with a
         user-facing message on any rejection (callers render it).
         """
-        src = Path(source).expanduser()
-        if src.exists() and src.is_file() and src.suffix.lower() == ".zip":
-            return self._install_zip(src)
-        if src.exists() and src.is_dir():
-            return self._install_dir(src)
-        if source.startswith(("http://", "https://", "git@", "ssh://")):
-            return self._install_git(source)
-        return self._install_from_marketplace(source)
+        try:
+            src = Path(source).expanduser()
+            if src.exists() and src.is_file() and src.suffix.lower() == ".zip":
+                return self._install_zip(src)
+            if src.exists() and src.is_dir():
+                return self._install_dir(src)
+            if source.startswith(("http://", "https://", "git@", "ssh://")):
+                return self._install_git(source)
+            return self._install_from_marketplace(source)
+        finally:
+            _invalidate_discovery()
 
     def uninstall(self, plugin_id: str) -> InstalledPlugin:
         import shutil
@@ -342,6 +396,7 @@ class PluginHost:
         if plugin.path is None or not plugin.path.exists():
             raise ValueError(f"Plugin '{plugin_id}' has no removable directory")
         shutil.rmtree(plugin.path)
+        _invalidate_discovery()
         self.regenerate_disabled_commands()
         return plugin
 

@@ -2,11 +2,9 @@
 NAVIG license quota tables — what each tier grants.
 
 The canonical, language-neutral spec lives in ``navig/license/tiers.json``
-(``legacy`` section). These dicts mirror it, as do the TS duplicates in
-``navig-api/src/lib/billing.ts`` and ``navig-deck/lib/license.ts``. They MUST
-agree — ``tests/license/test_tiers_parity.py`` enforces it. See
-``docs/BUSINESS-PLAN.md`` for the NAVIG Harbor consolidation that will fold
-these into Free/Plus/Max + Team/Enterprise.
+(``live`` + ``legacy`` sections). These dicts mirror it, as do the TS duplicates
+in ``services/api/src/lib/billing.ts`` and ``apps/deck/lib/license.ts``. They
+MUST agree — ``tests/license/test_tiers_parity.py`` enforces it.
 """
 
 from __future__ import annotations
@@ -33,15 +31,16 @@ LEGACY_TO_HARBOR: dict[str, str] = {
 }
 
 # Tier → host_limit. /api/deck/hosts uses this to slice the host inventory.
-# Plus and Max share capabilities but differ on host scale (+ AI allowance,
-# priority relay, lifetime — enforced elsewhere).
+# Plus and Max share capabilities but differ on host scale. For team and
+# enterprise this is the DEFAULT: a signed `contract_hosts` overrides it
+# (see keys.py and CONTRACT_HOST_TIERS).
 TIER_HOST_LIMIT: dict[TierName, int] = {
     # live
     "free": 1,
     "plus": 5,
     "max": 200,
     "team": 200,
-    "enterprise": 100_000,  # effectively unlimited; sized for safety net
+    "enterprise": 1_000,  # default; the contract number rides in the token
     # legacy (recognized; never sold)
     "solo": 1,
     "personal": 5,
@@ -49,6 +48,11 @@ TIER_HOST_LIMIT: dict[TierName, int] = {
     "business": 50,
     "fleet": 200,
 }
+
+# Tiers whose host limit is NEGOTIATED: a signed `contract_hosts` in the token
+# replaces the default above. Restricted to these two so a self-serve token
+# can never carry an override.
+CONTRACT_HOST_TIERS: frozenset[str] = frozenset({"team", "enterprise"})
 
 # Tier → capabilities (internal capability flags unlocked). Modules are no
 # longer sold à-la-carte (see tiers.json) — only granted by tier. Plus/Max

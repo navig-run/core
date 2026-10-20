@@ -20,7 +20,7 @@ navig formation init navig_app
 navig formation agents
 
 # Run a council deliberation
-navig council run "Should we migrate to microservices?"
+navig formation council "Should we migrate to microservices?"
 ```
 
 ## Commands
@@ -56,18 +56,18 @@ Options:
 - `--plain`: Plain text output
 - `--json`: JSON output
 
-### `navig council run <question>`
+### `navig formation council <question>`
 Run a multi-agent council deliberation on a question.
 
 Options:
-- `--rounds, -r`: Number of deliberation rounds (default: 3)
-- `--timeout, -t`: Per-agent timeout in seconds (default: 30)
+- `--rounds, -r`: Number of deliberation rounds (default: 1)
+- `--timeout, -t`: Per-agent timeout in seconds (default: none)
 - `--plain`: Plain text output
 - `--json`: JSON output
 
 ```bash
-navig council run "What's our deployment strategy?" --rounds 2
-navig council run "Budget allocation for Q3" --json
+navig formation council "What's our deployment strategy?" --rounds 2
+navig formation council "Budget allocation for Q3" --json
 ```
 
 ## Built-in Formations

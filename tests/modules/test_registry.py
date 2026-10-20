@@ -39,7 +39,10 @@ def test_free_tier_locks_paid_apps(monkeypatch):
     rows = ModuleRegistry().discover().list_modules()
     by_id = {m["id"]: m for m in rows}
     assert by_id["finance"]["locked"] is True     # business_ops
-    assert by_id["projects"]["locked"] is True    # ai_operator
+    assert by_id["devops"]["locked"] is True      # deploy_ops
+    # Free since the Projects hub (plans/todos/scripts/context); its money view
+    # moved into Finance, which stays business_ops-gated above.
+    assert by_id["projects"]["locked"] is False
     assert by_id["goals"]["locked"] is False      # free
     assert by_id["life"]["locked"] is False
 

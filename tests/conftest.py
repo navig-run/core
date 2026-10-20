@@ -47,6 +47,30 @@ import yaml
 # already do exactly that, and still work because each builds a fresh Console.
 os.environ["COLUMNS"] = "200"
 
+
+@pytest.fixture(scope="session", autouse=True)
+def _shared_console_created_at_suite_width():
+    """Create the shared console NOW, while COLUMNS is the pinned 200.
+
+    The env pin above is necessary but not sufficient: Rich reads COLUMNS once, when a
+    Console is CREATED, and pins it. `navig.console_helper.console` is lazy, so the console
+    was created by whichever test touched it first in each xdist worker — and a test that
+    narrowed COLUMNS (to check a narrow terminal) and printed first pinned the whole worker
+    narrow. Every later test there wrapped at 80 and failed a correct substring assert:
+    three land gates went red on 2026-10-15, each on a different `tests/repo` test, all
+    passing solo. Creating it here, once per worker, takes "who touches it first" out of
+    the ordering lottery. Reproduce the old leak with the two node ids in this order:
+    `test_repo_gates.py::test_a_narrow_terminal_...` then `test_repo_sweep.py::
+    test_stale_flags_a_worktree_holding_main`.
+    """
+    try:
+        from navig.console_helper import console
+
+        _ = console.width  # materialise under COLUMNS=200
+    except ImportError:  # a suite run without navig installed has no console to pin
+        pass
+    yield
+
 # ── Vault crypto guard ─────────────────────────────────────────────────────
 # Two platform operations hang indefinitely in fresh subprocesses on this
 # Windows / Python 3.14 environment:
@@ -120,6 +144,24 @@ def pytest_configure(config):  # noqa: ARG001
         _vc._argon2_funcs = None
     except Exception:  # noqa: BLE001
         pass  # best-effort; if the module can't be imported, skip silently
+
+    # A config load starts daemon threads (a shadow re-read of config.yaml, deferred schema
+    # validation) that outlive the test that triggered them and run on into LATER tests —
+    # where the shadow re-read's `config_load_failed` incident failed an unrelated test's
+    # exact assertion under -n auto. Tests call the loaders directly; nothing needs these.
+    try:
+        import navig.config as _navig_config  # noqa: PLC0415
+
+        _navig_config.BACKGROUND_THREADS_ENABLED = False
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Two workers killed by the per-test timeout used to abort the whole run with an xdist
+    # INTERNALERROR — see the module. Only the controller schedules; installing it in
+    # workers too is harmless and lets the suite assert it is wired.
+    from tests.fixtures.xdist_reschedule_guard import install  # noqa: PLC0415
+
+    install()
 
 
 def pytest_collection_modifyitems(config, items):  # noqa: ARG001
@@ -345,6 +387,85 @@ def _reset_approval_gate_globals():
             appr.reset_approval_gate()
             appr.set_approval_policy(appr.ApprovalPolicy.CONFIRM_DESTRUCTIVE)
         except Exception:  # noqa: BLE001 — gate hygiene must never fail a test
+            pass
+
+    _reset()
+    yield
+    _reset()
+
+
+def _real_config_dirs() -> frozenset[Path]:
+    """The operator's REAL config dir(s), captured when conftest is imported — before
+    any session or test fixture repoints ``NAVIG_CONFIG_DIR`` or ``HOME``."""
+    dirs = {Path(os.path.expanduser("~")) / ".navig"}
+    if os.environ.get("NAVIG_CONFIG_DIR"):
+        dirs.add(Path(os.environ["NAVIG_CONFIG_DIR"]))
+    out = set()
+    for d in dirs:
+        try:
+            out.add(d.resolve())
+        except OSError:
+            out.add(d)
+    return frozenset(out)
+
+
+_REAL_CONFIG_DIRS = _real_config_dirs()
+
+
+def _is_real_config_dir(path: Path) -> bool:
+    try:
+        return path.resolve() in _REAL_CONFIG_DIRS
+    except OSError:
+        return path in _REAL_CONFIG_DIRS
+
+
+@pytest.fixture(autouse=True)
+def _reset_model_fallback_state(request):
+    """Never leak model-fallback state (or a real notification) between tests.
+
+    The runtime fallback records what it observes — which models answered, which
+    primary is degraded — in ``<config_dir>/perf/`` (``model_health.json``,
+    ``model_fallback_state.json``, ``model_fallbacks.jsonl``), and the session
+    shares ONE isolated config dir. Measured on first wiring: a rotation test's
+    fast-model drop recorded ``ollama:qwen2.5:3b`` as live, and the next test's
+    exact-chain assertion then saw that model appended as a healthy stand-in.
+
+    Also installs a no-op notification sink so a test that exercises a fallback
+    never schedules a real ``navig.notify`` dispatch; a test asserting on the
+    notification sets its own sink. The module is tiny (stdlib only), so the
+    import is cheap; the file removals are three unlinks.
+    """
+    import contextlib as _ctx
+
+    def _reset() -> None:
+        try:
+            from navig.llm import model_fallback as _mf
+            from navig.llm import model_health as _mh
+            from navig.platform.paths import config_dir as _cfg
+
+            cfg = _cfg()
+            if _is_real_config_dir(cfg):
+                # ⛔ This resolved to the OPERATOR'S config dir — some test (or
+                # fixture) cleared NAVIG_CONFIG_DIR. Deleting here wiped the live
+                # daemon's model verdicts and fallback state on every such test
+                # (seen 2026-10-10: model_health.json vanished between beats,
+                # erasing the 401 verdict that reroutes chats). Refuse, and name it.
+                import warnings as _w
+
+                _w.warn(
+                    f"{request.node.nodeid}: config_dir() resolved to the real "
+                    f"{cfg} — model-fallback reset skipped; isolate NAVIG_CONFIG_DIR",
+                    stacklevel=1,
+                )
+            else:
+                perf = cfg / "perf"
+                for name in (_mh.FILE_NAME, _mf.STATE_FILE, f"{_mf.LEDGER_LOG}.jsonl"):
+                    with _ctx.suppress(OSError):
+                        (perf / name).unlink()
+            _mh.reset_for_tests()
+            _mf.reset_for_tests()
+            _mf._sink = lambda *_a, **_k: None
+        except Exception:  # noqa: BLE001 — hygiene must never fail a test
             pass
 
     _reset()
@@ -630,13 +751,15 @@ navig_log_capture = log_messages
 
 @pytest.fixture(autouse=True, scope="session")
 def _isolate_navig_config_dir(tmp_path_factory):
-    """Isolate the three independent state roots for the whole session.
+    """Isolate the independent state roots for the whole session.
 
     They are genuinely independent — each is resolved by its own code path, and
     setting one says nothing about the others:
 
     * ``NAVIG_CONFIG_DIR`` -> ``global_config_dir``
     * ``NAVIG_DATA_DIR``   -> ``paths.data_dir()`` (its own env var, else ``home/.navig/data``)
+    * ``NAVIG_CACHE_DIR``  -> ``paths.cache_dir()`` (its own env var, else the OS cache)
+    * ``NAVIG_LOG_DIR``    -> ``paths.log_dir()`` (its own env var, else the OS log dir)
     * app-root detection   -> ``base_dir`` (hosts / apps / cache), from the **CWD**
 
     ⚠ This docstring used to claim the first bullet stopped ``find_app_root()`` from
@@ -734,6 +857,21 @@ def _isolate_navig_config_dir(tmp_path_factory):
     isolated_cache = isolated / "cache"
     isolated_cache.mkdir(parents=True, exist_ok=True)
     os.environ["NAVIG_CACHE_DIR"] = str(isolated_cache)
+
+    # The FIFTH root: `paths.log_dir()` reads NAVIG_LOG_DIR and otherwise the OS log
+    # location (%LOCALAPPDATA%\navig\logs on Windows) — derived from none of the four
+    # above. Same rule, same reason, and this one was MEASURED to bite: every
+    # GoalPlanner / RemediationEngine / DebugLogger built in a test wrote structured
+    # OPERATION blocks into the operator's REAL debug.log, shared by all xdist workers
+    # (separate processes appending one file). That is a RotatingFileHandler rollover
+    # race on Windows (os.rename of a file another worker holds open -> WinError 32)
+    # and pollution of the real audit log — the flakiness the locked-store tests kept
+    # showing. `isolated` is a per-process tempdir, so logs/ under it is automatically
+    # per-worker. A floor, not an override — a test that sets NAVIG_LOG_DIR itself wins.
+    old_log = os.environ.get("NAVIG_LOG_DIR")
+    isolated_log = isolated / "logs"
+    isolated_log.mkdir(parents=True, exist_ok=True)
+    os.environ["NAVIG_LOG_DIR"] = str(isolated_log)
 
     # The THIRD leg, and the one no env var can reach: app-root detection.
     #
@@ -850,6 +988,10 @@ def _isolate_navig_config_dir(tmp_path_factory):
         os.environ.pop("NAVIG_CACHE_DIR", None)
     else:
         os.environ["NAVIG_CACHE_DIR"] = old_cache
+    if old_log is None:
+        os.environ.pop("NAVIG_LOG_DIR", None)
+    else:
+        os.environ["NAVIG_LOG_DIR"] = old_log
 
 
 @pytest.fixture(autouse=True)
@@ -1113,3 +1255,57 @@ def _reset_navig_singletons():
         _paths._DETECTED_OS = None
     except Exception:  # noqa: BLE001
         pass
+
+
+@pytest.fixture(autouse=True)
+def _no_real_cloudflared_tunnel(monkeypatch):
+    """No test may open a REAL public cloudflared tunnel or register it with the broker.
+
+    Measured: every test that boots a real ``NavigGateway`` (tests/e2e) ran the cloud
+    manager against the isolated config — cloud defaults ON and the deck mints a key —
+    so it spawned ``cloudflared tunnel --url http://127.0.0.1:<port>``, published a
+    ``*.trycloudflare.com`` URL and registered it with the production broker. When
+    teardown missed it the process outlived pytest; six orphans in one session, one of
+    them aimed at the operator's LIVE gateway port.
+
+    Patched on the class, so a test that substitutes ``_spawn_cloudflared`` on its own
+    instance (tests/cloud/test_manager_watchdog.py) still wins.
+    """
+    try:
+        import navig.cloud.manager as mod
+    except Exception:  # noqa: BLE001
+        return
+
+    async def _refuse(self):  # noqa: ANN001
+        raise RuntimeError("tests must not spawn a real cloudflared tunnel")
+
+    monkeypatch.setattr(mod.CloudManager, "_spawn_cloudflared", _refuse)
+
+
+@pytest.fixture(autouse=True)
+def _reset_chat_tidy_routine_mark():
+    """Start every test with the chat-tidy "routine" mark OFF.
+
+    `chat_tidy.mark_routine()` is meant for one-shot CLI processes: it sets a
+    ContextVar and never resets it. In a long-lived xdist worker that mark leaks
+    into every later test, so an ALERT dispatched afterwards was recorded for
+    overnight deletion — `test_alerts_are_never_tidied` failed only when a
+    mark_routine() caller ran earlier in the same worker, and passed alone.
+
+    Guarded by sys.modules so it never force-imports the module.
+    """
+    import sys
+
+    mod = sys.modules.get("navig.telegram.chat_tidy")
+    if mod is None or not hasattr(mod, "_ROUTINE"):
+        yield
+        return
+    token = mod._ROUTINE.set(False)
+    try:
+        yield
+    finally:
+        try:
+            mod._ROUTINE.reset(token)
+        except ValueError:  # set in a different context (async test) — leave it
+            mod._ROUTINE.set(False)
+

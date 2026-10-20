@@ -162,7 +162,96 @@ def has_routable_connection(
     route = resolve_route(model_spec, connection_id)
     if route is None:
         return False
-    return bool(route.connection.get("is_routable")) or _is_external(route.connection)
+    if route.connection.get("is_routable") or _is_external(route.connection):
+        return True
+    # A broken default (e.g. a Claude login that needs reauth) on an UNPINNED
+    # request: complete_via_connection falls over to another provider's ready
+    # connection, so that path can act. Without this the request skipped every
+    # connection and dropped to the legacy host path.
+    if _is_pinned(model_spec, connection_id):
+        return False
+    return bool(_cross_provider_candidates(_provider_of(route.connection), route.model))
+
+
+def _is_pinned(model_spec: str | None, connection_id: str | None) -> bool:
+    """True when the caller chose a connection or a provider — then a failure is
+    theirs to see, never silently answered by a different provider."""
+    return connection_id is not None or _parse_spec(model_spec)[0] is not None
+
+
+def reconnect_hint(provider_id: str | None) -> str | None:
+    """The command that fixes a provider whose credential was rejected —
+    ``navig connect login <tmpl>`` for a subscription, ``navig connect add <tmpl>``
+    for a key. Prefers a connection already marked ``needs_reauth``. Never raises."""
+    if not provider_id:
+        return None
+    try:
+        from navig.providers.connect import CONNECTION_TEMPLATES, list_connections
+
+        conns = [c for c in list_connections() if _provider_of(c) == provider_id]
+    except Exception:  # noqa: BLE001
+        return None
+    if not conns:
+        return None
+    conns.sort(key=lambda c: 0 if c.get("ui_state") == "needs_reauth" else 1)
+    template = conns[0].get("template_id") or provider_id
+    tmpl = CONNECTION_TEMPLATES.get(template)
+    verb = "login" if tmpl is not None and tmpl.auth_kind == "oauth" else "add"
+    return f"navig connect {verb} {template}"
+
+
+def _cross_provider_candidates(
+    primary_provider: str | None, primary_model: str | None,
+) -> list[tuple[dict[str, Any], str]]:
+    """Ready connections on OTHER providers to answer an unpinned request when
+    every account of the primary provider is unavailable, best first:
+    the configured fallback chain (``agent.fallback_chain`` · ``llm.fallback.prefer``
+    · healthy-model ranking, all policy-filtered), then — when ``llm.fallback.auto``
+    is on — every remaining ready connection at its own default model.
+    Cooling accounts and ``never_to`` targets are skipped. Never raises."""
+    try:
+        from navig.llm import model_fallback as mf
+        from navig.llm.fallback_policy import account_cool_key, is_cooling
+        from navig.providers.connect import list_connections
+
+        policy = mf.load_policy()
+        pp = (primary_provider or "").lower()
+        by_provider: dict[str, dict[str, Any]] = {}
+        for c in sorted(list_connections(), key=lambda c: 0 if c.get("is_default") else 1):
+            p = (_provider_of(c) or "").lower()
+            if not p or p == pp or not c.get("is_routable") or _is_external(c):
+                continue
+            by_provider.setdefault(p, c)
+        if not by_provider:
+            return []
+
+        specs: list[str] = []
+        try:
+            specs += mf.policy_chain(None, pp, primary_model or "", policy=policy)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("fallback chain unavailable: %s", exc)
+        if policy.auto:
+            for p, c in by_provider.items():
+                m = c.get("default_model") or (c.get("models") or [None])[0]
+                if m:
+                    specs.append(f"{p}:{m}")
+
+        out: list[tuple[dict[str, Any], str]] = []
+        seen: set[str] = set()
+        for spec in specs:
+            n = mf.norm_spec(spec)
+            p, _, m = n.partition(":")
+            conn = by_provider.get(p)
+            if conn is None or not m or n in seen or mf.blocked_target(n, policy):
+                continue
+            if is_cooling(account_cool_key(p, m, conn.get("connection_id"))):
+                continue
+            seen.add(n)
+            out.append((conn, m))
+        return out
+    except Exception as exc:  # noqa: BLE001 — a fallback lookup must never break a reply
+        logger.debug("cross-provider candidates skipped: %s", exc)
+        return []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -530,6 +619,48 @@ def _run_sync(coro_fn: Callable[[], Awaitable[Any]]) -> Any:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+async def _account_client(conn: dict[str, Any], provider_id: str | None, timeout: float):
+    """Build a provider client authenticated as ONE specific connection (account).
+
+    A claude-max connection gets its OAuth bearer (the driver's resolver, which
+    auto-refreshes within a 5-minute buffer); every other connection gets its
+    stored/shared key. Shared by the one-shot and the streaming paths so both
+    authenticate identically. The caller owns ``close()``.
+    """
+    from navig.providers.clients import create_client
+
+    template_id = conn.get("template_id")
+    is_oauth = template_id == "claude-max"
+    endpoint = (conn.get("metadata") or {}).get("endpoint")
+    token: str | None = None
+    api_key: str | None = None
+
+    if is_oauth:
+        from navig.providers.connections import get_connection_store
+        from navig.providers.drivers.native import NativeDriver
+
+        store = get_connection_store()
+        drv = NativeDriver(
+            secret_resolver=store.read_secret,
+            secret_writer=store.update_secret,
+            oauth=True,
+            provider_id="anthropic",
+        )
+        token = await drv._oauth_access_token(conn.get("secret_ref"))
+        if not token:
+            raise NoRoutableConnection(
+                "Claude subscription token unavailable — re-run "
+                "`navig connect login claude-max`."
+            )
+    else:
+        api_key = _resolve_api_key(conn, provider_id)
+
+    config = _provider_config(provider_id, endpoint, oauth=is_oauth)
+    if config is None:
+        raise NoRoutableConnection(f"No provider config for '{provider_id or template_id}'.")
+    return create_client(config, api_key=api_key, oauth_token=token, timeout=timeout)
+
+
 def _complete_one_account(
     conn: dict[str, Any],
     provider_id: str | None,
@@ -545,43 +676,10 @@ def _complete_one_account(
     Resolves that connection's own credential (claude-max OAuth bearer, else its
     stored/shared key) — so rotating across sibling subscriptions uses each
     account's real token, never a shared one."""
-    template_id = conn.get("template_id")
-    is_oauth = template_id == "claude-max"
-    endpoint = (conn.get("metadata") or {}).get("endpoint")
-
     async def _run() -> str:
-        from navig.providers.clients import CompletionRequest, Message, create_client
+        from navig.providers.clients import CompletionRequest, Message
 
-        token: str | None = None
-        api_key: str | None = None
-
-        if is_oauth:
-            # Reuse the driver's OAuth resolver: reveals the bearer and
-            # auto-refreshes a token bundle within a 5-minute buffer.
-            from navig.providers.connections import get_connection_store
-            from navig.providers.drivers.native import NativeDriver
-
-            store = get_connection_store()
-            drv = NativeDriver(
-                secret_resolver=store.read_secret,
-                secret_writer=store.update_secret,
-                oauth=True,
-                provider_id="anthropic",
-            )
-            token = await drv._oauth_access_token(conn.get("secret_ref"))
-            if not token:
-                raise NoRoutableConnection(
-                    "Claude subscription token unavailable — re-run "
-                    "`navig connect login claude-max`."
-                )
-        else:
-            api_key = _resolve_api_key(conn, provider_id)
-
-        config = _provider_config(provider_id, endpoint, oauth=is_oauth)
-        if config is None:
-            raise NoRoutableConnection(f"No provider config for '{provider_id or template_id}'.")
-
-        client = create_client(config, api_key=api_key, oauth_token=token, timeout=timeout)
+        client = await _account_client(conn, provider_id, timeout)
         try:
             resp = await client.complete(CompletionRequest(
                 messages=[
@@ -649,6 +747,7 @@ def complete_via_connection(
         "anthropic" if primary.get("template_id") == "claude-max" else None
     )
 
+    pinned = _is_pinned(model_spec, connection_id)
     # Account chain: the resolved connection first, then its siblings (same
     # provider) — but only when the caller didn't pin a specific connection.
     accounts = [primary]
@@ -658,11 +757,19 @@ def complete_via_connection(
             c for c in list_provider_connections(provider_id)
             if c.get("connection_id") != primary_cid
         )
+    # A default that is KNOWN broken (needs reauth / failed) is not worth a
+    # round-trip on an unpinned request: start from the next account instead.
+    # The reason is kept so the switch notice can say why and how to fix it.
+    known_broken: str | None = None
+    if not pinned and not primary.get("is_routable"):
+        accounts = [a for a in accounts if a is not primary]
+        known_broken = "auth" if primary.get("ui_state") == "needs_reauth" else "unknown"
 
     from navig.llm.fallback_policy import (
         account_cool_key,
         categorize_error,
         mark_cooldown,
+        should_fallback,
         should_rotate_account,
     )
 
@@ -712,11 +819,57 @@ def complete_via_connection(
                     "connection_id": acct.get("connection_id"),
                     "provider": provider_id,
                     "model": model,
-                    "reason": categorize_error(last_exc) if last_exc else "cooldown",
+                    "reason": (categorize_error(last_exc) if last_exc
+                               else known_broken or "cooldown"),
                 })
             except Exception:  # noqa: BLE001 — reporting must never break the answer
                 pass
         return content
+
+    # Every account of the primary provider is out. An UNPINNED request may still
+    # be answered by another provider the operator has a working key for — that
+    # is what having several providers connected is for. A pinned request (an
+    # explicit connection or provider) fails loudly instead.
+    reason = categorize_error(last_exc) if last_exc is not None else (known_broken or "unknown")
+    if not pinned and should_fallback(reason):
+        from_spec = f"{provider_id or primary.get('template_id')}:{model}"
+        for conn, cand_model in _cross_provider_candidates(provider_id, model):
+            cand_provider = _provider_of(conn)
+            try:
+                content = _complete_one_account(
+                    conn, cand_provider, cand_model, system_prompt, user_content,
+                    temperature, max_tokens, timeout,
+                )
+            except ExternalNotRoutable:
+                continue
+            except Exception as exc:  # noqa: BLE001 — cool it and try the next provider
+                mark_cooldown(account_cool_key(cand_provider, cand_model, conn.get("connection_id")),
+                              categorize_error(exc))
+                tried.append(_conn_label(conn))
+                continue
+            info = {
+                "from": _conn_label(primary),
+                "to": f"{_conn_label(conn)} ({cand_model})",
+                "connection_id": conn.get("connection_id"),
+                "provider": cand_provider,
+                "model": cand_model,
+                "reason": reason,
+                "reconnect": reconnect_hint(provider_id) if reason == "auth" else None,
+            }
+            logger.warning("provider fallback: %s → %s:%s (%s)",
+                           from_spec, cand_provider, cand_model, reason)
+            try:
+                from navig.llm import model_fallback as _mf
+
+                _mf.note_fallback("ask", from_spec, f"{cand_provider}:{cand_model}", reason)
+            except Exception:  # noqa: BLE001 — notifying must never break the answer
+                pass
+            if on_fallback is not None:
+                try:
+                    on_fallback(info)
+                except Exception:  # noqa: BLE001
+                    pass
+            return content
 
     # Every account for this provider is unavailable. Make the failure legible in
     # the logs: how many accounts exist, which were tried, which are cooling.
@@ -732,6 +885,119 @@ def complete_via_connection(
             "`navig connect login claude-max` so NAVIG can rotate",
             provider_id, model,
         )
+    if last_exc is not None:
+        raise last_exc
+    if known_broken == "auth":
+        # The default was skipped as needs-reauth and nothing else could answer:
+        # say so as the auth failure it is (callers classify it), with the fix.
+        hint = reconnect_hint(provider_id) or "navig connect"
+        raise PermissionError(
+            f"401 auth failed: '{_conn_label(primary)}' needs reauth — run `{hint}`"
+        )
+    raise NoRoutableConnection("No routable AI connection for this request.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Streaming bridge
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def astream_via_connection(
+    *,
+    messages: list[dict[str, str]],
+    model_spec: str | None = None,
+    connection_id: str | None = None,
+    temperature: float = 0.2,
+    max_tokens: int = 2048,
+    timeout: float = 90.0,
+    on_account: Callable[[dict[str, Any]], None] | None = None,
+):
+    """Stream a completion THROUGH the resolved connection, yielding text deltas
+    as the provider sends them (a true async stream — nothing is buffered).
+
+    Same routing and account rules as :func:`complete_via_connection`: the
+    resolved connection first, then its sibling accounts (same provider) when the
+    caller did not pin one, cooling accounts skipped. Rotation only happens
+    BEFORE the first delta — once text has reached the caller, a mid-stream
+    failure is raised rather than silently restarting on another account.
+
+    *on_account* is told which account answers (``{name, connection_id,
+    provider, model}``) before its first delta, so a surface can label the reply.
+    """
+    import asyncio
+
+    route = await asyncio.to_thread(resolve_route, model_spec, connection_id)
+    if route is None:
+        raise NoRoutableConnection("No AI connection configured. Run `navig connect`.")
+    primary = route.connection
+    if _is_external(primary):
+        raise ExternalNotRoutable(_conn_label(primary))
+    model = route.model
+    if not model:
+        raise NoRoutableConnection(f"Connection '{primary.get('name')}' has no model configured.")
+    provider_id = _provider_of(primary) or (
+        "anthropic" if primary.get("template_id") == "claude-max" else None
+    )
+
+    accounts = [primary]
+    if connection_id is None and provider_id:
+        primary_cid = primary.get("connection_id")
+        siblings = await asyncio.to_thread(list_provider_connections, provider_id)
+        accounts.extend(c for c in siblings if c.get("connection_id") != primary_cid)
+        if not primary.get("is_routable") and len(accounts) > 1:
+            accounts = accounts[1:]  # a known-broken default is not worth a round-trip
+        accounts = accounts_to_try(accounts, provider_id, model) or accounts[:1]
+
+    from navig.llm.fallback_policy import (
+        account_cool_key,
+        categorize_error,
+        mark_cooldown,
+        should_rotate_account,
+    )
+    from navig.providers.clients import CompletionRequest, Message
+
+    request = CompletionRequest(
+        messages=[Message(role=m["role"], content=m["content"]) for m in messages],
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        stream=True,
+    )
+    last_exc: Exception | None = None
+    for acct in accounts:
+        started = False
+        client = None
+        try:
+            client = await _account_client(acct, provider_id, timeout)
+            if on_account is not None:
+                on_account({
+                    "name": _conn_label(acct),
+                    "connection_id": acct.get("connection_id"),
+                    "provider": provider_id,
+                    "model": model,
+                })
+            async for chunk in client.complete_stream(request):
+                if chunk.delta:
+                    started = True
+                    yield chunk.delta
+            return
+        except ExternalNotRoutable:
+            raise
+        except Exception as exc:  # noqa: BLE001 — classify, cool, maybe rotate
+            category = categorize_error(exc)
+            mark_cooldown(account_cool_key(provider_id, model, acct.get("connection_id")), category)
+            last_exc = exc
+            if started or connection_id is not None or not should_rotate_account(category):
+                raise
+            logger.info("stream: account '%s' %s for %s:%s — trying the next",
+                        _conn_label(acct), category, provider_id, model)
+        finally:
+            close = getattr(client, "close", None) if client is not None else None
+            if close:
+                try:
+                    await close()
+                except Exception:  # noqa: BLE001
+                    pass
     if last_exc is not None:
         raise last_exc
     raise NoRoutableConnection("No routable AI connection for this request.")

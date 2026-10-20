@@ -191,6 +191,23 @@ def cron_add(
     schedule: str = typer.Argument(..., help="Schedule (e.g., 'every 30 minutes', '0 * * * *')"),
     command: str = typer.Argument(..., help="Command to run"),
     disabled: bool = typer.Option(False, "--disabled", help="Create job in disabled state"),
+    exec_: bool = typer.Option(
+        False,
+        "--exec",
+        help="Run COMMAND as a local program (no shell, no AI) — e.g. 'node scripts/x.mjs'",
+    ),
+    timeout: int = typer.Option(
+        None,
+        "--timeout",
+        min=1,
+        max=86400,
+        help="Seconds the job may run before it is stopped (default 300)",
+    ),
+    yearly: bool = typer.Option(
+        False,
+        "--yearly",
+        help="Allow a schedule pinned to one date (e.g. '0 11 9 10 *'), which repeats every year",
+    ),
 ):
     """
     Add a new scheduled job.
@@ -199,25 +216,48 @@ def cron_add(
     - Natural language: "every 30 minutes", "hourly", "daily"
     - Cron expression: "*/5 * * * *", "0 9 * * *"
 
+    What runs: a `navig …` command, a local program with --exec, or else the
+    text is an instruction for the AI.
+
+    Not for one-off reminders: cron has no year, so a schedule pinned to a date
+    fires on it every year. Use `navig todo add "<text>" --at "YYYY-MM-DD HH:MM"`.
+    A date-pinned schedule is refused unless --yearly is passed.
+
     Examples:
         navig cron add "Disk check" "every 30 minutes" "navig host monitor disk"
         navig cron add "Daily backup" "0 2 * * *" "navig backup export"
         navig cron add "Health check" "hourly" "Check all hosts and report issues"
+        navig cron add "Nightly gates" "30 3 * * *" "node E:/repo/scripts/nightly-gates.mjs" --exec --timeout 3600
     """
-    job = _cron_api(
-        "POST",
-        "/cron/jobs",
-        action="create job",
-        json_body={
-            "name": name,
-            "schedule": schedule,
-            "command": command,
-            "enabled": not disabled,
-        },
-    )
+    from navig.scheduler.cron_service import EXEC_PREFIX, CronParser, split_exec_command
+
+    if not yearly:
+        pin_err = CronParser.yearly_pin_error(schedule)
+        if pin_err:
+            ch.error(pin_err)
+            raise typer.Exit(2)
+
+    if exec_:
+        if not split_exec_command(command):
+            ch.error("--exec needs a program to run")
+            raise typer.Exit(2)
+        command = f"{EXEC_PREFIX}{command}"
+    body: dict[str, Any] = {
+        "name": name,
+        "schedule": schedule,
+        "command": command,
+        "enabled": not disabled,
+    }
+    if yearly:
+        body["yearly"] = True
+    if timeout is not None:
+        body["timeout"] = timeout
+    job = _cron_api("POST", "/cron/jobs", action="create job", json_body=body)
     ch.success(f"Created job: {job.get('id')}")
     ch.info(f"  Name: {name}")
     ch.info(f"  Schedule: {schedule}")
+    if timeout is not None:
+        ch.info(f"  Timeout: {timeout}s")
     ch.info(f"  Next run: {job.get('next_run', 'N/A')}")
 
 
@@ -327,7 +367,11 @@ def add_cmd(name: str, ctx: dict[str, Any]) -> None:
     command = Prompt.ask("Command to run")
 
     if schedule and command:
-        cron_add(name, schedule, command, disabled=False)
+        # Every option passed explicitly: called as a plain function, an omitted one
+        # is Typer's OptionInfo placeholder, which is TRUTHY — so `exec_` silently
+        # turned every menu-created job into an --exec job, and `yearly` would skip
+        # the date-pin guard.
+        cron_add(name, schedule, command, disabled=False, exec_=False, timeout=None, yearly=False)
     else:
         ch.warning("Cancelled - schedule and command are required")
 

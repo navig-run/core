@@ -790,3 +790,11 @@ def history_stats_cmd(
     if json_out:
         ctx.obj["json"] = True
     history_stats(opts=ctx.obj)
+
+
+# `navig history files versions|diff|restore` — per-file version history (the versions
+# navig captured before editing a file). Lives in navig.commands.snapshot, which also
+# mounts the same commands under the superseded `navig snapshot`.
+from navig.commands.snapshot import files_app as _files_app  # noqa: E402
+
+history_app.add_typer(_files_app, name="files")

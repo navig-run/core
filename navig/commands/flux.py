@@ -324,7 +324,7 @@ def install(
         if not peer:
             typer.echo("--push requires a target peer identifier", err=True)
             raise SystemExit(1)
-        bash = f"curl -fsSL {src}/install/linux | bash"
+        bash = f"curl -fsSL {src}/install/unix.sh | bash"
         import subprocess
 
         result = subprocess.run(
@@ -336,16 +336,13 @@ def install(
         return
 
     typer.echo("\n  📦  NAVIG — Add a machine to this mesh\n")
-    typer.echo("  Windows (PowerShell 5+):")
-    typer.echo(f"    & ([scriptblock]::Create((iwr {src}/install/windows).Content))\n")
-    typer.echo("  Linux / macOS (bash):")
-    typer.echo(f"    curl -fsSL {src}/install/linux | bash\n")
-    typer.echo(f"  Install page: {src}/install\n")
-    try:
-        cfg = _get("/install/config")
-        typer.echo(f"  mesh_token: {cfg.get('mesh_token', '(none)')}\n")
-    except SystemExit:
-        pass  # subprocess called sys.exit; suppress
+    typer.echo("  Windows (PowerShell):")
+    typer.echo(f"    irm {src}/install/windows.ps1 | iex\n")
+    typer.echo("  macOS / Linux (terminal):")
+    typer.echo(f"    curl -fsSL {src}/install/unix.sh | bash\n")
+    typer.echo(f"  Or open on the new machine: {src}/install\n")
+    # The scripts carry the mesh token themselves — it is never printed here.
+    typer.echo("  (The network key travels inside the script. Reveal it: navig flux token)\n")
 
 
 @flux_app.command("token")

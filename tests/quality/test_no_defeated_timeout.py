@@ -40,9 +40,10 @@ PLUGINS = REPO / "plugins"
 # offender allowlists with the same key shape as a core one. Ratcheted by
 # test_allowlist_entries_still_match.
 _ALLOWLIST: dict[str, str] = {
-    "core/navig/commands/matrix.py": (
+    "plugins/navig-matrix/navig_matrix/commands/matrix.py": (
         "intentional SIGINT-yield POLL loop — result(timeout=0.1) is a poll interval, not a cap; "
-        "`while not future.done()` runs to completion, so the with-exit join is instant."
+        "`while not future.done()` runs to completion, so the with-exit join is instant. "
+        "(Moved here from core/navig/commands/matrix.py with the module itself.)"
     ),
 }
 

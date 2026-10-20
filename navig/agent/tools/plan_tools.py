@@ -246,17 +246,74 @@ class GetPlanContextTool(BaseTool):
             )
 
 
+class ProjectContextTool(BaseTool):
+    """Return a project's context pack — the budgeted description of the whole project."""
+
+    name = "project_context"
+    description = (
+        "Get the full context of a project (a folder with .navig/): its vision, plans, "
+        "current phase, open todos, agent instructions, README, runnable scripts, a code "
+        "outline and recent git history — the same pack the Projects hub shows. Omit "
+        "'project' for the active one. Use it before planning or changing a project."
+    )
+    owner_only = False
+    parameters = [
+        {
+            "name": "project",
+            "type": "string",
+            "description": "Project id (see the Projects app or `navig project list`). Omit for the active project.",
+            "required": False,
+        },
+    ]
+
+    async def run(
+        self,
+        args: dict[str, Any],
+        on_status: StatusCallback | None = None,
+    ) -> ToolResult:
+        import asyncio
+
+        def _build() -> dict[str, Any]:
+            from navig.projects.context_pack import build_pack
+            from navig.projects.model import resolve_project
+            from navig.projects.store import get_project_store
+            from navig.spaces import registry
+            from navig.spaces.space_manifest import load_space_manifest
+
+            project = str(args.get("project") or "").strip()
+            if not project:
+                active = registry.load_registry().get("active")
+                row = registry.entry_for(active) if active else None
+                if not row:
+                    raise ValueError("no active project — pass 'project' (see navig project list)")
+                project = str(row.get("id"))
+            pid, root = resolve_project(project)
+            manifest = load_space_manifest(root)
+            pack = build_pack(root, name=manifest.resolved_name or root.name, manifest=manifest.data,
+                              store=get_project_store())
+            return {"project": pid, "path": str(root), "context": pack["markdown"],
+                    "todo_counts": pack.get("todo_counts"),
+                    "truncated_sources": [s["source"] for s in pack["report"]["sources"] if s["truncated"]]}
+
+        try:
+            return ToolResult(name=self.name, success=True, output=await asyncio.to_thread(_build))
+        except Exception as exc:  # noqa: BLE001 — a tool reports, it never raises into the loop
+            return ToolResult(name=self.name, success=False,
+                              output=f"Could not build the project context: {exc}", error=str(exc))
+
+
 # ─────────────────────────────────────────────────────────────
 # Registration helpers
 # ─────────────────────────────────────────────────────────────
 
 
 def register_plan_context_tool() -> None:
-    """Register the ``get_plan_context`` tool in the ``core`` toolset."""
+    """Register ``get_plan_context`` and ``project_context`` in the ``core`` toolset."""
     from navig.agent.agent_tool_registry import _AGENT_REGISTRY
 
     _AGENT_REGISTRY.register(GetPlanContextTool(), toolset="core")
-    logger.debug("Agent tool registered: get_plan_context")
+    _AGENT_REGISTRY.register(ProjectContextTool(), toolset="core")
+    logger.debug("Agent tools registered: get_plan_context, project_context")
 
 
 def register_plan_tools(interceptor: Any) -> None:

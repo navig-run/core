@@ -34,8 +34,14 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 # Narration lines that must never appear on stdout. Keep in sync with the
 # onboarding banner (navig/onboarding/runner.py) and the migration narration
 # (navig/core/migrations.py).
+#
+# The banner's BODY is reworded from time to time — it now says "let's set up
+# this computer" (and points laptops at the join page) where it used to say
+# "first-time setup". A marker that no longer occurs in any output is dead:
+# it can never trip, so the negative check silently loses coverage. When the
+# banner changes, swap the marker rather than leaving it stale.
 _NARRATION_MARKERS = (
-    "first-time setup",
+    "set up this computer",
     "Welcome to NAVIG",
     "Verification summary",
     "configuration migrations",
@@ -108,13 +114,30 @@ def test_plain_command_on_virgin_dir_still_onboards_via_stderr(tmp_path):
 
     result = _run_cli(["paths"], env)
 
-    # Onboarding ran and is visible — on stderr.
-    assert "first-time setup" in result.stderr, (
+    # Onboarding ran and is visible — on stderr. Assert on the banner's STABLE
+    # anchor, not its body: the body is product copy and gets reworded (this
+    # assertion used to pin "first-time setup" and went red when the banner
+    # started saying "let's set up this computer"), while "Welcome to NAVIG" is
+    # what makes it the onboarding banner at all.
+    assert "Welcome to NAVIG" in result.stderr, (
         f"onboarding banner missing from stderr: {result.stderr[:2000]}"
     )
     # ...and never on stdout.
     for marker in _NARRATION_MARKERS:
         assert marker not in result.stdout, f"narration marker {marker!r} leaked into stdout"
+
+    # Floor: the markers must still OCCUR. A marker that appears in no output
+    # at all can never leak, so the negative loop above would pass while
+    # guarding nothing — coverage that looks real and is inert. Migration
+    # narration is excluded because it only runs when something migrates.
+    for marker in _NARRATION_MARKERS:
+        if marker == "configuration migrations":
+            continue
+        assert marker in result.stderr, (
+            f"narration marker {marker!r} no longer occurs in onboarding output — "
+            "it is dead coverage; re-sync _NARRATION_MARKERS with "
+            "navig/onboarding/runner.py"
+        )
 
     # Functional: the phase-1 config-file step wrote the base configuration.
     assert (config_dir / "config.yaml").exists(), (

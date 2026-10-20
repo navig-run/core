@@ -41,6 +41,13 @@ PKG_ROOT = Path(navig.__file__).resolve().parent
 # an explicit, actionable message when the path is absent.
 ALLOWED_ESCAPES: dict[str, str] = {
     # ── source-checkout detection: reaching outside the package IS the feature ──
+    "installer/profiles.py": (
+        "pyproject — DEV-CHECKOUT-ONLY validation enhancement: reads core/pyproject.toml to "
+        "check profile extras against the source of truth. From a wheel there is no "
+        "pyproject.toml beside the package, so _pyproject_path() returns None and validation "
+        "falls back to importlib.metadata requirements — the wheel path never depends on this "
+        "escape."
+    ),
     "commands/update.py": "src_dir — DETECTING a source checkout is the point (update-from-source).",
     "commands/upgrade.py": "src_dir — same source-checkout detection as commands/update.py.",
     "update/lifecycle.py": "src_dir — same source-checkout detection as commands/update.py.",
@@ -72,10 +79,6 @@ ALLOWED_ESCAPES: dict[str, str] = {
     "commands/desktop.py": (
         "host/internal/desktop/agent.py — the desktop agent backend is a source-tree host "
         "component, not Python package data. Now guarded by an existence check that says so."
-    ),
-    "commands/matrix.py": (
-        "deploy/synapse — Matrix/Synapse deployment templates. Explicitly source-checkout/VPS "
-        "only: prints 'Deploy dir not found — run from the repo root' and exits."
     ),
     "cli/registry.py": (
         "generated/commands.json — a build-time CLI-schema cache. Absent when installed, and "

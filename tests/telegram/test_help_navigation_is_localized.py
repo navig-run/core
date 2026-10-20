@@ -37,7 +37,8 @@ LOCALES = Path(tc.__file__).parent.parent.parent / "locales"
 ALLOWED = frozenset(
     {
         # Slash commands and the reply keywords — what the operator TYPES.
-        "start", "help", "status", "ping", "about", "version", "skill", "mode",
+        "start", "help", "status", "doctor", "os", "ping", "about", "version", "skill", "mode",
+        "extensions", "lang", "auto", "stop",  # /extensions /lang /auto_start /auto_stop
         "translate", "summarize", "music",
         # Product and vendor names.
         "navig", "docker", "cli",
@@ -93,7 +94,7 @@ def screens() -> dict[str, str]:
     assert listing is not None, "the command-list fixture category vanished"
     out["command list"] = _navigation_only(listing[0]) + " " + _buttons(listing[1])
 
-    subcat = M._build_help_subcategory("ai_models", "models")
+    subcat = M._build_help_subcategory("ai_models", "auto")
     assert subcat is not None, "the subcategory fixture vanished"
     out["subcategory"] = _navigation_only(subcat[0]) + " " + _buttons(subcat[1])
 
@@ -174,7 +175,7 @@ def test_a_missing_locale_entry_falls_back_to_the_english_label(monkeypatch) -> 
     raw `help.cat.*` key — the failure mode that turns a menu into debug output."""
     monkeypatch.setattr(M, "_t", staticmethod(lambda key, **_: key))
     assert M._help_label("cat", "docker", "Docker") == "Docker"
-    assert M._help_label("sub", "models", "Models & Providers") == "Models & Providers"
+    assert M._help_label("sub", "auto", "Auto Mode") == "Auto Mode"
 
 
 def test_every_key_exists_in_all_three_locales() -> None:

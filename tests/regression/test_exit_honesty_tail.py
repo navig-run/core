@@ -95,23 +95,17 @@ def test_proactive_test_exits_zero_when_every_source_passes(monkeypatch):
 
 
 # ── navig webhook test — "Test failed" then exit 0 ─────────────────────────────
+# The group now points at `navig trigger` and exits 1 on every verb (its API never
+# existed) — see tests/commands/test_webhook_says_the_truth.py.
 
-def test_webhook_test_exits_one_on_an_undelivered_event(monkeypatch):
-    import navig.commands.webhook as webhook_mod
+def test_webhook_test_exits_one(monkeypatch):
+    from typer.testing import CliRunner
 
-    monkeypatch.setattr(
-        webhook_mod, "_api", lambda *a, **kw: {"ok": False, "error": "connection refused"}
-    )
-    with pytest.raises(typer.Exit) as excinfo:
-        webhook_mod.webhook_test("wh_1")
-    assert excinfo.value.exit_code == 1
+    from navig.commands.webhook import webhook_app
 
-
-def test_webhook_test_exits_zero_on_delivery(monkeypatch):
-    import navig.commands.webhook as webhook_mod
-
-    monkeypatch.setattr(webhook_mod, "_api", lambda *a, **kw: {"ok": True})
-    webhook_mod.webhook_test("wh_1")   # no raise
+    res = CliRunner().invoke(webhook_app, ["test", "wh_1"], obj={})
+    assert res.exit_code == 1
+    assert "navig trigger test" in res.output
 
 
 # ── navig quick remove — a typo'd name reported success ────────────────────────

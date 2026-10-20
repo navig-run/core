@@ -9,6 +9,8 @@ and sends to every enabled channel using the senders that already exist:
     sms      → messaging SMS adapter
     discord  → messaging Discord adapter
     whatsapp → messaging WhatsApp Cloud adapter
+    toast    → Windows desktop toast (local, opt-in per type)
+    pushover → Pushover API (emergency = rings on silent, repeats until acknowledged)
     email    → Gmail connector (gmail.send)
 
 Master toggle + quiet-hours gating are applied first. Every channel send is
@@ -46,6 +48,35 @@ def _priority_enum(priority: str):
     }.get(priority, NotificationPriority.NORMAL)
 
 
+def _starts_with_symbol(text: str) -> bool:
+    """True when *text* already opens with an emoji/pictograph (``💰 New sale``)."""
+    import unicodedata
+
+    return bool(text) and unicodedata.category(text[0]) in ("So", "Sk")
+
+
+def format_telegram_html(type_key: str, title: str, body: str = "") -> str:
+    """One notification as Telegram HTML: ``<emoji> <b>title</b>`` + the body as markdown.
+
+    The direct-to-Bot-API path used to send ``<b>escape(title)</b>\\n escape(body)``:
+    no glyph, and every bit of markdown a producer wrote (``**bold**``, `` `code` ``,
+    bullet lists) arrived as literal asterisks and backticks. This matches
+    ``Notification.to_telegram_message`` — escaped bold title, body through the
+    shared ``md_to_html`` (which escapes first, so it is safe on any text). A title
+    that already starts with its own emoji keeps it instead of getting two.
+    """
+    from navig.gateway.channels.telegram_html import html_escape, md_to_html
+
+    title = (title or "").strip()
+    body_html = md_to_html(body) if body else ""
+    if title:
+        glyph = "" if _starts_with_symbol(title) else f"{emoji_for_type(type_key)} "
+        header = f"{glyph}<b>{html_escape(title)}</b>"
+    else:
+        header = emoji_for_type(type_key)
+    return f"{header}\n\n{body_html}" if body_html else header
+
+
 def _in_quiet_hours(hour: int, start: int, end: int) -> bool:
     if start == end:
         return False
@@ -78,7 +109,14 @@ class NotificationRouter:
         priority: str = "normal",
         data: dict[str, Any] | None = None,
         only_channels: list[str] | None = None,
+        keyboard: list[list[dict[str, str]]] | None = None,
     ) -> dict[str, Any]:
+        """Fan a notification out to its enabled channels.
+
+        ``keyboard`` (inline-button rows) is Telegram-only and optional; every
+        other channel ignores it, so a producer can offer a one-tap action without
+        caring which channels the operator has on.
+        """
         settings = prefs.get_settings()
         if not settings["master_enabled"]:
             return {"type": type_key, "skipped": "master_off", "channels": []}
@@ -107,28 +145,78 @@ class NotificationRouter:
             channels = [c for c in channels if c in only_channels]
 
         # Quiet hours: keep the silent in-app deck channel, mute the noisy
-        # outbound channels for anything below CRITICAL.
+        # outbound channels for anything below CRITICAL — except a Pushover
+        # EMERGENCY: the operator chose that type + priority as "must wake me", and
+        # quiet hours silencing it would make "never miss" mean "miss at night".
         if (
             settings["quiet_hours_enabled"]
             and priority != "critical"
             and _in_quiet_hours(datetime.now().hour, settings["quiet_hours_start"], settings["quiet_hours_end"])
         ):
-            channels = [c for c in channels if c == "deck"]
+            keep = {"deck"}
+            if "pushover" in channels:
+                from navig.notify import pushover
+
+                if pushover.pushover_priority(priority) == 2:
+                    keep.add("pushover")
+            channels = [c for c in channels if c in keep]
 
         text = body or ""
         results: list[dict[str, Any]] = []
         for ch in channels:
             try:
-                ok, detail = await self._send_one(ch, type_key, title, text, priority, data or {})
+                ok, detail = await self._send_one(
+                    ch, type_key, title, text, priority, data or {}, keyboard=keyboard
+                )
             except Exception as exc:  # noqa: BLE001 — isolate per-channel failures
                 logger.debug("notify channel %s failed: %s", ch, exc)
                 ok, detail = False, str(exc)
             results.append({"channel": ch, "ok": ok, "detail": detail})
+            # Remember the outcome so a channel that stopped working says so
+            # (Notifications → Channels), instead of failing invisibly for weeks.
+            # Self-limiting: a write only on a state change, or hourly while healthy.
+            from navig.notify import health
+
+            health.record(ch, ok, detail)
 
         return {"type": type_key, "priority": priority, "channels": results}
 
+    async def send_test(self, channel: str) -> dict[str, Any]:
+        """Deliver ONE test message to *channel*, bypassing the routing matrix.
+
+        "Send test" proves a channel can deliver; it must not depend on which
+        notification types happen to be routed there. It used to go through
+        ``dispatch("custom", only_channels=[channel])`` — and ``custom`` routes to the
+        deck only by default, so a Telegram test resolved to zero channels and was
+        reported as a failure for a perfectly working Telegram. Quiet hours are
+        bypassed too (the operator pressed the button); the master switch is not —
+        with every notification off, "skipped: master_off" is the honest answer.
+        """
+        from navig.notify.types import CHANNEL_KEYS
+
+        if channel not in CHANNEL_KEYS:
+            raise ValueError(f"unknown channel: {channel}")
+        if not prefs.get_settings()["master_enabled"]:
+            return {"type": "custom", "skipped": "master_off", "channels": []}
+        title = "Test notification"
+        body = f"This is a test to {channel} from navig."
+        try:
+            ok, detail = await self._send_one(channel, "custom", title, body, "normal", {"_test": True})
+        except Exception as exc:  # noqa: BLE001 — report, never raise into the route
+            logger.debug("notify test to %s failed: %s", channel, exc)
+            ok, detail = False, str(exc)
+        from navig.notify import health
+
+        health.record(channel, ok, detail)
+        return {
+            "type": "custom",
+            "priority": "normal",
+            "channels": [{"channel": channel, "ok": ok, "detail": detail}],
+        }
+
     async def _send_one(
-        self, channel: str, type_key: str, title: str, body: str, priority: str, data: dict
+        self, channel: str, type_key: str, title: str, body: str, priority: str, data: dict,
+        *, keyboard: list[list[dict[str, str]]] | None = None,
     ) -> tuple[bool, str]:
         if channel == "deck":
             item = feed.append(type_key, title, body, priority=priority, data=data)
@@ -144,27 +232,67 @@ class NotificationRouter:
 
             nm = get_notification_manager()
             ch_obj = nm.get_channel(channel) if hasattr(nm, "get_channel") else nm._channels.get(channel)
-            if ch_obj is None:
-                if channel == "telegram":
-                    # No channel object exists outside the gateway (a CLI, a cron subprocess —
-                    # and, as it turned out, inside the gateway too: configure_telegram() had
-                    # no caller). The Bot API itself needs none of that: DM the operator
-                    # directly, off the loop, with the same token the gateway uses.
+            if channel == "telegram":
+                from navig.notify import telegram_routes
+
+                # No channel object exists outside the gateway (a CLI, a cron subprocess —
+                # and, as it turned out, inside the gateway too: configure_telegram() had
+                # no caller). The Bot API itself needs none of that. A type with its own
+                # chat or sound setting always takes this path too: the channel object
+                # only knows the one bound chat.
+                if ch_obj is None or telegram_routes.wants_direct_delivery(type_key):
                     import asyncio
+                    import contextlib
 
-                    from navig.messaging.notify_operator import escape_html, notify_operator
+                    from navig.telegram import chat_tidy
 
-                    text = f"<b>{escape_html(title)}</b>"
-                    if body:
-                        text += "\n" + escape_html(body)
-                    ok = await asyncio.to_thread(notify_operator, text)
-                    return bool(ok), ("sent" if ok else "telegram not configured")
+                    text = format_telegram_html(type_key, title, body)
+                    # Day-bound routine (a sale ring, the daily summary, a briefing)
+                    # is recorded for tomorrow's chat tidy; an alert never is (and
+                    # the tidy only ever records private chats, so a routed channel
+                    # keeps its history). `asyncio.to_thread` runs the send in a COPY
+                    # of this context, so the flag set here is what `chat_tidy.note()`
+                    # reads in the thread.
+                    tidy_kind = chat_tidy.notify_tidy_kind(type_key, priority, data)
+                    scope = (
+                        chat_tidy.routine(tidy_kind)
+                        if tidy_kind
+                        else contextlib.nullcontext()
+                    )
+                    with scope:
+                        return await asyncio.to_thread(
+                            telegram_routes.deliver,
+                            type_key,
+                            text,
+                            fallback_chat_id=telegram_routes.default_chat_id(),
+                            keyboard=keyboard,
+                        )
+            if ch_obj is None:
                 return False, f"{channel} not configured"
             # Use the real result: send_alert now returns False when an immediate
             # (CRITICAL) send is rejected, so a must-deliver alert that Telegram/
             # Matrix refused is reported as failed instead of a phantom "sent".
-            ok = await ch_obj.send_alert(title, body, _priority_enum(priority))
+            if keyboard and channel == "telegram":
+                ok = await ch_obj.send_alert(
+                    title, body, _priority_enum(priority), keyboard=keyboard
+                )
+            else:
+                ok = await ch_obj.send_alert(title, body, _priority_enum(priority))
             return bool(ok), ("sent" if ok else f"{channel} rejected the send")
+
+        if channel == "pushover":
+            import asyncio
+
+            from navig.notify import pushover
+
+            return await asyncio.to_thread(pushover.send_notification, type_key, title, body, priority)
+
+        if channel == "toast":
+            import asyncio
+
+            from navig.notify import toast
+
+            return await asyncio.to_thread(toast.send_toast, title, body)
 
         if channel == "email":
             from navig.notify.email import send_email
@@ -181,7 +309,18 @@ class NotificationRouter:
             reg = get_adapter_registry()
             adapter = next((reg.get(n) for n in _ADAPTER_NAMES[channel] if reg.get(n)), None)
             if adapter is None:
-                return False, f"{channel} adapter not enabled"
+                # Only the gateway process registers adapters at boot. The Telegram
+                # worker (which delivers half the due reminders) and any CLI/cron
+                # process start empty — build the adapter here from config.
+                from navig.messaging import adapter_setup
+
+                for n in _ADAPTER_NAMES[channel]:
+                    ok, why = adapter_setup.ensure_registered(n)
+                    if ok:
+                        adapter = reg.get(n)
+                        break
+                if adapter is None:
+                    return False, why
             msg = f"{emoji_for_type(type_key)} {title}" + (f"\n\n{body}" if body else "")
             receipt = await adapter.send_message(target, msg)
             if receipt is None:

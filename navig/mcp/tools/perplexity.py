@@ -1,0 +1,295 @@
+"""``perplexity_*`` MCP tools — delegate work to the Perplexity desktop app.
+
+The app runs on the operator's own subscription, so work it completes costs the agent no
+tokens: this bundle is how an agent spends *the app's* budget instead of its own context.
+The handlers call :mod:`navig_perplexity.engine` — the same delegation path as the
+``navig perplexity`` CLI — so there is no second implementation to drift. Imported lazily, so
+core never hard-depends on the plugin being installed.
+
+Every handler is synchronous and the driver is synchronous — one call, one result, no event
+loop left running behind a tool call.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+_INSTALL_HINT = (
+    "The Perplexity desktop app bridge is not installed. "
+    "Install it with: pip install navig-perplexity"
+)
+
+
+def _engine():
+    """(Request, delegate, errors) from the plugin, or None when it is not installed."""
+    try:
+        from navig_perplexity import tasks as tasks_mod  # noqa: F401 - imported for its errors
+        from navig_perplexity.engine import DelegationError, Request, delegate
+        from navig_perplexity.threads import ThreadError
+    except ImportError:
+        return None
+    return Request, delegate, (DelegationError, ThreadError, RuntimeError)
+
+
+def _missing() -> dict[str, Any]:
+    return {"ok": False, "success": False, "status": "failed", "error": _INSTALL_HINT}
+
+
+def _failed(exc: Exception) -> dict[str, Any]:
+    payload: dict[str, Any] = {"ok": False, "success": False, "status": "failed", "error": str(exc)}
+    hint = getattr(exc, "hint", "")
+    if hint:
+        payload["hint"] = hint
+    candidates = getattr(exc, "candidates", None)
+    if candidates:
+        payload["candidates"] = candidates
+    return payload
+
+
+def _run(args: dict[str, Any], *, default_task: str = "auto") -> dict[str, Any]:
+    engine = _engine()
+    if engine is None:
+        return _missing()
+    Request, delegate, errors = engine
+    prompt = str(args.get("question") or args.get("brief") or "").strip()
+    if not prompt:
+        return {"ok": False, "success": False, "status": "failed", "error": "a prompt is required"}
+    request = Request(
+        prompt=prompt,
+        task=str(args.get("task") or default_task),
+        model=str(args.get("model") or "auto"),
+        reasoning=str(args.get("reasoning") or "auto"),
+        mode=str(args.get("mode") or "auto"),
+        thread=args.get("thread") or None,
+        topic=args.get("topic") or None,
+        project=args.get("project") or None,
+        new=bool(args.get("new", False)),
+        timeout=min(float(args.get("timeout") or 180), 300.0),
+        out=args.get("out") or None,
+        force=bool(args.get("force", False)),
+        full=bool(args.get("full", False)),
+        wait=min(float(args.get("wait") or 120), 300.0),
+        cross_project=bool(args.get("cross_project", False)),
+    )
+    try:
+        return delegate(request).as_dict()
+    except errors as exc:  # noqa: BLE001 - every failure becomes a tool result
+        return _failed(exc)
+
+
+# ────────────────────────── handlers ──────────────────────────
+
+
+def _tool_perplexity_ask(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
+    return _run(args)
+
+
+def _tool_perplexity_write(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
+    return _run(args, default_task="article")
+
+
+def _tool_perplexity_threads(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
+    try:
+        from navig_perplexity.threads import Registry, ThreadError
+    except ImportError:
+        return _missing()
+    action = str(args.get("action") or "list").strip().lower()
+    registry = Registry()
+    try:
+        if action == "list":
+            return {
+                "ok": True,
+                "threads": registry.list(
+                    project=args.get("project") or None,
+                    include_archived=bool(args.get("all", False)),
+                    limit=int(args.get("limit") or 20),
+                ),
+            }
+        alias = str(args.get("alias") or "").strip()
+        if not alias:
+            return {"ok": False, "error": f"action {action!r} needs an alias"}
+        if action == "show":
+            return {"ok": True, "thread": registry.get(alias).as_dict()}
+        if action == "archive":
+            return {"ok": True, "thread": registry.archive(alias).as_dict()}
+        if action == "resume":
+            thread = registry.get(alias)
+            return {"ok": True, "thread": registry.resume(alias).as_dict(),
+                    "note": "" if thread.remote_id else "this thread has no app id yet"}
+        return {"ok": False, "error": f"unknown action {action!r} (list, show, resume, archive)"}
+    except ThreadError as exc:
+        return _failed(exc)
+
+
+def _tool_perplexity_models(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
+    try:
+        from navig_perplexity.driver import Driver
+    except ImportError:
+        return _missing()
+    try:
+        with Driver(timeout=60) as driver:
+            return driver.models()
+    except Exception as exc:  # noqa: BLE001
+        return _failed(exc)
+
+
+def _tool_perplexity_model(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
+    try:
+        from navig_perplexity.driver import Driver
+    except ImportError:
+        return _missing()
+    name = str(args.get("name") or "").strip()
+    try:
+        with Driver(timeout=60) as driver:
+            if not name:
+                return {"ok": True, "current": driver.models().get("current", "")}
+            return driver.set_model(name)
+    except Exception as exc:  # noqa: BLE001
+        return _failed(exc)
+
+
+def _tool_perplexity_status(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
+    try:
+        from navig_perplexity import app as appmod
+    except ImportError:
+        return _missing()
+    info = appmod.status()
+    try:
+        from navig_perplexity.driver import Driver
+
+        if info.get("port"):
+            with Driver(timeout=30) as driver:
+                info["session"] = driver.status()
+    except Exception as exc:  # noqa: BLE001 - status reports what it could not read
+        info["session_error"] = str(exc)
+    return info
+
+
+# ────────────────────────── registration ──────────────────────────
+
+_THREADS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string", "enum": ["list", "show", "resume", "archive"],
+                   "default": "list", "description": "What to do with the registry."},
+        "alias": {"type": "string", "description": "Conversation alias (show/resume/archive)."},
+        "project": {"type": "string", "description": "Only conversations for this project."},
+        "all": {"type": "boolean", "default": False, "description": "Include archived ones."},
+        "limit": {"type": "integer", "default": 20, "description": "How many to return."},
+    },
+    "required": [],
+}
+
+_WORK_PROPS = {
+    "task": {"type": "string",
+             "description": "auto|research|investigate|article|marketing|social|naming|brainstorm|"
+                            "analysis|compare|translate|critique|second-opinion|report|rewrite|structured"},
+    "model": {"type": "string", "description": "'auto' (routed), or a model label from perplexity_models."},
+    "reasoning": {"type": "string", "enum": ["auto", "on", "off"],
+                  "description": "Reasoning is satisfied by model choice in this build."},
+    "mode": {"type": "string", "enum": ["auto", "search", "research", "computer"]},
+    "thread": {"type": "string", "description": "Continue this conversation alias."},
+    "topic": {"type": "string", "description": "Subject label: reuse the thread for this topic."},
+    "project": {"type": "string", "description": "Project identity (defaults to the repo's name)."},
+    "new": {"type": "boolean", "default": False, "description": "Start a fresh conversation."},
+    "timeout": {"type": "number", "default": 180, "description": "Seconds to wait (max 300)."},
+    "out": {"type": "string", "description": "Save the result to this path."},
+    "force": {"type": "boolean", "default": False, "description": "Overwrite an existing --out file."},
+    "full": {"type": "boolean", "default": False, "description": "Write brief + content + sources."},
+    "wait": {"type": "number", "default": 120, "description": "Seconds to wait for a busy composer."},
+    "cross_project": {"type": "boolean", "default": False,
+                      "description": "Reuse a thread that belongs to another project."},
+}
+
+
+def register(server: Any) -> None:
+    """Register the perplexity_* tools."""
+    server.tools.update({
+        "perplexity_ask": {
+            "name": "perplexity_ask",
+            "description": (
+                "Delegate intellectual work to the Perplexity desktop app and return the finished "
+                "result as structured content (text + citation URLs + thread identity). Research, "
+                "investigation, analysis, comparisons, critique, translation, brainstorming. The "
+                "model and reasoning mode are routed from the task; the conversation is reused for "
+                "the same project/topic and can be continued later with `thread`."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string", "description": "The work to delegate. Markdown and multi-line briefs are fine."},
+                    **_WORK_PROPS,
+                },
+                "required": ["question"],
+            },
+        },
+        "perplexity_write": {
+            "name": "perplexity_write",
+            "description": (
+                "Write publication-shaped content with the Perplexity app: an article, launch or "
+                "marketing copy, a social post, a report, a translation, a rewrite. Same engine and "
+                "result shape as perplexity_ask, with an editorial default task."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "brief": {"type": "string", "description": "What to write, with audience and format."},
+                    **_WORK_PROPS,
+                },
+                "required": ["brief"],
+            },
+        },
+        "perplexity_threads": {
+            "name": "perplexity_threads",
+            "description": (
+                "The persistent conversation registry: list delegated conversations, show one, "
+                "resume it in the app, or archive it so it is not picked automatically. A "
+                "conversation survives an agent restart — continue it with perplexity_ask thread=<alias>."
+            ),
+            "inputSchema": _THREADS_SCHEMA,
+        },
+        "perplexity_models": {
+            "name": "perplexity_models",
+            "description": (
+                "List the models this account can select, with the routing traits (thinking, "
+                "writing, reasoning, research, speed) and the gated tiers."
+            ),
+            "inputSchema": {"type": "object", "properties": {}, "required": []},
+        },
+        "perplexity_model": {
+            "name": "perplexity_model",
+            "description": "Read or set the app's model explicitly (bypassing routing). Omit name to read it.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"name": {"type": "string", "description": "Model label to select."}},
+                "required": [],
+            },
+        },
+        "perplexity_status": {
+            "name": "perplexity_status",
+            "description": "Check whether the app is attachable, which conversation is open and which model is set.",
+            "inputSchema": {"type": "object", "properties": {}, "required": []},
+        },
+    })
+
+    server._tool_handlers.update({
+        "perplexity_ask": _tool_perplexity_ask,
+        "perplexity_write": _tool_perplexity_write,
+        "perplexity_threads": _tool_perplexity_threads,
+        "perplexity_models": _tool_perplexity_models,
+        "perplexity_model": _tool_perplexity_model,
+        "perplexity_status": _tool_perplexity_status,
+    })
+
+    # The approval gate reads this. Asking/writing is OUTBOUND (the prompt leaves the machine
+    # and the app spends the operator's quota), so those are not "safe"; the rest only read.
+    if not hasattr(server, "_tool_safety"):
+        server._tool_safety = {}
+    server._tool_safety.update({
+        "perplexity_ask": "moderate",
+        "perplexity_write": "moderate",
+        "perplexity_threads": "moderate",
+        "perplexity_model": "moderate",
+        "perplexity_models": "safe",
+        "perplexity_status": "safe",
+    })

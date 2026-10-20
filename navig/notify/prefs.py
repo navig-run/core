@@ -108,6 +108,10 @@ def get_settings() -> dict[str, Any]:
         "briefing_times": [t for t in (raw.get("briefing_times", "") or "").split(",") if t.strip()],
         "briefing_channels": [c for c in (raw.get("briefing_channels", "") or "").split(",") if c.strip()],
         "sms_webhook_url": raw.get("sms_webhook_url", "") or "",
+        "pushover_emergency": raw.get("pushover_emergency", "high") or "high",
+        "pushover_sound": raw.get("pushover_sound", "") or "",
+        # "" = calls off (an install must opt in — they cost money).
+        "pushover_call_min": raw.get("pushover_call_min", "") or "",
         "targets": {
             ch: raw.get(f"target_{ch}", "") or "" for ch in CHANNEL_KEYS if ch != "deck"
         },
@@ -121,6 +125,10 @@ def set_setting(key: str, value: Any) -> None:
         "master_enabled", "quiet_hours_enabled", "quiet_hours_start", "quiet_hours_end",
         "briefing_enabled", "briefing_times", "briefing_channels",
         "sms_webhook_url", "sms_webhook_base",
+        "pushover_emergency", "pushover_sound", "pushover_escalate_min",
+        # Voice escalation: when an unacknowledged emergency is telephoned, and
+        # which Twilio number it comes from (discovered once, then cached).
+        "pushover_call_min", "call_from_number",
     }
     allowed |= {f"target_{ch}" for ch in CHANNEL_KEYS}
     if key not in allowed:

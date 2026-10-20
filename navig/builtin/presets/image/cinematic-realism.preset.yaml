@@ -1,0 +1,20 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: image/style/cinematic-realism
+name: Cinematic Realism
+tool: image
+layer: style
+category: Visual style
+tags:
+- style
+description: Photoreal film still.
+params:
+  art_direction: Photoreal film still, motivated practical lighting, shallow depth of field, anamorphic
+    feel, natural colour grade
+  mood: dramatic, grounded
+  lighting: motivated practical light, soft contrast
+  composition: rule of thirds, strong foreground layer
+  aspect: '16:9'
+  quality: high
+  negative: cartoon, illustration, oversaturated colours, plastic skin

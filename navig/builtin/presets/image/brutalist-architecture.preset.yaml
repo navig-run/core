@@ -1,0 +1,19 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: image/style/brutalist-architecture
+name: Brutalist Architecture
+tool: image
+layer: style
+category: Visual style
+tags:
+- style
+description: Architectural photography of raw board-formed concrete.
+params:
+  art_direction: Architectural photography of raw board-formed concrete, monolithic massing
+  mood: austere, monumental
+  lighting: hard raking sunlight, deep shadows
+  composition: symmetrical, low angle, strong verticals
+  aspect: '4:3'
+  quality: high
+  negative: ornament, people dominating the frame, warm cosy tones

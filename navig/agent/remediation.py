@@ -151,10 +151,44 @@ class RemediationEngine:
         self._save_actions()
         self._log("Remediation engine stopped")
 
+    def _pending_restart_for(self, component: str) -> RemediationAction | None:
+        """Return an in-flight COMPONENT_RESTART for ``component``, if any.
+
+        "In-flight" = PENDING or IN_PROGRESS — an action that will still act on the
+        component. SUCCESS / FAILED / SKIPPED are terminal, so they never block a
+        genuinely new restart.
+        """
+        for action in self._actions.values():
+            if (
+                action.type == RemediationType.COMPONENT_RESTART
+                and action.component == component
+                and action.status
+                in (RemediationStatus.PENDING, RemediationStatus.IN_PROGRESS)
+            ):
+                return action
+        return None
+
     def schedule_restart_sync(
         self, component: str, reason: str, metadata: dict[str, Any] | None = None
     ) -> str:
-        """Schedule a component restart (synchronous API)."""
+        """Schedule a component restart (synchronous API).
+
+        Idempotent per component: while a restart for ``component`` is still PENDING
+        or IN_PROGRESS, a repeat request returns that action's id instead of enqueuing
+        a duplicate. The health loop re-evaluates a still-failed component every cycle
+        (~60s) and the restart runs later in the process loop, so without this a
+        persistent fault piled up one COMPONENT_RESTART per cycle — each retried
+        independently with its own backoff. This mirrors the hysteresis the resource
+        monitor already applies to alerts.
+        """
+        existing = self._pending_restart_for(component)
+        if existing is not None:
+            self._log(
+                f"Restart already {existing.status.value} for {component}; "
+                f"not duplicating: {reason}"
+            )
+            return existing.id
+
         action_id = f"{component}_{datetime.now().timestamp()}"
         action = RemediationAction(
             id=action_id,

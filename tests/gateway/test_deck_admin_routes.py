@@ -13,6 +13,7 @@ from __future__ import annotations
 import sys
 from unittest.mock import MagicMock, patch
 
+from navig.config import ConfigManager as _RealConfigManager
 from navig.gateway.deck.routes.admin import (
     _load_admin_settings,
     _load_image_providers,
@@ -330,8 +331,8 @@ class TestLoadConnectors:
 
     def test_returns_empty_when_no_connectors_configured(self):
         fake_mod = MagicMock()
-        fake_cm = MagicMock()
-        fake_cm.get_config.return_value = {}
+        fake_cm = MagicMock(spec=_RealConfigManager)
+        fake_cm.get_global_config.return_value = {}
         fake_mod.get_config_manager.return_value = fake_cm
         with patch.dict(sys.modules, {"navig.config": fake_mod}):
             result = _load_connectors()
@@ -339,8 +340,8 @@ class TestLoadConnectors:
 
     def test_maps_connector_fields(self):
         fake_mod = MagicMock()
-        fake_cm = MagicMock()
-        fake_cm.get_config.return_value = {
+        fake_cm = MagicMock(spec=_RealConfigManager)
+        fake_cm.get_global_config.return_value = {
             "connectors": [
                 {
                     "key": "github",
@@ -375,8 +376,8 @@ class TestLoadDocumentSets:
 
     def test_returns_empty_when_no_sets_configured(self):
         fake_mod = MagicMock()
-        fake_cm = MagicMock()
-        fake_cm.get_config.return_value = {}
+        fake_cm = MagicMock(spec=_RealConfigManager)
+        fake_cm.get_global_config.return_value = {}
         fake_mod.get_config_manager.return_value = fake_cm
         with patch.dict(sys.modules, {"navig.config": fake_mod}):
             result = _load_document_sets()
@@ -384,8 +385,8 @@ class TestLoadDocumentSets:
 
     def test_maps_document_set_fields(self):
         fake_mod = MagicMock()
-        fake_cm = MagicMock()
-        fake_cm.get_config.return_value = {
+        fake_cm = MagicMock(spec=_RealConfigManager)
+        fake_cm.get_global_config.return_value = {
             "document_sets": [
                 {"name": "Engineering Docs", "icon": "⚙️", "docs": 50, "assignees": "devs"}
             ]
@@ -414,8 +415,8 @@ class TestLoadServiceAccounts:
 
     def test_returns_empty_when_none_configured(self):
         fake_mod = MagicMock()
-        fake_cm = MagicMock()
-        fake_cm.get_config.return_value = {}
+        fake_cm = MagicMock(spec=_RealConfigManager)
+        fake_cm.get_global_config.return_value = {}
         fake_mod.get_config_manager.return_value = fake_cm
         with patch.dict(sys.modules, {"navig.config": fake_mod}):
             result = _load_service_accounts()
@@ -423,8 +424,8 @@ class TestLoadServiceAccounts:
 
     def test_maps_token_fields(self):
         fake_mod = MagicMock()
-        fake_cm = MagicMock()
-        fake_cm.get_config.return_value = {
+        fake_cm = MagicMock(spec=_RealConfigManager)
+        fake_cm.get_global_config.return_value = {
             "service_accounts": [
                 {
                     "name": "ci-bot",

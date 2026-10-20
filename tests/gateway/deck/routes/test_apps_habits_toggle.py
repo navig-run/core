@@ -17,6 +17,15 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
+@pytest.fixture(autouse=True)
+def _sandboxed_tracker(tmp_path, monkeypatch):
+    """A tick also writes habits.csv, which resolves to the ACTIVE SPACE — the
+    operator's real tracker. Every test here gets a throwaway one instead."""
+    path = tmp_path / "habits.csv"
+    monkeypatch.setattr("navig.spaces.habit_tracker.tracker_path", lambda space=None: path)
+    return path
+
+
 def _app():
     pytest.importorskip("aiohttp")
     from aiohttp import web
@@ -170,3 +179,69 @@ async def test_last_run_is_LOCAL_on_the_live_scheduler_path_too(tmp_path, monkey
     assert stamped.isoformat().startswith(_date.today().isoformat()), (
         f"live-scheduler last_run {stamped!r} is not on the local calendar the readers use"
     )
+
+
+# ── the tick is recorded in habits.csv (the history streaks count) ────────────
+
+
+async def test_a_tick_is_written_to_the_habit_log(tmp_path, monkeypatch, _sandboxed_tracker):
+    """The tick used to stamp only last_run (ONE day), so a streak kept by tapping
+    the deck reset every day and `navig habit streak` never saw it."""
+    from datetime import date as _date
+
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from navig.spaces import habit_tracker
+
+    _seed(monkeypatch, tmp_path)
+    async with TestClient(TestServer(_app())) as client:
+        resp = await client.post("/toggle", json={"id": "workout"})
+        body = await resp.json()
+    assert body["data"]["logged"] is True
+    rows = habit_tracker.read_tracker(_sandboxed_tracker)
+    assert rows == [{"date": _date.today().isoformat(), "habit": "workout", "completed": "yes", "notes": "deck"}]
+
+
+async def test_a_value_logged_from_the_cli_is_not_overwritten(tmp_path, monkeypatch, _sandboxed_tracker):
+    from datetime import date as _date
+
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from navig.spaces import habit_tracker
+
+    _seed(monkeypatch, tmp_path)
+    today = _date.today().isoformat()
+    habit_tracker.upsert(_sandboxed_tracker, today, "workout", "2", "two sets")
+    async with TestClient(TestServer(_app())) as client:
+        body = await (await client.post("/toggle", json={"id": "workout"})).json()
+    assert body["data"]["logged"] is False
+    assert habit_tracker.day_map(_sandboxed_tracker, today) == {"workout": "2"}
+
+
+async def test_an_unwritable_log_does_not_fail_the_tick(tmp_path, monkeypatch):
+    from aiohttp.test_utils import TestClient, TestServer
+
+    _seed(monkeypatch, tmp_path)
+
+    def boom(*a, **k):
+        raise OSError("locked")
+
+    monkeypatch.setattr("navig.spaces.habit_tracker.mark_done_today", boom)
+    async with TestClient(TestServer(_app())) as client:
+        resp = await client.post("/toggle", json={"id": "workout"})
+        body = await resp.json()
+    assert resp.status == 200
+    assert body["data"]["logged"] is None
+
+
+def test_tracker_writes_are_atomic_and_keep_line_endings(tmp_path):
+    """write_tracker truncated then wrote — a crash mid-write lost the history."""
+    from navig.spaces import habit_tracker
+
+    path = tmp_path / "habits.csv"
+    habit_tracker.upsert(path, "2026-10-07", "wake", "yes")
+    habit_tracker.upsert(path, "2026-10-08", "wake", "yes")
+    raw = path.read_bytes()
+    assert b"\r\r\n" not in raw
+    assert habit_tracker.streak_for(habit_tracker.read_tracker(path), "wake", __import__("datetime").date(2026, 10, 8)) == 2
+    assert not list(tmp_path.glob(".habits.csv.tmp*")), "temp file left behind"

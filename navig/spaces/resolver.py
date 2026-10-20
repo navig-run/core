@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 
 from navig.platform import paths
@@ -161,6 +160,28 @@ def _is_space(entry: Path) -> bool:
     return any((entry / f).exists() for f in ("VISION.md", "index.md", "CURRENT_PHASE.md"))
 
 
+def _is_space_in_root(entry: Path) -> bool:
+    """Stricter :func:`_is_space` for children of a spaces ROOT.
+
+    A bare, EMPTY ``.navig/`` is not enough there: stubs recreated for deleted spaces
+    picked one up seconds later (measured 2026-10-15 on two of the fourteen), and
+    every real space under a root is scaffolded with content (``space init``,
+    ``wire``, a community install). A manifest, legacy plan markdown, or a non-empty
+    ``.navig/`` makes it a space.
+    """
+    from navig.spaces.space_manifest import find_manifest_file  # noqa: PLC0415
+
+    if find_manifest_file(entry) is not None:
+        return True
+    if any((entry / f).exists() for f in ("VISION.md", "index.md", "CURRENT_PHASE.md")):
+        return True
+    nav = entry / ".navig"
+    try:
+        return nav.is_dir() and any(nav.iterdir())
+    except OSError:
+        return False
+
+
 FOLD_MARKER = ".folded"
 FOLDED_DIR = ".navig.folded"
 
@@ -213,15 +234,32 @@ def discover_space_paths(
     cwd: Path | None = None, *, include_disabled: bool = False
 ) -> dict[str, SpaceConfig]:
     """Discover spaces across all roots + the project. Auto-registers found
-    spaces (enabled) and returns only enabled ones unless *include_disabled*."""
+    spaces (enabled) and returns only enabled ones unless *include_disabled*.
+
+    Never re-registers a path the user forgot (``registry.forget``). A child of a
+    global/configured root counts only when it is a space (a non-empty ``.navig/``, a
+    manifest, or legacy plan markdown) — an incidental or stub folder there is not one. When two
+    folders claim one id the first found keeps it (a project space still overrides a
+    global one) and the clash is logged instead of the later one silently winning.
+    """
     from navig.spaces import registry as _registry  # noqa: PLC0415
     from navig.spaces.space_manifest import load_space_manifest  # noqa: PLC0415
 
     current_dir = (cwd or Path.cwd()).resolve()
     discovered: dict[str, SpaceConfig] = {}
     seen: set[str] = set()
+    snapshot = _registry.load_registry()
+    forgotten = _registry.forgotten_paths(snapshot)
+    # Rows someone registered on purpose (`space register`, the deck, `wire`, install)
+    # — as opposed to `global`, the source the old every-folder scan wrote. An explicit
+    # registration of a folder in a spaces root is honoured even when it looks bare.
+    explicit = {
+        _registry._norm(e.get("path", ""))
+        for e in snapshot.get("spaces", [])
+        if e.get("path") and e.get("source") != "global"
+    }
 
-    def _record(entry: Path, scope: str) -> None:
+    def _record(entry: Path, scope: str, *, override: bool = False) -> None:
         try:
             rp = str(entry.resolve())
         except Exception:  # noqa: BLE001
@@ -233,31 +271,51 @@ def discover_space_paths(
         # `spaces.json`, since `ensure_registered` below writes before any filtering.
         if is_folded(entry):
             return
+        # A forgotten space stays forgotten: re-adding it here made `space forget`
+        # last only until the next scan.
+        if rp in forgotten or _registry._norm(entry) in forgotten:
+            return
         man = load_space_manifest(entry)
         sid = man.resolved_id or entry.name
         canonical = normalize_space_name(sid)
         _registry.ensure_registered(
-            entry, id=canonical, name=man.resolved_name or entry.name, source=scope
+            entry, id=canonical, name=man.resolved_name or entry.name, source=scope,
+            auto=True,
         )
         if not include_disabled and not _registry.is_enabled(entry):
             return
         seen.add(rp)
+        holder = discovered.get(canonical)
+        if holder is not None and not override:
+            _warn_duplicate_id(canonical, holder.path, entry)
+            return
         discovered[canonical] = SpaceConfig(
             requested_name=entry.name, canonical_name=canonical, path=entry, scope=scope
         )
 
-    def _scan_container(container: Path, scope: str) -> None:
-        # Every non-dot child dir of a spaces container is a space (even an empty
-        # one); dot-dirs (.git/.backup/…) are skipped.
+    def _scan_container(
+        container: Path, scope: str, *, strict: bool = False, override: bool = False
+    ) -> None:
+        # Dot-dirs (.git/.backup/.trash-…) are always skipped. In a *strict* container
+        # (the global spaces root and configured roots) a child must also BE a space:
+        # stub folders there — e.g. ones an app recreated for a deleted space — were
+        # registered as spaces and came back after every cleanup.
         if not container.exists():
             return
         for child in sorted(container.iterdir()):
-            if child.is_dir() and not child.name.startswith("."):
-                _record(child, scope)
+            if not child.is_dir() or child.name.startswith("."):
+                continue
+            if strict and not (
+                _is_space_in_root(child) or _registry._norm(child) in explicit
+            ):
+                continue
+            _record(child, scope, override=override)
 
     # Global + configured roots are containers of spaces.
+    strict_roots: set[str] = set()
     for root in spaces_roots():
-        _scan_container(root, "global")
+        strict_roots.add(_registry._norm(root))
+        _scan_container(root, "global", strict=True)
 
     # Installed CC/NAVIG plugins that ship `spaces/` (each subdir is a space).
     # The plugin host discovers packages under ~/.navig/plugins; best-effort.
@@ -272,10 +330,10 @@ def discover_space_paths(
     # Project: spaces under <project>/.navig/spaces + the opened folder itself.
     project_navig = _find_project_navig_root(current_dir)
     if project_navig is not None:
-        _scan_container(project_navig / "spaces", "project")
+        _scan_container(project_navig / "spaces", "project", override=True)
         parent = project_navig.parent
         if _project_has_content(parent):  # the opened folder is a workshop with content
-            _record(parent, "project")
+            _record(parent, "project", override=True)
 
     # Registry entries outside every scanned container — e.g. spaces registered
     # via `POST /api/deck/spaces/register` or `navig space register` from an
@@ -283,19 +341,52 @@ def discover_space_paths(
     # spaces.json but was unresolvable by every per-space route. Container hits
     # above win (dedup via `seen`); missing paths are skipped, enabled-filtering
     # happens inside _record.
-    for entry in _registry.load_registry().get("spaces", []):
+    for entry in snapshot.get("spaces", []):
         raw_path = entry.get("path") or ""
         if not raw_path:
             continue
         p = Path(raw_path)
-        if p.is_dir():
-            _record(p, str(entry.get("source") or "external"))
+        if not p.is_dir():
+            continue
+        # A row for a non-space folder directly inside a strict root was left by the
+        # old scan that registered every child dir; the container rule above already
+        # rejected the folder, so its stale row must not smuggle it back in.
+        if (
+            _registry._norm(p.parent) in strict_roots
+            and _registry._norm(p) not in explicit
+            and not _is_space_in_root(p)
+        ):
+            continue
+        _record(p, str(entry.get("source") or "external"))
 
     return discovered
 
 
+_warned_duplicates: set[tuple[str, str]] = set()
+
+
+def _warn_duplicate_id(canonical: str, kept: Path, dropped: Path) -> None:
+    """Log (once per process) that two folders claim one space id."""
+    key = (canonical, str(dropped))
+    if key in _warned_duplicates:
+        return
+    _warned_duplicates.add(key)
+    logger.warning(
+        "space id %r is claimed by two folders; keeping %s, ignoring %s "
+        "(rename one: navig space rename)", canonical, kept, dropped,
+    )
+
+
 def get_default_space() -> str:
-    env_space = os.environ.get("NAVIG_SPACE", "").strip()
-    if env_space:
-        return normalize_space_name(env_space)
-    return "default"
+    """The *active* space, else ``"default"`` — the fallback every agent surface uses.
+
+    Delegates to the single canonical reader (``navig.commands.space.resolve_active_space``:
+    ``NAVIG_SPACE`` → cache file → config keys), imported lazily because commands depend
+    on this module — the same pattern the deck routes already use. Before 2026-10-18 this
+    returned only the env override or the literal ``"default"``, so ``PlanContext`` and the
+    agent's plan tools snapshotted ``default`` even while another space was active.
+    """
+    from navig.commands.space import resolve_active_space  # noqa: PLC0415 — commands import spaces
+
+    active = resolve_active_space()
+    return normalize_space_name(active) if active else "default"

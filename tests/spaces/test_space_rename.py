@@ -77,6 +77,19 @@ def _squash(text: str) -> str:
     return "".join(str(text).split())
 
 
+def _says(result, text: str) -> bool:
+    """Did the command print *text*, wherever Rich chose to fold the line?
+
+    Every message here carries a tmp path whose length depends on the machine
+    (user name, worktree depth, pytest's counter), and Rich wraps at the terminal
+    width — so a phrase that follows a path can be split across a line at some
+    lengths and not others. Measured: "... already exists" split at 7 of 80 path
+    lengths, which is how `test_move_folder_refuses_when_the_destination_exists`
+    failed in a deep worktree and passed everywhere else.
+    """
+    return _squash(text) in _squash(result.output)
+
+
 # ── the registry primitive ───────────────────────────────────────────────────
 
 
@@ -127,7 +140,7 @@ def test_rename_by_id_moves_manifest_registry_and_derived_labels(isolated: Path)
     p = _space(isolated, "homelab")
     r = _run("homelab", "lab")
     assert r.exit_code == 0, r.output
-    assert "Renamed space 'homelab' → 'lab'" in r.output
+    assert _says(r, "Renamed space 'homelab' → 'lab'")
     m = load_space_manifest(p)
     assert m.resolved_id == "lab"
     assert m.get("display_name") == "Lab", "init's derived label follows the id"
@@ -135,7 +148,7 @@ def test_rename_by_id_moves_manifest_registry_and_derived_labels(isolated: Path)
     md = (p / "NAVIG.md").read_text(encoding="utf-8")
     assert md.startswith("---\nspace: lab\n---\n"), "frontmatter label follows"
     assert "body mentions space: homelab too" in md, "only the frontmatter line is touched"
-    assert "folder stays" in r.output, "the folder is never moved"
+    assert _says(r, "folder stays"), "the folder is never moved"
     assert p.is_dir()
 
 
@@ -145,7 +158,7 @@ def test_rename_by_path_works_for_an_unregistered_space_and_says_so(isolated: Pa
     assert r.exit_code == 0, r.output
     assert load_space_manifest(p).resolved_id == "lab"
     assert registry.load_registry()["spaces"] == [], "rename never adds a row"
-    assert "not registered" in r.output
+    assert _says(r, "not registered")
     assert _squash(f"navig space register {p}") in _squash(r.output)
 
 
@@ -164,13 +177,13 @@ def test_rename_moves_the_active_space_pointer_only_when_it_is_this_space(isolat
     r = _run("homelab", "lab")
     assert r.exit_code == 0, r.output
     assert space_cmd.resolve_active_space() == "lab"
-    assert "active space pointer" in r.output
+    assert _says(r, "active space pointer")
     # …and not when another space is active
     space_cmd._set_active_space("office")
     r = _run("lab", "rack")
     assert r.exit_code == 0, r.output
     assert space_cmd.resolve_active_space() == "office"
-    assert "active space pointer" not in r.output
+    assert not _says(r, "active space pointer")
     assert load_space_manifest(p).resolved_id == "rack"
 
 
@@ -179,8 +192,8 @@ def test_rename_refuses_an_id_another_space_holds_and_writes_nothing(isolated: P
     other = _space(isolated, "office")
     r = _run("homelab", "office")
     assert r.exit_code == 1, r.output
-    assert "already the id of another space" in r.output
-    assert str(other.resolve()) in r.output
+    assert _says(r, "already the id of another space")
+    assert _says(r, str(other.resolve()))
     assert _squash(f"navig space rename {p.resolve()} <other-id>") in _squash(r.output)
     assert load_space_manifest(p).resolved_id == "homelab"
     assert _row(p)["id"] == "homelab"
@@ -200,7 +213,7 @@ def test_rename_dry_run_reports_the_plan_and_writes_nothing(isolated: Path) -> N
         "active space pointer",
         "nothing was written",
     ):
-        assert line in r.output, line
+        assert _says(r, line), line
     assert load_space_manifest(p).resolved_id == "homelab"
     assert _row(p)["id"] == "homelab"
     assert space_cmd.resolve_active_space() == "homelab"
@@ -211,8 +224,8 @@ def test_rename_dry_run_still_reports_a_taken_id(isolated: Path) -> None:
     _space(isolated, "office")
     r = _run("homelab", "office", "--dry-run")
     assert r.exit_code == 1, r.output
-    assert "already the id of another space" in r.output
-    assert "dry run" in r.output
+    assert _says(r, "already the id of another space")
+    assert _says(r, "dry run")
 
 
 def test_rename_to_the_same_id_is_a_no_op(isolated: Path) -> None:
@@ -228,7 +241,7 @@ def test_rename_says_when_the_new_id_normalises(isolated: Path) -> None:
     p = _space(isolated, "homelab")
     r = _run("homelab", "lab-space")
     assert r.exit_code == 0, r.output
-    assert "normalises to 'lab'" in r.output
+    assert _says(r, "normalises to 'lab'")
     assert load_space_manifest(p).resolved_id == "lab"
 
 
@@ -236,7 +249,7 @@ def test_rename_rejects_a_bad_slug_before_touching_anything(isolated: Path) -> N
     p = _space(isolated, "homelab")
     r = _run("homelab", "Not A Slug!")
     assert r.exit_code != 0
-    assert "Invalid space name" in r.output
+    assert _says(r, "Invalid space name")
     assert load_space_manifest(p).resolved_id == "homelab"
 
 
@@ -245,10 +258,10 @@ def test_rename_of_something_that_is_not_a_space_is_refused(isolated: Path) -> N
     plain.mkdir()
     r = _run(str(plain), "lab")
     assert r.exit_code == 1, r.output
-    assert "Not a space" in r.output
+    assert _says(r, "Not a space")
     r = _run("no-such-space", "lab")
     assert r.exit_code == 1, r.output
-    assert "Not a space" in r.output
+    assert _says(r, "Not a space")
 
 
 def test_rename_refuses_a_yaml_manifest_and_leaves_the_registry_alone(isolated: Path) -> None:
@@ -258,7 +271,7 @@ def test_rename_refuses_a_yaml_manifest_and_leaves_the_registry_alone(isolated: 
     registry.register(p, id="homelab", name="homelab", source="external")
     r = _run(str(p), "lab")
     assert r.exit_code == 1, r.output
-    assert "Could not write the manifest" in r.output
+    assert _says(r, "Could not write the manifest")
     assert _row(p)["id"] == "homelab", "manifest failed first, so the registry was never touched"
 
 
@@ -270,9 +283,9 @@ def test_register_refuses_a_folder_whose_id_another_space_holds(isolated: Path) 
     second = _space(isolated, "homelab", register=False, folder="elsewhere")  # same manifest id
     r = CliRunner().invoke(space_cmd.space_app, ["register", str(second)])
     assert r.exit_code == 1, r.output
-    assert "already the id of another space" in r.output
-    assert str(other.resolve()) in r.output
-    assert "navig space rename" in r.output
+    assert _says(r, "already the id of another space")
+    assert _says(r, str(other.resolve()))
+    assert _says(r, "navig space rename")
     assert len([e for e in registry.load_registry()["spaces"] if e["id"] == "homelab"]) == 1
 
 
@@ -344,7 +357,7 @@ def test_a_root_space_renamed_in_place_warns_that_the_old_id_still_resolves(
     r = _run(str(p), "lab")
     assert r.exit_code == 0, r.output
     assert _squash("also still resolves to this space") in _squash(r.output)
-    assert "--move-folder" in r.output
+    assert _says(r, "--move-folder")
     # …and the warning is TRUE: the old id resolves here, which is why it is warned about.
     assert resolve_space("homelab", cwd=isolated).path.resolve() == p.resolve()
 
@@ -385,17 +398,17 @@ def test_move_folder_refuses_when_the_destination_exists(isolated: Path) -> None
     (paths.spaces_dir() / "lab").mkdir()
     r = _run(str(p), "lab", "--move-folder")
     assert r.exit_code == 1, r.output
-    assert "already exists" in r.output
+    assert _says(r, "already exists")
     assert p.is_dir(), "the source folder is untouched"
     assert load_space_manifest(p).resolved_id == "lab", "the manifest half had already landed"
-    assert "--move-folder" in r.output, "the message says how to finish the half that did not land"
+    assert _says(r, "--move-folder"), "the message says how to finish the half that did not land"
 
 
 def test_move_folder_does_not_apply_to_a_space_outside_the_spaces_root(isolated: Path) -> None:
     p = _space(isolated, "homelab")  # an ordinary project folder
     r = _run(str(p), "lab", "--move-folder")
     assert r.exit_code == 0, r.output
-    assert "does not apply" in r.output
+    assert _says(r, "does not apply")
     assert p.is_dir() and not (isolated / "lab").exists(), "somebody's project folder is not an id"
     assert load_space_manifest(p).resolved_id == "lab"
 
@@ -406,7 +419,7 @@ def test_move_folder_dry_run_writes_nothing(isolated: Path) -> None:
     p = _space(paths.spaces_dir(), "homelab", folder="homelab")
     r = _run(str(p), "lab", "--move-folder", "--dry-run")
     assert r.exit_code == 0, r.output
-    assert "folder: homelab" in r.output
+    assert _says(r, "folder: homelab")
     assert p.is_dir() and not (paths.spaces_dir() / "lab").exists()
     assert load_space_manifest(p).resolved_id == "homelab"
 

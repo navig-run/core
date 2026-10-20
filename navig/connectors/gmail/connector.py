@@ -105,6 +105,7 @@ class GmailConnector(BaseConnector):
         ],
         oauth_provider="gmail",
         requires_oauth=True,
+        oauth_app=("google", "GOOGLE", "Google OAuth"),
     )
 
     def __init__(self) -> None:
@@ -441,6 +442,46 @@ class GmailConnector(BaseConnector):
         if thread_id:
             message["threadId"] = thread_id
         return await self._api_post("/users/me/drafts", json_body={"message": message})
+
+    async def get_attachment(self, message_id: str, attachment_id: str) -> bytes:
+        """``messages.attachments.get`` → the attachment's bytes."""
+        data = await self._api_get(f"/users/me/messages/{message_id}/attachments/{attachment_id}")
+        raw = str(data.get("data") or "")
+        return base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
+
+    # -- Filters (needs the opt-in gmail.settings.basic scope) ----------------
+
+    async def _api_delete(self, path: str) -> None:
+        if not HTTPX_AVAILABLE:
+            raise ImportError("httpx is required. Install: pip install httpx")
+        async with httpx.AsyncClient(timeout=_GOOGLE_API_TIMEOUT) as client:
+            resp = await client.delete(f"{_API_BASE}{path}", headers=self._headers())
+            if resp.status_code not in (200, 204):
+                raise ConnectorAPIError("gmail", resp.status_code, resp.text[:200])
+
+    async def list_filters(self) -> list[dict[str, Any]]:
+        """``settings.filters.list``. A 403 means the token lacks gmail.settings.basic."""
+        data = await self._api_get("/users/me/settings/filters")
+        return list(data.get("filter") or [])
+
+    async def create_filter(self, criteria: dict[str, Any], action: dict[str, Any]) -> dict[str, Any]:
+        """``settings.filters.create`` — Gmail has no filter update; replace = create + delete."""
+        return await self._api_post("/users/me/settings/filters", json_body={"criteria": criteria, "action": action})
+
+    async def delete_filter(self, filter_id: str) -> None:
+        await self._api_delete(f"/users/me/settings/filters/{filter_id}")
+
+    async def send_raw(self, raw: bytes, *, thread_id: str | None = None) -> dict[str, Any]:
+        """``messages.send`` with a caller-built RFC 822 message, sent exactly as given.
+
+        The caller owns every header — notably ``Message-ID``, which is how a send whose
+        response was lost can later be found in Sent (``rfc822msgid:``) instead of being
+        sent twice. Returns Gmail's ``{id, threadId, labelIds}``.
+        """
+        body: dict[str, Any] = {"raw": base64.urlsafe_b64encode(raw).decode("ascii")}
+        if thread_id:
+            body["threadId"] = thread_id
+        return await self._api_post("/users/me/messages/send", json_body=body)
 
     async def fetch(self, resource_id: str) -> Resource:
         """Fetch a single Gmail message by ID (full body)."""

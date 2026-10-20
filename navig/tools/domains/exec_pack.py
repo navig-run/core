@@ -59,7 +59,14 @@ async def _run_shell(
             on_event=on_event,
         ),
     )
-    return {
+    return _as_dict(result)
+
+
+def _as_dict(result: Any) -> dict[str, Any]:
+    """The tool's result shape. A run that printed nothing carries a ``note`` saying
+    so — an empty stdout reads to a model as "nothing came back" (see
+    :func:`navig.tools.bash_exec.empty_output_note`)."""
+    out: dict[str, Any] = {
         "stdout": result.stdout,
         "stderr": result.stderr,
         "returncode": result.returncode,
@@ -68,6 +75,15 @@ async def _run_shell(
         "elapsed_ms": result.elapsed_ms,
         "termination": result.termination,
     }
+    if (
+        result.termination == "exit"
+        and not (result.stdout or "").strip()
+        and not (result.stderr or "").strip()
+    ):
+        from navig.tools.bash_exec import empty_output_note
+
+        out["note"] = empty_output_note(result.returncode or 0)
+    return out
 
 
 # =============================================================================
@@ -96,15 +112,7 @@ def bash_exec_handler(
             output_cap=_OUTPUT_CAP,
         ),
     )
-    return {
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "returncode": result.returncode,
-        "timed_out": result.termination in ("timeout", "no_output_timeout"),
-        "truncated": result.truncated,
-        "elapsed_ms": result.elapsed_ms,
-        "termination": result.termination,
-    }
+    return _as_dict(result)
 
 
 async def bash_exec_async_handler(

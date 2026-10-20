@@ -33,6 +33,7 @@ except ImportError as _exc:
 
 from navig.debug_logger import get_debug_logger
 from navig.gateway.routes.common import (
+    gateway_mesh_token,
     json_error_response,
     json_ok,
     require_bearer_auth,
@@ -232,10 +233,17 @@ def _ping(gw: NavigGateway):
 
     Useful when UDP multicast is blocked (e.g., some corporate networks).
     The server fetches /health + /mesh/peers from the given URL to bootstrap.
+
+    Accepts the fleet-shared ``gateway.mesh_token`` as a bearer in addition to
+    the admin token: the HTML/one-liner join flow authenticates its ping-back
+    with the very token that flow just distributed. Like ``/llm/chat`` this is
+    a peer credential on ONE route — it never unlocks anything else.
     """
 
     async def h(r: web.Request) -> web.Response:
-        auth = require_bearer_auth(r, gw)
+        auth = require_bearer_auth(
+            r, gw, extra_tokens=(gateway_mesh_token(gw),)
+        )
         if auth is not None:
             return auth
 
@@ -247,6 +255,7 @@ def _ping(gw: NavigGateway):
         url = (body.get("gateway_url") or "").rstrip("/")
         if not url:
             return json_error_response("gateway_url required", status=400, code="bad_request")
+        url = _resolve_peer_url(url, str(getattr(r, "remote", "") or ""))
 
         result = await _bootstrap_peer(url, gw)
         if result:
@@ -256,6 +265,34 @@ def _ping(gw: NavigGateway):
         )
 
     return h
+
+
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "0.0.0.0", "::"})
+
+
+def _resolve_peer_url(url: str, remote: str) -> str:
+    """A joiner that names itself by loopback means "me" — use the requester's address.
+
+    ``localhost`` in a ping body is only meaningful to the SENDER: taken
+    literally, this gateway would bootstrap from itself. When the requester is
+    a real (non-loopback) address, keep the scheme and port and swap the host.
+    A loopback requester (a ping from this same machine) is left as sent.
+    """
+    from urllib.parse import urlparse, urlunparse
+
+    try:
+        parsed = urlparse(url)
+    except Exception:  # noqa: BLE001
+        return url
+    host = (parsed.hostname or "").lower()
+    if host not in _LOOPBACK_HOSTS and not host.startswith("127."):
+        return url
+    remote = remote.strip()
+    if not remote or remote in _LOOPBACK_HOSTS or remote.startswith("127."):
+        return url
+    netloc_host = f"[{remote}]" if ":" in remote else remote
+    netloc = f"{netloc_host}:{parsed.port}" if parsed.port else netloc_host
+    return urlunparse(parsed._replace(netloc=netloc))
 
 
 def _is_safe_mesh_url(url: str) -> bool:

@@ -9,6 +9,8 @@ Type=simple
 User=navig
 Group=navig
 WorkingDirectory=/opt/navig
+# Say "system install" outright; the account-name guess is only a fallback.
+Environment=NAVIG_SYSTEM_SERVICE=1
 Environment=NAVIG_CONFIG_DIR=/etc/navig
 Environment=NAVIG_LOG_DIR=/var/log/navig
 Environment=NAVIG_DATA_DIR=/var/lib/navig

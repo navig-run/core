@@ -389,6 +389,108 @@ class TestConnectorConnect:
         mock_auth_instance.authenticate.assert_awaited_once()
 
 
+class TestApiKeyConnect:
+    """`navig connector connect` on an api_key connector: prompt → vault → connect."""
+
+    def test_missing_key_fields_are_prompted_and_stored(self, monkeypatch):
+        from navig.connectors.cyberaigen.connector import (
+            CYBERAIGEN_BASE_URL,
+            CyberAigenConnector,
+        )
+
+        stored: dict[str, str] = {}
+        monkeypatch.setattr("navig.connectors.secrets.resolve", lambda f: "")
+        monkeypatch.setattr(
+            "navig.connectors.secrets.store",
+            lambda f, v: stored.__setitem__(f.vault_label, v),
+        )
+        monkeypatch.setattr(
+            "navig.connectors.cyberaigen.connector.resolve",
+            lambda f: stored.get(f.vault_label, ""),
+        )
+        get_connector_registry().register(CyberAigenConnector)
+
+        result = runner.invoke(
+            connector_app, ["connect", "cyberaigen"], input="secret-token\n\n"
+        )
+
+        assert result.exit_code == 0, result.output
+        assert stored.get("cyberaigen/token") == "secret-token"
+        # Enter on the base-URL prompt accepts the GENERIC placeholder — no
+        # operator's host is baked in as a default anywhere.
+        assert stored.get("cyberaigen/base_url") == CYBERAIGEN_BASE_URL.placeholder
+        assert "connected" in result.output.lower()
+
+    def test_already_configured_fields_are_not_prompted(self, monkeypatch):
+        """Env/vault-present fields skip the prompt — extra input would abort, exit 0 proves it."""
+        from navig.connectors.cyberaigen.connector import CyberAigenConnector
+
+        monkeypatch.setattr("navig.connectors.secrets.resolve", lambda f: "preset")
+        monkeypatch.setattr(
+            "navig.connectors.cyberaigen.connector.resolve",
+            lambda f: "https://example.test" if f.name == "base_url" else "preset",
+        )
+        get_connector_registry().register(CyberAigenConnector)
+
+        result = runner.invoke(connector_app, ["connect", "cyberaigen"], input="")
+
+        assert result.exit_code == 0, result.output
+        assert "connected" in result.output.lower()
+
+    def test_reconfigure_reprompts_and_rotates_a_stored_secret(self, monkeypatch):
+        """`--reconfigure` is how a saved key gets ROTATED — without it the prompt
+        skips every stored field and the old vault value is untouchable from here."""
+        from navig.connectors.cyberaigen.connector import CyberAigenConnector
+
+        stored: dict[str, str] = {}
+        monkeypatch.setattr("navig.connectors.secrets.resolve", lambda f: "preset")
+        monkeypatch.setattr(
+            "navig.connectors.secrets.store",
+            lambda f, v: stored.__setitem__(f.vault_label, v),
+        )
+        monkeypatch.setattr(
+            "navig.connectors.cyberaigen.connector.resolve",
+            lambda f: stored.get(f.vault_label, "preset"),
+        )
+        get_connector_registry().register(CyberAigenConnector)
+
+        # prompt 1 = new token; prompt 2 = base URL (Enter keeps its current value)
+        result = runner.invoke(
+            connector_app,
+            ["connect", "cyberaigen", "--reconfigure"],
+            input="rotated-token\n\n",
+        )
+
+        assert result.exit_code == 0, result.output
+        assert stored.get("cyberaigen/token") == "rotated-token"
+        assert "New CyberAIGen API token" in result.output  # a STORED field re-prompted
+        assert "connected" in result.output.lower()
+
+    def test_reconfigure_enter_keeps_the_current_secret(self, monkeypatch):
+        """A blank answer on --reconfigure never deletes what works."""
+        from navig.connectors.cyberaigen.connector import CyberAigenConnector
+
+        stored: dict[str, str] = {}
+        monkeypatch.setattr("navig.connectors.secrets.resolve", lambda f: "preset")
+        monkeypatch.setattr(
+            "navig.connectors.secrets.store",
+            lambda f, v: stored.__setitem__(f.vault_label, v),
+        )
+        monkeypatch.setattr(
+            "navig.connectors.cyberaigen.connector.resolve",
+            lambda f: "preset",
+        )
+        get_connector_registry().register(CyberAigenConnector)
+
+        result = runner.invoke(
+            connector_app, ["connect", "cyberaigen", "--reconfigure"], input="\n\n"
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "cyberaigen/token" not in stored  # nothing was written → current kept
+        assert "Kept the existing CyberAIGen API token" in result.output
+
+
 class TestConnectorHealth:
     def test_health_no_connected(self):
         """health delegates to connector_status; no connected connectors → info message."""

@@ -91,7 +91,7 @@ async def _announce(ports: list[int]) -> None:
             f"(port{'' if len(ports) == 1 else 's'} {', '.join(str(p) for p in ports)}). "
             f"Named profiles and visible windows are never touched.",
             priority="low",
-            data={"source": "browser_reaper", "ports": ports},
+            data={"source": "browser_reaper", "ports": ports, "tidy": "status"},
         )
     except Exception as exc:  # noqa: BLE001
         logger.debug("[browser_reaper] could not announce: %s", exc)

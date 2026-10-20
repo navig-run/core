@@ -41,6 +41,8 @@ CFG_MODE = "telegram.business.deletions.mode"            # instant | digest | of
 CFG_WINDOW = "telegram.business.deletions.window_sec"    # int, default 900
 CFG_TARGET = "telegram.business.deletions.target"        # chat id, default owner DM
 CFG_MUTED = "telegram.business.deletions.mute_chats"     # list[int]
+CFG_QUIET_EXPIRED = "telegram.business.deletions.quiet_expired"  # bool, default on
+CFG_QUIET_WIPES = "telegram.business.deletions.quiet_wipes"      # bool, default on
 #: The original single toggle. Still honoured so an operator who turned alerts off
 #: stays off after upgrading: an explicit ``false`` means mode ``off``.
 CFG_LEGACY_ALERT = "telegram.business.deletion_alert"
@@ -214,14 +216,129 @@ def set_muted(chat_id: Any, muted: bool) -> bool:
     return muted
 
 
+# ── Deletions nobody chose: auto-delete timers and whole-history wipes ──────────
+#
+# Measured on the operator's own catalog (2026-10-09): 604 of 716 business
+# deletions landed within ten minutes of an exact multiple of 24 h after the
+# message was sent — 538 of them to the minute. That is a chat's auto-delete timer
+# expiring, not a person deciding, and it was most of every digest. A
+# whole-history clear arrives as ONE update carrying every id (34 and 13 in one
+# second, same catalog). Both are still RECORDED — the catalog row is the only
+# trace the message existed — they are just not announced.
+
+REASON_EXPIRED = "expired"
+REASON_WIPED = "wiped"
+REASONS = (REASON_EXPIRED, REASON_WIPED)
+
+#: Telegram's auto-delete timers are whole days (1 d · 1 w · 1 month · custom).
+#: Measured lateness of the expiry update: -1 to +4 minutes. A small negative
+#: margin covers clock skew between Telegram's `date` and our receive time.
+EXPIRY_EARLY_SEC = 3 * 60
+EXPIRY_LATE_SEC = 10 * 60
+DAY_SEC = 86_400
+#: One deletion event this large is a clear, not a tidy-up.
+WIPE_MIN_IDS = 10
+#: A smaller batch is still a clear when it empties the chat's whole record.
+WIPE_MIN_IDS_WHEN_EMPTIED = 3
+
+
+def _bool_cfg(key: str, default: bool) -> bool:
+    from navig.core.coerce import coerce_bool
+
+    try:
+        return coerce_bool(_cfg().get(key, default), default=default)
+    except Exception:  # noqa: BLE001
+        return default
+
+
+def quiet_reasons() -> set[str]:
+    """Deletion reasons that are recorded but never announced."""
+    out: set[str] = set()
+    if _bool_cfg(CFG_QUIET_EXPIRED, True):
+        out.add(REASON_EXPIRED)
+    if _bool_cfg(CFG_QUIET_WIPES, True):
+        out.add(REASON_WIPED)
+    return out
+
+
+def set_quiet(reason: str, quiet: bool) -> None:
+    key = {REASON_EXPIRED: CFG_QUIET_EXPIRED, REASON_WIPED: CFG_QUIET_WIPES}.get(reason)
+    if key is None:
+        raise ValueError(f"reason must be one of {' | '.join(REASONS)}")
+    cfg = _cfg()
+    cfg.set(key, bool(quiet), scope="global")
+    cfg.save(scope="global")
+
+
+def looks_expired(sent_date: Any, deleted_at: float) -> bool:
+    """True when a message vanished a whole number of days after it was sent.
+
+    *sent_date* is Telegram's ``date`` as the catalog stores it (epoch seconds, as
+    a string). Anything unparseable is "not known to be a timer" — an ordinary
+    deletion, which is the loud and therefore safe answer."""
+    try:
+        sent = float(str(sent_date).strip())
+    except (TypeError, ValueError):
+        return False
+    if sent <= 0:
+        return False
+    life = deleted_at - sent
+    days = round(life / DAY_SEC)
+    if days < 1:
+        return False
+    off = life - days * DAY_SEC
+    return -EXPIRY_EARLY_SEC <= off <= EXPIRY_LATE_SEC
+
+
+def classify(store: Any, chat_id: Any, ids: list[Any], *,
+             now: float | None = None) -> dict[Any, str | None]:
+    """``{message_id: reason | None}`` for one deletion event, BEFORE it is recorded.
+
+    Per message, the timer wins: an expired message in a large batch is still an
+    expiry. The wipe rule then covers the rest of a batch that is either large on
+    its own, or that leaves the chat with nothing live. Never raises — a lookup
+    failure means "ordinary deletion", which errs towards telling the operator."""
+    import time
+
+    ts = time.time() if now is None else now
+    out: dict[Any, str | None] = {}
+    known = 0
+    for mid in ids:
+        reason = None
+        try:
+            row = store.get_message_by_ref(chat_id, mid)
+        except Exception:  # noqa: BLE001
+            row = None
+        if row and not row.get("deleted"):
+            known += 1
+            if looks_expired(row.get("date"), ts):
+                reason = REASON_EXPIRED
+        out[mid] = reason
+    wiped = len(ids) >= WIPE_MIN_IDS
+    if not wiped and len(ids) >= WIPE_MIN_IDS_WHEN_EMPTIED and known:
+        try:
+            # Every live row of this chat is in this one event: the chat was cleared.
+            wiped = store.live_message_count(chat_id, kind="business") <= known
+        except Exception:  # noqa: BLE001
+            wiped = False
+    if wiped:
+        for mid, reason in out.items():
+            if reason is None:
+                out[mid] = REASON_WIPED
+    return out
+
+
 def status() -> dict[str, Any]:
     """Everything a status surface needs, in one read."""
+    quiet = quiet_reasons()
     return {
         "record": record_enabled(),
         "mode": mode(),
         "window_sec": window_sec(),
         "target": target_chat(),
         "muted_chats": sorted(muted_chats()),
+        "quiet_expired": REASON_EXPIRED in quiet,
+        "quiet_wipes": REASON_WIPED in quiet,
     }
 
 
@@ -267,7 +384,10 @@ def _digest_scope() -> dict[str, Any]:
     cannot disagree. Without it, a muted chat still landed in the count and under
     Show, and a message the operator deleted in a group via the deck was counted
     as a business deletion."""
-    return {"kind": "business", "exclude_chats": muted_chats()}
+    # Timer expiries and whole-chat wipes are recorded but not news (see
+    # `classify`), so they leave the count, the per-chat lines and Show together.
+    return {"kind": "business", "exclude_chats": muted_chats(),
+            "exclude_reasons": quiet_reasons()}
 
 
 def _store():
@@ -481,12 +601,20 @@ async def flush_digest(channel: Any, *, force: bool = False) -> dict[str, Any]:
         body = f"🗑 {head}\n" + (f"{who}\n" if who else "") + f"{since_line} · {tail}."
         token = _token_for(since)
         show = _t("deletions.button.show", n=n) or f"Show {n}"
-        quiet = _t("deletions.button.quiet") or "Quiet"
+        delete = _t("deletions.button.delete") or "Delete"
+        quiet = _t("deletions.button.quiet") or "Stop these alerts"
+        # Delete is THIS card; the off switch is EVERY future card. They sat side by
+        # side as "Show · Тихо", and the operator asked what Тихо did and for "just a
+        # button to delete it" — so delete is its own button, and the switch says
+        # what it switches, on its own row where it is not tapped by accident.
         keyboard = {
-            "inline_keyboard": [[
-                {"text": f"👁 {show}", "callback_data": f"{CB_PREFIX}show:{token}"},
-                {"text": f"🔕 {quiet}", "callback_data": f"{CB_PREFIX}off"},
-            ]]
+            "inline_keyboard": [
+                [
+                    {"text": f"👁 {show}", "callback_data": f"{CB_PREFIX}show:{token}"},
+                    {"text": f"🗑 {delete}", "callback_data": f"{CB_PREFIX}del"},
+                ],
+                [{"text": f"🔕 {quiet}", "callback_data": f"{CB_PREFIX}off"}],
+            ]
         }
         ok = await _send(channel, body, keyboard=keyboard)
         if ok:
@@ -620,8 +748,12 @@ async def resolve_target(owner_id: Any = None) -> str | None:
 
 
 async def _send(channel: Any, text: str, *, keyboard: dict | None = None,
-                owner_id: Any = None, target: str | None = None) -> bool:
-    """Deliver one deletion message. Returns whether Telegram accepted it."""
+                owner_id: Any = None, target: str | None = None,
+                sent: list[int] | None = None) -> bool:
+    """Deliver one deletion message. Returns whether Telegram accepted it.
+
+    ``sent`` collects the new message's id, so a caller can offer to remove what
+    it just posted (the Show button's "clear these")."""
     if target is None:
         target = await resolve_target(owner_id)
     if target is None or channel is None:
@@ -630,17 +762,31 @@ async def _send(channel: Any, text: str, *, keyboard: dict | None = None,
     data: dict[str, Any] = {"chat_id": target, "text": text}
     if keyboard:
         data["reply_markup"] = keyboard
+    from navig.telegram import chat_tidy  # noqa: PLC0415
+
     try:
-        return bool(await channel._api_call("sendMessage", data))
+        with chat_tidy.routine("deletion"):
+            result = await channel._api_call("sendMessage", data)
     except Exception:  # noqa: BLE001
         logger.warning("deletion alert send failed", exc_info=True)
         return False
+    _collect(sent, result)
+    return bool(result)
+
+
+def _collect(sent: list[int] | None, result: Any) -> None:
+    """Append a sent message's id to *sent*, when there is one to append."""
+    if sent is None or not isinstance(result, dict):
+        return
+    mid = result.get("message_id")
+    if isinstance(mid, int):
+        sent.append(mid)
 
 
 async def send_detail(channel: Any, text: str, *, target: str | None = None,
-                      owner_id: Any = None) -> bool:
+                      owner_id: Any = None, sent: list[int] | None = None) -> bool:
     """Public delivery for a rendered deletion report (no buttons)."""
-    return await _send(channel, text, target=target, owner_id=owner_id)
+    return await _send(channel, text, target=target, owner_id=owner_id, sent=sent)
 
 
 class DirectBotChannel:
@@ -675,7 +821,198 @@ class DirectBotChannel:
                 if not body.get("ok"):
                     logger.warning("telegram %s rejected: %s", method, body.get("description"))
                     return None
+                if method.startswith("send"):
+                    from navig.telegram import chat_tidy  # noqa: PLC0415
+
+                    chat_tidy.note(body.get("result"))
                 return body.get("result")
+
+
+# ── Deletions NAVIG made itself ──────────────────────────────────────────────
+#
+# The owner's trigger words — `tyler`, `translate`, `ping` — are deleted by the bot
+# so the other person never sees them. Telegram then reports those deletions like
+# any other, and they were recorded and put in the digest: "1 deleted in X (от
+# тебя)", for a word the owner typed to the bot a second earlier. Measured in the
+# gateway log 2026-09-29: `business deletion: chat=429106811 ids=1` right after a
+# `tyler`. Each bot-made deletion is noted just BEFORE the call, so Telegram's
+# report can never outrun it, and is skipped when the report arrives.
+
+#: Telegram reports a deletion within seconds; anything older is not ours.
+OWN_DELETION_TTL_SEC = 10 * 60
+
+
+def _own_deletions_path():
+    from navig.platform import paths  # noqa: PLC0415
+
+    return paths.cache_dir() / "own_business_deletions.json"
+
+
+def _own_key(bcid: Any, message_id: Any) -> str:
+    return f"{bcid}:{message_id}"
+
+
+def note_own_deletion(bcid: Any, message_ids: list[Any], *, now: float | None = None) -> None:
+    """Record that NAVIG is about to delete these business messages. Never raises."""
+    import json  # noqa: PLC0415
+    import time  # noqa: PLC0415
+
+    if not bcid or not message_ids:
+        return
+    ts = time.time() if now is None else now
+    path = _own_deletions_path()
+    try:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        data = {k: v for k, v in data.items() if ts - float(v) < OWN_DELETION_TTL_SEC}
+        for mid in message_ids:
+            data[_own_key(bcid, mid)] = ts
+        from navig.core.yaml_io import atomic_write_text  # noqa: PLC0415
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(path, json.dumps(data), encoding="utf-8")
+    except Exception:  # noqa: BLE001 — at worst the trigger shows up in a digest
+        logger.debug("could not note an own deletion", exc_info=True)
+
+
+def is_own_deletion(bcid: Any, message_id: Any, *, now: float | None = None) -> bool:
+    """Was this deletion made by NAVIG in the last few minutes? Consumes the note."""
+    import json  # noqa: PLC0415
+    import time  # noqa: PLC0415
+
+    if not bcid:
+        return False
+    ts = time.time() if now is None else now
+    path = _own_deletions_path()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    key = _own_key(bcid, message_id)
+    noted = data.pop(key, None)
+    if noted is None:
+        return False
+    try:
+        from navig.core.yaml_io import atomic_write_text  # noqa: PLC0415
+
+        atomic_write_text(path, json.dumps(data), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+    return ts - float(noted) < OWN_DELETION_TTL_SEC
+
+
+# ── Clearing what a Show tap revealed ────────────────────────────────────────
+#
+# "Show" posts a report plus every cached file back into the operator's chat — two
+# deleted videos are three messages. Asked for 2026-09-27: *"I want to be able to
+# delete the messages when I press Show"*. So each Show remembers exactly which
+# messages it posted, and offers one button that removes them all. The digest card
+# is left alone: it can be shown again, and the record itself is never touched.
+
+#: Telegram lets a bot delete its own messages for 48 hours; past that a clear
+#: cannot succeed, so the entry is not worth keeping.
+REVEAL_TTL_SEC = 48 * 3600
+
+
+def _reveals_path():
+    from navig.platform import paths  # noqa: PLC0415
+
+    return paths.cache_dir() / "deletion_reveals.json"
+
+
+def _read_reveals() -> dict[str, Any]:
+    import json  # noqa: PLC0415
+
+    try:
+        data = json.loads(_reveals_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_reveals(data: dict[str, Any]) -> None:
+    import json  # noqa: PLC0415
+
+    from navig.core.yaml_io import atomic_write_text  # noqa: PLC0415
+
+    path = _reveals_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(path, json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _remember_reveal(chat_id: Any, key: str, ids: list[int], *, now: float | None = None) -> None:
+    import time  # noqa: PLC0415
+
+    ts = time.time() if now is None else now
+    data = {
+        k: v
+        for k, v in _read_reveals().items()
+        if isinstance(v, dict) and ts - float(v.get("at", 0)) < REVEAL_TTL_SEC
+    }
+    data[f"{chat_id}:{key}"] = {"ids": list(ids), "at": ts}
+    _write_reveals(data)
+
+
+def _take_reveal(chat_id: Any, key: str) -> list[int] | None:
+    """Pop the ids a Show posted in this chat, or None when already cleared.
+
+    Scoped by chat: a key is only a message id, and the same id can exist in
+    another chat."""
+    data = _read_reveals()
+    entry = data.pop(f"{chat_id}:{key}", None)
+    if not isinstance(entry, dict):
+        return None
+    _write_reveals(data)
+    return [int(i) for i in entry.get("ids") or []]
+
+
+async def _offer_clear(channel: Any, chat_id: Any, ids: list[int]) -> bool:
+    """Post one "clear these" button under what a Show just revealed."""
+    if not ids:
+        return False
+    key = str(ids[0])
+    n = len(ids)
+    label = _t("deletions.button.clear", n=n) or f"Clear these {n}"
+    note = _t("deletions.reveal.note", n=n) or f"{n} shown. Clear them when you're done."
+    keyboard = {"inline_keyboard": [[
+        {"text": f"🧹 {label}", "callback_data": f"{CB_PREFIX}clr:{key}"},
+    ]]}
+    if not await _send(channel, note, keyboard=keyboard, target=str(chat_id)):
+        return False
+    _remember_reveal(chat_id, key, ids)
+    return True
+
+
+async def _clear_reveal(channel: Any, chat_id: Any, key: str, control_id: Any) -> str:
+    ids = _take_reveal(chat_id, key)
+    if ids is None:
+        return _t("deletions.toast.clear_gone") or "Already cleared"
+    removed = 0
+    for mid in ids:
+        try:
+            ok = await channel._api_call("deleteMessage", {"chat_id": chat_id, "message_id": mid})
+        except Exception:  # noqa: BLE001
+            ok = None
+        if ok:
+            removed += 1
+    # The button's own message goes last, so a failure above still leaves the
+    # operator a visible place where the clear was attempted.
+    if control_id is not None:
+        try:
+            await channel._api_call("deleteMessage", {"chat_id": chat_id, "message_id": control_id})
+        except Exception:  # noqa: BLE001
+            logger.debug("could not remove the clear button message", exc_info=True)
+    if removed == len(ids):
+        return _t("deletions.toast.cleared", n=removed) or f"Cleared {removed}"
+    logger.warning(
+        "deletion reveal clear: removed %d of %d in chat %s (older than 48 h cannot be deleted by a bot)",
+        removed, len(ids), chat_id,
+    )
+    return _t("deletions.toast.cleared_partial", n=removed, total=len(ids)) or (
+        f"Cleared {removed} of {len(ids)} — older than 48 h stay"
+    )
 
 
 # ── Callback buttons ─────────────────────────────────────────────────────────
@@ -688,6 +1025,20 @@ async def handle_callback(channel: Any, cb_data: str, chat_id: Any, message_id: 
     Gated by the ``business`` extension (``callback_prefixes``), so switching the
     business inbox off stops these buttons with everything else it owns."""
     payload = cb_data[len(CB_PREFIX):] if cb_data.startswith(CB_PREFIX) else cb_data
+
+    if payload == "del":
+        # Removes the card only. The record stays (`navig telegram business
+        # deleted`), and what a Show posted keeps its own 🧹 button.
+        try:
+            ok = await channel._api_call(
+                "deleteMessage", {"chat_id": chat_id, "message_id": message_id}
+            )
+        except Exception:  # noqa: BLE001
+            ok = None
+        if ok:
+            return _t("deletions.toast.deleted") or "Deleted"
+        # A bot may only delete its own messages for 48 hours.
+        return _t("deletions.toast.delete_failed") or "Couldn't delete — older than 48 h"
 
     if payload == "off":
         try:
@@ -717,6 +1068,7 @@ async def handle_callback(channel: Any, cb_data: str, chat_id: Any, message_id: 
         from navig.telegram import business as biz
 
         shown = 0
+        posted: list[int] = []
         for cid, ids in by_chat.items():
             chat = {"id": cid}
             try:
@@ -730,9 +1082,14 @@ async def handle_callback(channel: Any, cb_data: str, chat_id: Any, message_id: 
             # check_prefs=False: the operator TAPPED for this. Quiet hours mute the
             # unprompted alert, not an answer to a deliberate request.
             if await biz.deliver_deletion_detail(
-                channel, chat, ids, target=str(chat_id), check_prefs=False
+                channel, chat, ids, target=str(chat_id), check_prefs=False, sent=posted
             ):
                 shown += len(ids)
+        if posted:
+            await _offer_clear(channel, chat_id, posted)
         return f"Showed {shown}" if shown else "⚠️ Could not deliver the detail"
+
+    if payload.startswith("clr:"):
+        return await _clear_reveal(channel, chat_id, payload[len("clr:"):], message_id)
 
     return ""   # unknown sub-action: the caller answers with a generic toast

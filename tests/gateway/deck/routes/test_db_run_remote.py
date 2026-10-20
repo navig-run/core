@@ -72,7 +72,18 @@ async def test_db_query_endpoint_runs_through_fixed_runner(isolated_cfg, monkeyp
     )
     import navig.gateway.deck.routes.database as db
 
+    async def _allow_policy(action, actor, raw_input=""):
+        # Minimal wiring for the authorize_deck step: policy allows, audits nothing.
+        # Real policy consultation for db.query is pinned in test_remote_run_gate.py.
+        return None
+
     class _Req:
+        app = {"gateway": type("GW", (), {"policy_check": staticmethod(_allow_policy)})()}
+
+        def get(self, key, default=None):
+            # No deck auth middleware in this unit test: no identity keys set.
+            return default
+
         async def json(self):
             return {"host": "myhost", "db_type": "mysql", "user": "root", "query": "SELECT 1"}
 

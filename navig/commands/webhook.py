@@ -1,251 +1,55 @@
-"""
-NAVIG Webhook CLI Commands
+"""navig webhook / webhooks — SUPERSEDED by `navig trigger`.
 
-**NOT WIRED.** Every command here talks to a webhook-management API (``/api/v1/webhooks``)
-on ``daemon.browser_port`` (7421), and nothing in the repository serves it. The "Go host
-daemon" the old error hint pointed at was never part of this Python-only core, and
-``navig gateway start`` does not help either: the gateway serves a different port, and its
-``/webhook/{source}`` route is an inbound RECEIVER for external services posting to navig --
-not this management API (and that receiver is itself a documented no-op today: it is
-registered before ``self.webhook_receiver`` exists, and enabling it is a separate decision
-because it exposes an external endpoint; see ``NavigGateway._setup_webhook_routes``). So
-every command below fails at the connection, on every install.
+Every verb here called a webhook-management API (``/api/v1/webhooks`` on
+``daemon.browser_port``) that nothing in the repository has ever served, so every
+invocation failed at the connection on every install. Webhooks are owned by triggers:
 
-They used to fail with "host daemon is not running" plus a hint to start the gateway, which
-sent people to start something that would not have fixed it. They now say what is true.
-The commands stay so that ``navig webhook --help`` documents the intended surface; the
-decision they need -- implement the API in the gateway, or remove the group -- is an owner's.
-(Same situation as ``integrations/browser_orchestrator.py``, which is registered in
-``tests/quality/test_dormant_modules.py``; a command module cannot be, since the CLI
-registry always imports it.)
+    outbound:  navig trigger add <name> --action webhook:<url>
+    inbound:   navig trigger add <name> --type webhook --action <command>
+    manage:    navig trigger list | disable <id> | remove <id> | test <id>
 
-Commands:
-    navig webhook list             — List all registered webhooks (inbound + outbound)
-    navig webhook add-inbound      — Create an inbound trigger endpoint
-    navig webhook add-outbound     — Register an outbound notification URL
-    navig webhook disable <id>     — Disable a webhook
-    navig webhook delete <id>      — Delete a webhook permanently
-    navig webhook test <id>        — Send a test payload to an outbound webhook
+The group stays registered under both names (no CLI break): each verb prints the
+`navig trigger` command that replaced it and exits 1 (see ``navig.cli.superseded``).
 """
 
 from __future__ import annotations
 
 import typer
 
-from navig.console_helper import get_console
-from navig.lazy_loader import lazy_import
+from navig.cli.superseded import moved
 
-_ch = lazy_import("navig.console_helper")
+webhook_app = typer.Typer(
+    name="webhook",
+    help="Webhooks are trigger actions and trigger types (moved → navig trigger)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
 
-webhook_app = typer.Typer(name="webhook", help="Manage NAVIG inbound/outbound webhooks")
-
-def _daemon_base() -> str:
-    """Return the NAVIG host-daemon base URL, resolving port from config."""
-    from navig.config import get_config_manager
-    port = get_config_manager().get("daemon.browser_port", 7421)
-    return f"http://127.0.0.1:{port}"
-_WEBHOOK_REQUEST_TIMEOUT: int = 5  # Short timeout for local daemon API calls
+# Accept whatever the old verbs accepted: the callback answers before any parsing.
+_ANY_ARGS = {"ignore_unknown_options": True, "allow_extra_args": True}
 
 
-def _api(method: str, path: str, json=None):
-    """Call the NAVIG host daemon REST API."""
-    import httpx
-
-    url = f"{_daemon_base()}{path}"
-    try:
-        if method == "GET":
-            r = httpx.get(url, timeout=_WEBHOOK_REQUEST_TIMEOUT)
-        elif method == "POST":
-            r = httpx.post(url, json=json, timeout=_WEBHOOK_REQUEST_TIMEOUT)
-        elif method == "DELETE":
-            r = httpx.delete(url, timeout=_WEBHOOK_REQUEST_TIMEOUT)
-        else:
-            raise ValueError(f"Unknown method: {method}")
-        if r.status_code >= 400:
-            _ch.error(f"API error {r.status_code}: {r.text[:200]}")
-            raise typer.Exit(1)
-        return r.json()
-    except httpx.ConnectError as _exc:
-        # Honest, not hopeful: nothing serves this API in this install, so there is nothing
-        # the user can start. The previous hint ("navig gateway start (or the Go host
-        # daemon)") named a daemon that does not exist and a command that serves a
-        # different port and a different route.
-        _ch.error(
-            "navig webhook needs a webhook-management API (port 7421) that is not part of "
-            "this install -- there is nothing to start."
-        )
-        raise typer.Exit(1) from _exc
+@webhook_app.callback()
+def _webhook_callback(ctx: typer.Context) -> None:
+    group = ctx.info_name if ctx.info_name in ("webhook", "webhooks") else "webhook"
+    moved(f"navig {group} {ctx.invoked_subcommand}" if ctx.invoked_subcommand else f"navig {group}")
 
 
-@webhook_app.command("list")
-def webhook_list(json_output: bool = typer.Option(False, "--json")):
-    """List all registered inbound and outbound webhooks."""
-    import json as _json
+def _stub(verb: str, replacement: str) -> None:
+    def _cmd() -> None:
+        moved(f"navig webhook {verb}")
 
-    data = _api("GET", "/api/v1/webhooks")
-    if json_output:
-        from rich import print as rprint
-
-        rprint(_json.dumps(data, indent=2))
-        return
-    from rich.table import Table
-
-    inbound = data.get("inbound") or []
-    outbound = data.get("outbound") or []
-
-    if not inbound and not outbound:
-        _ch.warning("No webhooks registered.")
-        return
-
-    con = get_console()
-
-    if inbound:
-        t = Table(title="Inbound Webhooks", show_lines=False)
-        t.add_column("ID", style="dim")
-        t.add_column("Name", style="cyan")
-        t.add_column("Token", style="yellow")
-        t.add_column("Secret", style="dim")
-        t.add_column("Triggers", justify="right")
-        t.add_column("Enabled")
-        for wh in inbound:
-            t.add_row(
-                wh["id"],
-                wh["name"],
-                wh["token"],
-                wh.get("secret", "****"),
-                str(wh.get("trigger_count", 0)),
-                "✅" if wh["enabled"] else "⏸️",
-            )
-        con.print(t)
-
-    if outbound:
-        t2 = Table(title="Outbound Webhooks", show_lines=False)
-        t2.add_column("ID", style="dim")
-        t2.add_column("Name", style="cyan")
-        t2.add_column("URL", style="blue", max_width=45)
-        t2.add_column("Events", style="yellow")
-        t2.add_column("Enabled")
-        for wh in outbound:
-            events = ", ".join(wh.get("events") or []) or "all"
-            t2.add_row(
-                wh["id"],
-                wh["name"],
-                wh["url"][:45],
-                events,
-                "✅" if wh["enabled"] else "⏸️",
-            )
-        con.print(t2)
+    _cmd.__name__ = f"webhook_{verb.replace('-', '_')}"
+    _cmd.__doc__ = f"Moved to `{replacement}`."
+    webhook_app.command(verb, context_settings=_ANY_ARGS)(_cmd)
 
 
-@webhook_app.command("add-inbound")
-def webhook_add_inbound(
-    name: str = typer.Option(..., "--name", "-n", help="Human-readable name"),
-    json_output: bool = typer.Option(False, "--json"),
+for _verb, _replacement in (
+    ("list", "navig trigger list"),
+    ("add-inbound", "navig trigger add <name> --type webhook --action <command>"),
+    ("add-outbound", "navig trigger add <name> --action webhook:<url>"),
+    ("disable", "navig trigger disable <id>"),
+    ("delete", "navig trigger remove <id>"),
+    ("test", "navig trigger test <id>"),
 ):
-    """
-    Create an inbound webhook endpoint.
-    Returns a unique URL + HMAC secret. Use the secret to sign requests.
-
-    Example (GitHub Actions):
-        curl -X POST https://yourserver/webhook/in/<token> \\
-             -H 'X-Navig-Signature: sha256=<hmac>' \\
-             -d '{"event":"deploy","branch":"main"}'
-    """
-    import json as _json
-
-    result = _api("POST", "/api/v1/webhooks/inbound", json={"name": name})
-    if json_output:
-        from rich import print as rprint
-
-        rprint(_json.dumps(result, indent=2))
-        return
-    wh = result.get("webhook", result)
-
-    get_console().print(
-        f"\n[bold green]✅ Inbound webhook created[/bold green]\n"
-        f"  ID:     [cyan]{wh.get('id')}[/cyan]\n"
-        f"  Name:   {wh.get('name')}\n"
-        f"  URL:    [blue]POST {_daemon_base()}/webhook/in/{wh.get('token')}[/blue]\n"
-        f"  Secret: [yellow]{wh.get('secret')}[/yellow] (sign payload with HMAC-SHA256)\n"
-        f"\n  Add header: [dim]X-Navig-Signature: sha256=<hmac>[/dim]"
-    )
-
-
-@webhook_app.command("add-outbound")
-def webhook_add_outbound(
-    name: str = typer.Option(..., "--name", "-n", help="Human-readable name"),
-    url: str = typer.Option(..., "--url", "-u", help="Target URL to POST events to"),
-    events: str | None = typer.Option(
-        None,
-        "--events",
-        "-e",
-        help="Comma-separated events to subscribe to. Empty = all. "
-        "Options: task_complete,task_fail,task_start,captcha,2fa",
-    ),
-    json_output: bool = typer.Option(False, "--json"),
-):
-    """
-    Register an outbound webhook. NAVIG will POST to this URL when events occur.
-
-    Examples:
-        navig webhook add-outbound --name Zapier --url https://hooks.zapier.com/xyz
-        navig webhook add-outbound --name Slack --url https://hooks.slack.com/... --events task_complete,task_fail
-    """
-    import json as _json
-
-    event_list = [e.strip() for e in events.split(",")] if events else []
-    result = _api(
-        "POST",
-        "/api/v1/webhooks/outbound",
-        json={"name": name, "url": url, "events": event_list},
-    )
-    if json_output:
-        from rich import print as rprint
-
-        rprint(_json.dumps(result, indent=2))
-        return
-    wh = result.get("webhook", result)
-
-    get_console().print(
-        f"\n[bold green]✅ Outbound webhook registered[/bold green]\n"
-        f"  ID:     [cyan]{wh.get('id')}[/cyan]\n"
-        f"  Name:   {wh.get('name')}\n"
-        f"  URL:    [blue]{url}[/blue]\n"
-        f"  Events: {', '.join(event_list) or 'all'}\n"
-        f"  Secret: [yellow]{wh.get('secret')}[/yellow] (verify X-Navig-Signature on your end)"
-    )
-
-
-@webhook_app.command("disable")
-def webhook_disable(
-    webhook_id: str = typer.Argument(..., help="Webhook ID"),
-):
-    """Disable a webhook (inbound or outbound)."""
-    _api("POST", f"/api/v1/webhooks/{webhook_id}/disable")
-    _ch.success(f"Webhook {webhook_id} disabled.")
-
-
-@webhook_app.command("delete")
-def webhook_delete(
-    webhook_id: str = typer.Argument(...),
-    force: bool = typer.Option(False, "--force", "-f"),
-):
-    """Permanently delete a webhook."""
-    if not force:
-        if not _ch.confirm_action(f"Delete webhook {webhook_id}?"):
-            raise typer.Abort()
-    _api("DELETE", f"/api/v1/webhooks/{webhook_id}")
-    _ch.success(f"Webhook {webhook_id} deleted.")
-
-
-@webhook_app.command("test")
-def webhook_test(
-    webhook_id: str = typer.Argument(..., help="Outbound webhook ID to test"),
-):
-    """Send a test event payload to an outbound webhook."""
-    result = _api("POST", f"/api/v1/webhooks/{webhook_id}/test")
-    if result.get("ok"):
-        _ch.success(f"Test event delivered to webhook {webhook_id}.")
-    else:
-        _ch.error(f"Test failed: {result.get('error', 'unknown')}")
-        raise typer.Exit(1)
+    _stub(_verb, _replacement)

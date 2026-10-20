@@ -35,6 +35,50 @@ logger = logging.getLogger(__name__)
 
 _OVERRIDES_KEY = "modules.overrides"
 
+# ── per-space override layer ─────────────────────────────────────────────────
+# A space's `modules_enabled` / `modules_disabled` (space.json) layer OVER the
+# global `modules.overrides` store, so a module can be live in one space and
+# absent in another — across all three surfaces (routes/tiles, agent toolsets,
+# CLI). `is_enabled()` reads this on every call (toggling stays LIVE, no restart),
+# so it is cached by manifest path + mtime: `is_enabled` runs per route request,
+# and re-parsing the manifest each time would put a file read on the hot path.
+_SPACE_OVR_CACHE: dict[str, "tuple[float, dict[str, bool]]"] = {}
+
+
+def _space_module_overrides(space_dir: "object | None" = None) -> dict[str, bool]:
+    """Resolve per-space module overrides for *space_dir* (or the process-global
+    active space when None). Empty on ANY failure — an unreadable space must
+    never silently disable a module. Cached by (resolved manifest path, mtime).
+
+    Active-space resolution goes through ``spaces.active.get_active_working_dir``
+    (session pin → NAVIG_SPACE → active_space_dir.txt → app root → cwd) — NOT a
+    bare ``Path.cwd()``, which is the working-dir footgun that makes enablement
+    depend on where a command happened to be launched.
+    """
+    try:
+        from pathlib import Path  # noqa: PLC0415
+
+        from navig.spaces.active import get_active_working_dir  # noqa: PLC0415
+        from navig.spaces.space_manifest import (  # noqa: PLC0415
+            find_manifest_file,
+            load_space_manifest,
+        )
+
+        d = Path(space_dir) if space_dir is not None else get_active_working_dir()
+        mf = find_manifest_file(d)
+        if mf is None:
+            return {}  # a bare .navig/ (or no space) carries no override
+        mtime = mf.stat().st_mtime
+        key = str(mf)
+        cached = _SPACE_OVR_CACHE.get(key)
+        if cached is not None and cached[0] == mtime:
+            return cached[1]
+        ovr = load_space_manifest(d).module_overrides
+        _SPACE_OVR_CACHE[key] = (mtime, ovr)
+        return ovr
+    except Exception:  # noqa: BLE001
+        return {}
+
 
 class ModuleKind(str, Enum):
     APP = "app"              # operator app tile (finance/life/…) backed by a core deck route
@@ -68,6 +112,16 @@ class ModuleDef:
     app_category: str | None = None    # Money·Comms·Create·Life·Systems·Knowledge·Security
     hidden: bool = False               # hidden tile (kept for deep-links / palette)
     merged_into: str | None = None     # host app id when this app renders as a tab
+    # The host's SECTION id that renders this app. Two kinds of merge:
+    #   hidden=True  + merged_into          → ALWAYS a tab of the host (contacts →
+    #                                          messages); no tile of its own.
+    #   hidden=False + merged_into + merged_section → a CONDITIONAL fold: surfaces show
+    #                                          it as the host's section while the host
+    #                                          is present, enabled and NOT locked, and
+    #                                          keep its own tile otherwise — so a free
+    #                                          app folded into a paid host (Store sales
+    #                                          → Finance) never lands behind the paywall.
+    merged_section: str | None = None
     # Rich detail copy for the app's info page (surfaces render it; a surface
     # falls back to its own curated copy when these are None). Plugins set these
     # to give their app a full detail page without editing surface code.
@@ -106,6 +160,7 @@ class ModuleDef:
             "app_category": self.app_category,
             "hidden": self.hidden,
             "merged_into": self.merged_into,
+            "merged_section": self.merged_section,
             "about": self.about,
             "features": self.features,
             "settings_schema": self.settings_schema,
@@ -164,12 +219,16 @@ BUILTIN_MODULES: list[ModuleDef] = [
         requires=["gateway"], default_enabled=True, app_category="Life",
     ),
     ModuleDef(
-        id="projects", label="Projects", description="Build apps & projects with AI.",
+        # The Projects hub: every folder with .navig/ — plans, todos, docs, scripts,
+        # context. Free core (navig/projects). It was the BizOps money view (Plus,
+        # business_ops); money moved to Finance → "Projects & products", and the two
+        # stay linked through navig.projects.links (harbor registers the card).
+        id="projects", label="Projects", description="Every project: plans, todos, scripts & AI context.",
         kind=ModuleKind.APP, category="build", icon="hammer",
-        capability="ai_operator", min_tier="plus",
-        surfaces=["os-tile:projects"],  # deck code deleted 2026-07-12 (deck→OS)
-        requires=["gateway"], default_enabled=False, app_category="Money",
-        scope="space",  # projects live in the space's book
+        capability=None,
+        surfaces=["os-tile:projects", "cli:project"],
+        requires=["gateway"], default_enabled=True, app_category="Create",
+        scope="brain",  # the list spans every project, not one space's book
     ),
     # ── primitives (core depends on them; always available) ──────────────────
     ModuleDef(
@@ -213,7 +272,8 @@ BUILTIN_MODULES: list[ModuleDef] = [
     # ── Deck data-surface apps (deck→desktop migration, locked 2026-07-09) ────
     # The deck's APP_CARDS catalog promoted into the registry so ALL surfaces
     # render one catalog. Desktop eligibility = an "os-tile:<id>" surface entry;
-    # telegram + wallet are deliberately deck-only (Telegram Mini App runtime).
+    # wallet is deliberately deck-only (TON connect needs the Mini App runtime);
+    # telegram renders on both (Mini App settings + the NAVIG OS Telegram app).
     # "email"/"generate" are plugin-registered (navig-email / navig-generate).
     # Money
     ModuleDef(
@@ -232,10 +292,22 @@ BUILTIN_MODULES: list[ModuleDef] = [
         requires=["gateway"], default_enabled=True, app_category="Comms",
     ),
     ModuleDef(
-        id="telegram", label="Telegram", description="Manage rooms, catalog media, post & search.",
+        id="telegram", label="Telegram", description="Your bot, its chats and your Telegram account.",
         kind=ModuleKind.APP, category="operate", icon="send",
         capability=None,
-        surfaces=["deck-section:telegram"],  # deck-ONLY: MTProto manager is TMA-coupled
+        # Both surfaces: the Mini App keeps Settings → Telegram, and NAVIG OS has the
+        # full Telegram app (bot · extensions · commands · chats · account ·
+        # business) over the same /api/deck/telegram/* + /social/telegram* routes.
+        surfaces=["os-tile:telegram", "deck-section:telegram"],
+        requires=["gateway"], default_enabled=True, app_category="Comms",
+    ),
+    ModuleDef(
+        id="discord", label="Discord", description="Servers, roles & moderation for your bot and account.",
+        kind=ModuleKind.APP, category="operate", icon="message-circle",
+        capability=None,
+        # Desktop app over /api/deck/discord/* (navig.discord — the same engine and
+        # moderation policy as `navig discord` and the bot's slash commands).
+        surfaces=["os-tile:discord", "cli:discord"],
         requires=["gateway"], default_enabled=True, app_category="Comms",
     ),
     ModuleDef(
@@ -260,6 +332,15 @@ BUILTIN_MODULES: list[ModuleDef] = [
         kind=ModuleKind.APP, category="grow", icon="list-checks",
         capability=None,
         surfaces=["os-tile:tasks"],  # deck code deleted 2026-07-12 (deck→OS)
+        requires=["gateway"], default_enabled=True, app_category="Life",
+    ),
+    ModuleDef(
+        id="planner", label="Planner", description="To-dos, appointments & reminders.",
+        kind=ModuleKind.APP, category="grow", icon="calendar-check",
+        capability=None,
+        # One store (navig.pim.service) shared with the Telegram bot + business
+        # chats; routes under /api/deck/planner/*.
+        surfaces=["os-tile:planner"],
         requires=["gateway"], default_enabled=True, app_category="Life",
     ),
     ModuleDef(
@@ -341,6 +422,15 @@ BUILTIN_MODULES: list[ModuleDef] = [
         # (sections/inbox-section.tsx — asks/approvals + drop-upload), so the
         # deck-section surface remains truthful.
         surfaces=["os-tile:inbox", "deck-section:inbox"],
+        requires=["gateway"], default_enabled=True, app_category="Knowledge",
+    ),
+    ModuleDef(
+        id="customize", label="Customizations",
+        description="Agents, skills, instructions, hooks, MCP & tools the brain runs.",
+        kind=ModuleKind.APP, category="system", icon="sliders-horizontal",
+        capability=None,
+        # Backed by /api/deck/customize/* (gateway/deck/routes/customize.py).
+        surfaces=["os-tile:customize"],
         requires=["gateway"], default_enabled=True, app_category="Knowledge",
     ),
     ModuleDef(
@@ -542,11 +632,49 @@ class ModuleRegistry:
         self._ensure()
         return self._defs.get(module_id)
 
-    def is_enabled(self, module_id: str) -> bool:
+    def is_enabled(self, module_id: str, *, space_dir: "object | None" = None) -> bool:
+        """Resolve a module's enabled state for a space.
+
+        Precedence (most specific wins): per-space override → global override →
+        the module's ``default_enabled``. ``space_dir=None`` resolves the
+        process-global active space; pass an explicit dir to ask about a space
+        other than the active one (a gateway route serving a named space does).
+
+        This does NOT bypass a license lock: a module a space force-enables is
+        still *locked* when its capability isn't in the current entitlement
+        (resolved separately in ``to_dict``/``list_modules``). Per-space
+        enablement decides reachability, not entitlement.
+        """
         d = self.get(module_id)
         if d is None:
             return False
-        return self._overrides().get(module_id, d.default_enabled)
+        enabled = self._overrides().get(module_id, d.default_enabled)
+        space_ovr = _space_module_overrides(space_dir)
+        if module_id in space_ovr:
+            enabled = space_ovr[module_id]
+        return enabled
+
+    def disabled_surfaces(
+        self, prefix: str, *, space_dir: "object | None" = None
+    ) -> set[str]:
+        """Return the ``<prefix>:<name>`` surface *names* of every module that is
+        NOT effectively enabled in a space (the active space when None).
+
+        Used to gate non-route surfaces that the registry does not serve
+        directly: a module declaring ``surfaces=["toolset:devnet"]`` contributes
+        ``"devnet"`` here when it is off, and the agent drops that toolset before
+        offering tools to the model; ``"cli:net"`` gates the ``net`` CLI verb.
+        A module with no surface of *prefix* contributes nothing — gating a
+        surface a module does not own is a no-op, not an error.
+        """
+        self._ensure()
+        want = f"{prefix}:"
+        out: set[str] = set()
+        for mid, d in self._defs.items():
+            names = [s[len(want):] for s in d.surfaces if s.startswith(want)]
+            if names and not self.is_enabled(mid, space_dir=space_dir):
+                out.update(names)
+        return out
 
     def set_enabled(self, module_id: str, enabled: bool) -> bool:
         """Persist a user override. Returns False for an unknown module."""
@@ -564,16 +692,62 @@ class ModuleRegistry:
         cfg.save(scope="global")
         return True
 
-    def list_modules(self, *, include_dev: bool = False) -> list[dict[str, Any]]:
-        """Full catalog with resolved `locked` + `enabled` — the shape surfaces render."""
+    def set_enabled_in_space(
+        self, module_id: str, state: "bool | None", *, space_dir: "object"
+    ) -> bool:
+        """Persist a PER-SPACE module override into ``space_dir``'s manifest.
+
+        ``state=True`` adds the id to ``modules_enabled`` (force-ON here),
+        ``False`` adds it to ``modules_disabled`` (force-OFF here), and ``None``
+        clears any per-space override so the space inherits the global state
+        again. The id never lingers in both lists. Returns False for an unknown
+        module; raises :class:`~navig.spaces.space_manifest.ManifestNotWritable`
+        when the manifest can't be safely written (a YAML manifest, or unreadable
+        JSON) — the caller surfaces that (CLI error / deck 409).
+        """
+        self._ensure()
+        if module_id not in self._defs:
+            return False
+        from pathlib import Path  # noqa: PLC0415
+
+        from navig.spaces.space_manifest import (  # noqa: PLC0415
+            load_space_manifest,
+            set_manifest_field,
+        )
+
+        d = Path(space_dir)
+        mf = load_space_manifest(d)
+        enabled_ids = [i for i in mf._id_list("modules_enabled") if i != module_id]
+        disabled_ids = [i for i in mf._id_list("modules_disabled") if i != module_id]
+        if state is True:
+            enabled_ids.append(module_id)
+        elif state is False:
+            disabled_ids.append(module_id)
+        # None → leave the id out of both lists (inherit global)
+        set_manifest_field(d, "modules_enabled", enabled_ids or None, id_hint=d.name)
+        set_manifest_field(d, "modules_disabled", disabled_ids or None, id_hint=d.name)
+        _SPACE_OVR_CACHE.clear()  # the manifest changed; drop the mtime cache now
+        return True
+
+    def list_modules(
+        self, *, include_dev: bool = False, space_dir: "object | None" = None
+    ) -> list[dict[str, Any]]:
+        """Full catalog with resolved `locked` + `enabled` — the shape surfaces render.
+
+        ``enabled`` is resolved for *space_dir* (the active space when None), so
+        the catalog a surface renders already reflects the per-space override
+        layer — a module a space turned off reads ``enabled: false`` here, not
+        just hidden by the sidebar view-filter.
+        """
         self._ensure()
         caps = self._capabilities()
         overrides = self._overrides()
+        space_ovr = _space_module_overrides(space_dir)
         out: list[dict[str, Any]] = []
         for d in self._defs.values():
             if d.dev_only and not include_dev:
                 continue
-            enabled = overrides.get(d.id, d.default_enabled)
+            enabled = space_ovr.get(d.id, overrides.get(d.id, d.default_enabled))
             out.append(d.to_dict(capabilities=caps, enabled=enabled))
         out.sort(key=lambda m: (CATEGORY_ORDER.index(m["category"])
                                 if m["category"] in CATEGORY_ORDER else 99, m["label"].lower()))
@@ -628,6 +802,13 @@ def reset_entry_points() -> None:
         import importlib  # noqa: PLC0415
 
         importlib.invalidate_caches()
+    except Exception:  # noqa: BLE001 — cache invalidation is best-effort
+        pass
+    try:
+        # The capability-dir seam (personas/skills/...) memoises the same scan.
+        from navig.plugins.package import invalidate_plugin_discovery_cache  # noqa: PLC0415
+
+        invalidate_plugin_discovery_cache()
     except Exception:  # noqa: BLE001 — cache invalidation is best-effort
         pass
 

@@ -192,14 +192,24 @@ def test_get_access_token_returns_valid():
 # ---------------------------------------------------------------------------
 
 
-def test_revoke_calls_vault_remove():
+def test_revoke_deletes_the_vault_item():
+    """Specced against the real Vault: a plain MagicMock accepted ``vault.remove()`` — a
+    method the vault does not have — so this test passed while every Disconnect was a
+    no-op on a real install."""
+    from unittest.mock import create_autospec
+
+    from navig.vault.core import Vault
+
     mgr = _fresh_manager()
+    mgr._vault = create_autospec(Vault, instance=True)
     fake_cred = MagicMock()
     fake_cred.id = "vault-123"
     mgr._vault.get.return_value = fake_cred
+    mgr._vault.delete.return_value = True
+    mgr._vault.list.return_value = []
 
-    asyncio.run(mgr.revoke("svc_revoke"))
-    mgr._vault.remove.assert_called_once_with("vault-123")
+    assert asyncio.run(mgr.revoke("svc_revoke")) is True
+    mgr._vault.delete.assert_called_once_with("vault-123")
 
 
 def test_revoke_no_cred_does_not_raise():

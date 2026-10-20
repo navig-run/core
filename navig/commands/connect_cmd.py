@@ -20,6 +20,7 @@ import typer
 from navig.console_helper import get_console
 from navig.providers.connect import (
     CONNECTION_TEMPLATES,
+    VIRTUAL_PREFIX,
     begin_oauth,
     complete_oauth,
     connect_provider,
@@ -96,20 +97,56 @@ def _list() -> None:
             mark = "★" if r["connection_id"] == default_id else " "
             table.add_row(
                 mark, r["name"], r["template_id"], r["driver"], r["ui_state"],
-                str(r["connection_id"])[:8],
+                _short_ref(r["connection_id"]),
             )
         console.print(table)
-        console.print(
-            "[dim]remove one with [bold]navig connect remove <id>[/bold] "
-            "(the short ID above, or the exact name)[/dim]"
-        )
     except Exception:  # noqa: BLE001 — fall back to plain text
         for r in rows:
             mark = "*" if r["connection_id"] == default_id else " "
             console.print(
                 f"{mark} {r['name']} \\[{r['template_id']}] {r['ui_state']} "
-                f"({str(r['connection_id'])[:8]})"
+                f"({_short_ref(r['connection_id'])})"
             )
+    for line in _next_steps(rows, default_id):
+        console.print(f"[dim]{line}[/dim]")
+
+
+def _short_ref(connection_id: str) -> str:
+    """The ID shown in the list — always something `default`/`remove` accept.
+
+    Stored connections are UUIDs, so 8 chars is a unique prefix. Configured-elsewhere
+    ones are `configured:<provider>`: cutting those to 8 gave `configur` for every
+    one of them — an ambiguous prefix that resolves to nothing. Show them whole."""
+    cid = str(connection_id)
+    return cid if cid.startswith(VIRTUAL_PREFIX) else cid[:8]
+
+
+def _oauth_templates() -> set[str]:
+    """Templates that reconnect by signing in (`login`), not by pasting a key (`add`)."""
+    return {tid for tid, t in CONNECTION_TEMPLATES.items() if t.auth_kind == "oauth"}
+
+
+def _next_steps(rows: list[dict], default_id: str | None) -> list[str]:
+    """Footer: what to do next, tailored to the rows — reconnect broken ones first."""
+    lines: list[str] = []
+    broken = [r for r in rows if r.get("ui_state") == "needs_reauth"]
+    for template in sorted({r["template_id"] for r in broken}):
+        verb = "login" if template in _oauth_templates() else "add"
+        lines.append(
+            f"⚠ reconnect {template}: [bold]navig connect {verb} {template}[/bold]"
+            + (" (signing in to the same account updates it in place)" if verb == "login" else "")
+        )
+    default_row = next((r for r in rows if r["connection_id"] == default_id), None)
+    if default_row is None:
+        lines.append("○ no default yet — pick one with [bold]navig connect default <id>[/bold]")
+    elif default_row.get("ui_state") == "needs_reauth":
+        lines.append("⚠ your ★ default needs reauth — reconnect it, or switch: "
+                     "[bold]navig connect default <id>[/bold]")
+    lines.append("default  [bold]navig connect default <id>[/bold]   (★ marks the current one)")
+    lines.append("add      [bold]navig connect add <template>[/bold] · subscription: "
+                 "[bold]navig connect login claude-max[/bold] · list: [bold]navig connect templates[/bold]")
+    lines.append("remove   [bold]navig connect remove <id>[/bold]   (<id> = the ID column, or the exact name)")
+    return lines
 
 
 @connect_app.command("login")
@@ -346,6 +383,9 @@ def test_cmd(
             console.print(f"[green]✓ ready[/green] {conn.name} ({state})")
         else:
             console.print(f"[yellow]● {state}[/yellow] {conn.name}")
+            if state == "needs_reauth":
+                verb = "login" if conn.template_id in _oauth_templates() else "add"
+                console.print(f"    [dim]→ navig connect {verb} {conn.template_id}[/dim]")
 
 
 def _resolve_connection_ref(token: str) -> str:

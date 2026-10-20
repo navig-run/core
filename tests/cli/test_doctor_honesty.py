@@ -400,3 +400,205 @@ def test_skills_row_warns_when_the_loader_itself_fails(monkeypatch):
     (row,) = doctor.check_skills()
     assert row[1] is False and row[0] == doctor._WARN
     assert "COULD NOT VERIFY" in row.detail
+
+
+# ---------------------------------------------------------------------------
+# install.profile — the profile the installer recorded (Gate 2)
+# ---------------------------------------------------------------------------
+#
+# A row that reports what `navig init --profile` applied: green when the key
+# reads back a name the installer accepts, a warning when it does not, and an
+# explicit COULD NOT VERIFY when the config cannot be read — never a green tick
+# over an unknown, never no row at all.
+
+
+def _config_dir_with_profile(tmp_path, monkeypatch, value=None):
+    cfg = tmp_path / ".navig"
+    cfg.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(cfg))
+    from navig.config import reset_config_manager
+
+    reset_config_manager()
+    if value is not None:
+        from navig.config import ConfigManager
+
+        ConfigManager(config_dir=cfg).set("install.profile", value)
+    return cfg
+
+
+def test_install_profile_row_is_green_for_a_known_profile(tmp_path, monkeypatch):
+    _config_dir_with_profile(tmp_path, monkeypatch, "server")
+    (row,) = doctor.check_install_profile()
+    assert row[1] is True and row[0] == doctor._OK
+    assert row.label == "Install profile"
+    assert row.detail == "server"
+
+
+def test_install_profile_row_says_none_when_the_key_is_absent(tmp_path, monkeypatch):
+    _config_dir_with_profile(tmp_path, monkeypatch, None)
+    (row,) = doctor.check_install_profile()
+    # "None recorded" is a VERIFIED answer (interactive / pre-profile install),
+    # so it is green — but it must say what it found, not look like a profile.
+    assert row[1] is True
+    assert "none recorded" in row.detail
+
+
+def test_install_profile_row_warns_on_an_unknown_name(tmp_path, monkeypatch):
+    _config_dir_with_profile(tmp_path, monkeypatch, "not-a-profile")
+    (row,) = doctor.check_install_profile()
+    assert row[1] is False and row[0] == doctor._WARN
+    assert "not-a-profile" in row.detail and "not a known profile" in row.detail
+
+
+def test_install_profile_row_is_never_green_when_the_config_cannot_be_read(
+    tmp_path, monkeypatch
+):
+    _config_dir_with_profile(tmp_path, monkeypatch, "server")
+
+    def _boom(self, key, default=None):
+        raise OSError("disk on fire")
+
+    monkeypatch.setattr("navig.config.ConfigManager.get", _boom)
+    (row,) = doctor.check_install_profile()
+    assert row[1] is False and row[0] == doctor._WARN
+    assert "COULD NOT VERIFY" in row.detail
+
+
+def test_install_profile_row_is_wired_into_the_config_section():
+    """`check_install_profile` must be COLLECTED, not just defined — a check
+    nothing calls is the "written, tested, never wired" failure mode."""
+    import inspect
+
+    src = inspect.getsource(doctor._collect_sections)
+    assert "check_install_profile()" in src
+
+
+# ── Stripe webhook delivery (the payments health row) ──────────────────────────
+# A rotated secret or a moved endpoint stops `checkout.session.completed` while every other
+# light stays green. The row asks STRIPE (endpoint status + undelivered events), because the
+# endpoint's five sale-driven events mean silence cannot tell "no sales" from "dead channel".
+
+_ENDPOINT = "https://api.navig.run/api/webhooks/stripe"
+
+
+class _Resp:
+    def __init__(self, payload, status=200):
+        self.status_code = status
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+def _stripe(monkeypatch, *, key="sk_org_live_x", endpoints=None, undelivered=(), status=200):
+    """Point the row at a fake vault key and a fake Stripe; return the captured requests."""
+    import requests
+
+    monkeypatch.setattr(doctor, "_navig_billing_key", lambda: key)
+    seen = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        seen.append({"url": url, "params": params or {}, "headers": headers or {}})
+        if url.endswith("/webhook_endpoints"):
+            data = endpoints if endpoints is not None else [
+                {"id": "we_1", "url": _ENDPOINT, "status": "enabled"}
+            ]
+            return _Resp({"data": data}, status)
+        return _Resp({"data": list(undelivered)}, status)
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    return seen
+
+
+def test_stripe_row_is_absent_on_an_install_that_does_not_sell_navig(monkeypatch):
+    """Every customer's doctor: navig.run's billing is not theirs to see or worry about."""
+    monkeypatch.setattr(doctor, "_navig_billing_key", lambda: None)
+    assert doctor._stripe_webhook_row() == []
+
+
+def test_stripe_row_is_green_when_the_endpoint_is_enabled_and_everything_delivered(monkeypatch):
+    seen = _stripe(monkeypatch)
+    _icon, ok, text = _row(doctor._stripe_webhook_row(), "Stripe webhook")
+    assert ok is True, text
+    assert "every delivery succeeded" in text
+    # It asked Stripe the right question, for the right account.
+    events = next(r for r in seen if r["url"].endswith("/v1/events"))
+    assert events["params"]["delivery_success"] == "false"
+    assert events["headers"]["Stripe-Context"] == doctor._NAVIG_STRIPE_ACCOUNT
+
+
+def test_a_quiet_store_is_NOT_a_failure(monkeypatch):
+    """The defect of the first version: no sales for a week read as 'deliveries stopped'.
+    Stripe reports the endpoint enabled with nothing undelivered — that is healthy."""
+    _stripe(monkeypatch, undelivered=[])
+    _icon, ok, text = _row(doctor._stripe_webhook_row(), "Stripe webhook")
+    assert ok is True, text
+    assert "stopped" not in text
+
+
+def test_a_disabled_endpoint_is_a_verified_failure_not_a_warning(monkeypatch):
+    _stripe(monkeypatch, endpoints=[{"id": "we_1", "url": _ENDPOINT, "status": "disabled"}])
+    icon, ok, text = _row(doctor._stripe_webhook_row(), "Stripe webhook")
+    assert ok is False
+    assert icon == doctor._ERR, "Stripe gave up on the endpoint — that is known, not unknown"
+    assert "DISABLED" in text
+
+
+def test_undelivered_events_warn_and_name_what_failed(monkeypatch):
+    _stripe(monkeypatch, undelivered=[{"type": "checkout.session.completed"}] * 2)
+    icon, ok, text = _row(doctor._stripe_webhook_row(), "Stripe webhook")
+    assert ok is False
+    assert icon == doctor._WARN
+    assert "2 event(s) not delivered" in text
+    assert "checkout.session.completed" in text
+
+
+def test_no_endpoint_for_our_url_is_a_warning(monkeypatch):
+    _stripe(monkeypatch, endpoints=[{"id": "we_x", "url": "https://gaze.ink/hook", "status": "enabled"}])
+    _icon, ok, text = _row(doctor._stripe_webhook_row(), "Stripe webhook")
+    assert ok is False
+    assert "no Stripe endpoint points at" in text
+
+
+def test_stripe_row_is_not_green_when_stripe_cannot_be_asked(monkeypatch):
+    """Could-not-verify is never a tick: an HTTP error, a timeout, or a broken vault."""
+    import requests
+
+    _stripe(monkeypatch, status=401)
+    _icon, ok, text = _row(doctor._stripe_webhook_row(), "Stripe webhook")
+    assert ok is False and "COULD NOT VERIFY" in text
+
+    def boom(*a, **k):
+        raise requests.exceptions.ReadTimeout("Read timed out. (read timeout=4.0)")
+
+    monkeypatch.setattr(requests, "get", boom)
+    _icon, ok, text = _row(doctor._stripe_webhook_row(), "Stripe webhook")
+    assert ok is False and "COULD NOT VERIFY" in text
+
+    def broken_vault():
+        raise RuntimeError("vault locked")
+
+    monkeypatch.setattr(doctor, "_navig_billing_key", broken_vault)
+    _icon, ok, text = _row(doctor._stripe_webhook_row(), "Stripe webhook")
+    assert ok is False and "COULD NOT VERIFY" in text, "a broken vault must not hide the row"
+
+
+def test_a_plain_secret_key_is_not_sent_a_stripe_context(monkeypatch):
+    """`Stripe-Context` is for organization keys; a plain account key must not carry it."""
+    seen = _stripe(monkeypatch, key="sk_live_plain")
+    doctor._stripe_webhook_row()
+    assert all("Stripe-Context" not in r["headers"] for r in seen)
+
+
+def test_stripe_webhook_row_is_COLLECTED_by_its_own_section():
+    """Defined-but-never-called is the failure mode this repo keeps rediscovering.
+
+    Its own `Payments` section (not Reachability): `check_reachability()` is a tested
+    contract — its consumers assert the exact rows — and this one makes an outbound
+    network call those consumers must not inherit.
+    """
+    import inspect
+
+    src = inspect.getsource(doctor._collect_sections)
+    assert "check_payments()" in src, "the payments section must be collected, not just defined"
+    assert "_stripe_webhook_row()" in inspect.getsource(doctor.check_payments)

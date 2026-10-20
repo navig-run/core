@@ -2,6 +2,12 @@
   "version": 1,
   "_comment": "command → providing plugin. Regenerate: python scripts/gen_command_providers.py. Consumed by navig.cli.providers (suggest-and-activate) and the Store's AVAILABLE rows.",
   "commands": {
+    "agentctl": {
+      "plugin": "navig-agentctl",
+      "module": "agentctl",
+      "pip": "navig-agentctl",
+      "description": "Agent Control Center — sessions, worktrees & tasks (read-only Observer)"
+    },
     "android": {
       "plugin": "navig-mobile",
       "module": null,
@@ -18,7 +24,13 @@
       "plugin": "navig-audio",
       "module": null,
       "pip": "navig-audio",
-      "description": "NAVIG Audio module — voice (TTS/STT/wake-word/pipeline) + AI audio generation (music/SFX/TTS). A first-party navig plugin (free, toggleable). Extracted from core navig.voice."
+      "description": "Speak text, transcribe audio, generate music and sound effects, analyse beats and render podcasts — its own navig-audio command, with your own provider keys; also `navig audio` / `navig voice` inside navig."
+    },
+    "bookmarks": {
+      "plugin": "navig-bookmarks",
+      "module": null,
+      "pip": "navig-bookmarks",
+      "description": "navig bookmarks -- a local bookmark manager: import from any browser or HTML export, full-text search, AI folder plans and tags with your own AI, dead-link checks, duplicate cleanup, and Netscape HTML export with folders."
     },
     "cabinet": {
       "plugin": "navig-cabinet",
@@ -32,17 +44,35 @@
       "pip": "navig-calendar",
       "description": "Calendar view & sync (Google Calendar / CalDAV)"
     },
+    "chats": {
+      "plugin": "navig-chats",
+      "module": "chats",
+      "pip": "navig-chats",
+      "description": "AI chat library — import ChatGPT exports, search every message, folders, export"
+    },
     "contacts": {
       "plugin": "navig-contacts",
       "module": null,
       "pip": "navig-contacts",
       "description": "NAVIG Contacts module — `navig contacts`: the address book and the alias-to-route table dispatch resolves against, in one store. Imports vCard and Telegram exports, merges the same person out of many records, and keeps only contacts with a phone number that validates."
     },
+    "content": {
+      "plugin": "navig-pipeline",
+      "module": "pipeline",
+      "pip": "navig-pipeline",
+      "description": "Content production — script, narrate, cut and package reels and episodes"
+    },
     "ct": {
       "plugin": "navig-contacts",
       "module": null,
       "pip": "navig-contacts",
       "description": "NAVIG Contacts module — `navig contacts`: the address book and the alias-to-route table dispatch resolves against, in one store. Imports vCard and Telegram exports, merges the same person out of many records, and keeps only contacts with a phone number that validates."
+    },
+    "debrief": {
+      "plugin": "navig-debrief",
+      "module": null,
+      "pip": "navig-debrief",
+      "description": "Visual debrief of a work session: timeline, tool mix, mind map, files and UI mockups rendered to one navigable HTML report, with PNG exports."
     },
     "dedupe": {
       "plugin": "navig-dedupe",
@@ -61,6 +91,12 @@
       "module": null,
       "pip": "navig-devhost",
       "description": "NAVIG Dev Host module — give any local dev server a real .test domain over trusted HTTPS in one command (hosts + mkcert + raw TLS relay), wired into `navig devhost`. A first-party navig plugin (free, toggleable)."
+    },
+    "devnet": {
+      "plugin": "navig-devnet",
+      "module": null,
+      "pip": "navig-devnet",
+      "description": "Developer/ops network inspection: DNS/WHOIS/SSL lookups and an SSRF-guarded HTTP repeater — its own navig-devnet command, and `navig devnet` inside navig."
     },
     "dl": {
       "alias_of": "download"
@@ -128,17 +164,38 @@
       "pip": "navig-msstore",
       "description": "navig mstore -- Microsoft Store publishing verbs for NAVIG, wrapping the msstore-publish block."
     },
+    "notes": {
+      "plugin": "navig-notes",
+      "module": "notes",
+      "pip": "navig-notes",
+      "description": "Web sticky notes from the NAVIG Dock — list, search, add, export"
+    },
+    "obs": {
+      "plugin": "navig-obs",
+      "module": "obs",
+      "pip": "navig-obs",
+      "description": "Control OBS Studio — scenes, sources, stream & recording (obs-websocket)"
+    },
     "paperwork": {
       "plugin": "navig-cabinet",
       "module": null,
       "pip": "navig-cabinet",
       "description": "NAVIG Cabinet — your documents in one plugin: an encrypted cabinet for important files (ID and passport scans, medical records, contracts, photos, recordings — any type, any size; local-OCR search, expiry reminders, portable backups) plus `navig paperwork`, which files business paperwork (invoices, quotes, contracts, tax) into a space. A first-party navig plugin (free, toggleable)."
     },
-    "pipeline": {
-      "plugin": "navig-pipeline",
+    "pentest": {
+      "plugin": "navig-pentest",
       "module": null,
-      "pip": "navig-pipeline",
-      "description": "NAVIG content assembly line — composes navig-download/-audio/-text/-social into one flow (download → transcribe → script → narrate → fan-out). A first-party navig plugin (free, toggleable)."
+      "pip": "navig-pentest",
+      "description": "NAVIG Pentest — the authorized-only offensive-security toolkit: passive recon (RDAP/whois, DNS, crt.sh subdomains, HTTP fingerprint) plus gated active recon (port scan, subdomain probe, template checks) behind a written-authorization engagement gate. Wired into `navig pentest` (+ `navig-warroom` / `warroom-osint` conveniences)."
+    },
+    "perplexity": {
+      "plugin": "navig-perplexity",
+      "module": null,
+      "pip": "navig-perplexity",
+      "description": "Delegate independent intellectual work — research, articles, marketing copy, naming, comparisons, critique, translation — to the Perplexity desktop app over CDP: routed model and reasoning, persistent conversations you can continue, structured results; runs on its own as `navig-perplexity`."
+    },
+    "pipeline": {
+      "alias_of": "content"
     },
     "social": {
       "plugin": "navig-social",
@@ -166,6 +223,24 @@
     },
     "tt": {
       "alias_of": "tiktok"
+    },
+    "unpack": {
+      "plugin": "navig-mobile",
+      "module": null,
+      "pip": "navig-mobile",
+      "description": "NAVIG Mobile — pro-grade Android + iOS device operations: connect, device info, apps, file pull, screenshots, backups, plus forensics / spyware-scan / root-jailbreak assist / OSINT, and app UI automation (a11y snapshots, tap/fill, `ui assert` machine checks, evidence capture). Wired into `navig mobile` (+ `navig android` / `navig ios`). A first-party navig plugin (free, toggleable)."
+    },
+    "video": {
+      "plugin": "navig-video",
+      "module": null,
+      "pip": "navig-video",
+      "description": "NAVIG Video module — render a channel's video formats (kinetic episodes, bulletins, motion cards) from its workspace of texts, plates and voice: timeline → frames → ffmpeg, with per-destination encode variants. A first-party navig plugin (free, toggleable)."
+    },
+    "vm": {
+      "plugin": "navig-vm",
+      "module": null,
+      "pip": "navig-vm",
+      "description": "NAVIG VM module — local VMware Workstation VMs from verified cloud images, provisioned on first boot with cloud-init and driven from `navig vm` (create, start, ssh, snapshots). A first-party navig plugin (free, toggleable)."
     }
   }
 }

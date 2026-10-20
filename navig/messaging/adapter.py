@@ -16,6 +16,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal, Protocol, runtime_checkable
 
+# Contact / Route live in navig-sdk so the standalone navig-contacts builds the very same
+# objects this routing layer resolves: one class, not two look-alikes.
+from navig_sdk.pim import (  # noqa: F401 - re-exported: messaging imports them from here
+    Contact,
+    Route,
+)
+
 # ── Enums ─────────────────────────────────────────────────────
 
 
@@ -126,29 +133,6 @@ class Thread:
     created_at: str = ""
     last_active: str = ""
     meta: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class Route:
-    """A single transport route for a contact."""
-
-    network: str  # e.g. "whatsapp", "discord", "sms"
-    address: str  # e.g. "+33612345678", "123456789"
-    priority: int = 0
-    meta: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class Contact:
-    """Resolved contact with ordered routes and fallbacks."""
-
-    alias: str
-    display_name: str
-    default_network: str | None = None
-    routes: list[Route] = field(default_factory=list)
-    fallbacks: list[str] = field(default_factory=list)
-    created_at: str = ""
-    updated_at: str = ""
 
 
 @dataclass(frozen=True)

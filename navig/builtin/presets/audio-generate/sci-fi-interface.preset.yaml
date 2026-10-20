@@ -1,0 +1,17 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: audio-generate/sci-fi-interface
+name: Sci-Fi Interface
+tool: audio.generate
+layer: style
+category: Sound design
+tags:
+- sfx
+description: Short clean sci-fi interface sound.
+instructions: 'Short clean sci-fi interface sound: soft digital chirp with a glassy transient and a brief
+  synthetic shimmer tail.'
+params:
+  kind: sfx
+  duration_s: 1.5
+  negative: voice, music, long reverb

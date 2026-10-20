@@ -18,6 +18,15 @@ HELP_REGISTRY: dict[str, dict[str, Any]] = {
             "maintenance": "maintenance subcommands",
         },
     },
+    "security": {
+        "desc": "Local security operations (host-secret migration)",
+        "commands": {
+            "migrate-host-secrets": (
+                "move plaintext host YAML passwords into the vault — dry run; "
+                "--apply migrates, --rollback restores the newest backup"
+            ),
+        },
+    },
     "context": {
         "desc": "Manage host/app context for current project",
         "commands": {
@@ -222,7 +231,7 @@ HELP_REGISTRY: dict[str, dict[str, Any]] = {
         },
     },
     "skills": {
-        "desc": "Manage AI skill definitions",
+        "desc": "Manage AI skill definitions (navig skill)",
         "commands": {
             "list": "list available skills",
             "tree": "show skills by category",
@@ -428,7 +437,7 @@ HELP_REGISTRY: dict[str, dict[str, Any]] = {
         },
     },
     "browser": {
-        "desc": "Browser automation for web tasks",
+        "desc": "Browser automation for web tasks (superseded → navig cdp)",
         "commands": {
             "open": "navigate to URL",
             "click": "click element on page",
@@ -529,10 +538,11 @@ HELP_REGISTRY: dict[str, dict[str, Any]] = {
             "show": "show formation details",
             "init": "initialize profile for workspace",
             "agents": "list agents in active formation",
+            "council": "run a council deliberation across the formation's agents",
         },
     },
     "council": {
-        "desc": "Multi-agent council deliberation",
+        "desc": "Multi-agent council deliberation (superseded → navig formation council)",
         "commands": {
             "run": "run deliberation across all agents",
         },
@@ -573,25 +583,72 @@ HELP_REGISTRY: dict[str, dict[str, Any]] = {
             "sessions prune": "remove inactive sessions",
         },
     },
+    "discord": {
+        "desc": "Discord manager + the NAVIG Discord bot (servers, moderation, roles)",
+        "commands": {
+            "status": "which identities (bot / account) are connected",
+            "login": "opt in to account mode with your user token",
+            "logout": "forget your user token",
+            "bot set": "store the bot token",
+            "bot invite": "add the bot to a server you manage",
+            "servers": "every server you are in",
+            "server": "details of one server",
+            "channels": "channels grouped by category",
+            "roles": "roles, highest first",
+            "members": "members of a server the bot is in",
+            "leave": "leave a server (you, or the bot)",
+            "join": "preview an invite and open it in the browser",
+            "channel create": "create a channel or category (bot)",
+            "channel edit": "rename / topic / move / slowmode (bot)",
+            "channel delete": "delete a channel (bot)",
+            "role add": "give a member a role (bot)",
+            "role remove": "take a role from a member (bot)",
+            "role create": "create a role (bot)",
+            "role edit": "rename / recolour / re-permission a role (bot)",
+            "role delete": "delete a role (bot)",
+            "mod kick": "kick a member (bot)",
+            "mod ban": "ban a user (bot)",
+            "mod unban": "lift a ban (bot)",
+            "mod timeout": "time a member out (bot)",
+            "mod untimeout": "end a timeout (bot)",
+            "mod bans": "list bans (bot)",
+            "mod log": "NAVIG's record of moderation actions",
+            "bot profile": "show or change the bot's name, avatar, About Me",
+            "settings": "the discord.* settings and what they do",
+            "setup": "guided bot setup: token, library, intents, owners, invite",
+        },
+    },
     "crash": {
         "desc": "Manage crash reports and logs",
         "commands": {
             "export": "export latest crash report for GitHub",
         },
     },
-    # ── Phase 2: Links ──────────────────────────────────────────────────────
-    "links": {
-        "desc": "Browser bookmark manager with vault auto-login",
+    # ── Bookmarks (navig-bookmarks plugin; `links` is its deprecated old name) ──
+    "bookmarks": {
+        "desc": "Bookmark manager: import, search, AI folder plans and tags, dead links, duplicates",
         "commands": {
-            "add": "add a bookmark (optionally attach vault credential)",
-            "list": "list all bookmarks",
+            "<url>": "save a bookmark (short for add)",
+            "add": "add a bookmark (optionally attach a vault credential)",
+            "list": "list bookmarks (--tag, --folder, --untagged)",
             "search": "full-text search (FTS5)",
             "show": "show bookmark details",
-            "open": "open bookmark in browser (auto-login if cred attached)",
+            "open": "open in the browser (auto-login if a credential is attached)",
             "edit": "edit bookmark metadata",
-            "tag": "add a tag to a bookmark",
+            "tag": "add/remove tags, or --ai to let your AI tag",
             "delete": "delete a bookmark",
-            "import": "import bookmarks from JSON or native browser files",
+            "import": "import from HTML/JSON exports or browser profiles (folders kept)",
+            "export": "export Netscape HTML with folders, or JSON",
+            "organize": "AI folder plan (dry run; --apply, --force, --undo)",
+            "check": "dead links and redirects (headers only, SSRF-guarded)",
+            "dedupe": "find and merge the same page saved twice",
+            "rules": "offline domain -> tag rules",
+        },
+    },
+    "links": {
+        "desc": "[deprecated] renamed to `navig bookmarks` (navig-bookmarks plugin)",
+        "commands": {
+            "*": "every `navig links <cmd>` forwards to `navig bookmarks <cmd>`",
         },
     },
     "import": {
@@ -619,7 +676,7 @@ HELP_REGISTRY: dict[str, dict[str, Any]] = {
     },
     # ── Phase 4: Webhooks ───────────────────────────────────────────────────
     "webhook": {
-        "desc": "Manage inbound/outbound webhooks",
+        "desc": "Webhooks are trigger actions and trigger types (moved → navig trigger)",
         "commands": {
             "list": "list all registered webhooks",
             "add-inbound": "create inbound trigger endpoint (HMAC-secured)",

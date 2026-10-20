@@ -87,6 +87,8 @@ def _register_all() -> None:
         # Infrastructure
         ("navig.connectors.supabase.connector", "SupabaseConnector", "Supabase"),
         ("navig.connectors.gcp_translate.connector", "GcpTranslateConnector", "GCP Translate"),
+        # Security — password-leak / breach lookups (powers `navig vault breach`)
+        ("navig.connectors.cyberaigen.connector", "CyberAigenConnector", "CyberAIGen"),
         # Commerce/finance connectors (partner_center, paddle, stripe, bank) ship in the
         # private `navig-harbor` plugin and self-register via ConnectorRegistry on enable —
         # they are intentionally NOT listed here (public core stays free of business code).
@@ -120,33 +122,50 @@ def _register_all() -> None:
     except Exception as exc:
         _log.debug("entry-point connector discovery skipped: %s", exc)
 
-    # Register OAuth provider configs so get_auth_url() works for each connector.
-    # Each loader reads env vars (GITHUB_CLIENT_ID etc.) — silently skipped if absent.
-    #
-    # The whole block is guarded: ConnectorAuthManager pulls in the vault (and
-    # transitively the `cryptography` package).  If that import chain is broken
-    # (e.g. a missing native dep), connector *registration* must still succeed —
-    # the registry is useful for listing even when OAuth isn't available yet.
+    register_oauth_providers()
+
+
+# (connector_id, module, loader) — every OAuth connector the deck can Connect. Each loader
+# reads its app credentials from the environment, then the vault, and returns None when
+# neither has them (the connector is then listed as "needs its app credentials").
+OAUTH_LOADERS: tuple[tuple[str, str, str], ...] = (
+    ("github", "navig.connectors.github.oauth_config", "get_github_oauth_config"),
+    ("slack", "navig.connectors.slack.oauth_config", "get_slack_oauth_config"),
+    ("notion", "navig.connectors.notion.oauth_config", "get_notion_oauth_config"),
+    ("google_drive", "navig.connectors.google_drive.oauth_config", "get_google_drive_oauth_config"),
+    ("gmail", "navig.connectors.gmail.oauth_config", "get_gmail_oauth_config"),
+    ("google_calendar", "navig.connectors.google_calendar.oauth_config", "get_calendar_oauth_config"),
+    ("linear", "navig.connectors.linear.oauth_config", "get_linear_oauth_config"),
+)
+
+
+def register_oauth_providers(only: str | None = None) -> list[str]:
+    """Register the OAuth provider config of every connector whose app credentials resolve.
+
+    Safe to call again: the app calls it after the operator saves a client id, so Connect
+    works at once instead of after a restart. Returns the ids registered by this call.
+
+    Guarded as a whole: ConnectorAuthManager pulls in the vault (and transitively the
+    `cryptography` package). If that import chain is broken, connector *registration*
+    must still succeed — the registry is useful for listing even without OAuth.
+    """
+    registered: list[str] = []
     try:
         import importlib
 
         from navig.connectors.auth_manager import ConnectorAuthManager
-
-        _oauth_loaders = [
-            ("navig.connectors.github.oauth_config", "get_github_oauth_config", "github"),
-            ("navig.connectors.slack.oauth_config", "get_slack_oauth_config", "slack"),
-            ("navig.connectors.notion.oauth_config", "get_notion_oauth_config", "notion"),
-            ("navig.connectors.google_drive.oauth_config", "get_google_drive_oauth_config", "google_drive"),
-            ("navig.connectors.gmail.oauth_config", "get_gmail_oauth_config", "gmail"),
-            ("navig.connectors.linear.oauth_config", "get_linear_oauth_config", "linear"),
-        ]
-        for module_path, fn_name, connector_id in _oauth_loaders:
-            try:
-                mod = importlib.import_module(module_path)
-                config = getattr(mod, fn_name)()
-                if config:
-                    ConnectorAuthManager.register_provider(connector_id, config)
-            except Exception as exc:
-                _log.debug("%s OAuth config load failed: %s", connector_id, exc)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         _log.debug("OAuth provider registration skipped (auth manager unavailable): %s", exc)
+        return registered
+
+    for connector_id, module_path, fn_name in OAUTH_LOADERS:
+        if only is not None and connector_id != only:
+            continue
+        try:
+            config = getattr(importlib.import_module(module_path), fn_name)()
+            if config:
+                ConnectorAuthManager.register_provider(connector_id, config)
+                registered.append(connector_id)
+        except Exception as exc:  # noqa: BLE001
+            _log.debug("%s OAuth config load failed: %s", connector_id, exc)
+    return registered

@@ -66,8 +66,10 @@ async def test_modules_is_flat_and_carries_app_surface_fields(monkeypatch):
     assert system["scope"] == "brain"
     assert system["hidden"] is False
     assert any(s.startswith("os-tile:") for s in system["surfaces"])
-    # Deck-only split survives serialization.
-    assert not any(s.startswith("os-tile:") for s in by_id["telegram"]["surfaces"])
+    # Surface split survives serialization: wallet is deck-only, telegram is both.
+    assert not any(s.startswith("os-tile:") for s in by_id["wallet"]["surfaces"])
+    assert "os-tile:telegram" in by_id["telegram"]["surfaces"]
+    assert "deck-section:telegram" in by_id["telegram"]["surfaces"]
     assert by_id["contacts"]["merged_into"] == "messages"
 
 

@@ -39,6 +39,14 @@ _ALLOWLIST: dict[str, str] = {
     # Walk-UP loops: iterate [dir, *dir.parents] and stop at the first `.git`, so they
     # correctly find the repo root from ANY depth — the right pattern, not the trap.
     "navig/agent/tools/git_tools.py": "_find_git_root walks up the parents",
+    "navig/recall/projects.py": (
+        "_nearest_marked_root walks up the parents of a transcript's cwd (which may no longer "
+        "exist, so git cannot be asked); in-repo worktrees are folded to their repo first"
+    ),
+    "navig/core/code_source.py": (
+        "_enclosing_checkout walks up the parents; it is the NO-GIT fallback for when git "
+        "itself timed out, so a git-based helper cannot replace it; site-packages excluded"
+    ),
     # navig/guard/{agent_lock,session_start}.py used to be here. Their walk-up now tests
     # `.is_dir()` (the main tree) and `.is_file()` (a linked worktree's gitdir pointer,
     # which it READS to find the main tree) — a linked worktree's `.git` is a file, and
@@ -47,7 +55,16 @@ _ALLOWLIST: dict[str, str] = {
     # possible subdirectory) — 'is THIS dir a git repo' is the correct question there.
     "navig/commands/contribute.py": "checks a freshly-cloned repo root",
     "navig/commands/repo.py": "checks a worktree checkout dir",
+    "navig/commands/doctor.py": (
+        "twin probes: HEAVY_SLOT_TWIN_REPO and the twin computed from git-common-dir are "
+        "checkout roots by construction (env override / sibling of the main checkout), "
+        "never a possible subdirectory"
+    ),
     "navig/commands/project_inspect.py": "reports has_git for the inspected project root",
+    "navig/projects/gitinfo.py": (
+        "has_own_repo: a project shows its OWN repo, never an enclosing one, so the root "
+        "check is the intent; git_state confirms with rev-parse --show-toplevel"
+    ),
     "navig/selfheal/git_manager.py": "checks the managed clone dir (~/.navig/core-repo)",
 }
 

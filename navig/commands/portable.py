@@ -14,7 +14,10 @@ def portable_create(
     """Create a portable NAVIG bundle."""
     from navig import console_helper as ch
 
-    ch.warning("`portable create` is not implemented — use: navig backup export --include-secrets --encrypt")
+    ch.warning(
+        "`portable create` is not implemented. To move NAVIG to another machine: navig move out · "
+        "for a backup: navig backup export --include-secrets --encrypt"
+    )
     raise typer.Exit(1)
 
 

@@ -18,6 +18,7 @@ Usage::
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -592,9 +593,12 @@ def load_all_skills(dirs: list[Path] | None = None) -> list[Skill]:
             if skill is None:
                 continue
 
-            # If id collision, suffix with folder path hash to keep both
+            # If id collision, suffix with a hash of the file path to keep both. It must be
+            # a STABLE hash: the builtin `hash()` is salted per process (PYTHONHASHSEED),
+            # so the suffixed id — the key `/api/deck/skills/{id}` URLs are built from —
+            # changed on every daemon restart and every saved link to it 404'd.
             if skill.id in seen_ids:
-                suffix = str(abs(hash(str(resolved))))[:6]
+                suffix = hashlib.sha1(str(resolved).encode("utf-8")).hexdigest()[:6]
                 skill = Skill(
                     **{**skill.__dict__, "id": f"{skill.id}-{suffix}"}  # type: ignore[arg-type]
                 )

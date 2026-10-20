@@ -97,6 +97,9 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
         commands=frozenset({
             "start", "help", "helpme", "status", "ping", "about", "version",
             "user", "lang", "mode", "deck", "skill", "restart",
+            # Engine control: the pocket remote must always be able to check,
+            # heal and restart NAVIG, so these live in the locked Core.
+            "doctor", "os",
             # The switch for every other switch, and its alias.  Both are in
             # LOCKED_COMMANDS: if /extensions could be switched off the only
             # route back would be a terminal.
@@ -110,9 +113,40 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
             # "xt:" is the extensions card itself - locked, so it can always
             # answer even when everything else is switched off.
             "xt:",
-            "helpme", "help:", "nav:", "st_", "stfix:", "ask_followup:", "wf:",
-            "ms_", "mdl_", "aitier_", "ai_close", "prov_", "open_providers",
-            "pmv_", "pms_", "hyb_", "vis_", "pu_", "heard_",
+            # "osr:" answers "allow this new device to use NAVIG OS?". Core, so switching
+            # extensions off can never strand a device request without its buttons.
+            "osr:",
+            # "eng:" is /doctor's Heal / Re-check / Restart buttons (engine control).
+            "eng:",
+            # One prefix per LINE: a shared line holds 10 prefixes at once, so a
+            # merge that resolves it the wrong way drops all 10 (measured: #1817
+            # landed without "hbhow:"/"hbchk:", which #1834 had added to this list —
+            # caught by the guard only once main was red for everyone). On separate
+            # lines two branches edit different lines and merge cleanly, and a bad
+            # resolution can cost one prefix, not ten. A tuple this large is the only
+            # one edited piecemeal — see the guard's shape test.
+            "helpme",
+            "help:",
+            "nav:",
+            "st_",
+            "stfix:",
+            "hbfix:",
+            "hbhow:",
+            "hbchk:",
+            "ask_followup:",
+            "wf:",
+            "ms_",
+            "mdl_",
+            "aitier_",
+            "ai_close",
+            "prov_",
+            "open_providers",
+            "pmv_",
+            "pms_",
+            "hyb_",
+            "vis_",
+            "pu_",
+            "heard_",
             # NOTE: "slash:" is deliberately NOT listed here.  It re-dispatches
             # an arbitrary command, so it must resolve to the extension owning
             # that command - see the special case in extension_for_callback.
@@ -144,8 +178,8 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
         label="Todo",
         description="Your personal task list - capture, schedule, remind, tick off.",
         group="Life", icon="check-square",
-        commands=frozenset({"todo", "t", "task"}),
-        callback_prefixes=("td:",),
+        commands=frozenset({"todo", "t", "task", "agenda"}),
+        callback_prefixes=("td:", "ag:"),
         about=(
             "/todo, /t and /task stop working and leave /help and the \"/\" menu",
             "the task card's buttons stop answering",
@@ -168,15 +202,33 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
         ),
     ),
     TelegramExtension(
+        id="checkins",
+        label="Check-ins",
+        description="Pills and water — one-tap check-ins on a schedule.",
+        group="Life", icon="pill",
+        # The weigh-in is a check-in too, but it stays gated by Health above: it
+        # predates this extension, and switching Check-ins off must not silence it.
+        commands=frozenset({"checkins"}),
+        callback_prefixes=("ci:",),
+        about=(
+            "/checkins stops working and leaves /help and the \"/\" menu",
+            "pill and water prompts are not delivered and their buttons stop answering",
+            "the weigh-in keeps following the Health extension",
+            "every check-in and every recorded answer stays exactly as it is",
+        ),
+    ),
+    TelegramExtension(
         id="reminders",
         label="Reminders",
         description="One-off and recurring reminders delivered to this chat.",
         group="Life", icon="alarm-clock",
         commands=frozenset({"remindme", "myreminders", "reminders", "cancelreminder"}),
+        callback_prefixes=("rv:",),
         about=(
             "those four commands stop working",
             "reminders already due are not delivered while it is off",
             "nothing you have scheduled is deleted",
+            "the reminders card's buttons stop answering",
         ),
     ),
     TelegramExtension(
@@ -266,7 +318,8 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
         # The deletion digest's "Show N" / "Quiet" buttons. Gated here so turning
         # the business inbox off stops them with everything else it owns, instead
         # of leaving live buttons for a feature that is supposed to be gone.
-        callback_prefixes=("bizdel:",),
+        # ...and the business-chat reminder's "✖ Cancel" / "+1 h" / "+1 day".
+        callback_prefixes=("bizdel:", "bzr:"),
         about=(
             "business messages are no longer catalogued",
             "deletion alerts stop",
@@ -360,6 +413,34 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
         callback_prefixes=("task:",),
     ),
     TelegramExtension(
+        id="prompts",
+        label="Prompt library",
+        description="Find a saved prompt and get it back ready to copy - send /prompt and a few words.",
+        group="Knowledge", icon="library",
+        commands=frozenset({"prompt", "prompts"}),
+        # "pr:" is the prompt card + picker (navig/prompts/delivery.py), routed in
+        # TelegramChannel._handle_prompt_callback.
+        callback_prefixes=("pr:",),
+        about=(
+            "/prompt stops working and leaves /help and the \"/\" menu",
+            "the prompt buttons stop answering",
+            "your prompt library stays exactly as it is - manage it in NAVIG OS or navig prompts",
+        ),
+    ),
+    TelegramExtension(
+        id="reading",
+        label="Read aloud",
+        description="Send a text and it is read to you like a book, in quiet ten-minute parts - "
+                    "send /read and the text, or a .txt file with the caption /read.",
+        group="Life", icon="book-open",
+        commands=frozenset({"read", "book"}),
+        about=(
+            "/read stops working and leaves /help and the \"/\" menu",
+            "a reading that is already running finishes; the parts already sent stay in the chat",
+            "the audio already generated stays cached - nothing is deleted",
+        ),
+    ),
+    TelegramExtension(
         id="paperwork",
         label="Paper mail",
         description="Photograph a letter with the caption /courrier: filed into the paperwork "
@@ -389,6 +470,7 @@ GROUP_ORDER: tuple[str, ...] = ("Life", "Systems", "Comms", "Create", "Knowledge
 CATEGORY_TO_EXTENSION: dict[str, str] = {
     "core": "core",
     "paperwork": "paperwork",
+    "prompts": "prompts",
     "admin": "groups",
     "ai": "autopilot",
     "database": "remote",

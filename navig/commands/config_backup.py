@@ -111,12 +111,10 @@ def _collect_configs(
     for host_name in config_manager.list_hosts():
         try:
             host_config = config_manager.load_host_config(host_name)
-            # Redact sensitive data
-            safe_config = host_config.copy()
-            if "database" in safe_config and "password" in safe_config["database"]:
-                safe_config["database"] = safe_config["database"].copy()
-                safe_config["database"]["password"] = "[REDACTED]"
-            data["hosts"][host_name] = safe_config
+            # load_host_config RESOLVES vault refs back into plaintext, so every
+            # credential path has to be masked here — masking only database.password
+            # shipped ssh_password and database.root_password in the clear.
+            data["hosts"][host_name] = _mask_host_secrets(host_config)
         except Exception as e:
             ch.warning(f"Could not load host config '{host_name}': {e}")
             if failures is not None:
@@ -128,12 +126,7 @@ def _collect_configs(
         for app_name in config_manager.list_apps(host_name):
             try:
                 app_config = config_manager.load_app_config(host_name, app_name)
-                # Redact sensitive data
-                safe_config = app_config.copy()
-                if "database" in safe_config and "password" in safe_config.get("database", {}):
-                    safe_config["database"] = safe_config["database"].copy()
-                    safe_config["database"]["password"] = "[REDACTED]"
-                data["apps"][host_name][app_name] = safe_config
+                data["apps"][host_name][app_name] = _mask_host_secrets(app_config)
             except Exception as e:
                 ch.warning(f"Could not load app config '{app_name}': {e}")
                 if failures is not None:
@@ -142,7 +135,230 @@ def _collect_configs(
     return data
 
 
-def _create_archive(output_path: Path, include_secrets: bool = False) -> dict[str, Any]:
+def _mask_host_secrets(config: dict[str, Any]) -> dict[str, Any]:
+    """A copy of a host/app mapping with every credential path set to ``[REDACTED]``.
+
+    The paths are :data:`navig.core.host_secrets.HOST_SECRET_KEYS` — the one list the
+    vault migration also uses — so a credential field added there is masked here too.
+    The ``*_ref`` siblings are kept: a reference names a vault item, it is not a value.
+    """
+    import copy
+
+    from navig.core.host_secrets import HOST_SECRET_KEYS
+
+    safe = copy.deepcopy(config)
+    for path in HOST_SECRET_KEYS:
+        parts = path.split(".")
+        node: Any = safe
+        for part in parts[:-1]:
+            node = node.get(part) if isinstance(node, dict) else None
+        if isinstance(node, dict) and node.get(parts[-1]) not in (None, ""):
+            node[parts[-1]] = "[REDACTED]"
+    return safe
+
+
+#: Files under hosts/ or apps/ that are never configuration in effect and must not
+#: travel in an export: `migrate-host-secrets` writes `<host>.yaml.bak.<stamp>`, a
+#: byte-for-byte copy of the PLAINTEXT file it just vaulted.
+def _is_backup_file(path: Path) -> bool:
+    from navig.core.host_secrets import BACKUP_INFIX
+
+    return BACKUP_INFIX in path.name or path.suffix in (".bak", ".orig", ".tmp")
+
+
+# ── the brain scope: config PLUS the state a brain runs on ───────────────────
+#
+# A config export is portable to any machine; a brain also needs its
+# databases, memory, sessions and license. `vault/` is deliberately NOT here:
+# its key is bound to this machine (DPAPI + a device fingerprint), so copying
+# the vault files elsewhere carries a vault that cannot open. The vault moves
+# on its own path — `navig vault backup` then `navig vault restore` re-wraps
+# the key for the target machine — which is why this bundle says so in its
+# summary instead of shipping a folder that would only look like one.
+_BRAIN_FILES = ("license.key", "genesis.json", "onboarding.json", ".env")
+# `scheduler` is the cron jobs themselves (the brain's automation); `workspace`
+# is the agent's continuity (SOUL/IDENTITY/AGENTS/…); `approvals` is what has
+# already been approved. Without them the migrated brain boots amnesiac: right
+# config, none of the automation or the identity.
+_BRAIN_DIRS = ("memory", "sessions", "scheduler", "workspace", "approvals")
+_BRAIN_DAEMON = ("config.json",)
+# Not copied, by design:
+#   logs/, cache/, runtime/, venv/, history/, config_cache, backups/ — regenerated
+#   or already archives; daemon state/pid/logs and the Windows task XML — runtime
+#   or machine-specific (the service is registered on the TARGET); `credentials/`
+#   (the pre-keyslots vault — the live one is vault/, moved on its own path);
+#   asset trees under the data dir (audio/media/backups) — carried separately
+#   because they are bulk, not state.
+_DB_SUFFIXES = (".db", ".sqlite", ".sqlite3")
+_DB_SIDECARS = (".db-wal", ".db-shm")
+
+
+def _is_db_file(path: Path) -> bool:
+    """A database or one of SQLite's WAL/SHM sidecars (taken together or not at all)."""
+    return path.suffix in _DB_SUFFIXES or path.name.endswith(_DB_SIDECARS)
+
+
+def _stage_brain(tmpdir_path: Path, config_dir: Path, data_dir: Path) -> dict[str, Any]:
+    """Copy the brain's state into the archive staging dir; returns what went in.
+
+    Binary SQLite files cannot be redacted, so a brain export is only ever made
+    with secrets included and encrypted — enforced by ``export_config``.
+    """
+    staged: dict[str, Any] = {"files": 0, "databases": 0, "dirs": 0, "dir_files": {}}
+    dest = tmpdir_path / "brain"
+    dest.mkdir(parents=True, exist_ok=True)
+
+    for name in _BRAIN_FILES:
+        src = config_dir / name
+        if src.is_file():
+            shutil.copy2(src, dest / name)
+            staged["files"] += 1
+
+    for name in _BRAIN_DAEMON:
+        src = config_dir / "daemon" / name
+        if src.is_file():
+            (dest / "daemon").mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest / "daemon" / name)
+            staged["files"] += 1
+
+    # Databases: the data dir is the authority (it may not live under the config
+    # dir), plus any sitting at the config root. Only top-level files — `data/`
+    # itself is the data dir, so its children are taken once, here.
+    for root, into in ((data_dir, dest / "data"), (config_dir, dest / "config-dbs")):
+        if not root.is_dir():
+            continue
+        for src in sorted(root.iterdir()):
+            if src.is_file() and _is_db_file(src):
+                into.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, into / src.name)
+                staged["databases"] += 1
+
+    for name in _BRAIN_DIRS:
+        src = config_dir / name
+        if not src.is_dir():
+            continue
+        files = 0
+        for f in sorted(src.rglob("*")):
+            if not f.is_file():
+                continue
+            dst = dest / name / f.relative_to(src)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(f, dst)
+            files += 1
+        staged["dirs"] += 1
+        staged["dir_files"][name] = files
+
+    return staged
+
+
+def _restore_brain(extract_path: Path, config_dir: Path, data_dir: Path) -> dict[str, Any]:
+    """Write a brain scope back onto this machine; returns what was written."""
+    src = extract_path / "brain"
+    restored: dict[str, Any] = {"files": 0, "databases": 0, "dirs": 0, "dir_files": {}}
+    if not src.is_dir():
+        return restored
+
+    config_dir.mkdir(parents=True, exist_ok=True)
+    for name in _BRAIN_FILES:
+        f = src / name
+        if f.is_file():
+            shutil.copy2(f, config_dir / name)
+            restored["files"] += 1
+
+    daemon_src = src / "daemon" / "config.json"
+    if daemon_src.is_file():
+        (config_dir / "daemon").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(daemon_src, config_dir / "daemon" / "config.json")
+        restored["files"] += 1
+
+    for sub, target in (("data", data_dir), ("config-dbs", config_dir)):
+        d = src / sub
+        if not d.is_dir():
+            continue
+        target.mkdir(parents=True, exist_ok=True)
+        for f in sorted(d.iterdir()):
+            if f.is_file():
+                shutil.copy2(f, target / f.name)
+                restored["databases"] += 1
+
+    for name in _BRAIN_DIRS:
+        d = src / name
+        if not d.is_dir():
+            continue
+        files = 0
+        for f in sorted(d.rglob("*")):
+            if not f.is_file():
+                continue
+            dst = config_dir / name / f.relative_to(d)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(f, dst)
+            files += 1
+        restored["dirs"] += 1
+        restored["dir_files"][name] = files
+
+    return restored
+
+
+# ── config.yaml: always exported, now restored too ───────────────────────────
+#
+# The archive has always carried config.yaml, and until now nothing read it
+# back: an import restored hosts and apps and silently left the target's
+# settings alone. For a migration that is the dangerous half — `deck.api_key`,
+# `cloud.mode` and the licence live there, and a target keeping its own copy
+# (or an empty one from a fresh install) mints a NEW identity instead of
+# inheriting the brain's.
+
+
+def _read_config_yaml(extract_path: Path) -> str | None:
+    """The archive's config.yaml as text, validated. None when the archive has none.
+
+    Validated BEFORE anything is written: an import that cannot parse its own
+    settings must fail before it has replaced the target's hosts, not after.
+    """
+    src = extract_path / "config.yaml"
+    if not src.is_file():
+        return None
+    text = src.read_text(encoding="utf-8")
+    if not text.strip():
+        raise ValueError("the archive's config.yaml is empty")
+    try:
+        import yaml
+
+        parsed = yaml.safe_load(text)
+    except Exception as exc:  # noqa: BLE001 — any parse failure must refuse
+        raise ValueError(f"the archive's config.yaml does not parse ({exc})") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("the archive's config.yaml is not a mapping")
+    return text
+
+
+def _write_config_yaml(text: str, config_dir: Path, *, merge: bool, brain: bool) -> str:
+    """Write the validated config.yaml; returns ``written`` | ``replaced`` | ``skipped``.
+
+    A ``--brain`` restore always replaces it: that file IS the brain's identity,
+    so carrying it is the point. Plain ``merge`` (the default) never overwrites
+    settings the target already has — it fills a gap rather than taking a machine
+    over — and ``--replace`` does overwrite. The previous file is kept as
+    ``config.yaml.pre-import`` and the write is atomic, so a bad run is one copy
+    from undone and a concurrent reader never sees a half-written config.
+    """
+    dest = config_dir / "config.yaml"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    existed = dest.exists()
+    if existed and merge and not brain:
+        return "skipped"
+    if existed:
+        try:
+            shutil.copy2(dest, dest.with_name(dest.name + ".pre-import"))
+        except OSError:
+            pass  # insurance, never the reason an import fails
+    tmp = dest.with_name(dest.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, dest)
+    return "replaced" if existed else "written"
+
+
+def _create_archive(output_path: Path, include_secrets: bool = False, *, brain: bool = False) -> dict[str, Any]:
     """
     Create a compressed archive of all NAVIG configuration.
 
@@ -193,6 +409,7 @@ def _create_archive(output_path: Path, include_secrets: bool = False) -> dict[st
         # archive either, so it is recorded rather than dropped in silence.
         config_dirs = config_manager.get_config_directories()
         shadowed: list[str] = []
+        skipped_backups: list[str] = []
 
         for section in ("hosts", "apps"):
             dst_section = tmpdir_path / section
@@ -205,6 +422,12 @@ def _create_archive(output_path: Path, include_secrets: bool = False) -> dict[st
                     if not src.is_file():
                         continue
                     rel = src.relative_to(src_section)
+                    if _is_backup_file(src):
+                        # Not config in effect, and a migration backup is the
+                        # plaintext original — never shipped, with or without
+                        # --include-secrets (the live file carries the same data).
+                        skipped_backups.append(f"{section}/{rel.as_posix()}")
+                        continue
                     dst = dst_section / rel
                     if dst.exists():
                         shadowed.append(f"{section}/{rel.as_posix()} in {src_root}")
@@ -217,6 +440,8 @@ def _create_archive(output_path: Path, include_secrets: bool = False) -> dict[st
 
         if shadowed:
             manifest["shadowed"] = shadowed
+        if skipped_backups:
+            manifest["skipped_backups"] = skipped_backups
 
         # Copy global config. NOT merged across directories: config.yaml is a single
         # settings document, and merging two of them is a semantic decision this
@@ -229,6 +454,27 @@ def _create_archive(output_path: Path, include_secrets: bool = False) -> dict[st
             manifest["contents"].append("config.yaml")
         manifest["config_yaml_source"] = str(config_manager.config_dir)
         manifest["config_directories"] = [str(d) for d in config_dirs]
+
+        # The brain scope: the state a brain RUNS on, staged beside the config.
+        # This is what makes the archive machine-specific — everything above it
+        # travels anywhere; the databases, memory, sessions and license are one
+        # install's state, which is exactly why they are encrypted or not shipped.
+        brain_staged: dict[str, Any] = {}
+        if brain:
+            if not include_secrets:
+                # Databases are binary: redaction cannot reach into them, and a
+                # half-redacted brain restores as a silently broken one.
+                raise ValueError("a brain export must include secrets (databases cannot be redacted)")
+            from navig.platform.paths import data_dir as _data_dir
+
+            brain_staged = _stage_brain(
+                tmpdir_path, config_manager.config_dir, _data_dir()
+            )
+            manifest["scope"] = "brain"
+            manifest["brain"] = brain_staged
+            manifest["contents"].append("brain")
+        else:
+            manifest["scope"] = "config"
 
         # Redact secrets if not including them
         dropped: list[str] = []
@@ -262,7 +508,7 @@ def _create_archive(output_path: Path, include_secrets: bool = False) -> dict[st
         with tarfile.open(output_path, "w:gz") as tar:
             tar.add(tmpdir_path, arcname="navig-config")
 
-    return {"dropped": dropped, "shadowed": shadowed, **counts}
+    return {"dropped": dropped, "shadowed": shadowed, "brain": brain_staged, **counts}
 
 
 def _redact_secrets_in_dir(dir_path: Path) -> list[str]:
@@ -291,9 +537,15 @@ def _redact_secrets_in_dir(dir_path: Path) -> list[str]:
     sensitive_keys = ["password", "api_key", "openrouter_api_key", "secret", "token"]
     dropped: list[str] = []
 
-    for yaml_file in dir_path.rglob("*.yaml"):
+    for yaml_file in sorted(p for p in dir_path.rglob("*") if p.is_file()):
         rel = yaml_file.relative_to(dir_path).as_posix()
+        if rel == "manifest.json":
+            continue  # written by the exporter itself, after this pass
         try:
+            # Every file is redacted or dropped — not only `*.yaml`. Matching on the
+            # suffix let `<host>.yaml.bak.<stamp>` (and any `.yml`) through untouched.
+            if yaml_file.suffix not in (".yaml", ".yml"):
+                raise ValueError(f"not a YAML config file ({yaml_file.suffix or 'no suffix'})")
             with open(yaml_file, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
 
@@ -479,6 +731,35 @@ def export_config(options: dict[str, Any]):
     password = options.get("password")
     json_output = options.get("json", False)
 
+    # The brain scope adds this install's state to the archive. It refuses the
+    # unsafe combinations outright — a warning read once, three screens up, does
+    # not stop an unencrypted brain from being copied to a shared drive.
+    scope = options.get("scope", "config")
+    brain = scope == "brain"
+    if brain:
+        if fmt != "archive":
+            ch.error("--brain exports an archive only: databases cannot be expressed as JSON.")
+            raise typer.Exit(2)
+        # Databases are binary, so redaction cannot make them safe: secrets come
+        # along whether --include-secrets is passed or not, so it is not a choice.
+        include_secrets = True
+        if not encrypt:
+            ch.error(
+                "--brain requires --encrypt: the bundle carries this install's "
+                "memory, sessions, databases and license."
+            )
+            raise typer.Exit(2)
+        # The same rule import enforces, from the other side: a bundle taken while
+        # the daemon is writing can capture a database mid-write, and nothing
+        # downstream can tell a torn copy from a good one — the restore would fail
+        # somewhere far away, on the machine you just migrated to.
+        from navig.daemon.supervisor import NavigDaemon
+
+        if NavigDaemon.is_running():
+            ch.error("The daemon is running — stop it before exporting a brain bundle.")
+            ch.info("  navig service stop    (then re-run this export)")
+            raise typer.Exit(1)
+
     # Generate default output path
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_dir = _get_backup_dir()
@@ -566,7 +847,7 @@ def export_config(options: dict[str, Any]):
                 json.dump(data, f, indent=2)
         else:
             # Export as archive
-            archive = _create_archive(output, include_secrets=include_secrets)
+            archive = _create_archive(output, include_secrets=include_secrets, brain=brain)
             dropped = archive["dropped"]
             shadowed = archive["shadowed"]
 
@@ -607,6 +888,9 @@ def export_config(options: dict[str, Any]):
         found_apps = max(found_apps, exported_apps)
 
         complete = not failures and not dropped
+        # The brain payload's own counts (brain forces archive format, so `archive`
+        # exists exactly when this can be non-empty).
+        brain_summary: dict[str, Any] = archive.get("brain") if fmt != "json" else {}
 
         if json_output:
             ch.raw_print(
@@ -627,6 +911,8 @@ def export_config(options: dict[str, Any]):
                         "shadowed": shadowed,
                         "encrypted": encrypt,
                         "include_secrets": include_secrets,
+                        "scope": scope,
+                        "brain": brain_summary,
                     }
                 )
             )
@@ -641,6 +927,17 @@ def export_config(options: dict[str, Any]):
                 ch.dim("  Encrypted: Yes")
             if include_secrets:
                 ch.warning("  ⚠ Includes unredacted secrets")
+            if brain:
+                dir_files = sum((brain_summary.get("dir_files") or {}).values())
+                ch.dim(
+                    f"  Brain: {brain_summary.get('databases', 0)} database(s), "
+                    f"{brain_summary.get('files', 0)} file(s), "
+                    f"{dir_files} memory/session file(s)"
+                )
+                ch.warning("  ⚠ Vault NOT included — its key is bound to this machine.")
+                ch.dim("    Move it on its own path (it re-wraps for the target):")
+                ch.dim("      navig vault backup --to vault.json")
+                ch.dim("      navig vault restore vault.json --into ~/.navig/vault   # on the target")
             for item in failures:
                 ch.warning(f"  ✗ not exported — {item}")
             for item in dropped:
@@ -699,7 +996,16 @@ def import_config(options: dict[str, Any]):
             exists locally but not in the backup survives either way. Naming it
             --replace invites the opposite reading, which is why both the flag
             help and this docstring spell it out.
+        brain: Also carry/restore this install's state (databases, memory,
+            sessions, license) and ALWAYS replace config.yaml — inheriting the
+            brain's identity is the point of the move.
         password: Decryption password (prompted if file is encrypted)
+
+    config.yaml is carried by every archive and restored now: replaced for a
+    ``--brain`` import or ``--replace``; under the default ``merge`` it is
+    written only when the target has none (merge fills a gap, it does not take
+    settings over). The previous file is kept as ``config.yaml.pre-import`` and
+    the archive's copy is parsed before anything is written.
     """
     import yaml
 
@@ -720,6 +1026,18 @@ def import_config(options: dict[str, Any]):
         ch.error(f"File not found: {input_file}")
         raise typer.Exit(2)
 
+    scope = options.get("scope", "config")
+    brain = scope == "brain"
+    if brain:
+        # Restoring databases under a live writer is how a copy becomes corrupt —
+        # refuse until the brain is actually stopped, rather than warn and hope.
+        from navig.daemon.supervisor import NavigDaemon
+
+        if NavigDaemon.is_running():
+            ch.error("The daemon is running — stop it before importing a brain bundle.")
+            ch.info("  navig service stop    (then re-run this import)")
+            raise typer.Exit(1)
+
     # Check if encrypted
     is_encrypted = input_file.suffix == ".enc"
 
@@ -738,6 +1056,11 @@ def import_config(options: dict[str, Any]):
     # raised while reporting a failure would replace the real error with noise.
     imported_hosts = 0
     imported_apps = 0
+    # Owned staging dir: a brain import reads it AFTER the config is written, so
+    # it cannot live inside a `with tempfile.TemporaryDirectory()` that ends when
+    # parsing does. Cleaned on every exit path, including this function's returns.
+    stage_dir: Path | None = None
+    extract_path: Path | None = None
 
     try:
         # Determine format
@@ -750,30 +1073,34 @@ def import_config(options: dict[str, Any]):
             apps_data = data.get("apps", {})
         else:
             # Archive format
-            with tempfile.TemporaryDirectory() as tmpdir:
-                with tarfile.open(input_file, "r:gz") as tar:
-                    _safe_extract_tar(tar, Path(tmpdir))
+            stage_dir = Path(tempfile.mkdtemp(prefix="navig-import-"))
+            with tarfile.open(input_file, "r:gz") as tar:
+                _safe_extract_tar(tar, stage_dir)
 
-                extract_path = Path(tmpdir) / "navig-config"
+            extract_path = stage_dir / "navig-config"
 
-                # Load hosts
-                hosts_data = {}
-                hosts_dir = extract_path / "hosts"
-                if hosts_dir.exists():
-                    for yaml_file in hosts_dir.glob("*.yaml"):
-                        with open(yaml_file, encoding='utf-8') as f:
-                            hosts_data[yaml_file.stem] = yaml.safe_load(f)
+            # Load hosts
+            hosts_data = {}
+            hosts_dir = extract_path / "hosts"
+            if hosts_dir.exists():
+                for yaml_file in hosts_dir.glob("*.yaml"):
+                    with open(yaml_file, encoding='utf-8') as f:
+                        hosts_data[yaml_file.stem] = yaml.safe_load(f)
 
-                # Load apps
-                apps_data = {}
-                apps_dir = extract_path / "apps"
-                if apps_dir.exists():
-                    for host_dir in apps_dir.iterdir():
-                        if host_dir.is_dir():
-                            apps_data[host_dir.name] = {}
-                            for yaml_file in host_dir.glob("*.yaml"):
-                                with open(yaml_file, encoding='utf-8') as f:
-                                    apps_data[host_dir.name][yaml_file.stem] = yaml.safe_load(f)
+            # Load apps
+            apps_data = {}
+            apps_dir = extract_path / "apps"
+            if apps_dir.exists():
+                for host_dir in apps_dir.iterdir():
+                    if host_dir.is_dir():
+                        apps_data[host_dir.name] = {}
+                        for yaml_file in host_dir.glob("*.yaml"):
+                            with open(yaml_file, encoding='utf-8') as f:
+                                apps_data[host_dir.name][yaml_file.stem] = yaml.safe_load(f)
+
+        # Validate the archive's settings FIRST — a config that will not parse
+        # must stop the import before a single host or app is written.
+        cfg_text = _read_config_yaml(extract_path) if extract_path is not None else None
 
         # Confirm import
         if not ch.confirm_operation(
@@ -806,6 +1133,24 @@ def import_config(options: dict[str, Any]):
                 config_manager.save_app_config(host_name, app_name, _restore_redacted_secrets(app_config, live))
                 imported_apps += 1
 
+        # The brain scope writes this install's state after the config: databases,
+        # license, memory and sessions. JSON exports cannot carry it (export
+        # refuses --brain), so `extract_path` exists exactly when this can run.
+        brain_restored: dict[str, Any] = {}
+        if brain and extract_path is not None:
+            from navig.platform.paths import data_dir as _data_dir
+
+            brain_restored = _restore_brain(
+                extract_path, config_manager.config_dir, _data_dir()
+            )
+
+        # The settings themselves — carried by every archive, restored at last.
+        config_result = "missing"
+        if cfg_text is not None:
+            config_result = _write_config_yaml(
+                cfg_text, config_manager.config_dir, merge=merge, brain=brain
+            )
+
         if json_output:
             ch.raw_print(
                 json.dumps(
@@ -814,6 +1159,9 @@ def import_config(options: dict[str, Any]):
                         "imported_hosts": imported_hosts,
                         "imported_apps": imported_apps,
                         "merge_mode": merge,
+                        "scope": scope,
+                        "brain": brain_restored,
+                        "config_yaml": config_result,
                     }
                 )
             )
@@ -821,6 +1169,30 @@ def import_config(options: dict[str, Any]):
             ch.success("✓ Configuration imported successfully")
             ch.dim(f"  Imported hosts: {imported_hosts}")
             ch.dim(f"  Imported apps: {imported_apps}")
+            if brain:
+                dir_files = sum((brain_restored.get("dir_files") or {}).values())
+                ch.dim(
+                    f"  Brain: {brain_restored.get('databases', 0)} database(s), "
+                    f"{brain_restored.get('files', 0)} file(s), "
+                    f"{dir_files} memory/session file(s)"
+                )
+                ch.info(
+                    "  Vault moves on its own path: "
+                    "navig vault restore <file> --into ~/.navig/vault"
+                )
+                ch.info("  Next: navig service start")
+            if config_result == "written":
+                ch.dim("  Settings: config.yaml restored")
+            elif config_result == "replaced":
+                ch.dim(
+                    "  Settings: config.yaml replaced "
+                    "(the previous copy is kept as config.yaml.pre-import)"
+                )
+            elif config_result == "skipped":
+                ch.dim(
+                    "  Settings: config.yaml kept as it is — merge never overwrites "
+                    "settings; pass --replace to take them from the archive"
+                )
 
         # Cleanup decrypted file if we created one
         if is_encrypted and input_file.exists():
@@ -845,6 +1217,11 @@ def import_config(options: dict[str, Any]):
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
         raise typer.Exit(1) from e
+    finally:
+        # Every exit path — success, cancelled confirm, partial failure — drops the
+        # staging dir, which for a brain bundle holds this install's databases.
+        if stage_dir is not None:
+            shutil.rmtree(stage_dir, ignore_errors=True)
 
 
 # ============================================================================

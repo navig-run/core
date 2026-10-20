@@ -22,10 +22,11 @@ import pytest
 
 from tests.fixtures.module_eviction import evicted_modules, matches
 
-# Every first-party plugin distribution's import package.
+# Every first-party plugin distribution's import package. NOT the hard core dependencies
+# (navig_sdk, navig_vault, navig_contacts, navig_generate): pip installs those with navig.
 PLUGIN_PACKAGES = (
     "navig_audio", "navig_calendar", "navig_devhost", "navig_download", "navig_email",
-    "navig_explore", "navig_games", "navig_generate", "navig_github", "navig_mobile",
+    "navig_explore", "navig_games", "navig_github", "navig_mobile",
     "navig_msstore", "navig_pipeline", "navig_social", "navig_text",
     "navig_harbor", "navig_bot", "navig_deck",
 )
@@ -66,7 +67,16 @@ UNDER_TEST = (
 # The ONE definition of what the simulated install hides. Eviction and the teardown
 # purge below must cover exactly the same set: a module the purge misses is a module
 # that outlives the world it was born in.
-_EVICTED_PREFIXES = PLUGIN_PACKAGES + EXPECTED_SHIMS + UNDER_TEST
+# Core command modules that BIND a plugin at import time and CACHE the result:
+# `navig.commands.voice` imports navig_audio's Typer app, or — with the plugin blocked —
+# builds a fallback that prints the install hint. Born inside the world as that fallback,
+# it outlived teardown (this list did not cover it), and every later test in the same
+# worker read the cached fallback: `voice_app is impl` failed and `speak` exited 2 with
+# "Voice needs navig-audio 0.2 or newer". They DEGRADE instead of raising, so they are not
+# EXPECTED_SHIMS — but they must be evicted exactly the same way.
+PLUGIN_BOUND_COMMANDS = ("navig.commands.voice",)
+
+_EVICTED_PREFIXES = PLUGIN_PACKAGES + EXPECTED_SHIMS + PLUGIN_BOUND_COMMANDS + UNDER_TEST
 
 
 def _matches(mod: str, prefixes: tuple[str, ...]) -> bool:
@@ -80,6 +90,50 @@ def no_plugins(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(sys, "meta_path", [blocker, *sys.meta_path])
     with evicted_modules(monkeypatch, _EVICTED_PREFIXES):
         yield blocker
+
+
+def test_a_fallback_command_module_does_not_outlive_the_world() -> None:
+    """`navig.commands.voice` must be restored — not left as the no-plugins fallback.
+
+    Same shape as the orphan guard below, for the one command module that binds a plugin
+    at import time: imported inside the blocked world it caches the fallback app, and if
+    that module outlives teardown every later test in the worker reads the fallback
+    (measured: `test_assistant_voice_exit_honesty` exited 2 with
+    "Voice needs navig-audio 0.2 or newer" whenever this file ran first).
+    """
+    victim = "navig.commands.voice"
+    saved_mod = sys.modules.pop(victim, None)
+    parent_name, _, leaf = victim.rpartition(".")
+    parent = sys.modules.get(parent_name)
+    saved_attr = getattr(parent, leaf, None) if parent is not None else None
+    if parent is not None and hasattr(parent, leaf):
+        delattr(parent, leaf)  # the seed case: neither entry nor attribute exists before
+    mp = pytest.MonkeyPatch()
+    try:
+        fixture_fn = getattr(no_plugins, "__wrapped__", no_plugins)
+        gen = fixture_fn(mp)
+        try:
+            next(gen)
+            born = importlib.import_module(victim)  # fallback app, plugin is blocked
+            assert born is not None and born.voice_app is not None
+            next(gen, None)  # teardown
+        finally:
+            mp.undo()
+        assert victim not in sys.modules, (
+            f"{victim} was born inside the simulated no-plugins install and outlived its "
+            "teardown — later tests in this worker read its cached fallback app."
+        )
+        if parent is not None:
+            assert not hasattr(parent, leaf), (
+                f"{parent_name}.{leaf} still points at the module the block dropped — the "
+                "dangling attribute is what makes the next eviction cycle register a stale "
+                "value to restore, leaving the pair (entry, attribute) diverged."
+            )
+    finally:
+        if parent is not None and saved_attr is not None:
+            setattr(parent, leaf, saved_attr)
+        if saved_mod is not None:
+            sys.modules[victim] = saved_mod
 
 
 def test_eviction_leaves_no_duplicate_module_behind() -> None:
@@ -316,14 +370,50 @@ def _shim_paths() -> list[Path]:
     return out
 
 
+def _hard_dependency_packages() -> frozenset[str]:
+    """Import names of the `navig-*` packages core declares as HARD dependencies.
+
+    Those are not plugins: pip installs them with navig and they cannot be missing, so core
+    may import them at module scope (navig-sdk, navig-vault, navig-contacts own code core
+    runs). Read from core/pyproject.toml, so a package demoted back to an extra is policed
+    again the day it is.
+    """
+    import re
+
+    import tomllib
+
+    data = tomllib.loads((_navig_package_dir().parent / "pyproject.toml").read_text(encoding="utf-8"))
+    out = set()
+    for req in data["project"]["dependencies"]:
+        name = re.split(r"[\s<>=!~;\[]", req, maxsplit=1)[0].strip().lower()
+        if name.startswith("navig-"):
+            out.add(name.replace("-", "_"))
+    return frozenset(out)
+
+
+def test_hard_dependencies_are_known_and_never_simulated_as_plugins() -> None:
+    hard = _hard_dependency_packages()
+    # Anti-vacuity: navig-vault and navig-sdk are hard dependencies today.
+    assert {"navig_vault", "navig_sdk"} <= hard, f"could not read core's dependencies: {sorted(hard)}"
+    overlap = hard & set(PLUGIN_PACKAGES)
+    assert not overlap, (
+        f"{sorted(overlap)} is a HARD core dependency — it cannot be uninstalled, so blocking it "
+        "in the no-plugins simulation tests a world no user can be in. Remove it from PLUGIN_PACKAGES."
+    )
+
+
 def _module_level_plugin_imports(py: Path) -> list[tuple[int, str]]:
-    """Top-level (never nested) imports of a `navig_*` package in one file."""
+    """Top-level (never nested) imports of a `navig_*` plugin package in one file.
+
+    A hard dependency (see `_hard_dependency_packages`) is not a plugin and is not reported.
+    """
     import ast
 
     try:
         tree = ast.parse(py.read_text(encoding="utf-8"))
     except SyntaxError:
         return []
+    hard = _hard_dependency_packages()
     hits: list[tuple[int, str]] = []
     for node in tree.body:  # tree.body == module scope only; nested imports are ignored
         names: list[str] = []
@@ -332,7 +422,8 @@ def _module_level_plugin_imports(py: Path) -> list[tuple[int, str]]:
         elif isinstance(node, ast.Import):
             names = [alias.name for alias in node.names]
         for name in names:
-            if name.split(".")[0].startswith("navig_"):
+            top = name.split(".")[0]
+            if top.startswith("navig_") and top not in hard:
                 hits.append((node.lineno, name))
     return hits
 

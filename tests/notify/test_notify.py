@@ -111,7 +111,8 @@ async def test_router_telegram_falls_back_to_a_direct_operator_dm(notify, monkey
     r = await router.dispatch("reminder", "Loud <one>", "now & then", priority="critical")
     tg = next(c for c in r["channels"] if c["channel"] == "telegram")
     assert tg["ok"] is True and tg["detail"] == "sent"
-    assert sent == ["<b>Loud &lt;one&gt;</b>\nnow &amp; then"]
+    # The type's glyph + escaped bold title, then the body rendered (and escaped).
+    assert sent == ["⏰ <b>Loud &lt;one&gt;</b>\n\nnow &amp; then"]
 
 
 async def test_router_reports_channel_rejection_not_phantom_success(notify, monkeypatch):

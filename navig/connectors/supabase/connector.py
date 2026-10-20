@@ -24,7 +24,6 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
 import time
 import urllib.parse
 import urllib.request
@@ -32,6 +31,7 @@ from typing import Any
 
 from navig.connectors.base import BaseConnector, ConnectorManifest
 from navig.connectors.errors import ConnectorAPIError, ConnectorAuthError
+from navig.connectors.secrets import KeyField, resolve
 from navig.connectors.types import (
     Action,
     ActionResult,
@@ -98,12 +98,37 @@ def _act_result(label: str, status_code: int, resp: dict | list, ok_codes: tuple
     )
 
 
+SUPABASE_URL = KeyField(
+    name="url",
+    label="Project URL",
+    vault_label="supabase/url",
+    env=("SUPABASE_URL",),
+    secret=False,
+    placeholder="https://xyz.supabase.co",
+)
+SUPABASE_ANON_KEY = KeyField(
+    name="anon_key",
+    label="Anon key",
+    vault_label="supabase/anon_key",
+    env=("SUPABASE_ANON_KEY",),
+    placeholder="eyJ…",
+)
+SUPABASE_SERVICE_KEY = KeyField(
+    name="service_key",
+    label="Service-role key (optional)",
+    vault_label="supabase/service_key",
+    env=("SUPABASE_SERVICE_KEY",),
+    optional=True,
+    placeholder="eyJ…",
+)
+
+
 class SupabaseConnector(BaseConnector):
     """Connector for Supabase — PostgREST table access via anon or service key.
 
     Auth: URL + anon key via env variables or navig vault labels:
-        ``supabase/<project_ref>/url``
-        ``supabase/<project_ref>/anon_key``
+        ``supabase/url``
+        ``supabase/anon_key`` (``supabase/service_key`` optional)
 
     Multiple projects can be configured by switching which env vars are set.
     """
@@ -121,6 +146,8 @@ class SupabaseConnector(BaseConnector):
         oauth_scopes=[],
         oauth_provider="",
         requires_oauth=False,
+        auth_mode="api_key",
+        key_fields=(SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_KEY),
         can_search=False,
         can_fetch=True,
         can_act=True,
@@ -135,17 +162,17 @@ class SupabaseConnector(BaseConnector):
     # ── Lifecycle ────────────────────────────────────────────────────────────
 
     async def connect(self) -> None:
-        """Load Supabase URL + anon key from environment."""
-        url = os.environ.get("SUPABASE_URL", "").rstrip("/")
-        anon = os.environ.get("SUPABASE_ANON_KEY", "").strip()
-        service = os.environ.get("SUPABASE_SERVICE_KEY", "").strip()
+        """Load Supabase URL + anon key (+ optional service key): env, then the vault."""
+        url = resolve(SUPABASE_URL).rstrip("/")
+        anon = resolve(SUPABASE_ANON_KEY)
+        service = resolve(SUPABASE_SERVICE_KEY)
         if not url or not anon:
             self._status = ConnectorStatus.ERROR
             raise ConnectorAuthError(
                 self.manifest.id,
                 "SUPABASE_URL and SUPABASE_ANON_KEY are required. "
-                "Set env vars or store in vault under 'supabase/<ref>/url' and "
-                "'supabase/<ref>/anon_key'.",
+                "Set env vars or store in vault under 'supabase/url' and "
+                "'supabase/anon_key'.",
             )
         self._url = url
         self._anon_key = anon

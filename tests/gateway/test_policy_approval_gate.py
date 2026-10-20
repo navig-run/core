@@ -49,7 +49,7 @@ def _build_gateway(tmp_path, *, rules, approval_manager):
     from navig.gateway.policy_gate import PolicyGate
 
     gw = MagicMock()
-    gw.config = SimpleNamespace(auth_token=None)
+    gw.config = SimpleNamespace(auth_token="test-token")
     gw.policy_gate = PolicyGate.from_config({"policy": {"default": "allow", "rules": rules}})
     gw.audit_log = AuditLog(path=tmp_path / "audit.jsonl")
     gw.billing_emitter = BillingEmitter(log_path=tmp_path / "billing.jsonl")
@@ -100,7 +100,9 @@ def _audit_records(tmp_path, action=None):
 
 
 _REQUIRE_MISSION = [{"pattern": "mission.*", "action": "require_approval"}]
-_HEADERS = {"X-Actor": "test:e2e"}
+# Bearer auth is part of the request identity here: without it the gateway answers
+# 503 (no configured token fails closed) / 401, not the behavior under test.
+_HEADERS = {"X-Actor": "test:e2e", "Authorization": "Bearer test-token"}
 
 
 def _node_payload():

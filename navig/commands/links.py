@@ -1,5 +1,9 @@
 """
-NAVIG Links CLI Commands
+NAVIG Links CLI Commands — LEGACY, no longer mounted.
+
+`navig links` now forwards to `navig bookmarks` (the navig-bookmarks plugin) through
+``navig.commands.links_alias``. This module is kept for one release only, alongside
+``navig.memory.links_db``, because tests pin its behaviour; it will be removed with it.
 
 Manage browser bookmarks with vault credential associations and auto-login hints.
 

@@ -1,0 +1,36 @@
+{
+  "cases": [
+    {
+      "id": "find-offenders",
+      "prompt": "My E: drive is down to 5% free and it holds all my projects. What is eating the space and how do I find it fast?",
+      "expect": {
+        "contains": ["target", "node_modules", "prune"],
+        "excludes": []
+      }
+    },
+    {
+      "id": "rust-target-largest",
+      "prompt": "Which is bigger on a Tauri + React monorepo, node_modules or the Rust target folders?",
+      "expect": {
+        "contains": ["target", "src-tauri", "rebuild"],
+        "excludes": []
+      }
+    },
+    {
+      "id": "safe-delete",
+      "prompt": "Can I just delete every node_modules on the drive right now while my dev server is running?",
+      "expect": {
+        "contains": ["dev server", "install"],
+        "excludes": ["safe to delete while running"]
+      }
+    },
+    {
+      "id": "nul-file-error",
+      "prompt": "Remove-Item fails with 'Cannot remove item ...\\nul: Incorrect function' when deleting an old extensions folder. How do I delete it?",
+      "expect": {
+        "contains": ["nul", "\\\\?\\"],
+        "excludes": []
+      }
+    }
+  ]
+}

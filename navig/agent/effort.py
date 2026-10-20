@@ -302,7 +302,10 @@ def get_thinking_params(
             return {"output_config": {"effort": effort}}
         return {"thinking": {"type": "adaptive"}, "output_config": {"effort": effort}}
 
-    if prov == "openai":
+    if prov in ("openai", "xai"):
+        # Both accept the OpenAI-shaped ``reasoning_effort`` (``low``/``medium``/``high``).
+        # Measured live 2026-10-12 on xai/grok-4.6: ``reasoning_effort`` low and high
+        # both accept the param without a 400 and reply correctly.
         return {"reasoning_effort": OPENAI_REASONING_EFFORT[level]}
 
     if prov == "google":

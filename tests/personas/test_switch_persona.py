@@ -31,7 +31,7 @@ def _wire(monkeypatch, *, load=None, resolve_ok=True):
         loader_mod, "load_persona",
         load or (lambda name, cwd=None: (_Config(), "soul")),
     )
-    monkeypatch.setattr(store_mod, "get_active_persona", lambda user_id, chat_id: "old-persona")
+    monkeypatch.setattr(store_mod, "get_persona_choice", lambda user_id: ("old-persona", False))
 
 
 async def test_switch_persists_new_persona(monkeypatch):
@@ -39,19 +39,19 @@ async def test_switch_persists_new_persona(monkeypatch):
     _wire(monkeypatch)
     monkeypatch.setattr(
         store_mod, "set_active_persona",
-        lambda user_id, chat_id, name: saved.append((user_id, chat_id, name)),
+        lambda user_id, chat_id, name, explicit=False: saved.append((user_id, chat_id, name, explicit)),
     )
 
     cfg = await switch_persona("hacker", 7, 99, deliver_assets=False)
 
     assert isinstance(cfg, _Config)
-    assert saved == [(7, 99, "hacker")]  # persisted the NEW persona
+    assert saved == [(7, 99, "hacker", True)]  # persisted the NEW persona, as a choice
 
 
 async def test_unknown_persona_raises_before_persist(monkeypatch):
     saved = []
     _wire(monkeypatch, resolve_ok=False)
-    monkeypatch.setattr(store_mod, "set_active_persona", lambda *a: saved.append(a))
+    monkeypatch.setattr(store_mod, "set_active_persona", lambda *a, **k: saved.append(a))
 
     with pytest.raises(PersonaSwitchError):
         await switch_persona("ghost", 7, 99, deliver_assets=False)
@@ -67,13 +67,13 @@ async def test_load_failure_rolls_back_to_previous(monkeypatch):
     _wire(monkeypatch, load=boom_load)
     monkeypatch.setattr(
         store_mod, "set_active_persona",
-        lambda user_id, chat_id, name: saved.append(name),
+        lambda user_id, chat_id, name, explicit=True: saved.append((name, explicit)),
     )
 
     with pytest.raises(PersonaSwitchError):
         await switch_persona("hacker", 7, 99, deliver_assets=False)
     # the failed switch rolled the store back to the previous persona
-    assert saved == ["old-persona"]
+    assert saved == [("old-persona", False)]  # with its own (un-chosen) flag
 
 
 def test_dead_agent_hotswap_is_gone():

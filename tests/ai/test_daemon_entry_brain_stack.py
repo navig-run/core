@@ -157,8 +157,10 @@ class TestDefaultDaemonConfig:
     def test_has_gateway_port(self):
         assert "gateway_port" in DEFAULT_DAEMON_CONFIG
 
-    def test_has_scheduler(self):
-        assert "scheduler" in DEFAULT_DAEMON_CONFIG
+    def test_scheduler_toggle_removed(self):
+        """The supervised `scheduler` child was a silent no-op (no module runner);
+        cron runs gateway-attached, so the default config no longer carries the key."""
+        assert "scheduler" not in DEFAULT_DAEMON_CONFIG
 
     def test_has_health_port(self):
         assert "health_port" in DEFAULT_DAEMON_CONFIG

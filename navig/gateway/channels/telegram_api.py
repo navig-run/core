@@ -9,10 +9,24 @@ stays focused on orchestration while preserving the existing return contracts:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Cap how long a single call will block waiting out a 429. A ``retry_after``
+# longer than this is not worth stalling the turn for — return ``None`` and let
+# the caller (e.g. the streamed-edit debounce) skip this edit rather than freeze
+# the whole reply behind a long server-mandated cooldown.
+#
+# Module-level, NOT a class attribute: these mixin methods are bound onto
+# TelegramChannel via functools.partial (see telegram.py's _MIXIN_BINDINGS), so
+# at runtime ``self`` is the channel, which does not inherit anything defined on
+# the mixin class. ``self._MAX_RETRY_AFTER_S`` raised AttributeError on the
+# first real 429 — swallowed by the except below, so the backoff silently never
+# ran. tests/regression/test_telegram_mixin_siblings_resolve.py catches this.
+_MAX_RETRY_AFTER_S = 5.0
 
 aiohttp = None
 try:
@@ -32,6 +46,13 @@ class TelegramApiMixin:
         failure (API error or network exception). Non-fatal — callers must
         handle ``None`` gracefully.
 
+        On a ``429 Too Many Requests`` the call honours Telegram's
+        ``parameters.retry_after`` exactly once, within ``_MAX_RETRY_AFTER_S``,
+        before giving up. Streaming substantive replies (not just short chat)
+        raises edit volume and brushes the ~1 edit/s ``editMessageText`` limit,
+        so a single respectful backoff turns a dropped edit into a delivered
+        one; a longer mandated wait is skipped so the turn never stalls.
+
         Note: for file uploads use ``_api_call_multipart`` instead.
         """
         if not self._session:
@@ -39,16 +60,32 @@ class TelegramApiMixin:
 
         url = f"{self.base_url}/{method}"
 
-        try:
-            async with self._session.post(url, json=data or {}) as resp:
-                result = await resp.json()
-                if result.get("ok"):
-                    return result.get("result")
-                logger.error("Telegram API error in %s: %s", method, result.get("description"))
+        for _attempt in range(2):  # initial try + at most one 429 retry
+            try:
+                async with self._session.post(url, json=data or {}) as resp:
+                    result = await resp.json()
+                    if result.get("ok"):
+                        return result.get("result")
+                    retry_after = None
+                    if result.get("error_code") == 429:
+                        retry_after = (result.get("parameters") or {}).get("retry_after")
+                    if (
+                        _attempt == 0
+                        and retry_after is not None
+                        and 0 < float(retry_after) <= _MAX_RETRY_AFTER_S
+                    ):
+                        logger.warning(
+                            "Telegram API %s rate-limited (429); retrying after %ss",
+                            method, retry_after,
+                        )
+                        await asyncio.sleep(float(retry_after))
+                        continue
+                    logger.error("Telegram API error in %s: %s", method, result.get("description"))
+                    return None
+            except Exception as exc:
+                logger.error("Telegram API call %s failed: %s", method, exc)
                 return None
-        except Exception as exc:
-            logger.error("Telegram API call %s failed: %s", method, exc)
-            return None
+        return None
 
     async def _api_call_multipart(
         self,

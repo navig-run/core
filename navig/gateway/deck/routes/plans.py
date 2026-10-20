@@ -407,9 +407,17 @@ async def handle_plans_doc_save(request: "web.Request") -> "web.Response":
         return _err("only .md plan docs can be saved")
 
     def _write() -> dict[str, Any]:
-        from navig.core.yaml_io import atomic_write_text
+        from navig.projects import textio
 
-        atomic_write_text(target, content)
+        # Keep the file's own line endings: the editor sends "\n", and a text-mode write
+        # on Windows used to turn every LF plan doc into CRLF (a whole-file git diff).
+        eol = "\n"
+        if target.is_file():
+            try:
+                eol = textio.dominant_eol(textio.read_exact(target))
+            except textio.NotUtf8Error as exc:
+                raise _PlanOpError(str(exc), 422) from exc
+        textio.write_exact(target, textio.normalize_eol(content, eol))
         return {
             "path": target.relative_to(plans_dir.resolve()).as_posix(),
             "mtime": target.stat().st_mtime,
@@ -417,6 +425,8 @@ async def handle_plans_doc_save(request: "web.Request") -> "web.Response":
 
     try:
         return _ok(await asyncio.to_thread(_write))
+    except _PlanOpError as exc:
+        return _err(str(exc), exc.status)
     except Exception as exc:
         logger.exception("plans doc save failed")
         return _err(str(exc), 500)
@@ -439,23 +449,34 @@ async def handle_plans_toggle_task(request: "web.Request") -> "web.Response":
     if not target.is_file():
         return _err("plan doc not found", 404)
 
-    def _toggle() -> dict[str, Any]:
-        from navig.core.yaml_io import atomic_write_text
+    expect = body.get("expect")
 
-        content = target.read_text(encoding="utf-8", errors="replace")
+    def _toggle() -> dict[str, Any]:
+        from navig.projects import textio
+        from navig.projects.todos import line_fingerprint
+
+        # Exact read/write: line endings and encoding survive the toggle byte-for-byte.
+        try:
+            content = textio.read_exact(target)
+        except textio.NotUtf8Error as exc:
+            raise _PlanOpError(str(exc), 422) from exc
         lines = content.splitlines(keepends=True)
         if line_no >= len(lines):
             raise _PlanOpError(f"line {line_no} is out of range", 400)
         raw = lines[line_no]
         text = raw.rstrip("\r\n")
         ending = raw[len(text):]
+        # Optional stale guard: a client that sends the line's fingerprint gets a 409
+        # instead of toggling whatever line moved into this index since it loaded.
+        if expect and line_fingerprint(text) != str(expect):
+            raise _PlanOpError("that line changed since you loaded it — reload", 409)
         m = _CHECKBOX_RE.match(text)
         if m is None:
             raise _PlanOpError(f"line {line_no} is not a markdown checkbox", 400)
         checked = m.group(2) not in ("x", "X")  # new state after the toggle
         lines[line_no] = text[: m.start(2)] + ("x" if checked else " ") + text[m.end(2):] + ending
         new_content = "".join(lines)
-        atomic_write_text(target, new_content)
+        textio.write_exact(target, new_content)
         return {"checked": checked, "content": new_content, "mtime": target.stat().st_mtime}
 
     try:

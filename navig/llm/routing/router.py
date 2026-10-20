@@ -643,6 +643,11 @@ class UnifiedRouter:
         # 3. Post-response audit
         audit = self._audit_response(response_text, decision)
         trace.audit_result = audit
+        # Decision-model judge (shadow-only, background): does the reply actually answer
+        # the request? Compared with the length/hedge rule above; changes nothing here.
+        from navig.agent import judges
+
+        judges.reply_quality(request.text, response_text, audit == "pass")
 
         if audit == "retry" and trace.provider != "mcp_bridge":
             # Escalate: try next provider with stronger model

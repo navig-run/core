@@ -27,6 +27,10 @@ from navig.messaging.adapter import (
 
 logger = logging.getLogger(__name__)
 
+#: The only containers Telegram's sendAudio accepts as a playable track (Bot API:
+#: "must be in the .MP3 or .M4A format"). Everything else goes out as a document.
+_SEND_AUDIO_EXTENSIONS: tuple[str, ...] = (".mp3", ".m4a")
+
 
 def _msg_id(msg: Any) -> str:
     """Extract a message id from a dict (channel) or object (PTB Message)."""
@@ -194,7 +198,25 @@ class TelegramMessagingAdapter:
                 return _sent_id(await bot.send_animation(chat_id, data, caption=caption))
             if kind == "voice" and hasattr(bot, "send_voice"):
                 return _sent_id(await bot.send_voice(chat_id, data))
-            # audio / document / anything else → document
+            if (
+                kind == "audio"
+                and hasattr(bot, "send_audio")
+                and filename.lower().endswith(_SEND_AUDIO_EXTENSIONS)
+            ):
+                # A generated track should arrive as Telegram's in-chat PLAYER (title,
+                # scrubber, queue), not an inert file. The Bot API only accepts MP3 and
+                # M4A there — anything else (wav/flac/ogg) stays a document below rather
+                # than being rejected, so a render never fails over its container.
+                return _sent_id(
+                    await bot.send_audio(
+                        chat_id,
+                        data,
+                        caption=caption,
+                        filename=filename,
+                        title=filename.rsplit(".", 1)[0][:64] or None,
+                    )
+                )
+            # audio (non-player formats) / document / anything else → document
             if hasattr(bot, "send_document"):
                 return _sent_id(
                     await bot.send_document(chat_id, data, filename=filename, caption=caption)

@@ -103,6 +103,7 @@ def translate_cc_hooks(
                             tool_filter=tool_filter,
                             timeout_seconds=timeout,
                             description=desc,
+                            source=f"plugin:{source}" if source else "plugin",
                         )
                     )
     return out

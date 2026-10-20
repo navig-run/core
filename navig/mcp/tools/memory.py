@@ -112,6 +112,14 @@ def register(server: Any) -> None:
     })
 
 
+def _memory_off_error() -> dict[str, Any] | None:
+    """An MCP error payload when the user switched memory off (``memory.enabled``)."""
+    from navig.memory.controls import memory_off_reason
+
+    reason = memory_off_reason()
+    return {"error": reason, "isError": True} if reason else None
+
+
 def _tool_memory_remember(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Store a key fact via KeyFactStore.upsert()."""
     import logging as _logging
@@ -123,6 +131,8 @@ def _tool_memory_remember(server: Any, args: dict[str, Any]) -> dict[str, Any]:
         fact_text = args.get("fact", "").strip()
         if not fact_text:
             return {"error": "fact is required", "isError": True}
+        if off := _memory_off_error():
+            return off
         source = args.get("source", "mcp")
         tags = args.get("tags", [])
         store = KeyFactStore()
@@ -132,7 +142,10 @@ def _tool_memory_remember(server: Any, args: dict[str, Any]) -> dict[str, Any]:
             tags=list(tags) if tags else [],
         )
         stored = store.upsert(fact)
-        return {"id": stored.id, "status": "stored"}
+        result: dict[str, Any] = {"id": stored.id, "status": "stored"}
+        if stored.metadata.get("redacted"):
+            result["redacted"] = True
+        return result
     except Exception as exc:
         _log.error("memory.key_facts.remember failed: %s", exc, exc_info=True)
         return {"error": str(exc), "isError": True}
@@ -176,6 +189,8 @@ def _tool_memory_retrieve(server: Any, args: dict[str, Any]) -> Any:
         query = args.get("query", "").strip()
         if not query:
             return []
+        if off := _memory_off_error():
+            return {**off, "facts": []}
         limit = int(args.get("limit", 10))
         store = KeyFactStore()
         retriever = FactRetriever(store)
@@ -227,14 +242,15 @@ def _tool_memory_update(server: Any, args: dict[str, Any]) -> dict[str, Any]:
             return {"error": "fact_id is required", "isError": True}
         if not new_content:
             return {"error": "new_content is required", "isError": True}
+        if off := _memory_off_error():
+            return off
         store = KeyFactStore()
         # Fetch original to preserve category/tags
         original = store.get(fact_id)
         if not original:
             return {"error": f"No fact found with id '{fact_id}'", "isError": True}
-        # Soft-delete the old version
-        store.soft_delete(fact_id)
-        # Insert updated version
+        # Insert the updated version FIRST, then retire the old one: upsert can refuse
+        # (a fact that is only a secret), and deleting first would lose the original.
         updated = KeyFact(
             content=new_content,
             category=original.category,
@@ -243,6 +259,8 @@ def _tool_memory_update(server: Any, args: dict[str, Any]) -> dict[str, Any]:
             source_platform=original.source_platform or "agent_update",
         )
         stored = store.upsert(updated)
+        if stored.id != fact_id:
+            store.soft_delete(fact_id)
         return {"id": stored.id, "old_id": fact_id, "status": "updated"}
     except Exception as exc:
         _log.error("memory.key_facts.update failed: %s", exc, exc_info=True)

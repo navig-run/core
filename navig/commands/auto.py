@@ -43,24 +43,33 @@ def auto_status():
         ch.error(f"No adapter available for {sys.platform}")
         raise typer.Exit(1)
 
+    if sys.platform == "linux":
+        # The display protocol decides what is possible, so it is reported first and in
+        # full: on Wayland, "xdotool is installed" is both true and useless, and the old
+        # binary-presence check is exactly how `navig auto` came to look like it worked
+        # while clicking into nothing.
+        adapter.is_available()  # populate the capability probe once
+        for label, ok, detail in adapter.diagnosis():
+            ch.info(f"  {'✓' if ok else '✗'} {label}", detail)
+        if adapter.is_available():
+            if adapter.windows_supported():
+                ch.success("Automation ready — input and window control")
+            else:
+                ch.success("Automation ready — input only, no window control")
+        else:
+            ch.warning(adapter.unavailable_reason())
+        return
+
     if adapter.is_available():
         ch.success(f"Automation ready on {sys.platform}")
 
-        # Platform-specific details
-        if sys.platform == "linux":
-            ch.info(f"  xdotool: {'✓' if adapter._has_xdotool else '✗'}")
-            ch.info(f"  wmctrl: {'✓' if adapter._has_wmctrl else '✗'}")
-            ch.info(f"  xclip: {'✓' if adapter._has_xclip else '✗'}")
-        elif sys.platform == "darwin":
+        if sys.platform == "darwin":
             ch.info("  AppleScript: ✓")
             ch.info(f"  cliclick: {'✓' if adapter._has_cliclick else '✗ (optional)'}")
     else:
         ch.error("Automation not available")
 
-        if sys.platform == "linux":
-            ch.info("Install required tools:")
-            ch.console.print("  sudo apt install xdotool wmctrl xclip")
-        elif sys.platform == "darwin":
+        if sys.platform == "darwin":
             ch.info("Optional: brew install cliclick")
 
 

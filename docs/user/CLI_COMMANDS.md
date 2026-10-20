@@ -257,6 +257,47 @@ navig evolve fix --check "python -m py_compile {file}" script.py "Fix syntax err
 
 ---
 
+#### `navig evolve sweep [path]`
+Check a git repository with ruff and pytest, and fix what fails using a **local** Ollama model —
+free, nothing leaves the machine.
+
+How it works: a new `chore/sweep/<date>-<id>` branch is created in its own worktree under
+`<repo>/.dev/worktrees/` (added to `.git/info/exclude` when `.dev/` is not ignored). Your checkout
+and any uncommitted work are never touched, and nothing is pushed.
+
+1. `ruff check --fix` applies ruff's own safe fixes (no model).
+2. For each lint error left, the model sees a small window of the file and returns the corrected
+   window. The fix is kept only if ruff no longer reports that error and reports nothing new.
+3. For each failing test, the model changes the **source** the traceback points at (tests are
+   never edited). The fix is kept only if the test then passes. Tests the first model cannot fix
+   go to a larger fallback model, loaded once for all of them.
+4. After each phase the whole suite re-runs; a commit that broke a passing test is dropped.
+
+Answers that silence the check instead of fixing it (`# noqa`, `pytest.skip`, deleting code) are
+refused. Tests failing for environmental reasons (missing module, file, network) are skipped.
+
+**Options:**
+- `--model, -m` - primary model (default: `evolve.sweep.model`, else `qwen2.5-coder:7b`)
+- `--fallback` / `--no-fallback` - model for tests the first cannot fix (default:
+  `evolve.sweep.fallback_model`, else `qwen2.5-coder:32b`). Skipped with a note when free RAM is
+  below its size — a paged-out model takes all night.
+- `--lint/--no-lint`, `--tests/--no-tests`, `--autofix/--no-autofix`
+- `--select B,SIM` - extra ruff rules, added to the project's config
+- `--python "<exe>"` - interpreter for the tests (default: the project's `.venv`, else `py -3`)
+- `--retries, -n` (2) · `--limit` (50 per phase) · `--max-minutes` · `--test-timeout` (900 s)
+- `--dry-run` (keep no branch) · `--keep-worktree` · `--json`
+
+The report is also saved as JSON under navig's data dir (`sweeps/`).
+
+**Example:**
+```bash
+navig evolve sweep                                   # the repo you are in
+navig evolve sweep C:\projects\myapp --select B,SIM --max-minutes 240
+navig config set evolve.sweep.model qwen2.5-coder:3b # a faster default
+```
+
+---
+
 ## Enhanced Windows-Only Commands
 
 Available on: **Windows only**

@@ -48,6 +48,20 @@ EXPECTED_TABLES = {
         "version",
     ],
     "vault_audit": ["id", "item_id", "action", "actor", "ts", "detail"],
+    # 2026-10-15 (vault federation) — additive, CREATE IF NOT EXISTS: an older vault.db
+    # gains them on first open and nothing existing moves. No rows in vault_keyslots =
+    # a legacy vault, which keeps reading exactly as before.
+    "vault_keyslots": ["id", "kind", "wrapped", "params_json", "created_at"],
+    "vault_meta": ["key", "value"],
+    "vault_item_history": [
+        "item_id",
+        "label",
+        "version",
+        "encrypted_dek",
+        "encrypted_blob",
+        "metadata_json",
+        "replaced_at",
+    ],
 }
 
 EXPECTED_INDEXES = {"idx_vault_kind", "idx_vault_provider", "uidx_vault_label"}

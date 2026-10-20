@@ -250,3 +250,61 @@ async def test_the_sweep_still_retries_a_client_that_is_not_parked(monkeypatch) 
     await _run_sweep_briefly(mgr)
 
     assert scheduled, "a client with no backoff was never retried at all"
+
+
+def _capture_registry_levels():
+    """Attach a handler straight to the registry logger (navig loggers do not
+    propagate, so caplog sees nothing) and return (records, detach)."""
+    import logging
+
+    records: list[int] = []
+
+    class _H(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record.levelno)
+
+    log = logging.getLogger(reg.__name__)
+    handler = _H(level=logging.DEBUG)
+    old_level = log.level
+    log.setLevel(logging.DEBUG)
+    log.addHandler(handler)
+
+    def detach() -> None:
+        log.removeHandler(handler)
+        log.setLevel(old_level)
+
+    return records, detach
+
+
+@pytest.mark.asyncio
+async def test_connect_failures_of_a_long_absent_client_log_at_debug() -> None:
+    """The per-attempt WARN and the round's ERROR are news for the first rounds
+    only. The telegram worker used to defeat this by calling the explicit connect
+    path every 60 s (which resets the backoff), so the vscode-copilot bridge —
+    whose only server was archived — logged WARN+ERROR every minute: ~2,500 of
+    2,712 telegram-bot.log lines. Once a client has failed the quiet threshold of
+    rounds, its connect failures must not log above DEBUG."""
+    import logging
+
+    mgr = _manager()
+    client = _Client()
+
+    records, detach = _capture_registry_levels()
+    try:
+        await mgr._connect_with_retry(client, max_attempts=1)
+        fresh = list(records)
+        records.clear()
+        mgr._reconnect_failures[client.id] = reg._QUIET_AFTER_FAILURES
+        await mgr._connect_with_retry(client, max_attempts=1)
+        long_absent = list(records)
+    finally:
+        detach()
+
+    assert logging.WARNING in fresh and logging.ERROR in fresh, (
+        f"a fresh failure must still be loud: levels={fresh}"
+    )
+    assert long_absent, "the quiet path logged nothing at all — the retry must stay visible at DEBUG"
+    assert max(long_absent) <= logging.DEBUG, (
+        f"a client absent for {reg._QUIET_AFTER_FAILURES} rounds still logged levels={long_absent}"
+    )
+    assert client.attempts == 2, "quieting the log must not stop the retry itself"

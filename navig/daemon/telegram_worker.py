@@ -133,7 +133,6 @@ def _mcp_bridge_config() -> dict:
         ),
         "token": (os.getenv("NAVIG_BRIDGE_LLM_TOKEN") or bridge_cfg.get("token", "")),
         "auto_connect": coerce_bool(bridge_cfg.get("mcp_auto_connect", True), default=True),
-        "reconnect_interval": bridge_cfg.get("mcp_reconnect_interval", 60),
     }
 
 
@@ -163,6 +162,19 @@ async def _start_gateway_http(gateway: NavigGateway, tg_config: dict, deck_cfg: 
         return result
 
     gateway._app = web.Application(middlewares=[_cors_middleware_adapter])
+
+    # Let installed plugins register their route hooks BEFORE register_deck_routes
+    # fires `gateway:register_routes` — same ordering the dedicated `gateway` child
+    # uses (server.py). Without this the worker's listener serves core deck routes
+    # only (plugin routes 404) and, if this process ever handles a callback query,
+    # plugin button prefixes (`mr:` …) are not registered. Best-effort: a plugin
+    # must never block the bot process.
+    try:
+        from navig.core.plugins import load_entry_point_plugins
+
+        load_entry_point_plugins()
+    except Exception:  # noqa: BLE001
+        pass
 
     # Register full gateway routes for parity with standard gateway startup
     from navig.gateway.routes import register_all_routes
@@ -196,6 +208,9 @@ async def _start_gateway_http(gateway: NavigGateway, tg_config: dict, deck_cfg: 
     # Use gateway config for host/port (from gateway section in config.yaml)
     host = gateway.config.host
     port = gateway.config.port
+    from navig.platform import accept_guard
+
+    accept_guard.install()  # see navig/platform/accept_guard.py
     site = web.TCPSite(gateway._runner, host, port)
     try:
         await site.start()
@@ -269,64 +284,6 @@ def _transport_for_url(url: str) -> str:
     return "stdio"
 
 
-async def _mcp_reconnect_loop(
-    gateway: NavigGateway,
-    mcp_cfg: dict,
-    stop_event: asyncio.Event,
-) -> None:
-    """Background task: keep MCP Bridge connection alive."""
-    import logging
-
-    logger = logging.getLogger(__name__)
-    interval = mcp_cfg.get("reconnect_interval", 60)
-    name = "vscode-copilot"
-
-    while not stop_event.is_set():
-        try:
-            await asyncio.sleep(interval)
-            if stop_event.is_set():
-                break
-
-            mgr = gateway.mcp_client_manager
-            if mgr is None:
-                continue
-
-            # Check if already connected
-            client = mgr.clients.get(name)
-            if client and getattr(client, "is_connected", False):
-                continue
-
-            # Attempt (re)connect
-            logger.info("MCP reconnect: attempting %s → %s", name, mcp_cfg["mcp_url"])
-            try:
-                from navig.mcp.client import MCPClientConfig
-
-                # Only register the client once; use auto_connect=False to
-                # avoid a double-connect race (add_client fires its own
-                # background retry when auto_connect=True, and connect_client
-                # below would then issue a second simultaneous attempt).
-                if name not in mgr.clients:
-                    await mgr.add_client(
-                        config=MCPClientConfig(
-                            id=name,
-                            url=mcp_cfg["mcp_url"],
-                            transport=_transport_for_url(mcp_cfg["mcp_url"]),
-                            auto_connect=False,
-                        )
-                    )
-                connected = await mgr.connect_client(name)
-                if connected:
-                    logger.info("MCP reconnect: %s connected", name)
-                else:
-                    logger.debug("MCP reconnect: %s still pending", name)
-            except Exception as e:
-                logger.debug("MCP reconnect failed: %s", e)
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.debug("MCP reconnect loop error: %s", e)
-
-
 async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
     import logging
 
@@ -395,7 +352,6 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
             matrix_adapter = None
 
     # ── MCP client manager ──
-    mcp_reconnect_task = None
     if mcp_cfg.get("auto_connect"):
         try:
             from navig.mcp import MCPClientManager
@@ -404,6 +360,14 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
             try:
                 from navig.mcp.client import MCPClientConfig
 
+                # ONE connection owner: add_client (auto_connect=True) starts the
+                # first attempt in the background AND arms the registry's health
+                # sweep, which retries with exponential backoff (1 min → 30 min) and
+                # goes quiet after a few failures. A worker-side 60 s loop used to
+                # call connect_client() here and on every tick — the EXPLICIT path,
+                # which resets that backoff — so an absent bridge (its only server,
+                # navig-grid, was archived) logged WARN+ERROR every minute forever:
+                # ~2,500 of 2,712 telegram-bot.log lines on 2026-10-15.
                 await gateway.mcp_client_manager.add_client(
                     config=MCPClientConfig(
                         id="vscode-copilot",
@@ -411,11 +375,7 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
                         transport=_transport_for_url(mcp_cfg["mcp_url"]),
                     )
                 )
-                connected = await gateway.mcp_client_manager.connect_client("vscode-copilot")
-                if connected:
-                    logger.info("MCP Bridge client connected → %s", mcp_cfg["mcp_url"])
-                else:
-                    logger.info("MCP Bridge client pending → %s", mcp_cfg["mcp_url"])
+                logger.info("MCP Bridge client registered → %s", mcp_cfg["mcp_url"])
             except Exception as e:
                 logger.info("MCP Bridge not yet available (will retry): %s", e)
         except ImportError as e:
@@ -463,21 +423,17 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
         except NotImplementedError:
             pass  # optional feature not implemented by this adapter
 
-    # ── MCP reconnect background task ──
-    if mcp_cfg.get("auto_connect") and gateway.mcp_client_manager:
-        mcp_reconnect_task = asyncio.create_task(_mcp_reconnect_loop(gateway, mcp_cfg, stop_event))
-
     try:
         while not stop_event.is_set():
             await asyncio.sleep(1)
     finally:
-        # Cancel reconnect loop
-        if mcp_reconnect_task:
-            mcp_reconnect_task.cancel()
+        # Stop the MCP manager: disconnects clients and cancels its health sweep
+        # (the reconnect owner), so no retry task outlives the worker.
+        if gateway.mcp_client_manager is not None:
             try:
-                await mcp_reconnect_task
-            except asyncio.CancelledError:
-                pass  # task cancelled; expected during shutdown
+                await gateway.mcp_client_manager.stop()
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical at shutdown
 
         # Tightly coupled shutdown: stop bot → stop matrix → stop deck/HTTP → done
         if channel:

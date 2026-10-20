@@ -275,3 +275,80 @@ def test_class_and_module_detect_mode_match_for_research():
     router = LLMModeRouter({})
 
     assert router.detect_mode(text) == detect_mode(text)
+
+
+# ── the fast-chat override list is CONFIGURABLE, not hardcoded ──────────────
+
+
+def test_fast_chat_reads_the_configured_list(monkeypatch):
+    """`navig mode set small_talk` was trampled by a hardcoded (xai,
+    grok-3-mini) table: the override existed for latency, but grok-3-mini is a
+    REASONING model — measured 4.8 s where grok-4.6 took 2.4 s for the same
+    one-liner. The operator must be able to set what chat actually uses."""
+    import navig.llm.router as router_mod
+
+    monkeypatch.setattr(router_mod, "_has_api_key", lambda p: True)
+    monkeypatch.setattr(
+        router_mod, "_config_get",
+        lambda key, default=None: [{"provider": "xai", "model": "grok-4.6"}],
+    )
+
+    fast = router_mod._pick_fast_chat_provider(temperature=0.4, max_tokens=100)
+
+    assert (fast.provider, fast.model) == ("xai", "grok-4.6")
+
+
+def test_invalid_fast_chat_entries_fall_back_to_the_default(monkeypatch):
+    """A malformed override must not blank the feature: per-item filtering,
+    and an all-invalid list returns the shipped default."""
+    import navig.llm.router as router_mod
+
+    monkeypatch.setattr(router_mod, "_has_api_key", lambda p: True)
+    monkeypatch.setattr(
+        router_mod, "_config_get",
+        lambda key, default=None: ["nonsense", {"provider": "", "model": "m"},
+                                   {"provider": "xai"}],
+    )
+
+    fast = router_mod._pick_fast_chat_provider(temperature=0.4, max_tokens=100)
+
+    assert (fast.provider, fast.model) == router_mod._FAST_CHAT_PROVIDERS[0]
+
+
+# ── the Claude brain-preference escalation is GATED ─────────────────────────
+
+
+def test_prefer_claude_brain_defaults_on(monkeypatch):
+    """Shipped behaviour is preserved when the key is unset."""
+    from navig.agent.conv import agent as conv_agent
+
+    monkeypatch.setattr("navig.config.get", lambda key, default=None: default)
+    assert conv_agent._prefer_claude_brain() is True
+
+
+def test_prefer_claude_brain_can_be_turned_off(monkeypatch):
+    """The measured incident: a rate-limited subscription made the escalation
+    a week of doomed Opus round-trips that trampled three explicit `navig mode
+    set` changes. The gate must make the configured mode the law."""
+    from navig.agent.conv import agent as conv_agent
+
+    monkeypatch.setattr(
+        "navig.config.get", lambda key, default=None: False if key == "llm_router.prefer_claude_brain" else default
+    )
+    assert conv_agent._prefer_claude_brain() is False
+
+
+def test_prefer_claude_brain_survives_an_unreadable_config():
+    from navig.agent.conv import agent as conv_agent
+
+    def boom(*_a, **_kw):
+        raise RuntimeError("config unreadable")
+
+    import navig.config
+
+    original = navig.config.get
+    navig.config.get = boom
+    try:
+        assert conv_agent._prefer_claude_brain() is True
+    finally:
+        navig.config.get = original

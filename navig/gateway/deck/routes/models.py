@@ -7,18 +7,24 @@ try:
 except ImportError:
     web = None
 
+from navig.gateway.deck.routes.telegram_bot import resolve_owner_user_id
+
 logger = logging.getLogger(__name__)
 
 
 async def handle_deck_models(request: "web.Request") -> "web.Response":
-    user_id = request.get("deck_user_id", 0)
+    owner = resolve_owner_user_id(request)
+    user_id = owner if owner is not None else request.get("deck_user_id", 0)
 
     user_tier_override = ""
     try:
         gateway = request.app.get("gateway")
         if gateway and hasattr(gateway, "channels"):
             tg = gateway.channels.get("telegram")
-            if tg and hasattr(tg, "_user_model_prefs"):
+            if tg and owner is not None and hasattr(tg, "_get_user_tier_pref"):
+                # The bot's own reader: in-memory first, then the DM session it persisted.
+                user_tier_override = tg._get_user_tier_pref(owner, owner, is_group=False)
+            elif tg and hasattr(tg, "_user_model_prefs"):
                 user_tier_override = tg._user_model_prefs.get(user_id, "")
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
@@ -107,13 +113,21 @@ async def handle_deck_models_set(request: "web.Request") -> "web.Response":
             {"error": f"invalid tier. valid: {', '.join(valid_tiers)}"}, status=400
         )
 
-    user_id = request.get("deck_user_id", 0)
+    owner = resolve_owner_user_id(request)
+    user_id = owner if owner is not None else request.get("deck_user_id", 0)
     applied = False
     try:
         gateway = request.app.get("gateway")
         if gateway and hasattr(gateway, "channels"):
             tg = gateway.channels.get("telegram")
-            if tg and hasattr(tg, "_user_model_prefs"):
+            if tg and owner is not None and hasattr(tg, "_set_user_tier_pref"):
+                # Same write the bot's tier buttons make: memory AND the owner's DM
+                # session, so the choice survives a daemon restart. Writing memory
+                # alone (under the Bearer sentinel id, at that) was lost on restart
+                # and keyed to a user the bot never sees.
+                tg._set_user_tier_pref(owner, owner, tier, is_group=False)
+                applied = True
+            elif tg and hasattr(tg, "_user_model_prefs"):
                 if tier:
                     tg._user_model_prefs[user_id] = tier
                 else:

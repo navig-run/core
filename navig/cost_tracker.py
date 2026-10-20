@@ -1,8 +1,9 @@
 """
 LLM Cost Tracker — per-session token and USD cost accumulation.
 
-All pricing is driven by ``config/defaults.yaml`` so no USD figure is
-hardcoded in this module.
+Pricing: an operator ``cost_tracker.model_pricing`` table in config.yaml wins;
+otherwise the agent's maintained ``navig.agent.usage_tracker.PRICE_TABLE``. No USD
+figure is hardcoded in this module.
 
 Usage::
 
@@ -11,7 +12,7 @@ Usage::
     tracker = get_session_tracker()
     tracker.record(model="gpt-4o", input_tokens=150, output_tokens=80)
     print(tracker.format_summary())          # rich table
-    tracker.save()                           # flush to ~/.navig/session_costs.jsonl
+    # persisted once at process exit to <workspace>/session_costs.jsonl
 
 The tracker is a process-wide singleton keyed to the current session ID.
 Call ``reset_session_tracker()`` in tests to clear it.
@@ -202,17 +203,25 @@ class SessionCostTracker:
 
         return "\n".join(lines)
 
-    def save(self) -> None:
+    def has_usage(self) -> bool:
+        """True once at least one request has been recorded."""
+        with self._lock:
+            return bool(self._model_usage)
+
+    def save(self, history_file: Path | None = None) -> None:
         """
         Append a session snapshot to ``~/.navig/session_costs.jsonl``.
         Creates the file and parent directory if absent.
         Rotates (keeps last ``history_keep`` entries) automatically.
+
+        *history_file* overrides the resolved path — the exit flush passes the
+        path it pinned when the tracker was created (see ``_register_exit_flush``).
         """
         if not coerce_bool(self._cfg.get("persist", True), default=True):
             return
 
         snapshot = self._build_snapshot()
-        history_file = self._history_path()
+        history_file = history_file or self._history_path()
 
         try:
             history_file.parent.mkdir(parents=True, exist_ok=True)
@@ -287,10 +296,16 @@ class SessionCostTracker:
 
         Searches for the longest prefix match in ``cost_tracker.model_pricing``.
         Falls back to the ``default`` key (all zeros for local models).
+
+        With no operator table, prices come from the agent's maintained
+        ``PRICE_TABLE`` (see :meth:`_canonical_pricing`). The table in
+        ``config/defaults.yaml`` never reaches here — ``cm.get("cost_tracker")``
+        does not merge package defaults — so this branch used to return zeros
+        and every recorded session cost $0.00.
         """
         pricing_table: dict[str, Any] = self._cfg.get("model_pricing", {})
         if not pricing_table:
-            return {"input": 0.0, "output": 0.0, "cache_read": 0.0}
+            return self._canonical_pricing(model)
 
         # Same matching rule as the agent's per-turn tracker: exact, else the
         # longest key the model is a VARIANT of. A bare `startswith` let an
@@ -303,6 +318,22 @@ class SessionCostTracker:
 
         default = pricing_table.get(_DEFAULT_PRICING_KEY, {})
         return self._normalise_pricing(default)
+
+    @staticmethod
+    def _canonical_pricing(model: str) -> dict[str, float]:
+        """Per-1K pricing from the agent's audited table (which is per-1M)."""
+        try:
+            from navig.agent.usage_tracker import _lookup_price
+
+            per_m_in, per_m_out, per_m_cache, _per_m_write = _lookup_price(model)
+        except Exception as exc:  # noqa: BLE001 — a price lookup must never break a call
+            logger.debug("cost_tracker: canonical price lookup failed for %r: %s", model, exc)
+            return {"input": 0.0, "output": 0.0, "cache_read": 0.0}
+        return {
+            "input": per_m_in / 1000.0,
+            "output": per_m_out / 1000.0,
+            "cache_read": per_m_cache / 1000.0,
+        }
 
     @staticmethod
     def _normalise_pricing(raw: Any) -> dict[str, float]:
@@ -396,7 +427,37 @@ def get_session_tracker() -> SessionCostTracker:
 
         session_id = f"s{os.getpid()}-{int(time.time())}"
         _active_tracker = SessionCostTracker(session_id=session_id, config=cfg)
+        _register_exit_flush(_active_tracker)
         return _active_tracker
+
+
+def _register_exit_flush(tracker: SessionCostTracker) -> None:
+    """Persist this session's snapshot once, when the process exits.
+
+    ``record()`` is called on every LLM request (``llm/generate.py``,
+    ``agent/decide.py``) but nothing ever called ``save()``, so every session's
+    cost evaporated at exit and ``navig cost history`` read a file that was never
+    written. The tracker is per-process by design (one session per CLI
+    invocation), so one flush at exit is the natural write point.
+
+    The path is resolved NOW, not at exit: by the time ``atexit`` runs, a test
+    session has already restored its environment, and an exit-time lookup would
+    append the suite's fake costs to the operator's REAL history. A session that
+    recorded nothing writes nothing.
+    """
+    import atexit
+
+    try:
+        pinned = tracker._history_path()
+    except Exception as exc:  # noqa: BLE001 — cost history must never break a run
+        logger.debug("cost_tracker: no history path, exit flush skipped: %s", exc)
+        return
+
+    def _flush() -> None:
+        if tracker.has_usage():
+            tracker.save(history_file=pinned)
+
+    atexit.register(_flush)
 
 
 def reset_session_tracker() -> None:

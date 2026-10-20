@@ -124,7 +124,6 @@ def test_core_ships_the_assets_that_were_actually_lost() -> None:
         "agent/conv/locales/en.json",                # i18n
         "modes/builtin.yaml",                        # builtin modes
         "license/tiers.json",                        # tier spec
-        "browser/templates/generic.yaml",            # browser templates
         "contracts/schemas/block.schema.json",       # the block contract
     ):
         if (pkg / critical).exists():

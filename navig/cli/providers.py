@@ -149,7 +149,7 @@ def suggest_provider(command: str, argv: list[str]) -> bool:
                 "description": info.description,
             },
             "activate": (
-                f"navig plugin enable {info.plugin}"
+                f"navig store enable plugin:{info.plugin}"
                 if info.installed else f"navig store install {info.plugin}"
             ),
         }
@@ -158,42 +158,48 @@ def suggest_provider(command: str, argv: list[str]) -> bool:
 
     from navig import console_helper as ch
 
-    status = "installed, currently disabled" if info.installed else "not installed"
-    ch.info(f"'{command}' is provided by plugin [bold]{info.plugin}[/bold] ({status})")
-    if info.description:
-        ch.dim(f"  {info.description}")
-
-    interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    interactive = sys.stdin.isatty() and sys.stdout.isatty() or _env_flag("NAVIG_AUTO_PLUGIN")
     depth = int(os.environ.get(_ACTIVATE_DEPTH_ENV, "0") or 0)
-    if not interactive or depth >= 1:
-        verb = f"navig plugin enable {info.plugin}" if info.installed else f"navig store install {info.plugin}"
-        ch.dim(f"  Activate: {verb}")
+    activate = (
+        f"navig store enable plugin:{info.plugin}"
+        if info.installed else f"navig store install {info.plugin}"
+    )
+
+    if _env_flag("NAVIG_NO_AUTO_PLUGIN") or not interactive or depth >= 1:
+        status = "installed, currently disabled" if info.installed else "not installed"
+        ch.info(f"'{command}' is provided by plugin [bold]{info.plugin}[/bold] ({status})")
+        if info.description:
+            ch.dim(f"  {info.description}")
+        ch.dim(f"  Activate: {activate}")
         return True
 
-    import typer
-
+    # ── activate, then run what the user actually asked for ────────────────
+    # A command a user typed is an intention; answering it with homework (and two
+    # confirmation prompts) is what this replaces. Non-interactive callers keep the
+    # hint instead, so a pipeline never installs packages behind the user's back.
     try:
         if info.installed:
-            if not typer.confirm(f"Enable {info.plugin} now?", default=True):
-                return True
+            ch.dim(f"Enabling plugin {info.plugin}…")
             from navig.plugins.host import get_plugin_host
 
             get_plugin_host().enable(info.plugin)
-            ch.success(f"Plugin '{info.plugin}' enabled")
         else:
-            if not typer.confirm(f"Install {info.plugin} now?", default=True):
-                return True
+            ch.dim(f"Installing plugin {info.plugin} (first use)…")
             _install(info)
-    except Exception as exc:  # noqa: BLE001
-        ch.error("Activation failed", str(exc)[:300])
+    except Exception as exc:  # noqa: BLE001 — never mask the original exit
+        ch.error(f"Could not activate '{info.plugin}'", str(exc)[:300])
+        ch.dim(f"  Install it manually: {activate}")
         return True
 
-    if typer.confirm(f"Re-run `{' '.join(argv[1:])}`?", default=True):
-        env = dict(os.environ)
-        env[_ACTIVATE_DEPTH_ENV] = str(depth + 1)
-        result = subprocess.run([sys.executable, "-m", "navig.main", *argv[1:]], env=env)
-        raise SystemExit(result.returncode)
-    return True
+    env = dict(os.environ)
+    env[_ACTIVATE_DEPTH_ENV] = str(depth + 1)
+    result = subprocess.run([sys.executable, "-m", "navig.main", *argv[1:]], env=env)
+    raise SystemExit(result.returncode)
+
+
+def _env_flag(name: str) -> bool:
+    """True when an environment flag is set to something affirmative."""
+    return (os.environ.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def pip_install(package: str) -> None:

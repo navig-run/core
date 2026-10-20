@@ -4,7 +4,7 @@ A block is untrusted content that can execute commands and consume secrets, so
 these checks run **before** the runner touches a subprocess:
 
   * **Trust** — Stage 1 accepts blocks only from the first-party community
-    source (``navig-run/community/blocks/*``) or local paths flagged
+    source (``navig-run/registry/blocks/*``) or local paths flagged
     ``--dev-untrusted``. Community publishing stays disabled until publisher
     signing ships (Stage 3).
   * **Effective risk** — computed from a step's declared *capabilities*, never
@@ -28,10 +28,11 @@ from pathlib import Path
 from navig.core.json_io import atomic_write_json, load_json_for_update, load_json_safe
 from navig.core.proc_text import decode_console_result
 
-# First-party trusted source (owner/repo). Everything else needs --dev-untrusted
-# until publisher signing lands (Stage 3).
-TRUSTED_OWNER = "navig-run"
-TRUSTED_REPO = "community"
+# First-party trusted source (owner/repo) — named once, in navig.registry_repo, which
+# also accepts its former name. Everything else needs --dev-untrusted until publisher
+# signing lands (Stage 3).
+from navig.registry_repo import OWNER as TRUSTED_OWNER  # noqa: E402
+from navig.registry_repo import REPO as TRUSTED_REPO  # noqa: E402
 
 RISK_SAFE = "safe"
 RISK_MODERATE = "moderate"
@@ -65,7 +66,9 @@ class PolicyError(RuntimeError):
 
 
 def is_trusted_source(owner: str, repo: str) -> bool:
-    return owner == TRUSTED_OWNER and repo == TRUSTED_REPO
+    from navig.registry_repo import is_first_party
+
+    return is_first_party(owner, repo)
 
 
 def check_install_trust(owner: str | None, repo: str | None, *, dev_untrusted: bool) -> str:

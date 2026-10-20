@@ -11,7 +11,7 @@ Deck route), so a broken board was previously only visible through a web UI.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 import typer
 
@@ -158,10 +158,24 @@ def add_cmd(
         None, "--remind", "-r", help="Lead time, repeatable: -r 3d -r 1h"
     ),
     as_json: bool = typer.Option(False, "--json"),
+    # Annotated so a direct Python call that omits it gets a real None, not Typer's
+    # (truthy) OptionInfo placeholder.
+    at: Annotated[
+        str | None,
+        typer.Option(
+            "--at",
+            help='Exact due time; the text is then kept word for word. e.g. --at "2026-10-12 09:00"',
+        ),
+    ] = None,
 ) -> None:
-    """Capture a task. The date can be part of the sentence."""
+    """Capture a task. The date can be part of the sentence, or exact with --at.
+
+    This is also NAVIG's one-off reminder: a task with a due time pings Telegram at
+    that time, and ticking it off cancels the ping. Prefer it to a cron job, which
+    repeats every year on a pinned date.
+    """
     from navig.pim.clock import to_utc_iso  # noqa: PLC0415
-    from navig.pim.dates import split_due, split_recurrence  # noqa: PLC0415
+    from navig.pim.dates import parse_at, split_due, split_recurrence  # noqa: PLC0415
 
     line = " ".join(text).strip()
     if not line:
@@ -169,11 +183,29 @@ def add_cmd(
         raise typer.Exit(1)
 
     now = _now()
-    # Recurrence first: "every monday 9:30" must lose "every monday" before the date
-    # parser sees it, or the suffix rule matches "monday 9:30" and the recurrence
-    # stays in the title.
-    rest, recur = split_recurrence(line)
-    title, due = split_due(rest, now)
+    recur = None
+    if at is not None:
+        # --at means "I know the moment": the sentence is NOT parsed, so a date it
+        # mentions ("the scan from 30/09") can neither become the due date nor be
+        # cut out of the text.
+        title, due = line, parse_at(at, now)
+        if due is None:
+            ch.error(
+                f"I could not read a time in --at {at!r}.",
+                'Try: --at "2026-10-12 09:00" · --at "tomorrow 9am"',
+            )
+            raise typer.Exit(1)
+        if due <= now:
+            ch.error(
+                f"--at {at!r} is already in the past — a reminder there would never fire.",
+            )
+            raise typer.Exit(1)
+    else:
+        # Recurrence first: "every monday 9:30" must lose "every monday" before the date
+        # parser sees it, or the suffix rule matches "monday 9:30" and the recurrence
+        # stays in the title.
+        rest, recur = split_recurrence(line)
+        title, due = split_due(rest, now)
     if not title.strip():
         ch.error("That is a date with no task.", f'Try: navig todo add "Something {line}"')
         raise typer.Exit(1)
@@ -215,7 +247,7 @@ def when_cmd(
 ) -> None:
     """Give a task a date — or move the one it has."""
     from navig.pim.clock import to_utc_iso  # noqa: PLC0415
-    from navig.pim.dates import format_local, split_due  # noqa: PLC0415
+    from navig.pim.dates import format_local, parse_at, split_due  # noqa: PLC0415
 
     store = _store()
     todo = _resolve(store, todo_id)
@@ -227,7 +259,13 @@ def when_cmd(
     phrase = " ".join(when).strip()
     _, due = split_due(f"{todo['title']} {phrase}", now)
     if due is None:
-        ch.error(f"I could not read a date in {phrase!r}.", "Try: tomorrow 9am · next monday · sep 12")
+        # An exact ISO moment ("2026-10-12 09:00"), the same values `add --at` takes.
+        due = parse_at(phrase, now)
+    if due is None:
+        ch.error(
+            f"I could not read a date in {phrase!r}.",
+            "Try: tomorrow 9am · next monday · sep 12 · 2026-10-12 09:00",
+        )
         raise typer.Exit(1)
 
     updated = store.update_todo(todo["id"], {"due_at": to_utc_iso(due)})
@@ -410,6 +448,42 @@ def _resolve(store: Any, todo_id: str) -> dict[str, Any]:
         )
         raise typer.Exit(1)
     return matches[0]
+
+
+@todo_app.command("import-legacy")
+def import_legacy_cmd(as_json: bool = typer.Option(False, "--json")) -> None:
+    """Fold the old ~/.navig/tasks.json into this list — once.
+
+    The Mini App and NAVIG OS used a flat tasks file before the Planner existed.
+    This brings those tasks in (done ones stay done), keyed so running it twice
+    adds nothing, then retires the old file to tasks.json.imported.
+    """
+    from navig.pim import service  # noqa: PLC0415
+
+    try:
+        report = service.import_legacy_tasks()
+    except service.PlannerError as exc:
+        ch.error("Could not import the old tasks.", str(exc))
+        raise typer.Exit(1) from exc
+
+    if as_json:
+        ch.emit_json(report)
+        return
+
+    if report["found"] == 0 and report["path"] is None:
+        ch.info("Nothing to import.", "No ~/.navig/tasks.json was found.")
+        return
+    if report["imported"] == 0:
+        ch.info(
+            "Already up to date.",
+            f"{report['found']} old task(s) were imported before; nothing new.",
+        )
+        return
+    ch.success(
+        f"Imported {report['imported']} task(s)"
+        + (f", {report['completed']} already done" if report["completed"] else ""),
+        "The old file is kept as tasks.json.imported." if report["path"] else "",
+    )
 
 
 @todo_app.callback(invoke_without_command=True)

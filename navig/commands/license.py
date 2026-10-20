@@ -61,6 +61,30 @@ def license_paste(
     raise typer.Exit(code=1)
 
 
+@app.command("refresh")
+def license_refresh() -> None:
+    """Fetch your newest licence from navig.run (renewals, Bay purchases).
+
+    The gateway does this by itself every 12 hours; this runs it now.
+    """
+    from navig.license.refresh import refresh_once
+    ch = _ch()
+    result = refresh_once()
+    if result.outcome == "updated":
+        ch.success(f"Licence updated: {(result.tier or '').upper()}")
+        ch.dim("Restart `navig gateway` if it's running so the daemon picks it up.")
+    elif result.outcome == "unchanged":
+        ch.success("Licence is already the newest one.")
+        if result.detail:
+            ch.dim(f"  {result.detail}")
+    elif result.outcome == "skipped":
+        ch.info(f"Nothing to refresh: {result.detail}.")
+    else:
+        # unreachable / rejected: the existing licence was left untouched.
+        ch.error(f"Could not refresh the licence ({result.outcome}: {result.detail}). Your current licence is unchanged.")
+        raise typer.Exit(code=1)
+
+
 @app.command("show")
 def license_show() -> None:
     """Print the persisted license token in truncated form."""

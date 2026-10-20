@@ -25,6 +25,23 @@ from rich.table import Table
 from navig.cli.recovery import require_active_server
 from navig.config import get_config_manager
 from navig.console_helper import _safe_symbol, console
+from navig.monitoring.checks import (
+    CPU_COMMAND,
+    DISK_COMMAND,
+    LOAD_COMMAND,
+    MEM_COMMAND,
+    NETWORK_COMMAND,
+    RESOURCES_COMMAND,
+    memory_metrics,
+    parse_cpu,
+    parse_disk_output,
+    parse_memory_usage,
+    parse_network,
+    parse_resources,
+    parse_services,
+    service_status_command,
+    services_command,
+)
 from navig.remote import RemoteOperations
 
 try:
@@ -277,21 +294,11 @@ def monitor_resources(options: dict[str, Any]) -> None:
         _monitor_resources_local_windows(app_name, options)
         return
 
-    metrics = {}
-    alerts = []
-
     # -- QUANTUM VELOCITY E1: all 6 metrics in ONE SSH round-trip --
     # Previously: 6 separate SSH calls (~6x round-trip latency).
-    # Now: 1 batched command with delimited sections (~1x round-trip).
-    _BATCH = (
-        "echo '===CPU==='; top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | cut -d'%' -f1; "
-        "echo '===MEM==='; free | grep Mem | awk '{print ($3/$2) * 100.0, $3, $2}'; "
-        "echo '===DISK==='; df -h / | tail -1 | awk '{print $5, $3, $2, $4}' | sed 's/%//'; "
-        "echo '===LOAD==='; uptime | awk -F'load average:' '{print $2}' | xargs; "
-        "echo '===CONN==='; ss -s 2>/dev/null | grep 'TCP:' | awk '{print $2}'; "
-        "echo '===UPTIME==='; uptime -p"
-    )
-
+    # Now: 1 batched command with delimited sections (~1x round-trip). The recipe
+    # and its parser live in navig.monitoring.checks, so the library API
+    # (navig.monitoring.collect) reads a host through exactly this data path.
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -299,68 +306,10 @@ def monitor_resources(options: dict[str, Any]) -> None:
         transient=True,
     ) as progress:
         progress.add_task("Collecting metrics\u2026", total=None)
-        batch_result = remote.execute_command(_BATCH, server_config)
+        batch_result = remote.execute_command(RESOURCES_COMMAND, server_config)
 
-    # -- Parse delimited output --
-    if batch_result.returncode == 0:
-        _sections: dict = {}
-        _cur_key = None
-        for _line in batch_result.stdout.splitlines():
-            if _line.startswith("===") and _line.endswith("==="):
-                _cur_key = _line.strip("=").strip()
-                _sections[_cur_key] = []
-            elif _cur_key is not None:
-                _sections[_cur_key].append(_line)
-
-        # CPU
-        try:
-            cpu_usage = float(_sections.get("CPU", ["0"])[0].strip())
-            metrics["cpu"] = round(cpu_usage, 1)
-            if cpu_usage > 80:
-                alerts.append(f"High CPU usage: {cpu_usage}%")
-        except (ValueError, IndexError):
-            pass  # malformed value; skip
-
-        # Memory
-        try:
-            _p = _sections.get("MEM", ["0 0 0"])[0].strip().split()
-            mem_usage = float(_p[0])
-            mem_used = int(_p[1])
-            mem_total = int(_p[2])
-            metrics["memory"] = {
-                "usage_percent": round(mem_usage, 1),
-                "used_kb": mem_used,
-                "total_kb": mem_total,
-                "used_mb": round(mem_used / 1024, 1),
-                "total_mb": round(mem_total / 1024, 1),
-            }
-            if mem_usage > 80:
-                alerts.append(f"High memory usage: {mem_usage}%")
-        except (ValueError, IndexError):
-            pass  # malformed value; skip
-
-        # Disk
-        try:
-            _p = _sections.get("DISK", ["0 0 0 0"])[0].strip().split()
-            disk_usage = int(_p[0])
-            metrics["disk"] = {
-                "usage_percent": disk_usage,
-                "used": _p[1],
-                "total": _p[2],
-                "available": _p[3],
-            }
-            if disk_usage > 80:
-                alerts.append(f"High disk usage: {disk_usage}%")
-        except (ValueError, IndexError):
-            pass  # malformed value; skip
-
-        # Scalar metrics
-        if _sections.get("LOAD"):
-            metrics["load_average"] = _sections["LOAD"][0].strip()
-        if _sections.get("CONN"):
-            metrics["tcp_connections"] = _sections["CONN"][0].strip()
-        if _sections.get("UPTIME"):
-            metrics["uptime"] = _sections["UPTIME"][0].strip()
+    # -- Parse delimited output (shared with navig.monitoring.collect) --
+    metrics, alerts = parse_resources(batch_result.stdout, batch_result.returncode)
 
     # Display results
     if options.get("json_output"):
@@ -455,36 +404,19 @@ def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
         _monitor_disk_local_windows(app_name, threshold, options)
         return
 
-    # Get all disk partitions
-    disk_cmd = "df -h | grep -E '^/dev/'"
-    result = remote.execute_command(disk_cmd, server_config)
+    # Get all disk partitions (shared recipe + parser with navig.monitoring.collect)
+    disk_result = remote.execute_command(DISK_COMMAND, server_config)
+    disks = parse_disk_output(disk_result.stdout, disk_result.returncode)
 
-    if result.returncode != 0:
+    if disks is None:
         console.print("[red]\u2717[/red] Failed to retrieve disk information")
         return
 
-    disks = []
-    alerts = []
-
-    for line in result.stdout.strip().split("\n"):
-        # Parse: /dev/sda1  20G  15G  4.2G  79% /
-        match = re.match(r"(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\d+)%\s+(\S+)", line)
-        if match:
-            device, size, used, available, usage, mount = match.groups()
-            usage_int = int(usage)
-
-            disk_info = {
-                "device": device,
-                "size": size,
-                "used": used,
-                "available": available,
-                "usage_percent": usage_int,
-                "mount": mount,
-            }
-            disks.append(disk_info)
-
-            if usage_int > threshold:
-                alerts.append(f"{mount} is {usage_int}% full (threshold: {threshold}%)")
+    alerts = [
+        f"{disk['mount']} is {disk['usage_percent']}% full (threshold: {threshold}%)"
+        for disk in disks
+        if disk["usage_percent"] > threshold
+    ]
 
     # Display results
     if options.get("json_output"):
@@ -546,7 +478,7 @@ def monitor_services(options: dict[str, Any]) -> None:
     config = get_config_manager()
     app_name = require_active_server(options, config)
 
-    server_config = config.get_app_config(app_name)
+    server_config = config.load_server_config(app_name)
     # RemoteOperations takes the ConfigManager; server_config is an argument to
     # each call (only execute_command_parallel reads self.config, so this was a
     # latent wrong-type constructor rather than an immediate crash).
@@ -560,37 +492,10 @@ def monitor_services(options: dict[str, Any]) -> None:
         f"\n[cyan]{_safe_symbol(chr(0x1F527), '>>')} Service Health Check:[/cyan] {app_name}\n"
     )
 
-    # Critical services to monitor
-    services = [
-        "nginx",
-        "apache2",
-        "mysql",
-        "mariadb",
-        "postgresql",
-        "php8.3-fpm",
-        "php8.2-fpm",
-        "php8.1-fpm",
-        "php-fpm",
-        "hestia",
-        "fail2ban",
-        "ufw",
-        "ssh",
-        "sshd",
-        "redis-server",
-        "memcached",
-    ]
-
-    service_status = []
-    inactive_services = []
-
     # -- QUANTUM VELOCITY E2: all service checks in ONE SSH round-trip --
     # Previously: 1 SSH call per service x 16 services = 16 round-trips.
-    # Now: 1 batched command -> parse delimited output.
-    _BATCH_SVC = "; ".join(
-        f"echo '===SVC:{s}==='; systemctl is-active {s} 2>/dev/null || echo 'not-installed'"
-        for s in services
-    )
-
+    # Now: 1 batched command -> parse delimited output. Recipe + parser live in
+    # navig.monitoring.checks (shared with navig.monitoring.collect).
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -598,32 +503,12 @@ def monitor_services(options: dict[str, Any]) -> None:
         transient=True,
     ) as progress:
         progress.add_task("Checking services\u2026", total=None)
-        svc_batch = remote.execute_command(_BATCH_SVC, server_config)
+        svc_batch = remote.execute_command(services_command(), server_config)
 
     # -- Parse delimited output --
-    _svc_map: dict = {}
-    if svc_batch.returncode == 0:
-        _cur_svc = None
-        for _line in svc_batch.stdout.splitlines():
-            if _line.startswith("===SVC:") and _line.endswith("==="):
-                _cur_svc = _line[7:-3].strip()
-                _svc_map[_cur_svc] = []
-            elif _cur_svc is not None and _line.strip():
-                _svc_map[_cur_svc].append(_line.strip())
-
-    for service in services:
-        status = (_svc_map.get(service, ["unknown"])[0] or "unknown").strip()
-        service_info = {"name": service, "status": status}
-        if status == "active":
-            service_info["health"] = "healthy"
-        elif status == "inactive":
-            service_info["health"] = "stopped"
-            inactive_services.append(service)
-        elif status == "not-installed":
-            service_info["health"] = "not-installed"
-        else:
-            service_info["health"] = "unknown"
-        service_status.append(service_info)
+    service_status, inactive_services = parse_services(
+        svc_batch.stdout, svc_batch.returncode
+    )
 
     # Display results
     if options.get("json_output"):
@@ -686,7 +571,7 @@ def monitor_network(options: dict[str, Any]) -> None:
     config = get_config_manager()
     app_name = require_active_server(options, config)
 
-    server_config = config.get_app_config(app_name)
+    server_config = config.load_server_config(app_name)
     # RemoteOperations takes the ConfigManager; server_config is an argument to
     # each call (only execute_command_parallel reads self.config, so this was a
     # latent wrong-type constructor rather than an immediate crash).
@@ -700,16 +585,8 @@ def monitor_network(options: dict[str, Any]) -> None:
         f"\n[cyan]{_safe_symbol(chr(0x1F310), '>>')} Network Statistics:[/cyan] {app_name}\n"
     )
 
-    metrics = {}
-
     # -- QUANTUM VELOCITY E3: all network metrics in ONE SSH round-trip --
-    _BATCH_NET = (
-        "echo '===CONN==='; ss -s; "
-        "echo '===LISTEN==='; ss -tuln 2>/dev/null | grep -c LISTEN || echo 0; "
-        "echo '===ESTAB==='; ss -tn 2>/dev/null | grep -c ESTAB || echo 0; "
-        "echo '===IFACE==='; ip -s link show | grep -E '^[0-9]+:' | awk '{print $2}' | sed 's/:$//' | head -5"
-    )
-
+    # Recipe + parser live in navig.monitoring.checks (shared with collect).
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -717,33 +594,10 @@ def monitor_network(options: dict[str, Any]) -> None:
         transient=True,
     ) as progress:
         progress.add_task("Collecting network stats\u2026", total=None)
-        net_batch = remote.execute_command(_BATCH_NET, server_config)
+        net_batch = remote.execute_command(NETWORK_COMMAND, server_config)
 
     # -- Parse delimited output --
-    if net_batch.returncode == 0:
-        _net_sections: dict = {}
-        _cur_net = None
-        for _line in net_batch.stdout.splitlines():
-            if _line.startswith("===") and _line.endswith("==="):
-                _cur_net = _line.strip("=").strip()
-                _net_sections[_cur_net] = []
-            elif _cur_net is not None:
-                _net_sections[_cur_net].append(_line)
-
-        if _net_sections.get("CONN"):
-            metrics["connection_summary"] = "\n".join(_net_sections["CONN"]).strip()
-        try:
-            metrics["listening_ports"] = int((_net_sections.get("LISTEN", ["0"])[0] or "0").strip())
-        except ValueError:
-            pass  # malformed value; skip
-        try:
-            metrics["established_connections"] = int(
-                (_net_sections.get("ESTAB", ["0"])[0] or "0").strip()
-            )
-        except ValueError:
-            pass  # malformed value; skip
-        if _net_sections.get("IFACE"):
-            metrics["interfaces"] = [ln for ln in _net_sections["IFACE"] if ln.strip()]
+    metrics = parse_network(net_batch.stdout, net_batch.returncode)
 
     # Display results
     if options.get("json_output"):
@@ -892,7 +746,11 @@ def generate_report(options: dict[str, Any]) -> None:
     config = get_config_manager()
     app_name = require_active_server(options, config)
 
-    server_config = config.get_app_config(app_name)
+    # `get_app_config` never existed on ConfigManager (it was removed as API
+    # drift — tests/security/test_security_fixes.py pins its absence), so this
+    # line raised AttributeError on every real run: the MagicMock the tests hand
+    # the command invented it. load_server_config is the documented replacement.
+    server_config = config.load_server_config(app_name)
     # RemoteOperations takes the ConfigManager; server_config is an argument to
     # each call (only execute_command_parallel reads self.config, so this was a
     # latent wrong-type constructor rather than an immediate crash).
@@ -923,51 +781,48 @@ def generate_report(options: dict[str, Any]) -> None:
     ) as progress:
         task = progress.add_task("Collecting data...", total=4)
 
-        # Collect resource metrics
+        # Collect resource metrics — the recipes and parsers are the shared ones in
+        # navig.monitoring.checks, so this report reads a host through the same data
+        # path as `monitor_resources` and `navig.monitoring.collect`.
         progress.update(task, description="Collecting resources...")
         # CPU
-        cpu_cmd = "top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | cut -d'%' -f1"
-        cpu_result = remote.execute_command(cpu_cmd, server_config)
+        cpu_result = remote.execute_command(CPU_COMMAND, server_config)
         if cpu_result.returncode == 0:
-            cpu_usage = float(cpu_result.stdout.strip())
-            report["metrics"]["cpu"] = round(cpu_usage, 1)
-            if cpu_usage > 80:
-                report["alerts"].append(f"High CPU usage: {cpu_usage}%")
+            cpu_usage = parse_cpu(cpu_result.stdout)
+            if cpu_usage is not None:
+                report["metrics"]["cpu"] = round(cpu_usage, 1)
+                if cpu_usage > 80:
+                    report["alerts"].append(f"High CPU usage: {cpu_usage}%")
 
-        # Memory
-        mem_cmd = "free | grep Mem | awk '{print ($3/$2) * 100.0, $3, $2}'"
-        mem_result = remote.execute_command(mem_cmd, server_config)
+        # Memory — the report's own three-key dict (key order is its JSON shape).
+        mem_result = remote.execute_command(MEM_COMMAND, server_config)
         if mem_result.returncode == 0:
-            parts = mem_result.stdout.strip().split()
-            mem_usage = float(parts[0])
-            report["metrics"]["memory"] = {
-                "usage_percent": round(mem_usage, 1),
-                "used_mb": round(int(parts[1]) / 1024, 1),
-                "total_mb": round(int(parts[2]) / 1024, 1),
-            }
-            if mem_usage > 80:
-                report["alerts"].append(f"High memory usage: {mem_usage}%")
+            mem_raw = parse_memory_usage(mem_result.stdout)
+            if mem_raw is not None:
+                mem_usage, mem_used_kb, mem_total_kb = mem_raw
+                full_memory = memory_metrics(mem_usage, mem_used_kb, mem_total_kb)
+                report["metrics"]["memory"] = {
+                    "usage_percent": full_memory["usage_percent"],
+                    "used_mb": full_memory["used_mb"],
+                    "total_mb": full_memory["total_mb"],
+                }
+                if mem_usage > 80:
+                    report["alerts"].append(f"High memory usage: {mem_usage}%")
 
         # Disk
-        disk_cmd = "df -h | grep -E '^/dev/'"
-        disk_result = remote.execute_command(disk_cmd, server_config)
-        if disk_result.returncode == 0:
-            for line in disk_result.stdout.strip().split("\n"):
-                match = re.match(r"(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\d+)%\s+(\S+)", line)
-                if match:
-                    device, size, used, available, usage, mount = match.groups()
-                    usage_int = int(usage)
-                    report["disks"].append(
-                        {
-                            "device": device,
-                            "mount": mount,
-                            "size": size,
-                            "used": used,
-                            "usage_percent": usage_int,
-                        }
-                    )
-                    if usage_int > 80:
-                        report["alerts"].append(f"{mount} is {usage_int}% full")
+        disk_result = remote.execute_command(DISK_COMMAND, server_config)
+        for disk in parse_disk_output(disk_result.stdout, disk_result.returncode) or []:
+            report["disks"].append(
+                {
+                    "device": disk["device"],
+                    "mount": disk["mount"],
+                    "size": disk["size"],
+                    "used": disk["used"],
+                    "usage_percent": disk["usage_percent"],
+                }
+            )
+            if disk["usage_percent"] > 80:
+                report["alerts"].append(f"{disk['mount']} is {disk['usage_percent']}% full")
 
         progress.update(task, advance=1)
 
@@ -984,7 +839,7 @@ def generate_report(options: dict[str, Any]) -> None:
             "fail2ban",
         ]
         for service in services:
-            status_cmd = f"systemctl is-active {service} 2>/dev/null || echo 'not-installed'"
+            status_cmd = service_status_command(service)
             result = remote.execute_command(status_cmd, server_config)
             status = result.stdout.strip() if result.returncode == 0 else "unknown"
 
@@ -1005,8 +860,7 @@ def generate_report(options: dict[str, Any]) -> None:
         progress.update(task, advance=1)
 
         # Load average
-        load_cmd = "uptime | awk -F'load average:' '{print $2}' | xargs"
-        load_result = remote.execute_command(load_cmd, server_config)
+        load_result = remote.execute_command(LOAD_COMMAND, server_config)
         if load_result.returncode == 0:
             report["metrics"]["load_average"] = load_result.stdout.strip()
 

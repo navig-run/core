@@ -233,8 +233,8 @@ class TestMigrateLegacyApply:
         ctx = _ctx(tmp_path)
         action = m.plan(ctx)[0]
         with (
-            patch("navig.commands.init._migrate_legacy_windows_runtime_layout", return_value=None),
-            patch("navig.commands.init._migrate_legacy_documents_dir", return_value=None),
+            patch("navig.commands.init._migrate_legacy_windows_runtime_layout", return_value=True),
+            patch("navig.commands.init._migrate_legacy_documents_dir", return_value=True),
         ):
             result = m.apply(action, ctx)
         assert result.state == ModuleState.APPLIED

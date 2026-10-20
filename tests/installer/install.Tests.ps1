@@ -437,3 +437,53 @@ Describe "Main — phased structure" {
         $fn.Value | Should -Match 'Print-Failure'
     }
 }
+
+
+# ─────────────────────────────────────────────────────────────
+# Uninstall PATH cleanup — only NAVIG's own entries (2026-10-16)
+# ─────────────────────────────────────────────────────────────
+Describe "Select-NavigPathKeep" {
+    BeforeAll {
+        $Script:Shim = 'C:\Users\u\.local\bin'
+        $Script:NHome = 'C:\Users\u\.navig'
+    }
+
+    It "keeps the shim dir while another tool still lives in it (uv, pipx)" {
+        $kept = Select-NavigPathKeep -Entries @($Script:Shim, 'C:\Windows') -ShimDir $Script:Shim -NavigHome $Script:NHome -ShimDirInUse $true
+        $kept | Should -Contain $Script:Shim
+    }
+
+    It "drops the shim dir once NAVIG was its last occupant" {
+        $kept = Select-NavigPathKeep -Entries @("$($Script:Shim)\", 'C:\Windows') -ShimDir $Script:Shim -NavigHome $Script:NHome -ShimDirInUse $false
+        $kept | Should -Not -Contain "$($Script:Shim)\"
+        $kept | Should -Contain 'C:\Windows'
+    }
+
+    It "never drops an unrelated dir that merely contains 'navig' in its path" {
+        $dev = 'E:\projects\apps\navig\tools'
+        $kept = Select-NavigPathKeep -Entries @($dev) -ShimDir $Script:Shim -NavigHome $Script:NHome -ShimDirInUse $false
+        $kept | Should -Contain $dev
+    }
+
+    It "drops the runtime under ~\.navig and a legacy navig\bin dir" {
+        $entries = @("$($Script:NHome)\runtime\venv\Scripts", 'C:\Users\u\AppData\Local\navig\bin', 'C:\Tools')
+        $kept = Select-NavigPathKeep -Entries $entries -ShimDir $Script:Shim -NavigHome $Script:NHome -ShimDirInUse $false
+        @($kept) | Should -Be @('C:\Tools')
+    }
+
+    It "uses Select-NavigPathKeep and no broad '\.local\bin' or 'navig' match" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $fn  = [regex]::Match($src, '(?s)function Remove-NavigPathArtifacts \{.*?\n\}').Value
+        $fn | Should -Match 'Select-NavigPathKeep'
+        $fn | Should -Not -Match "notmatch '\(\?i\)\\\.local"
+    }
+}
+
+Describe "Install-Navig — NAVIG_INSTALL_SPEC" {
+    It "honours NAVIG_INSTALL_SPEC ahead of the PyPI spec (the clean-machine CI tier)" {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $fn  = [regex]::Match($src, '(?s)function Install-Navig \{.*?\n\}').Value
+        $fn | Should -Match 'NAVIG_INSTALL_SPEC'
+        $fn.IndexOf('NAVIG_INSTALL_SPEC') | Should -BeLessThan $fn.IndexOf('navig[interactive]==')
+    }
+}

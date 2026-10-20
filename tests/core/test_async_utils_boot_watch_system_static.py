@@ -80,10 +80,11 @@ class TestBootCmd:
             result = _runner.invoke(boot_app, ["run", "--dry-run"])
         assert result.exit_code != 0, "an unimplemented command must not report success"
 
-    def test_boot_no_args_shows_help(self):
+    def test_boot_no_args_points_at_the_service(self):
+        # #1871 superseded `navig boot`: a bare invocation names the replacement and exits 1.
         result = _runner.invoke(boot_app, [])
-        # no_args_is_help=True → exits with 0 and prints help
-        assert result.exit_code == 0 or "Usage" in (result.output or "")
+        assert result.exit_code == 1
+        assert "navig service status" in (result.output or "")
 
 
 # ---------------------------------------------------------------------------

@@ -12,8 +12,8 @@ taps are handled here, inside the gateway. See
 habits.csv a card belongs to.
 
 Callback data (Telegram caps it at 64 bytes):
-    hb:t:<label>:<yyyymmdd>   toggle a habit
-    hb:s:<score>:<yyyymmdd>   set the day's score
+    hb:t:<label>:<yyyymmdd>[:m]   toggle a habit (``:m`` = tapped on the morning card)
+    hb:s:<score>:<yyyymmdd>[:m]   set the day's score
     hb:x:<yyyymmdd>           close the day
 """
 
@@ -31,6 +31,8 @@ from navig.spaces import habit_tracker
 logger = logging.getLogger(__name__)
 
 CALLBACK_PREFIX = "hb:"
+#: Appended to a toggle/score callback from the MORNING card, so a tap keeps it one.
+MORNING_SUFFIX = ":m"
 
 
 def extension_is_off() -> bool:
@@ -337,6 +339,11 @@ def build_card(path: Path, day: str, morning: bool = False) -> tuple[str, dict[s
 
     keyboard: list[list[dict[str, str]]] = []
     stamp = _compact(day)
+    # The frame rides in the callback (`:m`), because a tap re-renders the card and
+    # the handler has nothing else to tell a morning card from an evening one — a
+    # tap on the 08:00 card used to come back as the evening "Чек-ин". Optional, so
+    # every card already in a chat keeps working.
+    frame = MORNING_SUFFIX if morning else ""
     for row in CHECKIN_ROWS:
         keyboard.append(
             [
@@ -347,7 +354,7 @@ def build_card(path: Path, day: str, morning: bool = False) -> tuple[str, dict[s
                     # which is why the card text localized and the buttons under
                     # it stayed in English.
                     "text": f"{MARK_DONE if done(label) else MARK_OPEN} {_word(label)}",
-                    "callback_data": f"{CALLBACK_PREFIX}t:{label}:{stamp}",
+                    "callback_data": f"{CALLBACK_PREFIX}t:{label}:{stamp}{frame}",
                 }
                 for label, _english in row
             ]
@@ -356,7 +363,7 @@ def build_card(path: Path, day: str, morning: bool = False) -> tuple[str, dict[s
         [
             {
                 "text": f"{'▶' if score == value else ''}{face}",
-                "callback_data": f"{CALLBACK_PREFIX}s:{value}:{stamp}",
+                "callback_data": f"{CALLBACK_PREFIX}s:{value}:{stamp}{frame}",
             }
             for value, face in SCORE_FACES
         ]
@@ -677,6 +684,8 @@ async def handle_callback(
     body = cb_data[len(CALLBACK_PREFIX) :]
     parts = body.split(":")
     action = parts[0] if parts else ""
+    # `hb:t:<label>:<day>:m` — the card being tapped is the morning one.
+    morning = action in ("t", "s") and len(parts) >= 4 and parts[3] == "m"
 
     try:
         if action == "t" and len(parts) >= 3:
@@ -726,7 +735,7 @@ async def handle_callback(
         logger.warning("habit check-in write failed (chat=%s): %s", chat_id, exc)
         return f"⚠️ {_t('habit.toast.save_failed')}"
 
-    text, keyboard = build_card(path, day)
+    text, keyboard = build_card(path, day, morning=morning)
     await _edit(channel, chat_id, message_id, text, keyboard)
     return toast
 
@@ -788,7 +797,12 @@ async def ask_for_journal(channel: Any, chat_id: int, day: str) -> None:
         logger.warning("journal prompt failed (chat=%s): %s", chat_id, exc)
         return
 
-    prompt_id = ((result or {}).get("result") or {}).get("message_id")
+    # `channel._api_call` returns the Message itself, not the {ok, result} envelope:
+    # reading ["result"]["message_id"] gave None, so the reply check — which needs
+    # the prompt's id — never accepted a journal entry. Same fix as body_actions.
+    from navig.checkins.state import message_id_of  # noqa: PLC0415
+
+    prompt_id = message_id_of(result)
     habit_tracker.set_journal_prompt(chat_id, day, prompt_id)
 
 

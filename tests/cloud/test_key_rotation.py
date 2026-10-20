@@ -252,3 +252,72 @@ def test_repoint_menu_button_also_sweeps_per_chat_overrides(monkeypatch):
     sets = [b for m, b in calls if m == "setChatMenuButton"]
     assert "chat_id" not in sets[0]                     # the default, first
     assert {"chat_id": 111, "menu_button": {"type": "default"}} in sets
+
+
+# ── remote NAVIG OS: devices hold the OLD tenant as their relay address ───────
+
+
+def test_paired_os_devices_are_surfaced_for_re_pairing(monkeypatch):
+    from navig.notify import signals
+    from navig.store import os_devices
+
+    monkeypatch.setattr(signals, "list_sources", lambda: [])
+
+    class _Store:
+        def list_devices(self):
+            return [{"id": "d1"}]
+
+    monkeypatch.setattr(os_devices, "get_os_device_store", lambda: _Store())
+    manual = dict(rotation.manual_repoint_urls(_cfg(**{"adapters.sms": None})))
+    assert "paired NAVIG OS devices" in manual
+
+
+def test_no_devices_means_nothing_to_say(monkeypatch):
+    from navig.notify import signals
+    from navig.store import os_devices
+
+    monkeypatch.setattr(signals, "list_sources", lambda: [])
+
+    class _Store:
+        def list_devices(self):
+            return []
+
+    monkeypatch.setattr(os_devices, "get_os_device_store", lambda: _Store())
+    assert "paired NAVIG OS devices" not in dict(rotation.manual_repoint_urls(_cfg(**{"adapters.sms": None})))
+
+
+def test_retire_reports_a_missing_daemon_as_none_not_an_error(monkeypatch):
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        dead_port = s.getsockname()[1]
+    monkeypatch.setattr("navig.gateway_client.gateway_base_url", lambda: f"http://127.0.0.1:{dead_port}")
+    assert rotation.retire_os_relay(timeout=0.5) is None
+
+
+def test_cloud_key_rotate_retires_the_relay_while_the_old_key_is_live(monkeypatch):
+    """Only the OLD key's uplink reaches the OLD tenant, so retire must run first."""
+    from typer.testing import CliRunner
+
+    from navig.cloud import deck_key
+    from navig.commands import cloud
+
+    class _Cfg(FakeConfig):
+        def set(self, key, value, scope="global"):
+            self._v[key] = value
+
+        def save(self, scope="global"):
+            pass
+
+    cfg = _Cfg(**{"deck.api_key": KEY})
+    key_when_retired: list[str] = []
+    monkeypatch.setattr(cloud, "_config", lambda: cfg)
+    monkeypatch.setattr(rotation, "retire_os_relay", lambda: key_when_retired.append(cfg.get("deck.api_key")) or True)
+    monkeypatch.setattr(deck_key, "backup", lambda key: True)
+    monkeypatch.setattr(cloud, "_repoint_telegram_webhook", lambda c: None)
+
+    result = CliRunner().invoke(cloud.app, ["key", "--rotate"], input="yes\n")
+    assert result.exit_code == 0, result.output
+    assert key_when_retired == [KEY], "retire must run while the old key is still the live one"
+    assert cfg.get("deck.api_key") != KEY

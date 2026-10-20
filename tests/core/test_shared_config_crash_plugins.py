@@ -158,7 +158,12 @@ class TestGetDefaultConfig:
         obj = ConfigSingleton.__new__(ConfigSingleton)
         cfg = obj._get_default_config()
         assert "plugins" in cfg
-        assert cfg["plugins"]["enabled"] is True
+        assert isinstance(cfg["plugins"], dict)
+        # The live key: PluginHost.enable/disable writes `disabled_plugins` and
+        # `navig store enable|disable` reads it back. This used to assert
+        # `cfg["plugins"]["enabled"] is True` — a master switch nothing in the tree
+        # ever read, so the test was pinning the fiction rather than the contract.
+        assert cfg["plugins"]["disabled_plugins"] == []
 
     def test_debug_log_false_by_default(self):
         from navig.core.shared_config import ConfigSingleton

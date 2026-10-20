@@ -63,6 +63,8 @@ Legend:
 | `/help` | Yes | `/help` | Full command reference |
 | `/helpme` | Alias/Hidden | `/helpme` | Command reference alias |
 | `/status` | Yes | `/status` | System and spaces status |
+| `/doctor` | Yes | `/doctor` | Engine health check, with Heal / Re-check / Restart buttons |
+| `/os` | Yes | `/os` | Is NAVIG Desktop running on this computer, and its paired devices |
 | `/models` | Yes | `/models [big|small|coder|auto]` | Active model routing table |
 | `/model` | Alias/Hidden | `/model [big|small|coder|auto]` | Alias for models |
 | `/routing` | Alias/Hidden | `/routing` | Alias for models |
@@ -93,7 +95,7 @@ Legend:
 |---|---|---|---|
 | `/docker` | Yes | `/docker [ps|logs <name>|restart <name>|all]` | Container actions |
 | `/logs` | Yes | `/logs <container-name>` | Container logs |
-| `/restart` | Yes | `/restart [daemon|<container-name>]` | Restart daemon/container |
+| `/restart` | Yes | `/restart [daemon|<container-name>]` | Restart the NAVIG engine (same safe path as the deck and NAVIG Desktop — on Windows the on-demand restart task) or a docker container |
 
 ### Database
 
@@ -169,7 +171,7 @@ Legend:
 | `/user` | Yes | `/user` | Profile/tier/session snapshot |
 | `/version` | Yes | `/version` | Version/runtime info |
 | `/debug` | Yes | `/debug` | Debug environment info |
-| `/trace` | Yes | `/trace` or `/trace debug on|off` | Trace + debug footer toggle |
+| `/trace` | Yes | `/trace` or `/trace debug on|off` | Trace + debug toggle; the **Latency** section shows the last 20 turns as stage bars (prep · first token · gen · tools, approval waits called out) |
 | `/autoheal` | Yes | `/autoheal [on|off|status|hive on|hive off]` | Auto-heal controls |
 
 ### AI

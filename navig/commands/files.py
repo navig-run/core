@@ -29,6 +29,20 @@ def _reject_mangled_remote(remote: str) -> None:
     raise typer.Exit(1)
 
 
+def _target_is_windows(server_config, remote_ops) -> bool:
+    """True when the remote is a Windows host — there ``C:\\x`` is a real path.
+
+    Trusts ``metadata.os`` first (free); only when it is unset does one cached
+    ``ver`` probe over SSH decide (see RemoteOperations.is_windows_target).
+    """
+    if "windows" in str((server_config.get("metadata") or {}).get("os", "")).lower():
+        return True
+    try:
+        return remote_ops.is_windows_target(server_config)
+    except Exception:  # noqa: BLE001 — probe failed: fall back to the POSIX rule
+        return False
+
+
 def upload_file_cmd(local: Path, remote: str | None, options: dict[str, Any]):
     """Upload file/directory."""
     from navig.config import get_config_manager
@@ -50,7 +64,9 @@ def upload_file_cmd(local: Path, remote: str | None, options: dict[str, Any]):
         ch.error(f"Local file not found: {local}")
         raise typer.Exit(2)
 
-    if _looks_mangled(remote):
+    server_config = config_manager.load_server_config(server_name)
+
+    if _looks_mangled(remote) and not _target_is_windows(server_config, remote_ops):
         _reject_mangled_remote(remote)
         return
 
@@ -58,7 +74,6 @@ def upload_file_cmd(local: Path, remote: str | None, options: dict[str, Any]):
 
     # Smart path detection
     if remote is None:
-        server_config = config_manager.load_server_config(server_name)
         web_root = server_config.get("paths", {}).get("web_root", "/tmp")
         remote = f"{web_root}/{local.name}"
         if not json_enabled:
@@ -78,8 +93,6 @@ def upload_file_cmd(local: Path, remote: str | None, options: dict[str, Any]):
 
     if not json_enabled:
         ch.info(f"Uploading: {local} -> {remote}")
-
-    server_config = config_manager.load_server_config(server_name)
 
     # Show progress for uploads
     if json_enabled:
@@ -130,7 +143,9 @@ def download_file_cmd(remote: str, local: Path | None, options: dict[str, Any]):
 
     server_name = require_active_server(options, config_manager)
 
-    if _looks_mangled(remote):
+    server_config = config_manager.load_server_config(server_name)
+
+    if _looks_mangled(remote) and not _target_is_windows(server_config, remote_ops):
         _reject_mangled_remote(remote)
         return
 
@@ -139,8 +154,6 @@ def download_file_cmd(remote: str, local: Path | None, options: dict[str, Any]):
         ch.dim(f"Auto-detected local path: {local}")
 
     ch.info(f"Downloading: {remote} -> {local}")
-
-    server_config = config_manager.load_server_config(server_name)
 
     # Show progress for downloads
     with ch.create_spinner("Transferring file..."):

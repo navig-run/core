@@ -40,6 +40,8 @@ PLUGINS = REPO / "plugins"
 # missing, so they are the point of the matrix rather than an afterthought.
 _ENV_MATRIX = [
     {},
+    {"NAVIG_CACHE_DIR": "/tmp/navig-parity-cache", "NAVIG_LOG_DIR": "/tmp/navig-parity-logs"},
+    {"LOCALAPPDATA": "/tmp/navig-parity-local", "XDG_CACHE_HOME": "/tmp/xdg-c", "XDG_STATE_HOME": "/tmp/xdg-s"},
     {"NAVIG_SYSTEM_SERVICE": "1"},
     {"NAVIG_CONFIG_DIR": "/tmp/navig-parity-cfg"},
     {"NAVIG_DATA_DIR": "/tmp/navig-parity-data"},
@@ -47,7 +49,12 @@ _ENV_MATRIX = [
     {"NAVIG_DATA_DIR": "/tmp/navig-parity-data", "NAVIG_SYSTEM_SERVICE": "1"},
 ]
 _CLEARED = ("NAVIG_CONFIG_DIR", "NAVIG_DATA_DIR", "NAVIG_SYSTEM_SERVICE", "NAVIG_VAULT_DIR",
-            "NAVIG_LOG_DIR", "NAVIG_STORE_DIR")
+            "NAVIG_LOG_DIR", "NAVIG_STORE_DIR", "NAVIG_CACHE_DIR", "LOCALAPPDATA",
+            "XDG_CACHE_HOME", "XDG_STATE_HOME")
+
+
+# Path functions that take an argument: called with a representative one.
+_ARGS: dict[str, tuple[str, ...]] = {"media_dir": ("images",)}
 
 
 def _compat_modules() -> list[tuple[str, object]]:
@@ -59,14 +66,20 @@ def _compat_modules() -> list[tuple[str, object]]:
     out = []
     if not PLUGINS.is_dir():
         return out
-    for f in sorted(PLUGINS.glob("navig-*/navig_*/_compat.py")):
-        spec = importlib.util.spec_from_file_location(f"_compat_probe_{f.parts[-2]}", f)
+    # navig-sdk's host module is the shared seam every standalone plugin uses, so its
+    # fallbacks are held to the same standard as a plugin's own _compat.
+    sources = sorted(PLUGINS.glob("navig-*/navig_*/_compat.py"))
+    sdk_host = REPO / "registry" / "sdk" / "python" / "navig_sdk" / "host.py"
+    assert sdk_host.is_file(), f"{sdk_host} moved — update this guard, do not let it go blind"
+    sources.append(sdk_host)
+    for f in sources:
+        spec = importlib.util.spec_from_file_location(f"_compat_probe_{f.parts[-2]}_{f.stem}", f)
         mod = importlib.util.module_from_spec(spec)
         try:
             spec.loader.exec_module(mod)
         except Exception as exc:  # noqa: BLE001 - a plugin that cannot load is its own problem
             pytest.fail(f"{f.relative_to(REPO)} failed to load standalone: {exc}")
-        out.append((f.parts[-3], mod))
+        out.append(("navig-sdk" if f == sdk_host else f.parts[-3], mod))
     return out
 
 
@@ -97,7 +110,8 @@ def test_every_plugin_compat_path_fallback_matches_core(monkeypatch: pytest.Monk
                 for k, v in env.items():
                     monkeypatch.setenv(k, v)
                 checked += 1
-                got, want = fallback(), core_fn()
+                args = _ARGS.get(name, ())
+                got, want = fallback(*args), core_fn(*args)
                 if got != want:
                     offenders.append(
                         f"{plugin}: _{name}_fallback() -> {got}  but navig resolves {want}"

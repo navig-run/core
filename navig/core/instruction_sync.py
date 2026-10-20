@@ -25,7 +25,6 @@ TARGET_PATHS: dict[str, str] = {
     "copilot": ".github/copilot-instructions.md",
     "cline": ".cline/memory.md",
     "vscode": ".vscode/settings.json",
-    "claude": ".claude/CLAUDE.md",
     "codex": ".codex/AGENTS.md",
     "gemini": ".gemini/GEMINI.md",
 }
@@ -35,6 +34,15 @@ TARGET_PATHS: dict[str, str] = {
 CHECKABLE = ("cursor", "copilot")
 
 MASTER_REL = ".github/instructions/MASTER.instructions.md"
+
+# Claude Code reads MASTER directly: the tracked root CLAUDE.md imports it with an `@` line.
+# The generated `.claude/CLAUDE.md` mirror is RETIRED — it was gitignored, so worktree sessions
+# never had one and the main checkout's copy silently went stale (it lagged MASTER by days and
+# contradicted the push gate's changelog rule). Generating it again would load MASTER twice.
+RETIRED_CLAUDE_MIRROR = ".claude/CLAUDE.md"
+# The closing line every generated mirror carries — how a stale generated copy is told apart from
+# a hand-written `.claude/CLAUDE.md`, which is never touched.
+_GENERATED_MARKER = "*Single Source of Truth. Run `.\\scripts\\sync-instructions.ps1` to propagate to all tools.*"
 
 # Case-insensitive to match PowerShell's `-match` / `-replace` default.
 _HEADING = re.compile(r"^##\s")
@@ -136,7 +144,8 @@ def check_drift(root: Path) -> list[tuple[str, str]]:
 def sync_all(root: Path, *, dry_run: bool = False) -> list[tuple[str, str, int]]:
     """Regenerate every mirror from MASTER. Returns [(rel_path, status, char_count)].
 
-    status ∈ {"written", "dry", "unparseable", "unchanged"}.
+    status ∈ {"written", "dry", "unparseable", "retired", "would-retire"} — the last two are the
+    removal of a stale generated `.claude/CLAUDE.md` (see RETIRED_CLAUDE_MIRROR).
     """
     raw = read_master(root)
     out: list[tuple[str, str, int]] = []
@@ -158,4 +167,15 @@ def sync_all(root: Path, *, dry_run: bool = False) -> list[tuple[str, str, int]]
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8", newline="\n")
         out.append((rel, "dry" if dry_run else "written", len(content)))
+
+    retired = root / RETIRED_CLAUDE_MIRROR
+    if retired.is_file():
+        try:
+            generated = retired.read_text(encoding="utf-8").rstrip().endswith(_GENERATED_MARKER)
+        except (OSError, UnicodeDecodeError):
+            generated = False  # unreadable → cannot prove it is ours → leave it
+        if generated:
+            if not dry_run:
+                retired.unlink()
+            out.append((RETIRED_CLAUDE_MIRROR, "would-retire" if dry_run else "retired", 0))
     return out

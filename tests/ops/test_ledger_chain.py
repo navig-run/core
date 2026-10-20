@@ -417,6 +417,20 @@ class TestLedgerVerifyCli:
         assert result.exit_code == 0, result.output
         assert "chain intact" in result.output
 
+    def test_output_names_the_file_it_verified(self, tmp_path):
+        """A verdict without its path is not a verdict.
+
+        Run from inside a checkout, `navig ledger verify` reads that repo's
+        scratch `.navig/history/operations.jsonl` rather than the operator's
+        ledger — so a scratch file's breakage reads as "the audit spine is
+        broken". The path on screen is what makes the verdict attributable.
+        """
+        rec = _make_recorder(tmp_path)
+        _write_ops(rec, 3)
+        result = self._invoke(["verify", "--path", str(_ledger(tmp_path))])
+        assert result.exit_code == 0, result.output
+        assert "operations.jsonl" in _flat(result.output)
+
     def test_broken_exits_one_and_names_the_line(self, tmp_path):
         rec = _make_recorder(tmp_path)
         _write_ops(rec, 5)

@@ -10,6 +10,7 @@ are pinned here; the tool is stdlib-only and imported by path, like the other co
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -70,11 +71,23 @@ def test_every_fragment_on_disk_is_valid(tool) -> None:
         assert f.kind in tool.KINDS
 
 
-def test_the_real_changelog_still_assembles(tool) -> None:
-    """The live file's Unreleased block must be one the assembler can address."""
-    text = (_CORE / "CHANGELOG.md").read_text(encoding="utf-8")
-    start, end = tool._unreleased_span(text)
-    assert "### " in text[start:end]
+def test_the_real_changelog_still_assembles(tool, tmp_path) -> None:
+    """The live file's Unreleased block must be one the assembler can address.
+
+    Proven against TODAY's real file instead of a filled block: ``release_text``
+    deliberately leaves [Unreleased] holding only the header template, so the live block
+    is empty after every release and a snapshot assertion stays red until someone runs
+    `npm run changelog:assemble` — which is exactly what happened after 3.26.0, failing
+    every session that added a fragment since. The promise here is that the assembler
+    can address the real file, so fold a probe fragment into a COPY of it and check the
+    sections land.
+    """
+    live = (_CORE / "CHANGELOG.md").read_text(encoding="utf-8")
+    core = _core(tmp_path, {"probe-fold.added.md": "- **Probe fold.** addressable\n"}, changelog=live)
+    assert tool.main(["--core", str(core)]) == 0
+    out = (core / "CHANGELOG.md").read_text(encoding="utf-8")
+    start, end = tool._unreleased_span(out)
+    assert "### " in out[start:end], "folding a fragment into the real file must yield sections"
 
 
 # ── assembling ───────────────────────────────────────────────────────────────
@@ -253,12 +266,24 @@ def test_release_refuses_a_malformed_fragment_before_touching_anything(tool, tmp
 
 
 def test_the_live_changelog_can_be_rotated(tool, tmp_path) -> None:
-    """The real file's [Unreleased] must be one --release can address, today — with a
-    version the file does not already hold, against a COPY."""
+    """Today's real file must be releasable — the way the release does it: fold, then rotate.
+
+    Rotating the raw file raises ``NothingToRelease`` for as long as [Unreleased] is
+    empty, i.e. after every release (see the test above for why that is normal). The
+    pipeline ``version_bump`` runs is assemble + rotate, so this folds a probe fragment
+    into a COPY of the real file first, then rotates with a version the file does not
+    already hold.
+    """
     live = (_CORE / "CHANGELOG.md").read_text(encoding="utf-8")
-    text, rotated = tool.release_text(live, "999.0.0", "2026-01-01")
+    core = _core(tmp_path, {"probe-fold.added.md": "- **Probe fold.** addressable\n"}, changelog=live)
+    assert tool.main(["--core", str(core)]) == 0
+    folded = (core / "CHANGELOG.md").read_text(encoding="utf-8")
+    text, rotated = tool.release_text(folded, "999.0.0", "2026-01-01")
     assert rotated
-    assert text.index("## [999.0.0]") < text.index("## [3.25.0]")
+    first = re.search(r"^## \[\d+\.\d+\.\d+\]", text, re.M)
+    assert first is not None and first.group(0) == "## [999.0.0]", (
+        "the new release must sit directly under [Unreleased], before every real one"
+    )
 
 
 # ── the GitHub Release body: one writer, never over GitHub's limit ───────────

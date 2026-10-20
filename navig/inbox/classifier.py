@@ -168,6 +168,20 @@ _CATEGORY_KEYWORDS: dict[str, list[str]] = {
 }
 
 
+# What each category is FOR — the options a decision model (Clef) chooses between.
+_CATEGORY_DESCRIPTIONS: dict[str, str] = {
+    "wiki/technical": "technical documentation: APIs, architecture, databases, deployment, debugging, design decisions",
+    "wiki/knowledge": "general knowledge: concepts, guides, tutorials, definitions, research, reference material",
+    "hub/tasks": "tasks and to-dos: work items, tickets, backlog, follow-ups, assignments",
+    "hub/roadmap": "plans and roadmap: milestones, releases being planned, goals, strategy, phases",
+    "hub/changelog": "changelogs and release notes: what shipped, what was fixed, added or removed",
+    "external/business": "business: investors, revenue, market, fundraising, pitch decks, stakeholders",
+    "external/marketing": "marketing: campaigns, social media, newsletters, branding, SEO, announcements",
+    "archive": "old or obsolete material kept only for history",
+    "ignore": "noise: empty, spam or irrelevant — should not be filed anywhere",
+}
+
+
 # ── BM25 implementation ───────────────────────────────────────
 
 
@@ -228,7 +242,7 @@ class ClassifyResult:
     category: str
     confidence: float  # 0.0 – 1.0
     alternatives: list[tuple[str, float]] = field(default_factory=list)
-    method: str = "bm25"  # "bm25" | "llm"
+    method: str = "bm25"  # "bm25" | "llm" | "clef"
     explanation: str = ""
 
 
@@ -268,11 +282,51 @@ class Classifier:
             Optional extra metadata string (e.g. URL domain).
         """
         if self.use_llm:
+            # The decision model first (opt-in: `navig decider on`) — it can only answer
+            # with one of the categories, and says how sure it is. None = off / unsure /
+            # unavailable → the LLM, then BM25, exactly as before.
+            clef = self._classify_clef(content, filename, extra_context)
+            if clef is not None:
+                return clef
             try:
                 return self._classify_llm(content, filename, extra_context)
             except Exception:
                 pass  # fall through to BM25
         return self._classify_bm25(content, filename)
+
+    # ── Decision-model path ───────────────────────────────
+
+    def _classify_clef(
+        self,
+        content: str,
+        filename: str,
+        extra_context: str | None,
+    ) -> ClassifyResult | None:
+        from navig.agent import decide
+
+        snippet = (content[:1200] + "…") if len(content) > 1200 else content
+        extra = f"Extra context: {extra_context}\n" if extra_context else ""
+        answers = decide.decide(
+            f"Filename: {filename}\n{extra}\nContent:\n{snippet}",
+            [
+                decide.choice(
+                    "category",
+                    "Which section of the knowledge base should this document be filed in?",
+                    _CATEGORY_DESCRIPTIONS,
+                )
+            ],
+            use="inbox_sort",
+        )
+        if not answers or "category" not in answers:
+            return None
+        d = answers["category"]
+        return ClassifyResult(
+            category=d.answer,
+            confidence=round(d.confidence, 4),
+            alternatives=[(c, round(p, 4)) for c, p in d.ranked() if c != d.answer][:3],
+            method="clef",
+            explanation=f"Clef decision model, {d.confidence:.0%} sure",
+        )
 
     # ── BM25 path ─────────────────────────────────────────
 

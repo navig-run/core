@@ -10,7 +10,9 @@ are deferred until actually needed to improve CLI startup time.
 import logging
 import os
 import sys
+import time
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -732,7 +734,11 @@ def init_command(
         "",
         "--profile",
         "-p",
-        help="Run installer profile without wizard: quickstart, node, operator, architect, system_standard, system_deep",
+        help=(
+            "Run installer profile without wizard. Installation profiles: "
+            "cli, minimal, server, full — legacy: quickstart, node, operator, "
+            "architect, system_standard, system_deep"
+        ),
     ),
     dry_run: bool = typer.Option(
         False,
@@ -767,6 +773,16 @@ def init_command(
         navig init --profile operator          # silent install (default profile)
         navig init --profile node --dry-run    # preview minimal setup
         navig init --profile system_standard   # + service daemon
+
+    Installation profiles (the four `install.sh -p/--profile` names) — each one
+    prints an effective-profile report under --dry-run and, when applied,
+    records itself in the config key `install.profile`:
+
+        navig init --profile cli              # CLI only, no service
+        navig init --profile minimal          # CLI + shell PATH, no service
+        navig init --profile server           # headless: gateway + scheduler daemon
+        navig init --profile full             # everything the default install runs
+        navig init --profile server --dry-run # preview the whole plan, change nothing
 
     Deep-links (interactive wizard only):
         navig init --provider      jump to AI-provider configuration
@@ -978,6 +994,217 @@ def run_command(
     run_remote_command(command, options, stdin=stdin, file=file, interactive=interactive)
 
 
+@app.command("procs")
+def procs_command(
+    target: str = typer.Argument("node", help="Group (node/python/chrome/...) or process-name substring"),
+    flat: bool = typer.Option(False, "--flat", help="One row per process instead of grouping by project"),
+    top: int = typer.Option(0, "--top", "-t", help="Show only the N biggest rows (0 = all)"),
+    idle: bool = typer.Option(
+        False, "--idle", help="Classify Claude Code sessions as idle / active / unknown (ignores TARGET)"
+    ),
+    idle_hours: float = typer.Option(24.0, "--idle-hours", help="With --idle: hours without activity that count as idle"),
+    by: str = typer.Option("project", "--by", help="Group by 'project' (default) or 'role' (CI gate, TypeScript, dev server, ...)"),
+    watch: float = typer.Option(0, "--watch", "-w", help="Redraw every N seconds until Ctrl-C (0 = once)"),
+    json_output: bool = typer.Option(False, "--json", help="Output raw JSON"),
+):
+    """Show which project each process belongs to, with memory and owner (read-only).
+
+    \b
+    The project is the git repo of the process's working directory; a linked
+    worktree reads as repo:worktree. The owner is the nearest agent session or
+    editor window up the parent chain. "detached" means the launcher is gone:
+    either deliberately backgrounded or a leftover.
+
+    \b
+    --idle lists every Claude Code session with a verdict. "idle" means no tool
+    is running, it has been open longer than --idle-hours and its transcript has
+    not been written for that long; "unknown" is never reaped. Reap the idle
+    ones with `navig kill claude-idle` (the conversations stay resumable).
+
+    \b
+    Examples:
+      navig procs                      # node processes grouped by project
+      navig procs python --flat        # every python process, one row each
+      navig procs claude --top 10      # the 10 biggest agent sessions
+      navig procs --idle               # which Claude sessions are leftovers
+      navig procs --by role            # node processes by job: CI gate, TypeScript, dev server
+      navig procs --watch 5            # live view, redrawn every 5 s
+      navig procs node --json
+
+    \b
+    The header shows CPU, free RAM, memory commit and the biggest process
+    FAMILIES machine-wide, so a heavy family the TARGET filter hides (agent
+    sessions, editors, a leaking desktop app) is still visible.
+    """
+    import json as _json
+
+    from navig.commands import processes
+
+    if idle:
+        sessions = processes.describe_processes(processes.find_processes_by_name(["claude"]))
+        sessions = [r for r in sessions if (r.get("name") or "").lower().removesuffix(".exe") == "claude"]
+        if not sessions:
+            typer.echo("No Claude Code sessions running.")
+            raise typer.Exit(0)
+        order = {"idle": 0, "unknown": 1, "young": 2, "active": 3, "self": 4}
+        rows = sorted(
+            processes.classify_claude_sessions(sessions, idle_hours),
+            key=lambda r: (order.get(r["verdict"], 9), -(r.get("idle_h") or 0), -r["mem_mb"]),
+        )
+        if json_output:
+            typer.echo(_json.dumps(rows, indent=2, default=str))
+            raise typer.Exit(0)
+        from navig import console_helper as ch
+        from navig.console_helper import Table
+
+        tone = {"idle": "yellow", "unknown": "dim", "young": "cyan", "active": "green", "self": "magenta"}
+        t = Table(box=None, show_header=True, padding=(0, 2))
+        for col, just in (("PID", "right"), ("Verdict", "left"), ("RAM", "right"), ("Open", "right"),
+                          ("Last write", "right"), ("Project", "left"), ("Why", "left")):
+            t.add_column(col, justify=just, no_wrap=col != "Why")
+        for r in rows[:top] if top else rows:
+            where = r["project"] or ("<unreadable>" if not r["readable"] else "")
+            last = f"{r['idle_h']:g}h ago" if r.get("idle_h") is not None else "—"
+            t.add_row(str(r["pid"]), f"[{tone.get(r['verdict'], 'dim')}]{r['verdict']}[/]",
+                      f"{r['mem_mb'] / 1024:.2f} GB", f"{r['age_s'] / 3600:.1f}h", last, where, f"[dim]{r['reason']}[/dim]")
+        ch.console.print(t)
+        reap = [r for r in rows if r["verdict"] == "idle"]
+        counts = {v: sum(1 for r in rows if r["verdict"] == v) for v in order}
+        ch.console.print(
+            f"\n{len(rows)} session(s): [yellow]{counts['idle']} idle[/yellow] "
+            f"(~{sum(r['mem_mb'] for r in reap) / 1024:.1f} GB) · "
+            f"[green]{counts['active'] + counts['self']} active[/green] · "
+            f"[cyan]{counts['young']} young[/cyan] (open under {idle_hours:g}h, not judged) · "
+            f"{counts['unknown']} unknown"
+        )
+        if reap:
+            ch.console.print(f"[dim]Reap the idle ones: navig kill claude-idle --idle-hours {idle_hours:g}[/dim]")
+        elif counts["young"]:
+            ch.console.print(f"[dim]Judge younger sessions with a shorter threshold: navig procs --idle --idle-hours 4[/dim]")
+        raise typer.Exit(0)
+
+    if by not in ("project", "role"):
+        typer.echo("--by must be 'project' or 'role'.", err=True)
+        raise typer.Exit(2)
+
+    def _snapshot() -> tuple[list, Any]:
+        rows = processes.describe_processes(processes.find_processes_by_group(target))
+        if flat:
+            rows.sort(key=lambda r: -r["mem_mb"])
+            return rows, rows[:top] if top else rows
+        groups = processes.summarize_by_role(rows) if by == "role" else processes.summarize_by_project(rows)
+        return rows, groups[:top] if top else groups
+
+    if json_output:
+        if watch:
+            typer.echo("--watch cannot be combined with --json.", err=True)
+            raise typer.Exit(2)
+        _, shown = _snapshot()
+        typer.echo(_json.dumps(shown, indent=2, default=str))
+        raise typer.Exit(0)
+
+    if not watch:
+        _render_procs(processes, target, flat, by, _snapshot)
+        raise typer.Exit(0)
+
+    from navig import console_helper as ch
+
+    try:
+        while True:
+            ch.console.clear()
+            _render_procs(processes, target, flat, by, _snapshot)
+            ch.console.print(f"[dim]refreshing every {watch:g}s - Ctrl-C to stop[/dim]")
+            time.sleep(max(0.5, watch))
+    except KeyboardInterrupt:
+        raise typer.Exit(0)
+
+
+def _gb(mb: float) -> str:
+    return f"{mb / 1024:.2f} GB"
+
+
+def _render_procs(processes: Any, target: str, flat: bool, by: str, snapshot: Any) -> bool:
+    """Draw the machine header + the process table. Returns False when nothing matched."""
+    from navig import console_helper as ch
+    from navig.console_helper import Table
+
+    m = processes.machine_summary()
+    cpu = m.get("cpu_percent")
+    free, total = m.get("ram_free_gb"), m.get("ram_total_gb")
+    used, ctotal = m.get("commit_used_gb"), m.get("commit_total_gb")
+
+    def _tone(pct, warn, bad):
+        if pct is None:
+            return "dim"
+        return "red" if pct >= bad else "yellow" if pct >= warn else "green"
+
+    head = Table(box=None, show_header=False, padding=(0, 2))
+    for _ in range(3):
+        head.add_column(no_wrap=True)
+    ram_pct = None if not (free is not None and total) else 100 * (1 - free / total)
+    head.add_row(
+        f"[{_tone(cpu, 70, 90)}]CPU {cpu:.0f}%[/]" if cpu is not None else "[dim]CPU ?[/dim]",
+        f"[{_tone(ram_pct, 80, 92)}]RAM {free:.1f} GB free of {total:.0f} GB[/]" if ram_pct is not None else "[dim]RAM ?[/dim]",
+        f"commit {used:.0f} / {ctotal:.0f} GB - {m.get('processes', 0)} processes" if used is not None else "",
+    )
+    ch.console.print(head)
+    if m.get("families"):
+        ch.console.print("[dim]  biggest process families, by private memory:[/dim]")
+        fam = Table(box=None, show_header=True, padding=(0, 2))
+        fam.add_column("Family", no_wrap=True)
+        fam.add_column("Procs", justify="right", no_wrap=True)
+        fam.add_column("Private", justify="right", no_wrap=True)
+        for f in m["families"]:
+            fam.add_row(f["name"], str(f["count"]), f"{f['private_gb']:.1f} GB")
+        ch.console.print(fam)
+    ch.console.print()
+
+    rows, shown = snapshot()
+    if not rows:
+        ch.console.print(f"No matching processes for '{target}'.")
+        return False
+    t = Table(box=None, show_header=True, padding=(0, 2))
+    if flat:
+        cols = (("PID", "right"), ("RAM", "right"), ("Age", "right"), ("Project", "left"), ("Kind", "left"), ("Owner", "left"))
+        for col, just in cols:
+            t.add_column(col, justify=just, no_wrap=col != "Owner")
+        for r in shown:
+            where = r["project"] or ("<unreadable>" if not r["readable"] else "")
+            owner = r["owner"] or ("[yellow]detached[/yellow]" if r["detached"] else "")
+            t.add_row(str(r["pid"]), _gb(r["mem_mb"]), f"{r['age_s'] / 3600:.1f}h", where, r["kind"], owner)
+    else:
+        first = "Role" if by == "role" else "Project"
+        who_col = "Projects" if by == "role" else "Owner"
+        cols = (("RAM", "right"), ("Procs", "right"), (first, "left"), (who_col, "left"), ("What", "left"))
+        for col, just in cols:
+            t.add_column(col, justify=just, no_wrap=col in ("RAM", "Procs", first))
+        for g in shown:
+            kinds = ", ".join(f"{k} x{n}" if n > 1 else k for k, n in list(g["kinds"].items())[:5])
+            names = g["projects"] if by == "role" else g["owners"]
+            who = ", ".join(names[:3]) + (f" +{len(names) - 3}" if len(names) > 3 else "")
+            if g["detached"]:
+                who = (who + "; " if who else "") + f"[yellow]{g['detached']} detached[/yellow]"
+            t.add_row(_gb(g["mem_mb"]), str(g["count"]), g.get("role") or g.get("project"), who, f"[dim]{kinds}[/dim]")
+    ch.console.print(t)
+
+    total_mb = sum(r["mem_mb"] for r in rows)
+    unreadable = sum(1 for r in rows if not r["readable"])
+    detached = sum(1 for r in rows if r.get("detached"))
+    nudge = f"{len(rows)} {target} process(es) - {total_mb / 1024:.2f} GB"
+    if detached:
+        nudge += f" - {detached} detached"
+    if by == "project" and not flat:
+        nudge += " - by job: navig procs --by role"
+    nudge += " - idle agents: navig procs --idle"
+    ch.console.print(f"[dim]{nudge}[/dim]")
+    if unreadable:
+        hint = "an elevated shell" if sys.platform == "win32" else "root"
+        ch.console.print(
+            f"[dim]{unreadable} unreadable (owned by an elevated parent) - rerun from {hint} to see their project[/dim]"
+        )
+    return True
+
+
 @app.command("kill")
 def kill_command(
     target: str = typer.Argument(..., help="Group (node/python/chrome-tabs/...) or process-name substring"),
@@ -986,13 +1213,17 @@ def kill_command(
     include_self: bool = typer.Option(
         False, "--include-self", help="Don't protect this process's PID + parent PID (dangerous)"
     ),
+    idle_hours: float = typer.Option(
+        24.0, "--idle-hours", help="claude-idle only: hours without activity that count as idle"
+    ),
 ):
     """Kill processes by group or name (cross-platform).
 
     \b
     Built-in groups:
       node, python, powershell, pwsh, conhost, windows-terminal,
-      esbuild, git, chrome, chrome-tabs, chrome-all-renderers
+      esbuild, git, chrome, chrome-tabs, chrome-all-renderers,
+      claude-idle (Claude Code sessions `navig procs --idle` calls idle)
 
     \b
     Examples:
@@ -1000,8 +1231,32 @@ def kill_command(
       navig kill chrome-tabs           # kill Chrome tab renderers (keeps browser + extensions)
       navig kill esbuild --force       # SIGKILL all esbuild
       navig kill node --dry-run        # list what would be killed
+      navig kill claude-idle -n        # preview leftover Claude sessions, then drop -n
     """
     from navig.commands import processes
+
+    if target.strip().lower() == "claude-idle":
+        cands = processes.find_idle_claude_sessions(idle_hours)
+        if not cands:
+            typer.echo(f"No Claude Code session has been idle for {idle_hours:g}h.")
+            raise typer.Exit(0)
+        total = sum(r["mem_mb"] for r in cands)
+        verb = "Would reap" if dry_run else "Reaping"
+        typer.echo(f"{verb} {len(cands)} idle Claude session(s) (~{total / 1024:.1f} GB); conversations stay resumable:")
+        for r in sorted(cands, key=lambda r: -(r["idle_h"] or 0)):
+            where = r["project"] or "<unreadable>"
+            typer.echo(f"  pid={r['pid']:>6}  {r['mem_mb']:>5.0f} MB  {where:<28} {r['reason']}")
+        if dry_run:
+            raise typer.Exit(0)
+        report = processes.kill_processes(cands, force=True, exclude_self=not include_self)
+        k, f = len(report["killed"]), len(report["failed"])
+        typer.echo(f"Reaped {k}, failed {f}.")
+        if f:
+            if any("access denied" in str(x.get("reason", "")) for x in report["failed"]):
+                hint = "an elevated shell" if sys.platform == "win32" else "root"
+                typer.echo(f"  Some sessions belong to an elevated editor - rerun from {hint}.")
+            raise typer.Exit(1)
+        raise typer.Exit(0)
 
     if dry_run:
         report = processes.kill_group(target, dry_run=True)
@@ -1009,9 +1264,12 @@ def kill_command(
         if not cands:
             typer.echo(f"No matching processes for '{target}'.")
             raise typer.Exit(0)
-        typer.echo(f"Would kill {len(cands)} process(es) matching '{target}':")
-        for c in cands[:50]:
-            typer.echo(f"  pid={c['pid']:>6}  name={c['name']}")
+        rows = sorted(processes.describe_processes(cands), key=lambda r: -r["mem_mb"])
+        total = sum(r["mem_mb"] for r in rows)
+        typer.echo(f"Would kill {len(cands)} process(es) matching '{target}' (~{total / 1024:.2f} GB):")
+        for r in rows[:50]:
+            where = r["project"] or ("<unreadable>" if not r["readable"] else "")
+            typer.echo(f"  pid={r['pid']:>6}  {r['mem_mb']:>8.0f} MB  {where:<28} {r['kind']}")
         if len(cands) > 50:
             typer.echo(f"  ... +{len(cands) - 50} more")
         raise typer.Exit(0)
@@ -1164,15 +1422,10 @@ def quickstart_command(ctx: typer.Context):
     quickstart(ctx.obj)
 
 
-@app.command("install")
-def install_package(
-    ctx: typer.Context,
-    package: str = typer.Argument(..., help="Package or command to install"),
-):
-    """Auto-detect package manager and install."""
-    from navig.commands.remote import install_remote_package
-
-    install_remote_package(package, ctx.obj)
+# `navig install` is the community-asset group (navig.commands.install). An inline
+# `install <package>` command used to be declared here too, but the group registered
+# under the same name always won, so it was unreachable; installing a package on a
+# remote host is `navig host maintenance install <package>`.
 
 
 # ── hosts/software/local → navig.commands.local, web_app → navig.commands.webserver
@@ -1339,8 +1592,11 @@ def quick_start(
 # for every CLI invocation.
 #
 # Optimisation: if the first CLI argument matches an *inline* command
-# (one that is defined in this file), we skip all external imports
-# entirely — saving ~200 ms on hot paths like ``navig host list``.
+# (one that is defined in this file), we skip all external imports entirely —
+# no `navig.commands.*` module is imported on hot paths like ``navig host list``.
+# The saving is real but UNMEASURED: this line asserted "~200 ms" with no
+# benchmark behind it, in the same file family that claimed sub-50 ms startup
+# while measuring 80-90 ms. Quote a number here only once it has been measured.
 #
 # P1-14: Registration logic extracted to navig/cli/registration.py
 # ============================================================================

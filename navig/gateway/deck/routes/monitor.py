@@ -42,16 +42,22 @@ def _err(msg: str, status: int = 500) -> "web.Response":
 # the loop stays responsive, and (b) cache each result for a short TTL so the
 # Deck's 30s polls and multiple concurrent consumers share one collection.
 _TTL_SECONDS = 8.0
+# A reading older than the TTL is still served at once, as long as it is younger than this,
+# while a refresh runs behind it. A collection can be slow: the CPU section's top-process
+# walk took 6–11 s inside the daemon (0.12 s from a shell). psutil times every process,
+# and for each process the daemon's token may not open, it falls back to a snapshot of
+# the WHOLE process table (`_pswindows.cpu_times` → `_proc_info`), seen in a py-spy dump.
+# The dashboard polls less often than the TTL, so before this every poll was cold. On a
+# linked NAVIG OS that cold poll plus the relay crossed the 15 s proxy ceiling and the
+# dashboard read "No brain connected".
+_STALE_SERVE_SECONDS = 300.0
 _cache: dict[str, tuple[float, object]] = {}
 _locks: dict[str, asyncio.Lock] = {}
+_refreshing: set[str] = set()
 
 
-async def _cached(key: str, fn: Callable[[], object]) -> object:
-    now = time.monotonic()
-    hit = _cache.get(key)
-    if hit is not None and now - hit[0] < _TTL_SECONDS:
-        return hit[1]
-    # One in-flight collection per key — concurrent callers await the same result
+async def _collect(key: str, fn: Callable[[], object]) -> object:
+    # One in-flight collection per key: concurrent callers await the same result
     # instead of each spawning their own (possibly slow) scan.
     lock = _locks.setdefault(key, asyncio.Lock())
     async with lock:
@@ -63,8 +69,50 @@ async def _cached(key: str, fn: Callable[[], object]) -> object:
         return data
 
 
+def _refresh_behind(key: str, fn: Callable[[], object]) -> None:
+    if key in _refreshing:
+        return
+    _refreshing.add(key)
+
+    async def _run() -> None:
+        try:
+            await _collect(key, fn)
+        finally:
+            _refreshing.discard(key)
+
+    from navig.core.background import spawn  # noqa: PLC0415
+
+    spawn(_run(), name=f"deck-monitor-refresh:{key}")
+
+
+async def _cached(key: str, fn: Callable[[], object]) -> object:
+    hit = _cache.get(key)
+    if hit is not None:
+        age = time.monotonic() - hit[0]
+        if age < _TTL_SECONDS:
+            return hit[1]
+        if age < _STALE_SERVE_SECONDS:
+            _refresh_behind(key, fn)
+            return hit[1]
+    return await _collect(key, fn)
+
+
+async def warm_monitor_cache(_app: object = None) -> None:
+    """Collect the dashboard snapshot once at startup, so the first poll is not cold.
+
+    Registered as an aiohttp ``on_startup`` hook; runs behind the start, never blocks it.
+    """
+    _refresh_behind("all", monitor.get_all_monitoring)
+
+
 async def handle_deck_monitor_all(request: "web.Request") -> "web.Response":
     try:
+        # ?scope=vitals → cpu/mem/disk/uptime only, for the dashboards' 5s poll:
+        # services + listening ports are the expensive half and no dashboard shows
+        # them. Its own cache key, so it can never serve (or be served by) the full
+        # snapshot.
+        if request.query.get("scope") == "vitals":
+            return _ok(await _cached("vitals", monitor.get_vitals))
         # ?services=all → every installed service with its real status (the
         # System app's "Show all services" setting). Separate cache key — the
         # two variants must not serve each other's payload.

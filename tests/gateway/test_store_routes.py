@@ -98,6 +98,69 @@ async def test_action_install_fires_contract(monkeypatch):
     assert events and events[0] == {"kind": "install", "id": "some-mod"}
 
 
+# ── the versioned envelope NAVIG OS reads ─────────────────────────────────────
+
+
+class _GetReq:
+    """Enough of a request for the READ endpoint (it reads `.query`, not `.json`)."""
+
+    query: dict = {}
+
+
+def _body(resp) -> dict:
+    import json
+
+    return json.loads(resp.body.decode("utf-8"))
+
+
+async def test_the_store_read_carries_the_api_version(monkeypatch):
+    """NAVIG OS must be able to tell a core that understands it from one that does not.
+
+    The envelope rides the endpoint the OS already polls rather than a second `/v1`
+    route — a parallel path would be a second surface to keep in step, and the
+    catalog would then exist twice.
+    """
+    import navig.hub as hub
+
+    class _Item:
+        def to_dict(self):
+            return {"id": "demo"}
+
+    monkeypatch.setattr(hub, "collect_store", lambda **kwargs: [_Item()])
+    monkeypatch.setattr(hub, "store_status", lambda items: {"total": len(items)})
+
+    resp = await store.handle_deck_store(_GetReq())
+    assert resp.status == 200
+    assert _body(resp)["api_version"] == store.STORE_API_VERSION
+    assert _body(resp)["items"] == [{"id": "demo"}]  # additive only — nothing moved
+
+
+async def test_mutations_carry_the_same_version(monkeypatch):
+    """A client reading the version must see it on writes too, or the check it
+    performs on the response is only half true."""
+    import navig.hub as hub
+
+    monkeypatch.setattr(hub, "apply_action", lambda item_id, action: {"ok": True})
+    _spy_contract(monkeypatch)
+
+    resp = await store.handle_deck_store_action(_Req({"action": "enable", "id": "demo"}))
+    assert resp.status == 200
+    assert _body(resp)["api_version"] == store.STORE_API_VERSION
+
+
+async def test_an_error_response_carries_it_too():
+    """Otherwise a failure is indistinguishable from a core too old to know the field."""
+    resp = await store.handle_deck_store_action(_Req({"action": "enable"}))
+    assert resp.status == 400
+    assert _body(resp)["api_version"] == store.STORE_API_VERSION
+
+
+def test_the_version_is_pinned_not_floating():
+    """A version that drifts on its own is worse than none: every consumer that
+    asserted `== 1` would start failing on an additive release."""
+    assert store.STORE_API_VERSION == 1
+
+
 async def test_failed_action_fires_no_contract(monkeypatch):
     import navig.hub as hub
 

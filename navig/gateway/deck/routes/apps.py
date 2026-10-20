@@ -202,9 +202,11 @@ async def handle_deck_apps_health(request: "web.Request") -> "web.Response":
 
     jobs, _ = await _async_load_cron_jobs()
     habit_jobs = [j for j in jobs if j.get("name", "").startswith(HABIT_NAME_PREFIX)]
-    completed_today = sum(
-        1 for j in habit_jobs if (j.get("last_run") or "").startswith(today)
-    )
+    # "Done" is read from the RECORDS, never from the job's last_run: a job that
+    # ran only means the bot ASKED. Counting that as done reported every habit
+    # complete the moment its reminder fired, answered or not.
+    completed_today = await asyncio.to_thread(_habits_done_today, habit_jobs, today)
+    checkins = await asyncio.to_thread(_checkins_today)
 
     body: dict[str, Any] = {
         "weight_kg": None,
@@ -259,10 +261,124 @@ async def handle_deck_apps_health(request: "web.Request") -> "web.Response":
         "heart_rate_zone": None,
         "habits_total": len(habit_jobs),
         "habits_done_today": completed_today,
+        "checkins": checkins,
     })
 
 
+def _habits_path() -> Path:
+    """The habits.csv to read with no chat to identify one (cf. body_metrics.default_path)."""
+    from navig.spaces import habit_tracker as ht
+
+    state = ht._read_state()
+    paths = {ht._chat_state(state, int(k)).get("path") for k in state if str(k).lstrip("-").isdigit()}
+    paths.discard(None)
+    if len(paths) == 1:
+        return Path(next(iter(paths)))
+    return ht.tracker_path()
+
+
+def _habits_done_today(habit_jobs: list[dict], today: str) -> int:
+    """How many habit jobs have a DONE record today — habits.csv, metrics.csv.
+
+    A habit is ``habit:<label>`` and is done when habits.csv holds a done row for
+    ``(today, label)``. The two legacy body jobs that still wear the ``habit:``
+    prefix are answered in metrics.csv instead: the weigh-in by today's weight,
+    the weekly card by today's mood or sleep. An unreadable record counts as not
+    done — never as done.
+    """
+    done = 0
+    try:
+        from navig.spaces import habit_tracker as ht
+
+        day_map = ht.day_map(_habits_path(), today)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("habit record unreadable: %s", exc)
+        day_map = {}
+    body_row: dict[str, str] | None = None
+    for job in habit_jobs:
+        label = str(job.get("name", ""))[len(HABIT_NAME_PREFIX):]
+        command = str(job.get("command") or "")
+        if command.startswith("navig body checkin"):
+            if body_row is None:
+                try:
+                    from navig.spaces import body_metrics as bm
+
+                    _, rows = bm.read_metrics(bm.default_path())
+                    body_row = next((r for r in rows if r.get("date") == today), {})
+                except Exception:  # noqa: BLE001
+                    body_row = {}
+            if "--weekly" in command:
+                done += int(bool((body_row.get("mood_1_10") or body_row.get("sleep_hours") or "").strip()))
+            else:
+                done += int(bool((body_row.get("weight_kg") or "").strip()))
+            continue
+        try:
+            from navig.spaces import habit_tracker as ht
+
+            done += int(label in day_map and ht.is_done(day_map[label]))
+        except Exception:  # noqa: BLE001
+            continue
+    return done
+
+
+def _checkins_today() -> list[dict]:
+    """Every check-in's done-today, from its record (metrics.csv / checkins.jsonl)."""
+    try:
+        from navig.checkins import engine
+
+        return [
+            {
+                "id": e["id"],
+                "template": e["template"],
+                "label": e["label"],
+                "emoji": e["emoji"],
+                "enabled": e.get("enabled", True),
+                "done": bool(e.get("done")),
+                "state": e.get("state"),
+            }
+            for e in engine.today_entries(None)
+        ]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("check-ins unreadable for the health summary: %s", exc)
+        return []
+
+
 # ── Tasks + Habits ─────────────────────────────────────────────────────────────
+
+def _read_habit_tracker_rows() -> list[dict] | None:
+    """The space's habits.csv history, or None when it cannot be read.
+
+    Runs in a worker thread: the tracker file is disk I/O on a route the dashboard
+    polls. ``None`` (unreadable) is kept distinct from ``[]`` (read, empty) so the
+    caller can answer ``null`` instead of inventing a streak.
+    """
+    try:
+        from navig.spaces import habit_tracker  # noqa: PLC0415
+
+        return habit_tracker.read_tracker(habit_tracker.tracker_path())
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("habit tracker unreadable; streaks omitted: %s", exc)
+        return None
+
+
+def _habit_streak(rows: list[dict] | None, key: str, completed_today: bool) -> int | None:
+    """Consecutive done days for *key*; None when there is no history for it.
+
+    A tick in the deck stamps the job's ``last_run`` but writes no tracker row, so
+    today counts as done when either source says so. Never 0-by-default: the old
+    literal ``0`` read as "you broke your streak" on every habit, every day.
+    """
+    if rows is None:
+        return None
+    from navig.spaces import habit_tracker  # noqa: PLC0415
+
+    own = [r for r in rows if r.get("habit") == key]
+    if completed_today:
+        own.append({"date": date.today().isoformat(), "habit": key, "completed": "yes"})
+    if not own:
+        return None
+    return habit_tracker.streak_for(own, key, date.today())
+
 
 async def handle_deck_apps_tasks_get(request: "web.Request") -> "web.Response":
     """
@@ -276,6 +392,7 @@ async def handle_deck_apps_tasks_get(request: "web.Request") -> "web.Response":
         habit_jobs = [j for j in jobs if j.get("name", "").startswith(HABIT_NAME_PREFIX)]
 
         today = date.today().isoformat()
+        tracker_rows = await asyncio.to_thread(_read_habit_tracker_rows)
 
         habits = []
         for j in habit_jobs:
@@ -292,12 +409,13 @@ async def handle_deck_apps_tasks_get(request: "web.Request") -> "web.Response":
                         label = name_raw
 
             completed_today = (j.get("last_run") or "").startswith(today)
-            # Streak: count consecutive days in last_runs history (not available in schema;
-            # use active status as a proxy)
             habits.append({
                 "id": j.get("id", name_raw),
                 "title": label,
-                "streak": 0,
+                # Counted from the space's habits.csv (the history `navig habit log`
+                # and the Telegram check-in write). null = no history to count from;
+                # the old literal 0 read as "you broke your streak" every day.
+                "streak": _habit_streak(tracker_rows, name_raw, completed_today),
                 "completed_today": completed_today,
                 "active": j.get("status", "active") == "active",
                 "cron": j.get("schedule", ""),
@@ -305,8 +423,9 @@ async def handle_deck_apps_tasks_get(request: "web.Request") -> "web.Response":
 
         return _ok({"tasks": tasks, "habits": habits})
     except Exception as exc:
+        # A server failure is a 500, not a 400: the request was fine.
         logger.exception("apps/tasks failed")
-        return _err(str(exc))
+        return _err(str(exc), 500)
 
 
 async def handle_deck_apps_tasks_add(request: "web.Request") -> "web.Response":
@@ -359,6 +478,25 @@ async def handle_deck_apps_tasks_toggle(request: "web.Request") -> "web.Response
     return _ok({"id": task_id, "done": done})
 
 
+def _log_habit_in_tracker(key: str) -> bool | None:
+    """Mirror a deck tick into the space's habits.csv — the history streaks count.
+
+    The tick only stamped the job's ``last_run``, which holds ONE day: the deck
+    showed a habit done while ``navig habit streak`` (and tomorrow's dashboard)
+    never saw it, so a streak kept only by tapping the deck reset every day.
+    Returns True when a row was written, False when today was already logged
+    (a value logged from the CLI is kept as is), None when the log could not be
+    written — the tick itself already succeeded, so that is reported, not raised.
+    """
+    try:
+        from navig.spaces import habit_tracker  # noqa: PLC0415
+
+        return habit_tracker.mark_done_today(key, note="deck")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("habit %s ticked but not written to habits.csv: %s", key, exc)
+        return None
+
+
 async def handle_deck_apps_habits_toggle(request: "web.Request") -> "web.Response":
     """POST { id: str } → marks habit as completed today by touching last_run."""
     try:
@@ -389,7 +527,8 @@ async def handle_deck_apps_habits_toggle(request: "web.Request") -> "web.Respons
                         svc.update_job, job.id, last_run=_habit_run_stamp()
                     ),
                 )
-                return _ok({"ok": True, "id": habit_id})
+                logged = await asyncio.to_thread(_log_habit_in_tracker, jname)
+                return _ok({"ok": True, "id": habit_id, "logged": logged})
         return _err("Habit not found", 404)
 
     jobs, counter = await _async_load_cron_jobs()
@@ -409,7 +548,8 @@ async def handle_deck_apps_habits_toggle(request: "web.Request") -> "web.Respons
         return _err("Habit not found", 404)
 
     await _async_save_cron_jobs(jobs, counter)
-    return _ok({"ok": True, "id": habit_id})
+    logged = await asyncio.to_thread(_log_habit_in_tracker, jname)
+    return _ok({"ok": True, "id": habit_id, "logged": logged})
 
 
 # ── Reminders ─────────────────────────────────────────────────────────────────
@@ -567,6 +707,19 @@ def _get_active_space_name() -> str | None:
         return None
 
 
+def _plan_path(space_dir: Path, name: str) -> Path:
+    """Where *space_dir* keeps plan *name* (``.navig/plans``, ``plans/`` or the root).
+
+    These readers used to look at the root only, so a space that keeps its plans in
+    ``.navig/plans/`` — most of them — showed no vision, phase or milestones. The
+    root path is still returned when no copy exists, so callers' "missing" handling
+    is unchanged.
+    """
+    from navig.spaces.plan_files import plan_file  # noqa: PLC0415
+
+    return plan_file(space_dir, name) or (space_dir / name)
+
+
 def _get_spaces_dir() -> Path:
     return _navig_dir() / "spaces"
 
@@ -636,7 +789,7 @@ async def handle_deck_apps_plans(request: "web.Request") -> "web.Response":
                 name = space_dir.name
                 is_active = name == active
 
-                vision_text = _read_file_content(space_dir / "VISION.md", 512)
+                vision_text = _read_file_content(_plan_path(space_dir, "VISION.md"), 512)
                 vision_headline = ""
                 for line in vision_text.splitlines():
                     line = line.strip()
@@ -647,7 +800,7 @@ async def handle_deck_apps_plans(request: "web.Request") -> "web.Response":
                         vision_headline = line[2:].strip()[:120]
                         break
 
-                phase_text = _read_file_content(space_dir / "CURRENT_PHASE.md", 512)
+                phase_text = _read_file_content(_plan_path(space_dir, "CURRENT_PHASE.md"), 512)
                 current_phase = ""
                 for line in phase_text.splitlines():
                     line = line.strip()
@@ -658,7 +811,7 @@ async def handle_deck_apps_plans(request: "web.Request") -> "web.Response":
                         current_phase = line[2:].strip()[:120]
                         break
 
-                milestones = _parse_roadmap_milestones(space_dir / "ROADMAP.md")
+                milestones = _parse_roadmap_milestones(_plan_path(space_dir, "ROADMAP.md"))
                 total = len(milestones)
                 done = sum(1 for m in milestones if m.get("done"))
                 completion_pct = int(done / total * 100) if total else 0
@@ -709,20 +862,37 @@ async def handle_deck_apps_finance(request: "web.Request") -> "web.Response":
 
 # ── Goals ─────────────────────────────────────────────────────────────────────
 
-async def handle_deck_apps_goals(request: "web.Request") -> "web.Response":
-    """
-    Goals overview derived from spaces ROADMAP.md milestone lists.
-    Shape: GoalsOverview { goals: [{id, title, progress_pct, milestones}] }
-    """
-    spaces_dir = _get_spaces_dir()
-    if not spaces_dir.is_dir():
-        return _ok({"goals": []})
+#: Parsed ROADMAP milestones, keyed by path, stamped with (mtime_ns, size). The goals
+#: card polls; a space whose roadmap has not changed must not be re-parsed. The stamp
+#: is a pair, not mtime alone: a rewrite inside the same nanosecond still changes size.
+_ROADMAP_CACHE: dict[str, tuple[tuple[int, int], list[dict]]] = {}
 
+
+def _cached_roadmap_milestones(roadmap_path: Path) -> list[dict]:
+    """Milestones for *roadmap_path*, re-parsed only when the file changed."""
+    try:
+        st = roadmap_path.stat()
+    except OSError:
+        _ROADMAP_CACHE.pop(str(roadmap_path), None)
+        return []
+    stamp = (st.st_mtime_ns, st.st_size)
+    hit = _ROADMAP_CACHE.get(str(roadmap_path))
+    if hit is not None and hit[0] == stamp:
+        return hit[1]
+    milestones = _parse_roadmap_milestones(roadmap_path)
+    _ROADMAP_CACHE[str(roadmap_path)] = (stamp, milestones)
+    return milestones
+
+
+def _collect_goals(spaces_dir: Path) -> list[dict]:
+    """Every space's roadmap as a goal. Directory walk + file reads: worker thread."""
+    if not spaces_dir.is_dir():
+        return []
     goals = []
     for space_dir in sorted(spaces_dir.iterdir()):
         if not space_dir.is_dir():
             continue
-        milestones = _parse_roadmap_milestones(space_dir / "ROADMAP.md")
+        milestones = _cached_roadmap_milestones(_plan_path(space_dir, "ROADMAP.md"))
         if not milestones:
             continue
         total = len(milestones)
@@ -733,7 +903,23 @@ async def handle_deck_apps_goals(request: "web.Request") -> "web.Response":
             "progress_pct": int(done / total * 100) if total else 0,
             "milestones": milestones,
         })
+    return goals
 
+
+async def handle_deck_apps_goals(request: "web.Request") -> "web.Response":
+    """
+    Goals overview derived from spaces ROADMAP.md milestone lists.
+    Shape: GoalsOverview { goals: [{id, title, progress_pct, milestones}] }
+
+    The walk + parse runs in a worker thread: it reads every space's ROADMAP.md off
+    disk, and the goals card polls. A failed scan answers a JSON 500 the UI can show,
+    not aiohttp's bare error page.
+    """
+    try:
+        goals = await asyncio.to_thread(_collect_goals, _get_spaces_dir())
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("apps/goals failed")
+        return _err(f"Could not read goals: {exc}", 500)
     return _ok({"goals": goals})
 
 
@@ -757,7 +943,7 @@ async def handle_deck_apps_goals_milestone(request: "web.Request") -> "web.Respo
     space_dir = _confined_space_dir(goal_id)  # goal_id is client-supplied — never let it traverse
     if space_dir is None:
         return _err("invalid goal id", 400)
-    roadmap_path = space_dir / "ROADMAP.md"
+    roadmap_path = _plan_path(space_dir, "ROADMAP.md")
     if not roadmap_path.exists():
         return _err("ROADMAP.md not found for this space", 404)
 
@@ -785,6 +971,8 @@ async def handle_deck_apps_goals_milestone(request: "web.Request") -> "web.Respo
         if not replaced:
             return _err("Milestone line not found in file", 404)
         roadmap_path.write_text("".join(lines), encoding="utf-8")
+        # A rewrite inside the same mtime tick would otherwise serve the pre-tap list.
+        _ROADMAP_CACHE.pop(str(roadmap_path), None)
     except Exception as exc:
         logger.warning("goals_milestone update error: %s", exc)
         return _err(str(exc), 500)

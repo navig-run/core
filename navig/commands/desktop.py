@@ -20,6 +20,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import typer
@@ -298,6 +299,18 @@ def desktop_crash_chrome(
         "--extensions/--no-extensions",
         help="Also crash extension processes (default: yes).",
     ),
+    only_extensions: bool = typer.Option(
+        False, "--only-extensions", "-x", help="Crash ONLY extension processes; leave every tab alone."
+    ),
+    channel: list[str] = typer.Option(
+        [], "--channel", "-c",
+        help="Limit to a Chrome channel: stable, beta, dev, canary (repeatable). Default: all.",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="List what would be crashed, per channel."),
+    include_automation: bool = typer.Option(
+        False, "--include-automation",
+        help="Also crash automation browsers (test harnesses, navig cdp — anything launched with --user-data-dir).",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output raw JSON."),
 ) -> None:
     """Crash all Chrome tabs + extensions to reclaim RAM — without closing the browser.
@@ -307,44 +320,123 @@ def desktop_crash_chrome(
     The Chrome window stays open; crashed tabs show "Aw, Snap!" and reload on click
     (Ctrl+Shift+T restores them). Frees the memory the tabs/extensions were holding.
 
+    Covers every channel at once — Chrome, Beta, Dev and Canary all run as chrome.exe
+    (they differ only by install folder). --only-extensions spares the tabs; --channel
+    narrows to some channels.
+
+    \b
+    Examples:
+      navig desktop crash-chrome -y                    # tabs + extensions, all channels
+      navig desktop crash-chrome --only-extensions -y  # extensions only, all channels
+      navig desktop crash-chrome -x -c beta -c dev -y  # extensions in Beta + Dev only
+      navig desktop crash-chrome -x --dry-run          # preview, per channel
+
     Cross-platform Chrome logic is reused from navig.commands.processes.
     """
     if sys.platform != "win32":
         typer.echo("error: navig desktop is Windows only", err=True)
         raise typer.Exit(1)
 
-    from navig.commands.processes import find_chrome_renderers, kill_processes
+    from navig.commands.processes import (
+        available_ram_bytes,
+        chrome_channel,
+        find_chrome_extensions,
+        find_chrome_renderers,
+        kill_processes,
+    )
 
-    procs = find_chrome_renderers(include_extensions=extensions)
+    wanted = {c.strip().lower() for c in channel if c.strip()}
+    if only_extensions:
+        procs = find_chrome_extensions(wanted or None, include_automation=include_automation)
+        what = "extension process(es)"
+    else:
+        procs = [
+            p for p in find_chrome_renderers(include_extensions=extensions, include_automation=include_automation)
+            if not wanted or chrome_channel(p.get("cmdline") or []) in wanted
+        ]
+        what = f"renderer(s) (tabs{'+extensions' if extensions else ''})"
     if not procs:
         if json_output:
-            typer.echo(json.dumps({"crashed": 0, "message": "no Chrome renderers found"}))
+            typer.echo(json.dumps({"crashed": 0, "message": "nothing matched"}))
         else:
-            typer.echo("  No Chrome renderer processes found (is Chrome running?).")
+            typer.echo(f"  No Chrome {what} found{' in ' + ', '.join(sorted(wanted)) if wanted else ''}.")
+        return
+
+    per_channel: dict[str, int] = {}
+    for p in procs:
+        ch = p.get("channel") or chrome_channel(p.get("cmdline") or [])
+        per_channel[ch] = per_channel.get(ch, 0) + 1
+    breakdown = ", ".join(f"{ch} {n}" for ch, n in sorted(per_channel.items()))
+    if dry_run:
+        if json_output:
+            typer.echo(json.dumps({"would_crash": len(procs), "per_channel": per_channel, "kind": what}))
+        else:
+            typer.echo(f"  Would crash {len(procs)} Chrome {what}: {breakdown}. Browsers stay open.")
         return
 
     if not confirm:
-        typer.confirm(
-            f"Crash {len(procs)} Chrome renderer(s) "
-            f"(tabs{'+extensions' if extensions else ''})? The browser stays open.",
-            abort=True,
-        )
+        typer.confirm(f"Crash {len(procs)} Chrome {what} ({breakdown})? The browsers stay open.", abort=True)
 
+    ram_before = available_ram_bytes()
     report = kill_processes(procs, force=True, exclude_self=True)
+    # The OS returns a killed process's pages a beat after it exits; read too
+    # early and the delta under-reports.
+    time.sleep(_RAM_SETTLE_SECS)
+    ram_after = available_ram_bytes()
+    # Count only what can have come BACK: extension hosts (background workers
+    # restart on their own). Tabs never respawn, and in --only-extensions mode
+    # they were never touched — counting all renderers reported the open tabs as
+    # "came back" (2026-10-09: "160 renderer(s) came back" after a 53-extension crash).
+    respawned = len(find_chrome_extensions(wanted or None, include_automation=include_automation))
+    tabs_crashed = not only_extensions
     result = {
         "crashed": len(report.get("killed", [])),
         "failed": len(report.get("failed", [])),
         "skipped": len(report.get("skipped", [])),
         "extensions": extensions,
-        "note": "browser left running — Ctrl+Shift+T restores crashed tabs",
+        "only_extensions": only_extensions,
+        "per_channel": per_channel,
+        # Measured, not estimated: available system RAM after minus before. Other
+        # apps allocate meanwhile, so it is clamped at 0; None = could not read.
+        "freed_bytes": _freed_bytes(ram_before, ram_after),
+        "ram_available_before": ram_before,
+        "ram_available_after": ram_after,
+        "extensions_restarted": respawned,
+        "note": "browser left running — crashed tabs reload when clicked" if tabs_crashed else "browser and tabs left open — only extensions crashed",
     }
     if json_output:
         typer.echo(json.dumps(result, indent=2, default=str))
     else:
+        freed = result["freed_bytes"]
+        freed_txt = f"Freed ~{format_bytes_short(freed)} — " if freed is not None else ""
         typer.echo(
-            f"  Crashed {result['crashed']} Chrome renderer(s) "
-            f"(failed {result['failed']}). Browser still open — Ctrl+Shift+T to restore tabs."
+            f"  {freed_txt}Crashed {result['crashed']} Chrome {what} [{breakdown}] "
+            f"(failed {result['failed']})."
         )
+        if respawned:
+            typer.echo(f"  {respawned} extension(s) restarted on their own (background workers) — that is normal.")
+        if tabs_crashed:
+            typer.echo("  Browser still open — click a crashed tab to reload it.")
+        else:
+            typer.echo("  Browser and every tab left open — only extensions were crashed.")
+
+
+_RAM_SETTLE_SECS = 0.75
+
+
+def _freed_bytes(before: int | None, after: int | None) -> int | None:
+    """Available-RAM delta across the kill; None when either read failed."""
+    if before is None or after is None:
+        return None
+    return max(0, after - before)
+
+
+def format_bytes_short(n: int) -> str:
+    """1.4 GB · 640 MB — the one-number answer to "how much did that free?"."""
+    gb = n / 1024**3
+    if gb >= 1:
+        return f"{gb:.1f} GB"
+    return f"{round(n / 1024**2)} MB"
 
 
 @desktop_app.command("tree")

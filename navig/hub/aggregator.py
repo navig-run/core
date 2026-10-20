@@ -319,7 +319,28 @@ def _mcp_servers() -> list[StoreItem]:
     seen: set[str] = set()
 
     cfg = get_config_manager().global_config or {}
-    clients = cfg.get("mcp", {}).get("clients", {}) if isinstance(cfg, dict) else {}
+    mcp_cfg = (cfg.get("mcp") or {}) if isinstance(cfg, dict) else {}
+    # `mcp.servers` is the ONE list the gateway connects at boot (and the deck writes).
+    # It used to be missing from the store entirely, while the two lists below — which
+    # nothing starts (only `MCPClientManager.start()` reads them, and no production
+    # path calls it) — were badged WIRED. Truth now: the started list is wired when
+    # enabled; the declared-but-never-started lists say so instead of claiming to run.
+    servers = mcp_cfg.get("servers") if isinstance(mcp_cfg, dict) else None
+    for entry in servers if isinstance(servers, list) else []:
+        name = entry.get("name") if isinstance(entry, dict) else None
+        if not isinstance(name, str) or not name or name in seen:
+            continue
+        seen.add(name)
+        enabled = coerce_bool(entry.get("enabled"), default=True)
+        items.append(StoreItem(
+            id=f"mcp:{name}",
+            kind="mcp",
+            label=name,
+            description="MCP server (connected by the gateway)",
+            state=(WireState.WIRED if enabled else WireState.UNWIRED).value,
+            source="config",
+        ))
+    clients = mcp_cfg.get("clients", {}) if isinstance(mcp_cfg, dict) else {}
     if isinstance(clients, dict):
         for name, client_cfg in clients.items():
             # `mcp.clients.<name>.enabled false` stores the STRING "false" (truthy under
@@ -328,13 +349,18 @@ def _mcp_servers() -> list[StoreItem]:
                 coerce_bool(client_cfg.get("enabled", True), default=True)
                 if isinstance(client_cfg, dict) else True
             )
+            if name in seen:
+                continue
             seen.add(name)
             items.append(StoreItem(
                 id=f"mcp:{name}",
                 kind="mcp",
                 label=name,
-                description="MCP server (config)",
-                state=(WireState.WIRED if enabled else WireState.UNWIRED).value,
+                description=(
+                    "MCP server (mcp.clients · not started by the gateway)"
+                    if enabled else "MCP server (mcp.clients · disabled)"
+                ),
+                state=WireState.UNWIRED.value,
                 source="config",
             ))
     for root in installed_plugin_roots():
@@ -347,8 +373,8 @@ def _mcp_servers() -> list[StoreItem]:
                 id=f"mcp:{name}",
                 kind="mcp",
                 label=name,
-                description=f"MCP server (plugin {pkg.plugin_id})",
-                state=WireState.WIRED.value,
+                description=f"MCP server (plugin {pkg.plugin_id} · not started by the gateway)",
+                state=WireState.UNWIRED.value,
                 provider=pkg.plugin_id,
                 source="plugin",
             ))

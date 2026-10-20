@@ -51,7 +51,7 @@ REPO = Path(__file__).resolve().parents[3]
 #:   core/installers/ — the documented user-run surface ("the scripts *you* run", its README).
 #:
 #: Deliberately OUT, each for a reason rather than an oversight:
-#:   registry/      — a MIRROR of the upstream navig-run/community repo. Editing it here would
+#:   registry/      — a MIRROR of the upstream navig-run/registry repo. Editing it here would
 #:                    not reach users and would diverge from upstream; it belongs there.
 #:   scripts/, core/tools/ — maintainer tooling, excluded from every published artifact.
 #:   apps/*/scripts, .github/ — build and CI tooling, run by us on machines with pwsh 7.

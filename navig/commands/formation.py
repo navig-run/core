@@ -56,7 +56,7 @@ def formation_list(
         else:
             ch.warning("No formations found.")
             ch.info("  Place formation directories in:")
-            ch.info("    ./formations/ (project)")
+            ch.info("    .navig/formations/ (project — walked up from the cwd)")
             ch.info("    ~/.navig/formations/ (global)")
         return
 
@@ -234,7 +234,7 @@ def formation_agents(
     """List agents in the active formation (from .navig/profile.json)."""
     from navig.formations.loader import get_active_formation
 
-    formation = get_active_formation()
+    formation = get_active_formation(workspace_dir=_workspace_root())
     if formation is None:
         ch.warning("No active formation.")
         ch.info("  Initialize with: navig formation init <formation-id>")
@@ -272,6 +272,120 @@ def formation_agents(
     ch.console.print()
 
 
+# Tool names Claude Code understands in a subagent's `tools:` frontmatter. A
+# formation's `tools[]` also holds navig ReAct tool names ("ai", "analysis") for
+# `formation run` — those must never leak into Claude frontmatter, so `sync`
+# emits a tools line ONLY when the whole list is inside this set; otherwise the
+# line is omitted and the subagent inherits all tools.
+_CC_TOOL_NAMES = frozenset({
+    "Agent", "Artifact", "Bash", "Edit", "Glob", "Grep", "MultiEdit", "NotebookEdit",
+    "PowerShell", "Read", "Skill", "Task", "TodoWrite", "WebFetch", "WebSearch", "Write",
+})
+
+_GEN_SYNC_HEADER = (
+    "<!-- GENERATED from formation {src} by navig formation sync — do not edit by hand. -->"
+)
+
+
+def _yaml_quote(s: str) -> str:
+    """A safe single-line double-quoted YAML scalar (same shape sync-agents uses)."""
+    s = " ".join(s.split())
+    s = s.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{s}"'
+
+
+def _workspace_root() -> Path:
+    """Nearest ancestor of the invocation cwd that holds `.navig/profile.json`.
+
+    `formation init` writes the profile anchored to where the operator STANDS,
+    but `read_profile` defaults to `Path.cwd()` — which `main.py` has already
+    chdir'd into the active SPACE. Reading from there instead of the workspace
+    is how a worktree's `schema-grid` activation silently resolved the space's
+    `app_project` roster. Walk up from the invocation dir so root, subdir and
+    worktree all find THEIR profile; fall back to the invocation dir (the
+    default-profile fallback then behaves exactly as before).
+    """
+    start = invocation_cwd()
+    for base in (start, *start.parents):
+        if (base / ".navig" / "profile.json").exists():
+            return base
+    return start
+
+
+@formation_app.command("sync")
+def formation_sync(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Report what would change; write nothing."),
+    json_output: bool = typer.Option(False, "--json", help="JSON output."),
+):
+    """Render the active formation's agents into .navig/agents/<id>.md (Claude Code).
+
+    The missing bridge between formations (the canonical roster) and
+    `.claude/agents` (what Claude Code actually loads — the wire junction points
+    at `.navig/agents`). Frontmatter mirrors scripts/sync-agents.py's
+    `_render_claude`: name, quoted description, optional tools, then the
+    GENERATED marker and the composed system prompt. Idempotent: an unchanged
+    file is not rewritten, so repeated syncs are byte-stable.
+    """
+    from navig.formations.loader import get_active_formation  # noqa: PLC0415
+    from navig.platform.paths import invocation_cwd  # noqa: PLC0415
+
+    formation = get_active_formation(workspace_dir=_workspace_root())
+    if formation is None:
+        ch.error("No active formation.", "Initialize one: navig formation init <formation-id>")
+        raise typer.Exit(1)
+
+    out_dir = invocation_cwd() / ".navig" / "agents"
+    written: list[str] = []
+    unchanged: list[str] = []
+    missing: list[str] = []
+
+    for aid in formation.agents:
+        agent = formation.loaded_agents.get(aid)
+        if agent is None:
+            missing.append(aid)
+            continue
+        desc = " ".join((agent.role or f"{formation.id} agent").split())
+        lines = ["---", f"name: {aid}", f"description: {_yaml_quote(desc)}"]
+        if agent.tools and set(agent.tools) <= _CC_TOOL_NAMES:
+            lines.append("tools: " + ", ".join(agent.tools))
+        lines += ["---", "", _GEN_SYNC_HEADER.format(src=formation.id), ""]
+        text = "\n".join(lines) + agent.system_prompt.strip() + "\n"
+
+        target = out_dir / f"{aid}.md"
+        rel = str(target)
+        current = target.read_text(encoding="utf-8") if target.exists() else None
+        if current == text:
+            unchanged.append(rel)
+            continue
+        if dry_run:
+            written.append(rel)
+            continue
+        out_dir.mkdir(parents=True, exist_ok=True)
+        with target.open("w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+        written.append(rel)
+
+    if json_output:
+        print(json_module.dumps({
+            "formation": formation.id,
+            "written": written,
+            "unchanged": unchanged,
+            "missing": missing,
+            "dry_run": dry_run,
+        }, indent=2))
+        return
+    if missing:
+        ch.warning(f"{len(missing)} agent(s) failed to load: {', '.join(missing)}")
+    if dry_run:
+        ch.info(f"Dry run — {len(written)} file(s) would change.", f"output: {out_dir}")
+        return
+    ch.success(
+        f"Synced {formation.id}",
+        f"{len(written)} written · {len(unchanged)} unchanged → {out_dir}",
+    )
+    ch.dim("Claude Code reads them through the .claude/agents junction (navig wire).")
+
+
 @formation_app.command("run")
 def formation_run(
     request: str = typer.Argument(..., help="The request to run across the formation"),
@@ -304,3 +418,10 @@ def formation_run(
     except Exception as e:  # noqa: BLE001
         ch.error(f"Error: {e}")
         raise typer.Exit(1) from e
+
+
+# `navig formation council` — the council deliberation, housed with the formation it runs
+# across. Same implementation as the (now hidden, superseded) `navig council run`.
+from navig.commands.council import council_run as _council_run  # noqa: E402
+
+formation_app.command("council")(_council_run)

@@ -13,7 +13,7 @@ see :mod:`navig.skills.federation`), so a resolved
 
 The map (:data:`TECH_SKILLS`) is **data** — extend it freely. Skill specs are
 either ``owner/repo/skill`` (public agent-skill repos, installed as
-``github:owner/repo/skill``) or a bare navig-community skill id.
+``github:owner/repo/skill``) or a bare navig-registry skill id.
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ class TechRule:
 
 # ── Technology → skills map ───────────────────────────────────────────────────
 # Skill refs are real public agent-skill repos (owner/repo/skill) unless prefixed
-# `community:` (a navig-community CLI skill). Curated to NAVIG-relevant stacks;
+# `community:` (a navig-registry CLI skill; the prefix predates the rename). Curated to NAVIG-relevant stacks;
 # add rows freely — this is just data.
 TECH_SKILLS: tuple[TechRule, ...] = (
     # ── Frontend frameworks ───────────────────────────────────────────────────
@@ -156,7 +156,7 @@ TECH_SKILLS: tuple[TechRule, ...] = (
     TechRule("celery", "Celery", ("wshobson/agents/python-background-jobs",), py_packages=("celery",)),
     TechRule("pandas", "Pandas", ("jeffallan/claude-skills/pandas-pro",), py_packages=("pandas",)),
     TechRule("fastmcp", "FastMCP", ("sharanharsoor/skills/fastmcp",), py_packages=("fastmcp", "mcp")),
-    # ── Infra CLI skills (navig-community, runnable) — `community:<category>/<id>` ──
+    # ── Infra CLI skills (navig-registry, runnable) — `community:<category>/<id>` ──
     TechRule("docker", "Docker", ("community:docker/docker-ops",),
              config_files=("Dockerfile", "docker-compose.yml", "docker-compose.yaml", "compose.yaml")),
 )
@@ -301,14 +301,14 @@ def _registry_base() -> str:
 def _ref_to_spec(ref: str) -> str:
     """Map a skill ref to a `navig skill install` spec.
 
-    `community:<category>/<id>` → the navig-run/community CLI-skill path.
+    `community:<category>/<id>` → the navig-run/registry CLI-skill path.
     `owner/repo/skill`          → the curated registry by skill NAME (last
                                   segment). owner/repo is attribution only — the
                                   files live flat in the registry, so this is
                                   what actually resolves + installs.
     """
     if ref.startswith("community:"):
-        return f"github:navig-run/community/cli-skills/{ref[len('community:'):]}"
+        return f"github:navig-run/registry/cli-skills/{ref[len('community:'):]}"
     name = ref.rsplit("/", 1)[-1]
     # `skill:` scheme pins the type so the registry's `packages/…` path segment
     # isn't mis-classified as a package (see install._parse_spec explicit-wins).

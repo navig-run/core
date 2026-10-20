@@ -877,3 +877,46 @@ async def test_provider_picker_has_nav_and_close(monkeypatch):
     all_cbs = [btn.get("callback_data", "") for row in kb for btn in row]
     assert "mdl_chgprov" in all_cbs
     assert "mdl_close" in all_cbs
+
+
+async def test_resolve_provider_models_drops_non_chat_cloud_ids(monkeypatch):
+    """The live NVIDIA catalog lists guard/embed/reward models; none may reach the
+    Telegram model keyboard or the tier-default fallback (models[0])."""
+    import aiohttp
+
+    from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+    catalog = {"data": [
+        {"id": "meta/llama-guard-4-12b"}, {"id": "nvidia/nv-embedqa-mistral-7b-v2"},
+        {"id": "nvidia/nemotron-4-340b-reward"}, {"id": "meta/llama-3.1-70b-instruct"},
+        {"id": "nvidia/nemotron-3-super-120b-a12b"},
+    ]}
+
+    class _Resp:
+        async def json(self, content_type=None):
+            return catalog
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    class _Session:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        def get(self, *a, **k):
+            return _Resp()
+
+    monkeypatch.setattr(aiohttp, "ClientSession", _Session)
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test")
+
+    models = await TelegramCommandsMixin._resolve_provider_models(object(), "nvidia", manifest=None)
+    assert models == ["meta/llama-3.1-70b-instruct", "nvidia/nemotron-3-super-120b-a12b"]

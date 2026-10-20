@@ -1,8 +1,8 @@
-# NAVIG Plugin SDK — Moved
+# NAVIG Plugin SDK
 
-The NAVIG Plugin SDK has moved to the community repository:
-
-**Canonical location:** [`navig-community/sdk/`](https://github.com/navig-run/community/tree/main/sdk)
+The SDK lives in this repository: [`registry/sdk/`](../../registry/sdk/). The public
+[navig-run/registry](https://github.com/navig-run/registry) repo is an **export** of `registry/`
+(`registry/scripts/export-registry.mjs`), so the source and the published copy never diverge by hand.
 
 ## Install
 
@@ -16,7 +16,7 @@ npm install navig-sdk
 
 ## Source
 
-| SDK        | Source path                                                                                        |
-|------------|----------------------------------------------------------------------------------------------------|
-| Python     | [navig-community/sdk/python/](https://github.com/navig-run/community/tree/main/sdk/python)         |
-| TypeScript | [navig-community/sdk/typescript/](https://github.com/navig-run/community/tree/main/sdk/typescript) |
+| SDK        | Source path                                        |
+|------------|----------------------------------------------------|
+| Python     | [`registry/sdk/python/`](../../registry/sdk/python/) |
+| TypeScript | [`registry/sdk/typescript/`](../../registry/sdk/typescript/) |

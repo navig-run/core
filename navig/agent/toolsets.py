@@ -26,7 +26,7 @@ TOOLSETS: dict[str, list[str] | None] = {
     # Minimal safe surface for general tasks
     "core": list(NAVIG_CORE_TOOLS),
     # Web retrieval only
-    "search": ["search", "web_fetch"],
+    "search": ["search", "web_fetch", "domain_lookup"],
     # Core + search combined (good for research tasks)
     "research": [
         "bash_exec",
@@ -35,13 +35,23 @@ TOOLSETS: dict[str, list[str] | None] = {
         "list_files",
         "search",
         "web_fetch",
+        "domain_lookup",
         "wiki_search",
         "wiki_read",
         "kb_lookup",
         "memory_read",
+        "search_all",
     ],
     # Software development tasks
-    "code": ["bash_exec", "read_file", "write_file", "list_files", "search", "web_fetch"],
+    "code": [
+        "bash_exec",
+        "read_file",
+        "write_file",
+        "list_files",
+        "search",
+        "web_fetch",
+        "domain_lookup",
+    ],
     # Git operations (status, diff, log, commit, stash)
     "git": ["git_status", "git_diff", "git_log", "git_commit", "git_stash"],
     # Structured DevOps command surface (requires owner_only clearance)
@@ -71,7 +81,9 @@ TOOLSETS: dict[str, list[str] | None] = {
         "git_status",
         "git_diff",
         "git_log",
-        "git_stash",
+        # NOT git_stash: this list only became live when the registry started
+        # honouring it (2026-10-16), and the stash is one stack shared by every
+        # worktree and session — a mutating tool must be asked for via "git".
     ],
     # Knowledge base + wiki access.
     # NB: `fts_search` used to be listed here and is NOT an agent tool — it is a
@@ -80,8 +92,12 @@ TOOLSETS: dict[str, list[str] | None] = {
     # four tools while claiming five. Exposing conversation full-text search as a
     # real tool is worth doing; it is a feature, not a table entry.
     "memory": ["memory_read", "memory_write", "memory_delete", "kb_lookup"],
+    # One search across the user's own sources (connectors, wiki, Cabinet, past chats)
+    "search_all": ["search_all"],
     # Wiki-specific toolset
     "wiki": ["wiki_search", "wiki_read", "wiki_write"],
+    # The user's saved prompt library (read-only): "which prompt should I use for X?"
+    "prompts": ["prompt_library_search", "prompt_library_get"],
     # Remote agent executor (multi-host, file read, host switch)
     "remote": [
         "remote_execute",
@@ -115,13 +131,17 @@ PARALLEL_SAFE_TOOLS: frozenset[str] = frozenset(
     {
         "search",
         "web_fetch",
+        "domain_lookup",
         "read_file",
         "list_files",
         "wiki_search",
+        "search_all",
         "wiki_read",
         "kb_lookup",
         "memory_read",
         "fts_search",
+        "prompt_library_search",
+        "prompt_library_get",
         "navig_db_list",
         "navig_host_show",
         "navig_host_test",

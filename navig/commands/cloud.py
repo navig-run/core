@@ -482,7 +482,13 @@ def cloud_key(
         if confirm.strip().lower() != "yes":
             ch.warning("Cancelled.")
             return
-        from navig.cloud import deck_key
+        from navig.cloud import deck_key, rotation
+
+        # While the OLD key is still live: retire its relay tenant so paired NAVIG OS
+        # devices are told to pair again rather than showing "offline" forever.
+        retired = rotation.retire_os_relay()
+        if retired is None:
+            ch.dim("The daemon is not running, so paired NAVIG OS devices were not told to re-pair.")
 
         key = "navig_" + secrets.token_urlsafe(32)
         cfg.set("deck.api_key", key, scope="global")

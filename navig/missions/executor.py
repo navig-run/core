@@ -49,6 +49,7 @@ _CAPABILITY_TOOLSETS = {
     "proactive": "core",
     "agentic": "core",
     "board_card": "core",
+    "goal": "core",
 }
 
 
@@ -390,7 +391,13 @@ class MissionExecutor:
     #: report, so the mission-level prompt bought nothing but a 15-minute timeout
     #: (80 of the operator's 84 remediate missions ended exactly that way).
     #: Override per capability with ``missions.<capability>.autonomy``.
-    _CAPABILITY_AUTONOMY: dict[str, Autonomy] = {"remediate": Autonomy.AUTO}
+    #: `goal` (a standing-goal cycle) is AUTO for the same reason: it runs on a
+    #: schedule under the read-only grant, and a per-cycle page would be the
+    #: 84-missions flood all over again. The cycle sets it explicitly as well.
+    _CAPABILITY_AUTONOMY: dict[str, Autonomy] = {
+        "remediate": Autonomy.AUTO,
+        "goal": Autonomy.AUTO,
+    }
 
     def _resolve_autonomy(self, mission: Mission) -> Autonomy:
         raw = (mission.metadata or {}).get("autonomy")

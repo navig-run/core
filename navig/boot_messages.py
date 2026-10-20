@@ -33,7 +33,9 @@ logger = logging.getLogger(__name__)
 NAVIG_BOOT_MESSAGES: list[str] = [
     "Awake. All systems breathing. Ready when you are.",
     "Back online. Sensors up, memory clear, clocks synced. Standing by.",
-    "Good morning, navigator. Systems warm, heading null. Let's go somewhere.",
+    # No time of day in this pool: it is picked on every boot, whatever the hour,
+    # and "Good morning" at 20:47 is what the operator actually got.
+    "Here, navigator. Systems warm, heading null. Let's go somewhere.",
     "Initialization complete. No anomalies. The road is yours.",
     "Online. Horizon locked. Waiting on your first move.",
     "Diagnostics passed. Signal clean. I've been expecting you.",
@@ -98,10 +100,14 @@ def get_boot_message(
 
 CFG_GREETING_ENABLED = "telegram.boot_greeting.enabled"
 CFG_GREETING_DEDUPE = "telegram.boot_greeting.dedupe_sec"
-#: Long enough to cover two siblings booting together (measured: same second) and
-#: a supervisor's staggered restart, short enough that a genuine boot hours later
-#: still says hello.
-DEFAULT_DEDUPE_SEC = 300
+#: A restart is not news. Five minutes covered two siblings booting together, but
+#: not the restarts themselves: on 2026-09-27 the daemon booted EIGHT times
+#: (daemon.log), mostly agents deploying fixes, and the boots at 14:38, 20:47 and
+#: 21:17 each landed in the operator's chat as a greeting within the same minute.
+#: None was anything they did or needed to know. Six hours keeps a day of
+#: restarts quiet and still says hello after a night off. Set
+#: `telegram.boot_greeting.dedupe_sec` lower to hear every boot again.
+DEFAULT_DEDUPE_SEC = 6 * 3600
 
 
 def boot_greeting_enabled() -> bool:

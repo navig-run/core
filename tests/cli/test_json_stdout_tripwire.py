@@ -309,9 +309,10 @@ def test_emit_json_compact_mode_is_a_single_line(capsys):
 # Layer 2 — dynamic sampled matrix (real subprocesses, virgin config dir)
 # =============================================================================
 
-# Keep in sync with test_bootstrap_stdout_purity.py.
+# Keep in sync with test_bootstrap_stdout_purity.py. A marker must occur in
+# real output or it can never trip — swap it when the banner is reworded.
 _NARRATION_MARKERS = (
-    "first-time setup",
+    "set up this computer",
     "Welcome to NAVIG",
     "Verification summary",
     "configuration migrations",

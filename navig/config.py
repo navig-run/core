@@ -34,6 +34,14 @@ from navig.platform import paths
 
 logger = logging.getLogger(__name__)
 
+#: Whether a config load may start its background threads — the shadow re-read that
+#: cross-checks the pickle cache, and the deferred schema validation. Both are daemon
+#: threads that outlive the call that started them; in a test process that means they
+#: run on into LATER tests, where the shadow re-read's ``config_load_failed`` incident
+#: has failed an unrelated test's exact assertion. The test suite turns this off
+#: (core/tests/conftest.py). Nothing else should need to.
+BACKGROUND_THREADS_ENABLED = True
+
 
 # ── Hardened pickle loading for the config cache ──────────────────────────────
 # The config cache (~/.navig/.config_cache.pkl) only ever stores plain
@@ -608,11 +616,13 @@ class ConfigManager:
                         except Exception:
                             pass  # Shadow failures are silent
 
-                    threading.Thread(
-                        target=_shadow_verify,
-                        args=(fast_result, global_config_file, self),
-                        daemon=True,
-                    ).start()
+                    if BACKGROUND_THREADS_ENABLED:
+                        threading.Thread(
+                            target=_shadow_verify,
+                            args=(fast_result, global_config_file, self),
+                            daemon=True,
+                            name="navig-config-shadow",
+                        ).start()
 
                     return fast_result
 
@@ -642,12 +652,13 @@ class ConfigManager:
             except Exception:  # noqa: BLE001
                 pass  # validation must never crash startup
 
-        threading.Thread(
-            target=_bg_validate,
-            args=(slow_result,),
-            daemon=True,
-            name="navig-config-validate",
-        ).start()
+        if BACKGROUND_THREADS_ENABLED:
+            threading.Thread(
+                target=_bg_validate,
+                args=(slow_result,),
+                daemon=True,
+                name="navig-config-validate",
+            ).start()
 
         # ── 3. Persist cache for next invocation ────────────────────────────
         if global_config_file.exists():
@@ -854,6 +865,24 @@ class ConfigManager:
                 return default
             node = node[part]
         return node
+
+    def get_live(self, dotted_key: str, default: Any = None) -> Any:
+        """:meth:`get`, but re-reads ``config.yaml`` first when it changed on disk.
+
+        :meth:`get` serves the process-lifetime snapshot, so in the long-lived daemon a
+        user's ``navig config set …`` from a terminal is invisible until a restart. For
+        a setting the user expects to take effect at once (a privacy switch, a style
+        dial), read it through here: the cost is one ``stat`` when nothing changed.
+        """
+        try:
+            if (
+                self._global_config_loaded
+                and self._global_config_file_mtime() != self._global_config_mtime_ns
+            ):
+                self.refresh_global_config()
+        except Exception as exc:  # noqa: BLE001 — fall back to the cached snapshot
+            logger.debug("config live re-read skipped: %s", exc)
+        return self.get(dotted_key, default)
 
     def set(self, dotted_key: str, value: Any, scope: str = "global") -> None:
         """Dotted write of a global config value — delegates to :meth:`set_global`.
@@ -1209,6 +1238,13 @@ class ConfigManager:
             },
         }
 
+        # Gate 0F: a host secret passed here goes straight to the vault — the dict
+        # (and therefore every file written from it) carries only *_ref. Raises
+        # HostSecretError rather than falling back to plaintext; save_server_config
+        # below re-checks as the write-side choke point (a no-op after this pass).
+        from navig.core.host_secrets import secrets_for_storage
+
+        config = secrets_for_storage(config, name)
         self.save_server_config(name, config)
         return config
 

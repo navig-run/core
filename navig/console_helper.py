@@ -761,6 +761,19 @@ def requires_confirmation(
     return op_level <= threshold
 
 
+def _noninteractive_session() -> bool:
+    """True when ``NAVIG_NONINTERACTIVE=1`` — no terminal exists to answer a prompt.
+
+    Set by the deck console on the CLI child it spawns (``routes/cli.py``); a
+    confirmation prompt there would block forever on stdin nobody can type into.
+    """
+    import os
+
+    from navig.core.coerce import coerce_bool
+
+    return coerce_bool(os.environ.get("NAVIG_NONINTERACTIVE"), default=False)
+
+
 def confirm_operation(
     operation_name: str,
     operation_type: str = "standard",
@@ -786,7 +799,9 @@ def confirm_operation(
         force_confirm: If True (--confirm flag), force confirmation even in auto mode
 
     Returns:
-        True if operation should proceed, False otherwise
+        True if operation should proceed, False otherwise — including when the
+        session is non-interactive (``NAVIG_NONINTERACTIVE=1``) and a prompt
+        would be required: the operation is then refused, never auto-approved.
 
     Operation Types:
         - 'critical': Destructive operations (DROP, DELETE, rm, service stop)
@@ -807,6 +822,16 @@ def confirm_operation(
     # Check if confirmation is needed
     if not requires_confirmation(operation_type, confirmation_level, execution_mode, auto_confirm):
         return True
+
+    # A prompt is required here, but nobody can answer it: fail CLOSED (deny)
+    # instead of hanging on stdin — auto-approving would defeat the point of the
+    # confirmation. --yes (auto_confirm) already returned True above.
+    if _noninteractive_session():
+        error(
+            f"non-interactive session: '{operation_name}' requires confirmation; "
+            "re-run with --yes or from an interactive terminal"
+        )
+        return False
 
     # Build confirmation message
     console.print()
@@ -945,29 +970,14 @@ def classify_command(command: str) -> str:
 
 def classify_sql(query: str) -> str:
     """
-    Classify an SQL query by its danger level.
+    Classify an SQL query by its danger level: 'critical', 'standard', or 'verbose'.
 
-    Args:
-        query: SQL query to classify
-
-    Returns:
-        'critical', 'standard', or 'verbose'
+    Delegates to ``navig.core.sql_classify`` — the one classifier the deck's DB route
+    shares. It reads statement keywords (not substrings) and fails closed.
     """
-    query_upper = query.upper().strip()
+    from navig.core.sql_classify import classify_sql as _classify
 
-    # Critical SQL operations
-    if any(kw in query_upper for kw in ["DROP", "TRUNCATE", "DELETE"]):
-        return "critical"
-
-    # Standard SQL operations
-    if any(
-        kw in query_upper
-        for kw in ["CREATE", "ALTER", "INSERT", "UPDATE", "REPLACE", "GRANT", "REVOKE"]
-    ):
-        return "standard"
-
-    # Verbose (read-only)
-    return "verbose"
+    return _classify(query)
 
 
 def confirm_action(message: str, default: bool = True) -> bool:

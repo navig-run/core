@@ -9,7 +9,10 @@ Powers the navig-deck "Spaces" control panel + the catalog/marketplace:
     POST /api/deck/spaces/{id}/activate    → set the active space (binds the working dir)
     POST /api/deck/spaces/{id}/apps        → set the pinned-apps view-filter (allow-list)
     POST /api/deck/spaces/{id}/books       → set the finance BOOK (separate ledger; null = default)
+    POST /api/deck/spaces/{id}/info        → set the display name / description / category (null = clear)
     POST /api/deck/spaces/register         → register an external .navig/ folder (enabled)
+    POST /api/deck/spaces/repath           → the folder moved: carry its registry row to the new path
+    POST /api/deck/spaces/forget           → drop a space's registry row (folder untouched)
 
 All registry state lives in ~/.navig/spaces.json (see navig.spaces.registry); discovery +
 manifest parsing reuse navig.spaces.{resolver,space_manifest}. Read-only progress reuses the
@@ -20,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -122,12 +126,12 @@ async def handle_deck_spaces_scan(request: "web.Request") -> "web.Response":
 
 
 def _community_root() -> Path | None:
-    """Best-effort locate the navig-community registry (dev repo or ~/.navig)."""
+    """Best-effort locate the registry content root (monorepo registry/ or ~/.navig)."""
     from navig.platform.paths import config_dir
 
     candidates: list[Path] = [config_dir() / "community"]
     # Walk up from this file, checking in precedence order per parent: a sibling
-    # `navig-community` checkout (polyrepo), then a `registry/community` mirror
+    # `navig-community` checkout (the pre-2026-10-16 polyrepo name), then a `registry/community` mirror
     # if one was ever synced there, then the in-repo index at `registry/` itself
     # — this monorepo keeps `registry/community.yaml` + `registry/<type>/
     # registry.json` DIRECTLY under `registry/` (no `community/` subdir), so
@@ -150,9 +154,10 @@ def _read_json(p: Path) -> Any:
         return None
 
 
-# The community marketplace lives in the navig-run/community GitHub repo.
-_MARKET_OWNER = "navig-run"
-_MARKET_REPO = "community"
+# The marketplace lives in the first-party registry repo (navig.registry_repo names it).
+from navig.registry_repo import OWNER as _MARKET_OWNER  # noqa: E402
+from navig.registry_repo import REPO as _MARKET_REPO  # noqa: E402
+from navig.registry_repo import normalize_spec as _normalize_registry_spec  # noqa: E402
 
 
 def _titleize(s: str) -> str:
@@ -280,23 +285,76 @@ def _bay_catalog_path() -> Path | None:
 
 
 def _installed_space_ids() -> set[str]:
-    """Ids of spaces already installed locally (for the catalog ``installed`` flag)."""
+    """Every name an installed space answers to, for the catalog ``installed`` flag.
+
+    A registry entry's ``id`` is often NOT the catalog slug: the Bay installs ``system-space``
+    under that id, but a space registered any other way carries its normalized or federated
+    id (``homelab-system``, ``human``) while its folder keeps the slug (``system-space``).
+    Matching on the id alone reported every such space as not installed.
+    """
     try:
         from navig.spaces import registry as _registry  # noqa: PLC0415
+        from navig.spaces.contracts import normalize_space_name  # noqa: PLC0415
 
-        return {str(e.get("id")) for e in _registry.load_registry().get("spaces", [])}
+        names: set[str] = set()
+        for e in _registry.load_registry().get("spaces", []):
+            for value in (e.get("id"), Path(str(e.get("path") or "")).name):
+                if value:
+                    names.add(str(value))
+                    names.add(normalize_space_name(str(value)))
+        return names
     except Exception:  # noqa: BLE001
         return set()
 
 
 def _installed_plugin_ids() -> set[str]:
-    """Ids of first-party plugins installed locally (package · pip · legacy formats)."""
+    """Ids of plugins installed locally, in both forms a catalog slug may take.
+
+    The plugin host keys a pip plugin by its distribution name (``navig-audio``) while
+    ``_plugin_id_of`` strips catalog slugs to the bare id (``audio``), so comparing the two
+    never matched: every installed pip plugin showed "Install". Both forms are in the set.
+    """
     try:
         from navig.plugins.host import get_plugin_host  # noqa: PLC0415
 
-        return {str(p.id) for p in get_plugin_host().list_installed()}
+        ids = {str(p.id) for p in get_plugin_host().list_installed()}
+        return ids | {_plugin_id_of(i) for i in ids}
     except Exception:  # noqa: BLE001
         return set()
+
+
+def _installed_other_ids() -> dict[str, set[str]]:
+    """Installed personas, blocks, formations, prompts and webapps — each by its loader.
+
+    These kinds carried no ``installed`` flag at all, so the Bay offered them forever.
+    A kind whose lookup fails is left out (unknown, not "not installed").
+    """
+    out: dict[str, set[str]] = {}
+    try:
+        from navig.personas.resolver import discover_persona_paths  # noqa: PLC0415
+
+        out["persona"] = {str(n) for n in discover_persona_paths()}
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from navig.blocks.loader import blocks_by_id  # noqa: PLC0415
+
+        out["block"] = set(blocks_by_id().keys())
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from navig.platform.paths import config_dir as _config_dir  # noqa: PLC0415
+        from navig.platform.paths import store_dir  # noqa: PLC0415
+
+        for kind, root in (
+            ("formation", store_dir() / "formations"),
+            ("prompt", store_dir() / "prompts"),
+            ("webapp", _config_dir() / "webapps"),
+        ):
+            out[kind] = {d.name for d in root.iterdir() if d.is_dir()} if root.is_dir() else set()
+    except Exception:  # noqa: BLE001
+        pass
+    return out
 
 
 def _installed_skill_ids() -> set[str]:
@@ -327,10 +385,10 @@ def _license_tier() -> str:
 
 def _install_spec(install: str) -> str | None:
     """The bare spec ``/api/deck/catalog/install`` accepts, pulled from a bay
-    item's ``install`` command — the ``github:navig-run/community/…`` reference.
+    item's ``install`` command — the ``github:navig-run/registry/…`` reference.
 
     Returns ``None`` for kinds acquired a different way (persona ``use``, block
-    ``apply``, plugin ``install <name>``, lens = manual): a surface renders those
+    ``apply``, plugin ``install <name>``, an extension-bundled lens = manual): a surface renders those
     as the raw ``install`` command instead of a one-click Install button.
     """
     idx = install.find("github:")
@@ -346,6 +404,7 @@ def _enrich_bay_item(
     fail_open: bool,
     installed_plugins: set[str] | None = None,
     installed_skills: set[str] | None = None,
+    installed_other: dict[str, set[str]] | None = None,
 ) -> dict[str, Any]:
     """Attach live entitlement (``unlocked``/``capability``) + ``installed`` to an item.
 
@@ -373,11 +432,15 @@ def _enrich_bay_item(
     out["spec"] = _install_spec(str(item.get("install") or ""))
     kind = item.get("kind")
     if kind == "space":
-        out["installed"] = slug in installed_spaces
+        from navig.spaces.contracts import normalize_space_name  # noqa: PLC0415
+
+        out["installed"] = slug in installed_spaces or normalize_space_name(slug) in installed_spaces
     elif kind == "plugin" and installed_plugins is not None:
-        out["installed"] = _plugin_id_of(slug) in installed_plugins
+        out["installed"] = slug in installed_plugins or _plugin_id_of(slug) in installed_plugins
     elif kind == "skill" and installed_skills is not None:
         out["installed"] = slug in installed_skills
+    elif installed_other is not None and kind in installed_other:
+        out["installed"] = slug in installed_other[str(kind)]
     return out
 
 
@@ -409,6 +472,7 @@ def gather_bay_items(*, kind: str | None = None, surface: str | None = None) -> 
     installed_spaces = _installed_space_ids()
     installed_plugins = _installed_plugin_ids()
     installed_skills = _installed_skill_ids()
+    installed_other = _installed_other_ids()
     out: list[dict[str, Any]] = []
     for it in items:
         if not isinstance(it, dict):
@@ -426,6 +490,7 @@ def gather_bay_items(*, kind: str | None = None, surface: str | None = None) -> 
                 fail_open=fail_open,
                 installed_plugins=installed_plugins,
                 installed_skills=installed_skills,
+                installed_other=installed_other,
             )
         )
     return {
@@ -477,6 +542,29 @@ def _plugin_name(install: str) -> str | None:
     return parts[-1] if len(parts) >= 2 and "install" in parts else None
 
 
+_PIP_PACKAGE = re.compile(r"^navig-[a-z0-9][a-z0-9-]*$")
+
+
+def _pip_package(install: str) -> str | None:
+    """The first-party package a catalog install command names, or None.
+
+    Catalog plugins install as ``pip install navig-audio`` or
+    ``navig store install pip:navig-calendar``. Only a ``navig-*`` name is accepted, so the
+    Bay can never be talked into installing an arbitrary package.
+    """
+    text = install.split("#", 1)[0]
+    tokens = text.split()
+    for i, tok in enumerate(tokens):
+        if tok.startswith("pip:"):
+            name = tok[4:]
+        elif tok == "install" and i > 0 and tokens[i - 1] == "pip" and i + 1 < len(tokens):
+            name = tokens[i + 1]
+        else:
+            continue
+        return name if _PIP_PACKAGE.match(name) else None
+    return None
+
+
 def _rearm_entry_points() -> None:
     """Forget the entry-point once-guard so a freshly pip-installed plugin's
     module appears on the NEXT catalog GET — no daemon restart. Mirrors
@@ -504,7 +592,10 @@ def acquire_bay_item(slug: str, kind: str = "", install: str = "") -> dict[str, 
     - **persona** → ``{"action": "activate"}`` — a switch in the caller's context.
     - **block** → ``{"action": "apply"}`` — blocks EXECUTE with inputs/approvals;
       the caller opens the apply flow (never silently run from a button).
-    - **lens / unknown** → ``{"action": "manual", "command": install}``.
+    - **lens** with a ``github:`` spec (a store Lens, ``.user.js``) installs like the
+      github kinds above, through the Lens store; a lens bundled in the Chrome
+      extension (no spec — "Enable in the Dock bar") stays manual.
+    - **unknown** → ``{"action": "manual", "command": install}``.
     - priced+locked → ``{"action": "locked", "capability", "tier_required"}``.
     - bad input / install failure → ``{"action": "error", "error": ...}``.
 
@@ -562,6 +653,22 @@ def acquire_bay_item(slug: str, kind: str = "", install: str = "") -> dict[str, 
             logger.warning("bay acquire (install) failed for %s: %s", slug, exc)
             return {"action": "error", "error": f"install failed: {exc}"}
         _rearm_entry_points()  # the fresh install must appear on the next catalog GET
+        return {"slug": slug, "action": "install", "installed": True}
+
+    if kind == "plugin" and (package := _pip_package(install)):
+        # The plugin host installs dirs, zips and git repos — it never runs pip, so handing it
+        # "navig-audio" could only fail. Install the package into the daemon's own runtime.
+        from navig.cli.providers import pip_install  # noqa: PLC0415
+
+        try:
+            pip_install(package)
+        except ValueError as exc:
+            logger.warning("bay acquire (pip) failed for %s: %s", package, exc)
+            return {"action": "error", "error": str(exc)}
+        import importlib  # noqa: PLC0415
+
+        importlib.invalidate_caches()  # the new distribution must be visible to metadata
+        _rearm_entry_points()
         return {"slug": slug, "action": "install", "installed": True}
 
     if kind == "plugin":
@@ -633,11 +740,22 @@ def _find_market_pricing(spec: str) -> tuple[str, dict[str, Any]] | None:
     Only specs pointing into OUR community registry are resolvable; anything
     else (arbitrary github/local specs) returns None and installs ungated.
     """
-    prefix = f"github:{_MARKET_OWNER}/{_MARKET_REPO}/"
-    if not spec.startswith(prefix):
+    # One spelling before the gate: a spec naming the registry's former name is OUR
+    # registry, so it must be priced — never waved through as "someone else's".
+    spec = _normalize_registry_spec(spec)
+    # Parse exactly as the installer does. A literal prefix test was bypassable: GitHub
+    # owner/repo names are case-insensitive (`github:NAVIG-RUN/…` installs the same
+    # folder) and the installer also accepts `space:`/`skill:`/bare `owner/repo/…` and an
+    # `@ref` suffix — each of those installed a priced item ungated.
+    from navig.commands.install import _parse_spec  # noqa: PLC0415
+
+    try:
+        info = _parse_spec(spec)
+    except ValueError:
         return None
-    rest = spec[len(prefix):].strip("/")
-    parts = rest.split("/")
+    if str(info["owner"]).lower() != _MARKET_OWNER or str(info["repo"]).lower() != _MARKET_REPO:
+        return None
+    parts = [p for p in info["subpath"] if p]
     if len(parts) < 2:
         return None
     cid = parts[-1]
@@ -645,13 +763,19 @@ def _find_market_pricing(spec: str) -> tuple[str, dict[str, Any]] | None:
     if root is None:
         return None
 
-    def _block_from(entries: Any) -> dict[str, Any] | None:
+    def _block_from(entries: Any) -> tuple[str, dict[str, Any]] | None:
         if not isinstance(entries, list):
             return None
         for e in entries:
-            if isinstance(e, dict) and str(e.get("id") or e.get("name")) == cid:
+            if not isinstance(e, dict):
+                continue
+            # Match the FOLDER too: `social-media` installs from `spaces/social-media-space`
+            # (its registry `path`), and an id-only match let that paid space install
+            # ungated. The entry's own id is what the grant key is built from, so it —
+            # not the path — is what the caller gets back.
+            if cid in (str(e.get("id") or e.get("name")), str(e.get("path") or "")):
                 m = e.get("marketplace")
-                return m if isinstance(m, dict) else {}
+                return str(e.get("id") or e.get("name")), (m if isinstance(m, dict) else {})
         return None
 
     # Spaces + skills registries, personas persona.json — tolerant walk.
@@ -663,9 +787,9 @@ def _find_market_pricing(spec: str) -> tuple[str, dict[str, Any]] | None:
     ):
         reg = _read_json(reg_path)
         if isinstance(reg, dict):
-            block = _block_from(reg.get(key) or reg.get("items"))
-            if block is not None:
-                return cid, block
+            hit = _block_from(reg.get(key) or reg.get("items"))
+            if hit is not None:
+                return hit
     meta = _read_json(root / "personas" / cid / "persona.json")
     if isinstance(meta, dict):
         m = meta.get("marketplace")
@@ -904,6 +1028,85 @@ async def handle_deck_space_books(request: "web.Request") -> "web.Response":
         return _err(str(exc), 500)
 
 
+# What a person may type into the desktop's "Edit details" dialog. The cap is generous
+# for a name and a sentence or two; it exists so a pasted document can't become a
+# manifest field every surface then has to render.
+_SPACE_INFO_LIMITS = {"display_name": 80, "description": 500, "category": 40}
+_MANIFEST_ID_KEYS = ("id", "space_id", "spaceId", "name")
+
+
+async def handle_deck_space_info(request: "web.Request") -> "web.Response":
+    """POST { display_name?, description?, category? } (str | null) — a space's identity text.
+
+    The desktop's workspace switcher edits a space's name and description here, so
+    the brain (Telegram, `navig space list`, the deck) shows what the operator typed
+    instead of the folder slug. Same safe writer and contract as ``/books``: unknown
+    space → 404, YAML / unreadable manifest → 409, bad body → 400; an empty string or
+    null clears the field.
+
+    ``display_name`` is the LAST fallback of ``SpaceManifest.resolved_id``. A manifest
+    with no id key of its own would therefore start answering to "Company Business"
+    the moment a display name landed in it — so the route pins ``id`` first.
+    """
+    try:
+        from navig.spaces.resolver import discover_space_paths  # noqa: PLC0415
+        from navig.spaces.space_manifest import (  # noqa: PLC0415
+            ManifestNotWritable,
+            load_space_manifest,
+            set_manifest_field,
+        )
+
+        sid = request.match_info.get("id", "")
+        cfg = discover_space_paths(include_disabled=True).get(sid)
+        if cfg is None:
+            return _err(f"space '{sid}' not found", 404)
+
+        body = await request.json()
+        if not isinstance(body, dict) or not any(k in body for k in _SPACE_INFO_LIMITS):
+            return _err("body must be { display_name?, description?, category? } (string | null each)", 400)
+        updates: dict[str, str | None] = {}
+        for key, limit in _SPACE_INFO_LIMITS.items():
+            if key not in body:
+                continue
+            raw = body[key]
+            if raw is not None and not isinstance(raw, str):
+                return _err(f"'{key}' must be a string or null", 400)
+            value = (raw.strip() or None) if isinstance(raw, str) else None
+            if value is not None and len(value) > limit:
+                return _err(f"'{key}' is longer than {limit} characters", 400)
+            updates[key] = value
+
+        space_dir = Path(cfg.path)
+
+        def _write() -> dict[str, Any]:
+            manifest = load_space_manifest(space_dir)
+            if manifest.source_path is not None and not any(manifest.get(k) for k in _MANIFEST_ID_KEYS):
+                set_manifest_field(space_dir, "id", sid, id_hint=sid)
+            for key, value in updates.items():
+                set_manifest_field(space_dir, key, value, id_hint=sid)
+            after = load_space_manifest(space_dir)
+            # A manifest nesting its fields under "space:" lets the nested copy win on
+            # read, so a top-level write would report success and change nothing.
+            for key, value in updates.items():
+                if (after.get(key) or None) != value:
+                    raise ManifestNotWritable(f"space manifest keeps `{key}` nested — edit it by hand")
+            return {
+                "id": sid,
+                "name": after.resolved_name or sid,
+                "display_name": after.get("display_name"),
+                "description": after.get("description") or "",
+                "category": after.get("category"),
+            }
+
+        try:
+            return _ok(await asyncio.to_thread(_write))
+        except ManifestNotWritable as exc:
+            return _err(str(exc), 409)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("spaces/info failed")
+        return _err(str(exc), 500)
+
+
 async def handle_deck_space_activate(request: "web.Request") -> "web.Response":
     """Set the active space (binds the working dir, like `navig space switch`)."""
     sid = request.match_info.get("id", "")
@@ -943,7 +1146,16 @@ async def handle_deck_space_activate(request: "web.Request") -> "web.Response":
 
 
 async def handle_deck_space_register(request: "web.Request") -> "web.Response":
-    """POST { path } — register an external .navig/ folder (enabled)."""
+    """POST { path, auto? } — register an external .navig/ folder (enabled).
+
+    ``auto: true`` marks a *background* back-fill (NAVIG OS syncing its workspace
+    list into the registry). That caller must never resurrect a space the operator
+    forgot — and never scaffold a ``.navig/`` marker onto one — so a forgotten path
+    answers ``{skipped: "forgotten"}`` with its tombstone intact and a bare folder
+    answers ``{skipped: "not_a_space"}`` (the caller may scaffold, then retry
+    explicitly). Without ``auto`` the contract is unchanged: an explicit register
+    is the documented way to bring a forgotten space back.
+    """
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
@@ -951,14 +1163,185 @@ async def handle_deck_space_register(request: "web.Request") -> "web.Response":
     raw = (body.get("path") or "").strip()
     if not raw:
         return _err("'path' is required")
+    auto = bool(body.get("auto"))
     from navig.spaces import registry as _registry  # noqa: PLC0415
     from navig.spaces.contracts import normalize_space_name  # noqa: PLC0415
     from navig.spaces.space_manifest import is_space_dir, load_space_manifest  # noqa: PLC0415
 
     target = Path(raw).expanduser()
-    if not target.is_dir() or not is_space_dir(target):
+    if auto:
+        if _registry.is_forgotten(target):
+            return _ok({"skipped": "forgotten"})
+        if not target.is_dir() or not is_space_dir(target):
+            return _ok({"skipped": "not_a_space"})
+    elif not target.is_dir() or not is_space_dir(target):
         return _err("not a space (needs a .navig/ directory)", 400)
     manifest = load_space_manifest(target)
     sid = normalize_space_name(manifest.resolved_id or target.name)
     entry = _registry.register(target, id=sid, name=manifest.resolved_name or target.name, source="external", enabled=True)
     return web.json_response({"ok": True, "data": entry}, status=201)
+
+
+def _relations_space_or_err(request: "web.Request") -> "tuple[Any, None] | tuple[None, web.Response]":
+    """Resolve ``/spaces/{id}/…`` to (space_cfg, None) or (None, error_response)."""
+    from navig.spaces.resolver import discover_space_paths  # noqa: PLC0415
+
+    sid = request.match_info.get("id", "")
+    cfg = discover_space_paths(include_disabled=True).get(sid)
+    if cfg is None:
+        return None, _err("not registered", 404)
+    return cfg, None
+
+
+async def handle_deck_space_relations(request: "web.Request") -> "web.Response":
+    """GET /spaces/{id}/relations — the shared graph reader's payload (parent, links,
+    children, inbound links, availability, ``parent_cycle``). Read-only."""
+    from navig.spaces import relations as _relations  # noqa: PLC0415
+    from navig.spaces.space_manifest import load_space_manifest  # noqa: PLC0415
+
+    cfg, err = _relations_space_or_err(request)
+    if err is not None:
+        return err
+    own = load_space_manifest(cfg.path).resolved_id or request.match_info.get("id", "")
+    _, payload = _relations.related_graph(cfg.path, space_id=own)
+    return _ok(payload)
+
+
+async def handle_deck_space_relations_update(request: "web.Request") -> "web.Response":
+    """POST /spaces/{id}/relations — incremental, validated mutations.
+
+    Body: ``{op: "link", space, include?, exclude?, profile?}`` ·
+    ``{op: "unlink", space}`` · ``{op: "parent", space | null}`` (null clears).
+    Same write-time rules as the CLI: unregistered targets, self-links, bad access
+    and parent cycles answer 400 with the reason; success returns the updated
+    graph payload so a client never refetches to converge.
+    """
+    from navig.spaces import relations as _relations  # noqa: PLC0415
+    from navig.spaces.space_manifest import load_space_manifest  # noqa: PLC0415
+
+    cfg, err = _relations_space_or_err(request)
+    if err is not None:
+        return err
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return _err("invalid JSON")
+    op = str(body.get("op") or "").strip()
+    try:
+        if op == "link":
+            target = str(body.get("space") or "").strip()
+            if not target:
+                return _err("'space' is required for op=link")
+            _relations.link(
+                cfg.path,
+                target,
+                include=tuple(body.get("include") or ()),
+                exclude=tuple(body.get("exclude") or ()),
+                profile=body.get("profile"),
+            )
+        elif op == "unlink":
+            target = str(body.get("space") or "").strip()
+            if not target:
+                return _err("'space' is required for op=unlink")
+            _relations.unlink(cfg.path, target)
+        elif op == "parent":
+            space = body.get("space")
+            _relations.set_parent(cfg.path, str(space).strip() if space else None)
+        else:
+            return _err("op must be one of: link, unlink, parent")
+    except ValueError as exc:
+        return _err(str(exc), 400)
+    own = load_space_manifest(cfg.path).resolved_id or request.match_info.get("id", "")
+    _, payload = _relations.related_graph(cfg.path, space_id=own)
+    return _ok(payload)
+
+
+async def handle_deck_space_linked_context(request: "web.Request") -> "web.Response":
+    """GET /spaces/{id}/context?query= — what an agent may read from the links.
+
+    Mirrors the ``/context/snapshot`` shape (``_ok({"snapshot": …})``) but scoped to
+    the CROSS-Space half: provenance per item, deny-list, containment, budgets and
+    dedupe already applied by ``navig.spaces.linked_context`` (read-only). ``query``
+    is the caller's focus note, echoed back so runs stay comparable.
+    """
+    from navig.spaces import linked_context as _lc  # noqa: PLC0415
+    from navig.spaces.space_manifest import load_space_manifest  # noqa: PLC0415
+
+    cfg, err = _relations_space_or_err(request)
+    if err is not None:
+        return err
+    own = load_space_manifest(cfg.path).resolved_id or request.match_info.get("id", "")
+    focus = request.rel_url.query.get("query") or None
+
+    def _gather() -> Any:
+        ctx = _lc.gather_linked(cfg.path, space_id=own)
+        return {
+            "snapshot": {
+                "space": ctx.space,
+                "parent_cycle": ctx.parent_cycle,
+                "unavailable": [{"id": i, "reason": r} for i, r in ctx.unavailable],
+                "chars_total": ctx.chars_total,
+                "items": [
+                    {**item.provenance, "source": item.source, "size": item.size} for item in ctx.items
+                ],
+            },
+            "focus": focus,
+        }
+
+    return _ok(await asyncio.to_thread(_gather))
+
+
+async def handle_deck_space_repath(request: "web.Request") -> "web.Response":
+    """POST { old_path, new_path } — the space's folder moved; follow it.
+
+    The desktop's "Change folder…" calls this after the operator points a workspace at
+    the folder's new place. A registered space keeps its row — ``enabled``, ``trusted``
+    and the active pointer included (``registry.repath``); a space the registry only
+    knew by discovery (a folder under the spaces root) is registered at the new place.
+    The new folder must be a space (have ``.navig/``); nothing on disk is moved here.
+    """
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return _err("invalid JSON")
+    old_raw = str(body.get("old_path") or "").strip() if isinstance(body, dict) else ""
+    new_raw = str(body.get("new_path") or "").strip() if isinstance(body, dict) else ""
+    if not old_raw or not new_raw:
+        return _err("'old_path' and 'new_path' are required")
+    from navig.spaces import registry as _registry  # noqa: PLC0415
+    from navig.spaces.contracts import normalize_space_name  # noqa: PLC0415
+    from navig.spaces.space_manifest import is_space_dir, load_space_manifest  # noqa: PLC0415
+
+    target = Path(new_raw).expanduser()
+    if not target.is_dir() or not is_space_dir(target):
+        return _err("the new folder is not a space (needs a .navig/ directory)", 400)
+
+    def _move() -> dict[str, Any]:
+        if _registry.repath(old_raw, target):
+            return {"path": str(target), "carried": True}
+        manifest = load_space_manifest(target)
+        sid = normalize_space_name(manifest.resolved_id or target.name)
+        _registry.ensure_registered(target, id=sid, name=manifest.resolved_name or target.name, source="external")
+        return {"path": str(target), "carried": False}
+
+    return _ok(await asyncio.to_thread(_move))
+
+
+async def handle_deck_space_forget(request: "web.Request") -> "web.Response":
+    """POST { path } — drop a space's registry row (the folder is not touched).
+
+    Called when the desktop removes a workspace, so a deleted space does not linger as
+    a registry row pointing at nothing. Answers ``{forgotten: false}`` (not an error)
+    for a path the registry never held — discovery-only spaces have no row to drop.
+    """
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return _err("invalid JSON")
+    raw = str(body.get("path") or "").strip() if isinstance(body, dict) else ""
+    if not raw:
+        return _err("'path' is required")
+    from navig.spaces import registry as _registry  # noqa: PLC0415
+
+    forgotten = await asyncio.to_thread(_registry.forget, str(Path(raw).expanduser()))
+    return _ok({"path": raw, "forgotten": bool(forgotten)})

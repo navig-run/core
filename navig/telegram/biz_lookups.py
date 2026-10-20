@@ -46,23 +46,36 @@ def _money(v) -> str:
 # ── weather (wttr.in) ────────────────────────────────────────────────────────
 
 
-async def weather(city: str) -> str:
+_WEATHER_COPY = {
+    "en": ("feels", "km/h", "🌧 Couldn't fetch the weather right now."),
+    "ru": ("ощущается", "км/ч", "🌧 Не удалось получить погоду."),
+    "fr": ("ressenti", "km/h", "🌧 Météo indisponible pour le moment."),
+}
+
+
+async def weather(city: str, lang: str = "en") -> str:
+    """Current weather for *city*, in *lang* (en/ru/fr). "погода Москва" came back in
+    English, and "weather Paris" was titled by whichever neighbourhood the service
+    picked ("Saint-Merri") — the city now keeps the name it was asked by."""
     spec = (city or "").strip()
-    url = f"https://wttr.in/{spec}?format=j1" if spec else "https://wttr.in/?format=j1"
+    lang = lang if lang in _WEATHER_COPY else "en"
+    feels, kmh, failed = _WEATHER_COPY[lang]
+    base = f"https://wttr.in/{spec}?format=j1" if spec else "https://wttr.in/?format=j1"
+    url = base if lang == "en" else f"{base}&lang={lang}"
     data = await _get_json(url, timeout=10, headers=_UA)
     if not data:
-        return "🌧 Couldn't fetch the weather right now."
+        return failed
     cur = (data.get("current_condition") or [{}])[0]
     area = (data.get("nearest_area") or [{}])[0]
-    name = ((area.get("areaName") or [{}])[0].get("value") or spec or "Here")
+    name = spec.title() if spec else ((area.get("areaName") or [{}])[0].get("value") or "Here")
     country = (area.get("country") or [{}])[0].get("value") or ""
-    desc = (cur.get("weatherDesc") or [{}])[0].get("value") or ""
+    desc = (cur.get(f"lang_{lang}") or cur.get("weatherDesc") or [{}])[0].get("value") or ""
     loc = f"{name}, {country}" if country else name
     t, f = cur.get("temp_C"), cur.get("FeelsLikeC")
     return (
         f"🌤 <b>{loc}</b>\n"
-        f"{desc} · <b>{t}°C</b> (feels {f}°C)\n"
-        f"💨 {cur.get('windspeedKmph')} km/h {cur.get('winddir16Point', '')} · "
+        f"{desc.strip()} · <b>{t}°C</b> ({feels} {f}°C)\n"
+        f"💨 {cur.get('windspeedKmph')} {kmh} {cur.get('winddir16Point', '')} · "
         f"💧 {cur.get('humidity')}%"
     )
 
@@ -247,17 +260,92 @@ def _parse_whois(raw: str) -> dict[str, str]:
     return out
 
 
-async def whois(domain: str) -> str:
+_RDAP_HEADERS = {**_UA, "Accept": "application/rdap+json"}  # rdap.org 403s aiohttp's UA
+
+
+async def _rdap(domain: str) -> dict[str, str] | None:
+    """Registration facts over RDAP — the only lookup many registries still serve.
+
+    `.run` (and the other Identity Digital TLDs) publish no port-43 whois at all:
+    IANA's record has an empty ``refer:``, and the old code then parsed IANA's
+    record about the TLD itself, so `whois navig.run` answered "Created:
+    2015-04-30" — the day `.run` was created."""
+    data = await _get_json(f"https://rdap.org/domain/{domain}", timeout=10, headers=_RDAP_HEADERS)
+    if not isinstance(data, dict) or not data.get("ldhName"):
+        return None
+    out: dict[str, str] = {}
+    for ev in data.get("events") or []:
+        action, when = ev.get("eventAction"), ev.get("eventDate") or ""
+        if action == "registration":
+            out["created"] = when
+        elif action == "expiration":
+            out["expires"] = when
+    for ent in data.get("entities") or []:
+        if "registrar" in (ent.get("roles") or []):
+            for row in (ent.get("vcardArray") or [None, []])[1]:
+                if isinstance(row, list) and len(row) > 3 and row[0] == "fn":
+                    out["registrar"] = str(row[3])
+    if status := data.get("status"):
+        out["status"] = str(status[0])
+    return out
+
+
+_NOT_FOUND_RE = re.compile(
+    r"no match for|not found|no entries found|no data found|status:\s*free|"
+    r"is available for|no object found|domain not found",
+    re.IGNORECASE,
+)
+
+
+_STATUS_URL_RE = re.compile(r"\s+https?://\S+")
+
+
+def _is_tld_record(raw: str, domain: str) -> bool:
+    """IANA's answer about the TLD, not about *domain* (an empty ``refer:``)."""
+    first = next((ln.split(":", 1)[1].strip().lower() for ln in raw.splitlines()
+                  if ln.lower().startswith("domain:")), "")
+    return bool(first) and first != domain.lower() and "." not in first
+
+
+async def lookup_domain(domain: str) -> dict[str, str]:
+    """Registration facts for *domain*: RDAP first, then port-43 whois.
+
+    Always returns ``domain`` and ``outcome`` — ``ok`` · ``not_registered`` ·
+    ``no_data`` · ``failed`` · ``invalid`` — plus, when ``ok``, ``source`` and
+    whichever of ``registrar`` / ``created`` / ``expires`` / ``status`` were found.
+    Shared by the ``/whois`` command and the agent's ``domain_lookup`` tool, so
+    neither shells out to a ``whois`` binary (on Windows that is Sysinternals
+    whois, which prints its licence and exits 1 until its EULA is accepted).
+    """
     d = _clean_domain(domain)
     if not d or "." not in d:
-        return "🌐 Usage: <code>whois example.com</code>"
+        return {"domain": d, "outcome": "invalid"}
+    f = await _rdap(d)
+    if f is not None:
+        return {"domain": d, "outcome": "ok", "source": "rdap", **f}
     try:
         raw = await asyncio.to_thread(_whois_raw, d)
     except Exception:  # noqa: BLE001
+        return {"domain": d, "outcome": "failed"}
+    if not raw or _is_tld_record(raw, d):
+        return {"domain": d, "outcome": "no_data"}
+    if _NOT_FOUND_RE.search(raw):
+        # It said "registered (no public details)" for a free domain.
+        return {"domain": d, "outcome": "not_registered"}
+    return {"domain": d, "outcome": "ok", "source": "whois", **_parse_whois(raw)}
+
+
+async def whois(domain: str) -> str:
+    f = await lookup_domain(domain)
+    d, outcome = f["domain"], f["outcome"]
+    if outcome == "invalid":
+        return "🌐 Usage: <code>whois example.com</code>"
+    if outcome == "failed":
         return f"🌐 whois lookup failed for <b>{d}</b>."
-    if not raw:
+    if outcome == "no_data":
         return f"🌐 No whois data for <b>{d}</b>."
-    f = _parse_whois(raw)
+    if outcome == "not_registered":
+        return f"🌐 <b>{d}</b> is not registered."
     lines = [f"🌐 <b>{d}</b>"]
     if f.get("registrar"):
         lines.append(f"🏢 {f['registrar']}")
@@ -266,5 +354,7 @@ async def whois(domain: str) -> str:
     if f.get("expires"):
         lines.append(f"⏳ Expires: {f['expires'][:10]}")
     if f.get("status"):
-        lines.append(f"🔖 {f['status'].split()[0]}")
+        # whois: "clientDeleteProhibited https://icann.org/epp#…"; RDAP: "client
+        # delete prohibited" — the first word alone read "client".
+        lines.append(f"🔖 {_STATUS_URL_RE.sub('', f['status']).strip()}")
     return "\n".join(lines) if len(lines) > 1 else f"🌐 <b>{d}</b> — registered (no public details)."

@@ -256,9 +256,9 @@ async def test_slash_ping_routes_to_ping_handler(monkeypatch):
 
 
 async def test_slash_settings_and_voice_are_no_longer_dispatched_as_commands(monkeypatch):
-    """/settings and /voice moved to the Deck — they must NOT route to bot handlers
-    anymore. Guards the migration: a removed slash command falls through to normal
-    conversation instead of silently re-binding to a handler."""
+    """/settings and /voice moved to the Mini App — they must NOT route to bot handlers
+    anymore, and must not reach the model as chat either (it improvised an answer about
+    a command that no longer exists). They answer with where the setting lives now."""
     seen: list[str] = []
 
     async def _on_message(channel, user_id, message, metadata, on_partial=None):
@@ -273,6 +273,14 @@ async def test_slash_settings_and_voice_are_no_longer_dispatched_as_commands(mon
     channel._bot_username = "mybot"
     channel._send_response = AsyncMock()
     channel._match_cli_command = lambda _text: None
+    channel._get_deck_url = lambda: None
+    sent: list[str] = []
+
+    async def _send_message(chat_id, text, parse_mode="HTML", **kwargs):
+        sent.append(text)
+        return {"ok": True}
+
+    channel.send_message = _send_message
 
     calls: list[str] = []
 
@@ -301,8 +309,11 @@ async def test_slash_settings_and_voice_are_no_longer_dispatched_as_commands(mon
 
     # Neither removed command reached a bot handler …
     assert calls == []
-    # … both fell through to normal conversation instead.
-    assert len(seen) == 2
+    # … nor the model …
+    assert seen == []
+    # … each answered with its Mini App pointer.
+    assert any("Settings" in t and "Mini App" in t for t in sent), sent
+    assert any("Voice & audio" in t for t in sent), sent
 
 
 async def test_auto_continuation_executes_second_turn_when_policy_enabled(monkeypatch):

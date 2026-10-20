@@ -35,6 +35,11 @@ def mcp_serve(
         "--print-config",
         help="Print connector config for Perplexity / VS Code / Claude and exit.",
     ),
+    only: str | None = typer.Option(
+        None,
+        "--only",
+        help="Serve only these tool bundles, comma-separated (e.g. recall). Default: all.",
+    ),
 ):
     """Start the NAVIG MCP server.
 
@@ -45,6 +50,7 @@ def mcp_serve(
       navig mcp serve --transport websocket    # WebSocket on ws://localhost:3001
       navig mcp serve --transport stdio        # stdio (for VS Code / Claude Desktop)
       navig mcp serve --print-config           # Print Perplexity connector URL and exit
+      navig mcp serve -t stdio --only recall   # just the Recall tools (Claude Code)
     """
     from navig import console_helper as ch
     from navig.mcp_server import (
@@ -72,11 +78,13 @@ def mcp_serve(
         ch.console.print(json.dumps(generate_claude_mcp_config(), indent=2))
         return
 
+    bundles = [b.strip() for b in (only or "").split(",") if b.strip()] or None
+
     if transport == _Transport.http and not token:
         ch.dim("Tip: pass --token to require Bearer token authentication.")
 
     try:
-        start_mcp_server(mode=transport.value, port=port, token=token, host=host)
+        start_mcp_server(mode=transport.value, port=port, token=token, host=host, only=bundles)
     except (ImportError, ValueError) as exc:
         ch.error(str(exc))
         raise typer.Exit(1) from exc
@@ -90,19 +98,102 @@ def mcp_serve(
 class _Client(str, Enum):
     vscode = "vscode"
     cursor = "cursor"
+    claude_code = "claude-code"
+
+
+class _Scope(str, Enum):
+    user = "user"
+    project = "project"
+    local = "local"
+
+
+#: The Claude Code server name `install-config --client claude-code` registers.
+CLAUDE_CODE_SERVER = "navig-recall"
+
+
+def claude_code_command(scope: str, claude: str = "claude") -> list[str]:
+    """``claude mcp add navig-recall --scope <s> -- <navig> mcp serve --transport stdio --only recall``.
+
+    The server is launched by Claude Code, not from a shell, so ``navig`` is resolved to
+    an absolute path here (falling back to this interpreter's ``-m navig``). The
+    transport is spelled out because ``serve`` defaults to HTTP.
+    """
+    import shutil
+    import sys
+
+    navig = shutil.which("navig")
+    launcher = [navig] if navig else [sys.executable, "-m", "navig"]
+    return [claude, "mcp", "add", CLAUDE_CODE_SERVER, "--scope", scope, "--",
+            *launcher, "mcp", "serve", "--transport", "stdio", "--only", "recall"]
+
+
+def _install_claude_code(scope: _Scope, dry_run: bool, yes: bool) -> None:
+    import shlex
+    import shutil
+    import subprocess
+    import sys
+
+    from navig import console_helper as ch
+    from navig.platform.paths import invocation_cwd
+
+    claude = shutil.which("claude")
+    cmd = claude_code_command(scope.value, claude or "claude")
+    argv = ["claude", *cmd[1:]]
+    # Shown the way this machine's shell would take it (cmd/PowerShell quoting on Windows).
+    shown = subprocess.list2cmdline(argv) if sys.platform == "win32" else shlex.join(argv)
+    if dry_run:
+        ch.info("Would run (dry run, nothing changed):")
+        ch.console.print(f"  {shown}", markup=False, highlight=False)
+        if not claude:
+            ch.warning("`claude` is not on PATH here — install Claude Code before running it for real.")
+        return
+    if not claude:
+        ch.error("Claude Code (`claude`) is not on PATH.", f"Install it, then run: {shown}")
+        raise typer.Exit(1)
+    where = "every Claude Code session for this user" if scope == _Scope.user else "this project"
+    ch.info(f"This registers the Recall tools with Claude Code for {where}:")
+    ch.console.print(f"  {shown}", markup=False, highlight=False)
+    if not yes:
+        if not sys.stdin.isatty():
+            ch.error("Not a terminal, so I can't ask.", "Re-run with --yes to confirm, or --dry-run to preview.")
+            raise typer.Exit(2)
+        if not typer.confirm("Run it?", default=False):
+            ch.dim("Nothing changed.")
+            raise typer.Exit(1)
+    proc = subprocess.run(cmd, cwd=str(invocation_cwd()), capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=60)
+    if proc.returncode != 0:
+        ch.error(f"claude mcp add failed (exit {proc.returncode}).", (proc.stderr or proc.stdout).strip()[:500])
+        raise typer.Exit(1)
+    ch.success(f"Claude Code can now call the Recall tools ({CLAUDE_CODE_SERVER}, scope {scope.value}).")
+    ch.dim("  Check: claude mcp list  ·  Turn reading on first if needed: navig recall enable")
 
 
 @mcp_app.command("install-config")
 def mcp_install_config(
-    client: _Client = typer.Option(_Client.vscode, "--client", "-c", help="Target editor: vscode | cursor"),
+    client: _Client = typer.Option(
+        _Client.vscode, "--client", "-c", help="Target client: vscode | cursor | claude-code"
+    ),
     path: str = typer.Option(None, "--path", help="Project dir (default: current dir)."),
+    scope: _Scope = typer.Option(
+        _Scope.user, "--scope", help="claude-code only: user (all sessions) | project | local."
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="claude-code only: print the command, change nothing."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="claude-code only: don't ask before running it."),
 ):
-    """Wire this editor to NAVIG's MCP server so blocks/tools are callable in-editor.
+    """Wire an editor or agent to NAVIG's MCP server so its tools are callable there.
 
     Merge-safe: adds a `navig` server to the client's MCP config, preserving any
     existing servers. VS Code → .vscode/mcp.json · Cursor → .cursor/mcp.json.
     Then run `navig mcp serve --transport stdio` (or let the client launch it).
+
+    Claude Code → `claude mcp add navig-recall` serving only the Recall tools
+    (`navig mcp serve --transport stdio --only recall`); it shows the command and asks first.
     """
+
+    if client == _Client.claude_code:
+        _install_claude_code(scope, dry_run, yes)
+        return
 
     from navig import console_helper as ch
     from navig.core.json_io import JsonReadError, atomic_write_json, load_json_for_update

@@ -49,9 +49,12 @@ class TestFindProjectNavigRoot:
 
 class TestGetDefaultSpace:
     def test_returns_default_when_no_env(self) -> None:
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("NAVIG_SPACE", None)
-            result = get_default_space()
+        # get_default_space now consults the canonical active-space reader; with no
+        # active space anywhere the contract is still the literal fallback.
+        with patch("navig.commands.space.resolve_active_space", return_value=None):
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("NAVIG_SPACE", None)
+                result = get_default_space()
         assert result == "default"
 
     def test_uses_env_var(self) -> None:
@@ -63,6 +66,36 @@ class TestGetDefaultSpace:
         with patch.dict(os.environ, {"NAVIG_SPACE": "  DevOps  "}):
             result = get_default_space()
         assert result == result.lower()
+
+    def test_uses_the_active_space_cache_when_no_env(self, tmp_path, monkeypatch) -> None:
+        """The Phase C fix: the fallback follows the ACTIVE space, not a literal."""
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        monkeypatch.delenv("NAVIG_SPACE", raising=False)
+        from navig.config import reset_config_manager
+
+        reset_config_manager()
+        try:
+            cache = tmp_path / "cache" / "active_space.txt"
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            cache.write_text("DevOps\n", encoding="utf-8")
+            assert get_default_space() == "devops"  # active + normalized
+        finally:
+            reset_config_manager()
+
+    def test_uses_the_config_key_mirror_when_no_env(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        monkeypatch.delenv("NAVIG_SPACE", raising=False)
+        from navig.config import get_config_manager, reset_config_manager
+
+        reset_config_manager()
+        try:
+            get_config_manager().set_global("space.active", "cfg-space")
+            from navig.spaces.contracts import normalize_space_name
+
+            # The fallback normalizes like every other name reader ("cfg-space" → "cfg").
+            assert get_default_space() == normalize_space_name("cfg-space")
+        finally:
+            reset_config_manager()
 
 
 # ---------------------------------------------------------------------------
@@ -131,8 +164,8 @@ class TestDiscoverSpacePaths:
     def test_discovers_global_spaces(self, tmp_path: Path) -> None:
         from navig.platform import paths as nav_paths
         fake_global = tmp_path / "global_config"
-        (fake_global / "spaces" / "devops").mkdir(parents=True)
-        (fake_global / "spaces" / "sysops").mkdir(parents=True)
+        for name in ("devops", "sysops"):
+            (fake_global / "spaces" / name / ".navig" / "plans").mkdir(parents=True)
 
         with patch.object(nav_paths, "config_dir", return_value=fake_global):
             result = discover_space_paths(cwd=tmp_path)
@@ -140,6 +173,21 @@ class TestDiscoverSpacePaths:
         assert "devops" in result
         assert "sysops" in result
         assert result["devops"].scope == "global"
+
+    def test_a_bare_folder_in_the_global_root_is_not_a_space(self, tmp_path: Path) -> None:
+        """Was: every non-dot child dir counted, so stub folders recreated by an app for
+        a deleted space came back as registered spaces after each cleanup."""
+        from navig.platform import paths as nav_paths
+        fake_global = tmp_path / "global_config"
+        (fake_global / "spaces" / "stub" / "skills").mkdir(parents=True)
+
+        with (
+            patch.object(nav_paths, "config_dir", return_value=fake_global),
+            patch("navig.spaces.resolver._find_project_navig_root", return_value=None),
+        ):
+            result = discover_space_paths(cwd=tmp_path)
+
+        assert "stub" not in result
 
     def test_project_spaces_override_global(self, tmp_path: Path) -> None:
         from navig.platform import paths as nav_paths

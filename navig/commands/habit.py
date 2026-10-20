@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -573,6 +574,13 @@ def habit_checkin(
     close: bool = typer.Option(
         False, "--close", help="Close the day: strip the buttons, post the verdict"
     ),
+    midday: bool = typer.Option(
+        False, "--midday",
+        help="Repost the morning card with the marks made so far (replaces the 08:00 one)",
+    ),
+    expire_morning: bool = typer.Option(
+        False, "--expire-morning", help="Delete the morning card (19:00 by default)"
+    ),
     chat_id: int | None = typer.Option(None, "--chat-id", help="Telegram chat to send to"),
     on_date: str | None = typer.Option(None, "--date", help="Card for another day"),
     space: str | None = typer.Option(
@@ -589,6 +597,8 @@ def habit_checkin(
       navig habit checkin --send              # evening card
       navig habit checkin --send --morning    # morning card
       navig habit checkin --close             # finalise the day
+      navig habit checkin --send --midday     # repost the morning card, marks included
+      navig habit checkin --expire-morning    # remove the morning card
 
     Waking up is the one thing that can only be marked as it happens — by 22:15 it
     is a memory. Hence a morning card. And a day nobody closes stays ambiguous
@@ -596,9 +606,14 @@ def habit_checkin(
 
     Deliver on a schedule by pointing cron jobs at this command:
       navig habit checkin --send --morning --space <space>   # 08:00
+      navig habit checkin --send --midday --space <space>    # 11:30
+      navig habit checkin --expire-morning                   # 19:00
       navig habit checkin --send --space <space>             # 22:15
       navig habit checkin --close --space <space>            # 23:55
     """
+    from navig.telegram import chat_tidy
+
+    chat_tidy.mark_routine("habit_card")  # what this sends is today's; tidied away tomorrow
     from navig.telegram import habit_actions
 
     day = (on_date or date.today().isoformat()).strip()
@@ -618,7 +633,7 @@ def habit_checkin(
     # Preview (no --send) stays allowed: reading your own tracker in your own
     # terminal is not a bot surface, and blocking it would be the switch
     # overreaching.
-    if send or close:
+    if send or close or expire_morning:
         from navig.gateway.channels.telegram_extensions import is_enabled
 
         if not is_enabled("habits"):
@@ -633,6 +648,13 @@ def habit_checkin(
         _close_day(path, day, chat_id)
         return
 
+    if expire_morning:
+        _expire_morning(chat_id)
+        return
+
+    # The midday card IS the morning card, re-rendered from habits.csv: the 08:00
+    # one has scrolled out of reach by lunch, and the marks made since belong on it.
+    morning = morning or midday
     text, keyboard = habit_actions.build_card(path, day, morning=morning)
 
     if not send:
@@ -651,7 +673,11 @@ def habit_checkin(
         ch.error("No Telegram chat id.", "Set telegram.allowed_users or pass --chat-id.")
         raise typer.Exit(1)
 
-    from navig.commands.telegram import _api_call, _load_telegram_token
+    from navig.telegram.api import _api_call, _load_telegram_token
+
+    if midday and habit_tracker.is_day_closed(int(target), day):
+        ch.dim(f"{day} already closed — no midday card.")
+        return
 
     try:
         result = _api_call(
@@ -673,12 +699,54 @@ def habit_checkin(
     # which tracker this chat's card writes into so the taps land in the right file,
     # plus the message id so the day can later be closed by editing THIS card
     # instead of posting a second one.
-    habit_tracker.remember_target(
-        int(target), path, message_id=(result.get("result") or {}).get("message_id"), day=day
-    )
+    new_id = (result.get("result") or {}).get("message_id")
+    habit_tracker.remember_target(int(target), path, message_id=new_id, day=day)
+    if morning and new_id is not None:
+        # Replace, never stack: the new card is posted FIRST so a failed send
+        # leaves the old one in place, and only then is the old one removed.
+        if midday:
+            _delete_morning_card(int(target), _api_call, _load_telegram_token())
+        habit_tracker.remember_morning(int(target), int(new_id), day)
 
-    ch.success(f"{'Morning' if morning else 'Check-in'} card sent to {target}.")
+    label = "Midday" if midday else ("Morning" if morning else "Check-in")
+    ch.success(f"{label} card sent to {target}.")
     ch.dim(f"{path}")
+
+
+def _delete_morning_card(target: int, api_call: Any, token: str) -> bool:
+    """Delete the stored morning card in *target*. True when one was removed.
+
+    The pointer is dropped either way: a card Telegram refuses to delete (already
+    gone, or past the bot's 48-hour limit) will never become deletable, and keeping
+    the pointer would retry it forever."""
+    message_id, _day = habit_tracker.morning_card(target)
+    if message_id is None:
+        return False
+    ok = False
+    try:
+        ok = bool(api_call(token, "deleteMessage", {"chat_id": target, "message_id": message_id}))
+    except Exception as exc:  # noqa: BLE001
+        ch.dim(f"Could not delete the morning card {message_id} ({exc}).")
+    habit_tracker.forget_morning(target)
+    return ok
+
+
+def _expire_morning(chat_id: int | None) -> None:
+    """Remove the morning card — by 19:00 its job (catch Wake, nudge Walk) is done,
+    and the evening card takes over."""
+    target = chat_id or _resolve_default_chat_id()
+    if not target:
+        ch.error("No Telegram chat id.", "Set telegram.allowed_users or pass --chat-id.")
+        raise typer.Exit(1)
+    from navig.telegram.api import _api_call, _load_telegram_token
+
+    if habit_tracker.morning_card(int(target))[0] is None:
+        ch.dim("No morning card to remove.")
+        return
+    if _delete_morning_card(int(target), _api_call, _load_telegram_token()):
+        ch.success("Morning card removed.")
+    else:
+        ch.dim("Morning card was already gone.")
 
 
 def _close_day(path: Path, day: str, chat_id: int | None) -> None:
@@ -704,7 +772,7 @@ def _close_day(path: Path, day: str, chat_id: int | None) -> None:
     text = habit_actions.build_closing_text(path, day)
     message_id, card_day = habit_tracker.last_card(target)
 
-    from navig.commands.telegram import _api_call, _load_telegram_token
+    from navig.telegram.api import _api_call, _load_telegram_token
 
     token = _load_telegram_token()
     edited = False
@@ -767,6 +835,9 @@ def habit_spark(
 
     Lines live in `sparks.txt` beside habits.csv — edit that file, not navig.
     """
+    from navig.telegram import chat_tidy
+
+    chat_tidy.mark_routine("spark")  # what this sends is today's; tidied away tomorrow
     from navig.spaces import sparks
 
     path = _tracker_path(space)
@@ -816,7 +887,7 @@ def habit_spark(
         ch.error("No Telegram chat id.", "Set telegram.allowed_users or pass --chat-id.")
         raise typer.Exit(1)
 
-    from navig.commands.telegram import _api_call, _load_telegram_token
+    from navig.telegram.api import _api_call, _load_telegram_token
 
     try:
         # No parse_mode key at all: Telegram rejects an explicit null with a 400,

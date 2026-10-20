@@ -90,6 +90,28 @@ class PolicyGate:
     _HARD_DENY: list[str] = [
         "system.delete_all",
         "*.drop_all",
+        # Gate 0 command classes that ApprovalPolicy classifies `never` — a typo in
+        # user config must never be able to re-enable them.
+        "remote.exec.never",
+        "cli.exec.never",
+    ]
+
+    # Gate 0 baseline: slugs that exist only as of the deck/CLI enforcement work and
+    # therefore have NO call sites in any existing deployment. Evaluated AFTER user
+    # rules and BEFORE the default, so operator config always wins — the baseline only
+    # guarantees these slugs are fail-closed even while `default` remains `allow`.
+    _BASELINE_REQUIRE_APPROVAL: list[str] = [
+        "remote.exec.dangerous",
+        "remote.docker.mutate",
+        "remote.host.select",
+        "remote.deploy",
+        "cli.exec.dangerous",
+    ]
+    _BASELINE_ALLOW: list[str] = [
+        "remote.exec",
+        "remote.read",
+        "remote.docker.read",
+        "cli.exec",
     ]
 
     def __init__(self, config: PolicyConfig | None = None) -> None:
@@ -113,24 +135,35 @@ class PolicyGate:
         try:
             default = PolicyDecision(default_str)
         except ValueError:
-            logger.warning("Unknown policy default '%s', using 'allow'", default_str)
-            default = PolicyDecision.ALLOW
+            # A typo in the default must not silently claim "allow" — fail closed and
+            # shout, so `navig doctor` / logs surface the broken policy immediately.
+            logger.error(
+                "Unknown policy default %r — failing CLOSED (deny). Fix gateway.policy.default "
+                "in your config (valid: allow | require_approval | deny).",
+                default_str,
+            )
+            default = PolicyDecision.DENY
 
         rules: list[PolicyRule] = []
         for raw_rule in policy_cfg.get("rules", []):
             pattern = raw_rule.get("pattern", "").strip()
             act_str = raw_rule.get("action", "allow").lower()
             if not pattern:
+                logger.warning("Policy rule with an empty pattern is ignored: %r", raw_rule)
                 continue
             try:
                 decision = PolicyDecision(act_str)
             except ValueError:
-                logger.warning(
-                    "Unknown rule action '%s' for pattern '%s', skipping",
+                # The operator wrote a gating rule; skipping it would fail OPEN. Treat
+                # the pattern as denied and shout — a typo'd `require-approval` intent
+                # becomes deny, which is the direction-preserving fail-closed choice.
+                logger.error(
+                    "Unknown rule action %r for pattern %r — treating this pattern as DENIED. "
+                    "Fix gateway.policy.rules (valid: allow | require_approval | deny).",
                     act_str,
                     pattern,
                 )
-                continue
+                decision = PolicyDecision.DENY
             rules.append(PolicyRule(pattern=pattern, decision=decision))
 
         config = PolicyConfig(default=default, rules=rules)
@@ -179,6 +212,26 @@ class PolicyGate:
                     matched_rule=rule.pattern,
                 )
 
+        # Gate 0 baseline — only slugs that have no pre-existing call sites, so this
+        # cannot change the decision for any route that shipped before the deck/CLI
+        # enforcement work. User rules (above) always win.
+        if action in self._BASELINE_REQUIRE_APPROVAL:
+            logger.debug(
+                "PolicyGate require_approval (baseline): action=%s actor=%s", action, actor
+            )
+            return PolicyResult(
+                decision=PolicyDecision.REQUIRE_APPROVAL,
+                action=action,
+                matched_rule="baseline",
+            )
+        if action in self._BASELINE_ALLOW:
+            logger.debug("PolicyGate allow (baseline): action=%s actor=%s", action, actor)
+            return PolicyResult(
+                decision=PolicyDecision.ALLOW,
+                action=action,
+                matched_rule="baseline",
+            )
+
         # Default
         logger.debug(
             "PolicyGate %s (default): action=%s actor=%s",
@@ -204,6 +257,8 @@ class PolicyGate:
                 {"pattern": r.pattern, "action": r.decision.value} for r in self._config.rules
             ],
             "hard_deny_patterns": self._HARD_DENY,
+            "baseline_require_approval": self._BASELINE_REQUIRE_APPROVAL,
+            "baseline_allow": self._BASELINE_ALLOW,
         }
 
     def __repr__(self) -> str:  # pragma: no cover

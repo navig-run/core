@@ -46,6 +46,7 @@ from navig.license._public_keys import (
     is_license_revoked,
 )
 from navig.license.quota import (
+    CONTRACT_HOST_TIERS,
     TIER_CAPABILITIES,
     TIER_HOST_LIMIT,
     TierName,
@@ -263,7 +264,7 @@ def verify_license(token: str | None) -> LicenseStatus:
     return LicenseStatus(
         valid=True,
         effective_tier=effective_tier,
-        host_limit=TIER_HOST_LIMIT[effective_tier],
+        host_limit=_host_limit(effective_tier, tier, payload),
         capabilities=capabilities,
         subscription_until=subscription_until,
         subscription_active=subscription_active,
@@ -275,6 +276,28 @@ def verify_license(token: str | None) -> LicenseStatus:
         branding=payload.get("branding") if isinstance(payload.get("branding"), dict) else None,
         signature_key_id=key_id,
     )
+
+
+def _host_limit(effective_tier: TierName, signed_tier: TierName, payload: dict[str, Any]) -> int:
+    """The tier default, or the signed ``contract_hosts`` for a contract tier.
+
+    Team and Enterprise are sold by contract, so their host count is negotiated
+    per customer and travels in the signed token rather than in a code change.
+    The override applies only while that signed tier is the effective one (a
+    lapsed contract falls back to its fallback tier's default) and only for
+    CONTRACT_HOST_TIERS, so a self-serve token can never raise its own limit.
+
+    The older ``hosts`` field is deliberately NOT read: every issuer wrote the
+    tier default into it at signing time, so honouring it would freeze today's
+    defaults into old tokens forever (an Enterprise token would keep 100000).
+    """
+    default = TIER_HOST_LIMIT[effective_tier]
+    if effective_tier != signed_tier or effective_tier not in CONTRACT_HOST_TIERS:
+        return default
+    raw = payload.get("contract_hosts")
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+        return default
+    return raw
 
 
 def _is_one_time_tier(payload: dict[str, Any]) -> bool:

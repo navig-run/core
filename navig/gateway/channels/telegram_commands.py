@@ -36,7 +36,7 @@ import re
 import socket
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -414,7 +414,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     ),
     SlashCommandEntry(
         "mode",
-        "Set focus/behavior mode (work/relax/sleep/etc.)",
+        "Focus mode: work, deep-focus, planning, creative, relax, sleep",
         handler="_handle_mode",
         category="core",
         usage="/mode [name|list]",
@@ -533,6 +533,18 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_restart_cmd",
         category="docker",
         usage="/restart [daemon|<container-name>]",
+    ),
+    SlashCommandEntry(
+        "doctor",
+        "Health check, with Heal and Restart buttons",
+        handler="_handle_doctor_cmd",
+        category="core",
+    ),
+    SlashCommandEntry(
+        "os",
+        "Is NAVIG OS running? Paired devices",
+        handler="_handle_os_cmd",
+        category="core",
     ),
     SlashCommandEntry(
         "exec",
@@ -776,6 +788,13 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     # --- Diagnostics ---------------------------------------------------------
     # --- User / profile ------------------------------------------------------
     SlashCommandEntry(
+        "incognito",
+        "Private chat: no memory, nothing saved (/incognito on|off)",
+        handler="_handle_incognito_cmd",
+        category="diagnostics",
+        usage="/incognito [on|off]",
+    ),
+    SlashCommandEntry(
         "user",
         "Your profile, tier, voice & session info",
         handler="_handle_user",
@@ -842,6 +861,34 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "task", "Capture a task (short for /todo)",
         handler="_handle_todo", category="todo", visible=False,
     ),
+    # --- Prompt library ---------------------------------------------------------
+    # `/prompt` with no argument opens favourites/recent; with words it finds and
+    # sends the prompt as a rich message (one-tap copy, native "Show More").
+    SlashCommandEntry(
+        "prompt", "Find & send a saved prompt: /prompt debug root cause",
+        handler="_handle_prompt", category="prompts", usage="/prompt [name or words]",
+    ),
+    SlashCommandEntry(
+        "prompts", "Browse your prompt library (same as /prompt)",
+        handler="_handle_prompt", category="prompts", visible=False,
+    ),
+    # --- Read aloud -------------------------------------------------------------
+    # Bedtime reader: a text becomes quiet ten-minute audio parts, delivered as they are
+    # made. `/read <text>` for short ones; a .txt/.md with the caption `/read` for long
+    # ones (a message is capped at 4096 characters — see navig/telegram/read_actions.py).
+    SlashCommandEntry(
+        "read", "Read a text aloud, like a book: /read <text>, or send a .txt with the caption /read",
+        handler="_handle_read", category="media", usage="/read <text> | /read stop | /read go",
+    ),
+    SlashCommandEntry(
+        "book", "Read a text aloud (same as /read)",
+        handler="_handle_read", category="media", visible=False,
+    ),
+    # Appointments live apart from tasks: something to ATTEND, not to DO.
+    SlashCommandEntry(
+        "agenda", "Your appointments, by day",
+        handler="_handle_agenda", category="todo", usage="/agenda",
+    ),
     # --- Paper mail (the mailroom) ---------------------------------------------
     # The verb is the caption of a photo/PDF; typed alone it explains the gesture.
     SlashCommandEntry(
@@ -852,20 +899,20 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     SlashCommandEntry("about", "Learn about NAVIG", handler="_handle_about", category="core"),
     SlashCommandEntry(
         "auto_start",
-        "Enable AI auto-replies",
+        "Auto mode on: reply in groups without @mention, allow auto-continuation",
         handler="_handle_auto_start",
         category="ai",
         usage="/auto_start [persona]",
     ),
     SlashCommandEntry(
         "auto_stop",
-        "Disable AI auto-replies",
+        "Auto mode off: groups need an @mention again, no auto-continuation",
         handler="_handle_auto_stop",
         category="ai",
     ),
     SlashCommandEntry(
         "auto_status",
-        "Check AI conversation status",
+        "Is auto mode on here, and what continuation is doing",
         handler="_handle_auto_status",
         category="ai",
     ),
@@ -995,6 +1042,12 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "body",
         "The weekly check-in card — trend, mood, sleep, treatment",
         handler="_handle_body",
+        category="health",
+    ),
+    SlashCommandEntry(
+        "checkins",
+        "Today's check-ins — pills, water, weigh-in",
+        handler="_handle_checkins",
         category="health",
     ),
     SlashCommandEntry(
@@ -1138,6 +1191,66 @@ def _iter_unique_registry(*, visible_only: bool = False) -> list[SlashCommandEnt
     return unique
 
 
+def bare_command(text: str) -> str:
+    """``"/Status@MyBot now"`` -> ``"status"``. Empty string when *text* is no command.
+
+    Telegram appends ``@botname`` to a command picked from the menu in a group, so
+    every exact command match must drop it -- and ``startswith("/skill")`` is not an
+    exact match (it is also ``/skills``).
+    """
+    head = (text or "").strip().split(None, 1)[0] if (text or "").strip() else ""
+    if not head.startswith("/"):
+        return ""
+    return head[1:].split("@", 1)[0].lower()
+
+
+def command_args(text: str) -> str:
+    """Everything after the command token: ``"/auto_start@MyBot tyler"`` -> ``"tyler"``."""
+    parts = (text or "").strip().split(None, 1)
+    if not parts or not parts[0].startswith("/"):
+        return (text or "").strip()
+    return parts[1].strip() if len(parts) > 1 else ""
+
+
+#: Commands that moved to the Mini App, by where they live now (Settings → AI & Models).
+#: A bare one used to fall through to the model and get an improvised chat answer.
+#: ``/big`` ``/small`` ``/coder`` + text stay one-shot tier prefixes (telegram.py); only
+#: the bare word is answered from here. ``settings`` is a LOCKED command with no handler:
+#: it is the most-guessed name for "where do I change things", so it must answer.
+ONE_SHOT_TIER_PREFIXES: frozenset[str] = frozenset({"big", "small", "coder"})
+
+MOVED_COMMANDS: dict[str, tuple[str, str]] = {
+    "settings": ("⚙️ Settings", "Settings"),
+    "ai": ("⚙️ Model tier", "Settings → AI & Models → Model tier"),
+    "model": ("⚙️ Model tier", "Settings → AI & Models → Model tier"),
+    "models": ("⚙️ Model tier", "Settings → AI & Models → Model tier"),
+    "big": ("⚙️ Model tier", "Settings → AI & Models → Model tier"),
+    "small": ("⚙️ Model tier", "Settings → AI & Models → Model tier"),
+    "coder": ("⚙️ Model tier", "Settings → AI & Models → Model tier"),
+    "auto": ("⚙️ Model tier", "Settings → AI & Models → Model tier"),
+    "routing": ("⚙️ LLM routing", "Settings → AI & Models → LLM routing"),
+    "router": ("⚙️ LLM routing", "Settings → AI & Models → LLM routing"),
+    "provider": ("⚙️ LLM providers", "Settings → AI & Models → LLM providers"),
+    "providers": ("⚙️ LLM providers", "Settings → AI & Models → LLM providers"),
+    "persona": ("🎭 AI persona", "Settings → AI & Models → AI persona"),
+    "personas": ("🎭 AI persona", "Settings → AI & Models → AI persona"),
+    "voice": ("🎙 Voice & audio", "Settings → AI & Models → Voice & audio"),
+    "audio": ("🎙 Voice & audio", "Settings → AI & Models → Voice & audio"),
+}
+
+
+def moved_command_notice(text: str) -> str | None:
+    """The pointer for a moved command, or None when *text* is not one."""
+    name = bare_command(text)
+    hit = MOVED_COMMANDS.get(name)
+    if hit is None or (name in ONE_SHOT_TIER_PREFIXES and command_args(text)):
+        return None
+    what, where = hit
+    if name == "settings":
+        return "⚙️ Settings live in the Mini App → Settings."
+    return f"{what} moved to the Mini App → {where}"
+
+
 # ---------------------------------------------------------------------------
 # Help Encyclopedia — interactive category-based navigation
 # ---------------------------------------------------------------------------
@@ -1165,50 +1278,43 @@ class _HelpCategory:
     subcategories: list[_HelpSubcategory] | None = None
 
 
+#: Every VISIBLE registry command sits in exactly one category here, and every
+#: command named here is in the registry -- tests/telegram/test_help_covers_registry.py
+#: enforces both, so a new command cannot ship invisible to /help. Hidden beta stubs
+#: (/music /quote /imagegen) are deliberately absent: they answer "pending migration".
 _HELP_CATEGORIES: list[_HelpCategory] = [
     _HelpCategory(
         key="getting_started",
         label="Getting Started",
         emoji="🚀",
-        commands=["start", "help", "status", "ping", "about", "version", "skill"],
+        commands=[
+            "start", "help", "status", "doctor", "os", "ping", "about", "version", "skill",
+            "extensions", "lang",
+        ],
+    ),
+    _HelpCategory(
+        key="focus",
+        label="Focus",
+        emoji="🎯",
+        # Modes: work · deep-focus · planning · creative · relax · sleep.
+        commands=["mode", "briefing"],
     ),
     _HelpCategory(
         key="ai_models",
-        label="AI & Models",
+        label="AI Auto Mode",
         emoji="🤖",
+        # Model tier, providers, routing, persona and voice live in the Mini App
+        # (Settings → AI & Models); the bare commands answer with that pointer.
         subcategories=[
-            _HelpSubcategory(
-                "models",
-                "Models & Providers",
-                "🧠",
-                # /ai /models /settings /providers /big /small /coder /auto moved to the Deck
-                # (Account → Model Tier / LLM Providers); manage models there, not via the bot.
-                ["mode"],
-            ),
-            _HelpSubcategory(
-                # /persona /personas moved to the Deck (Account → Persona).
-                "personas", "Personas & Style", "🎭", ["explain_ai"]
-            ),
-            _HelpSubcategory(
-                "continuation",
-                "Continuation & Auto",
-                "⚡",
-                [
-                    "auto_start",
-                    "auto_stop",
-                    "auto_status",
-                    "continue",
-                    "pause",
-                    "skip",
-                ],
-            ),
+            _HelpSubcategory("auto", "Auto Mode", "🤖", ["auto_start", "auto_stop", "auto_status"]),
+            _HelpSubcategory("continuation", "Continuation", "⚡", ["continue", "pause", "skip"]),
         ],
     ),
     _HelpCategory(
         key="monitoring",
         label="Monitoring",
         emoji="📊",
-        commands=["disk", "memory", "cpu", "uptime", "services", "ports"],
+        commands=["disk", "memory", "cpu", "uptime", "services", "ports", "kill"],
     ),
     _HelpCategory(
         key="docker",
@@ -1226,13 +1332,42 @@ _HELP_CATEGORIES: list[_HelpCategory] = [
         key="operations",
         label="Operations",
         emoji="🛠",
-        commands=["hosts", "test", "use", "apps", "app", "files", "cat", "run", "backup"],
+        commands=[
+            "hosts", "test", "hosttest", "use", "apps", "app", "files", "cat", "run", "backup",
+        ],
     ),
     _HelpCategory(
         key="planning",
         label="Planning & Spaces",
         emoji="🗂",
-        commands=["plans", "plan", "space", "spaces", "intake", "briefing"],
+        commands=["plans", "plan", "space", "spaces", "intake", "prompt"],
+    ),
+    _HelpCategory(
+        key="todo",
+        label="Todo & Reminders",
+        emoji="✅",
+        commands=["todo", "agenda", "remindme", "myreminders", "cancelreminder"],
+    ),
+    _HelpCategory(
+        key="habits",
+        label="Habits & Health",
+        emoji="💪",
+        commands=["habits", "stats", "card", "workout", "health", "weigh", "body"],
+    ),
+    _HelpCategory(
+        key="messaging",
+        label="Messaging",
+        emoji="💬",
+        commands=[
+            "messengers", "send", "sms", "wa", "reply", "thread", "threads",
+            "contact", "contacts",
+        ],
+    ),
+    _HelpCategory(
+        key="mesh",
+        label="Mesh",
+        emoji="🕸",
+        commands=["nodes", "leader", "mesh", "switch"],
     ),
     _HelpCategory(
         key="utilities",
@@ -1240,39 +1375,33 @@ _HELP_CATEGORIES: list[_HelpCategory] = [
         emoji="🔧",
         subcategories=[
             _HelpSubcategory("network", "Network & DNS", "🌐", ["ip", "dns", "ssl", "whois"]),
-            _HelpSubcategory("text", "Text & Reasoning", "📝", ["format", "think", "refine"]),
             _HelpSubcategory(
-                "reminders", "Reminders", "⏰", ["remindme", "myreminders", "cancelreminder"]
+                "text", "Text & Reasoning", "📝", ["format", "think", "refine", "explain_ai"]
             ),
+            _HelpSubcategory("health", "Habits & Health", "🩺", ["checkins"]),
             _HelpSubcategory(
                 "info",
                 "Info & Convert",
                 "📌",
                 ["time", "weather", "currency", "crypto_list", "choice"],
             ),
+            _HelpSubcategory("chat", "Chat & Mail", "📎", ["pin", "courrier"]),
         ],
     ),
     _HelpCategory(
         key="voice",
         label="Voice & Audio",
         emoji="🎙",
-        # /voice and /voicereply removed: they had no handler and only existed
-        # in this menu. Voice provider/model picking lives in Deck → Account →
-        # Audio settings now. /voiceon and /voiceoff control session voice
-        # replies (handlers _handle_voiceon_cmd / _handle_voiceoff_cmd).
-        commands=["voiceon", "voiceoff"],
+        # Voice provider/model picking lives in the Mini App (Settings → AI & Models →
+        # Voice & audio); these two switch spoken replies for this session. `/read` is the
+        # reverse direction: a text becomes audio you listen to (the bedtime reader).
+        commands=["voiceon", "voiceoff", "read"],
     ),
     _HelpCategory(
         key="diagnostics",
         label="Diagnostics",
         emoji="🔍",
-        commands=["user", "debug", "trace", "autoheal"],
-    ),
-    _HelpCategory(
-        key="social",
-        label="Social & Media",
-        emoji="👥",
-        commands=["profile", "quote", "music", "imagegen"],
+        commands=["user", "profile", "incognito", "debug", "trace", "autoheal"],
     ),
 ]
 
@@ -1377,6 +1506,12 @@ class TelegramCommandsMixin:
         "profile",
         "about",  # common English preposition; "tell me about X" must not match /about
     }
+    # Commands the generic phrase resolver must never pick. "prompt" is an everyday
+    # word ("write me a prompt for…" is a request for the LLM, not for the library),
+    # so /prompt is reached from free text only through its own narrow sniff
+    # (navig.telegram.prompt_actions.sniff_prompt_request), which also requires a
+    # library match before it intercepts anything.
+    _NL_SNIFF_ONLY: frozenset[str] = frozenset({"prompt", "prompts"})
     _NL_RISKY_COMMANDS: set[str] = {
         "run",
         "restart",
@@ -2272,6 +2407,26 @@ class TelegramCommandsMixin:
 
     # ── Habits: the tracker, reachable from the phone it already lives on ──────
 
+    async def _handle_agenda(self, chat_id: int, **_: Any) -> None:
+        """`/agenda` — upcoming appointments by day, plus proposals to confirm."""
+        from navig.telegram import agenda_actions
+
+        await agenda_actions.send(self, chat_id)
+
+    async def _handle_prompt(self, chat_id: int, text: str = "", **_: Any) -> None:
+        """`/prompt [name or words]` — send a saved prompt, or a picker of matches."""
+        from navig.telegram import prompt_actions
+
+        argument = (text or "").split(" ", 1)[1].strip() if " " in (text or "") else ""
+        await prompt_actions.handle_command(self, chat_id, argument)
+
+    async def _handle_read(self, chat_id: int, text: str = "", **_: Any) -> None:
+        """`/read [stop | go | status | <text>]` — be read to, like a book."""
+        from navig.telegram import read_actions
+
+        argument = (text or "").split(None, 1)[1].strip() if len((text or "").split(None, 1)) > 1 else ""
+        await read_actions.handle_command(self, chat_id, argument)
+
     async def _handle_todo(self, chat_id: int, text: str = "", **_: Any) -> None:
         """`/todo` \u2014 open the list, or capture a task when given one.
 
@@ -2292,7 +2447,12 @@ class TelegramCommandsMixin:
                 )
                 return
 
-        body, keyboard = todo_actions.build_view("all")
+        # A capture answers with what was saved and one tap to file it; a bare /todo
+        # opens the list.
+        if argument and created is not None:
+            body, keyboard = todo_actions.build_added(created)
+        else:
+            body, keyboard = todo_actions.build_view("all")
         sent = await self._api_call(
             "sendMessage",
             {
@@ -2513,14 +2673,19 @@ class TelegramCommandsMixin:
             )
             return
 
-        await self.send_command_output(
-            chat_id,
-            text,
-            command="status",
-            ai_hint="Session and system snapshot. Preserve every name, percentage, count, and timestamp exactly.",
-            parse_mode="HTML",
-            keyboard=nav_keyboard,
-        )
+        # Fresh send tagged `system` (an EDIT refreshes an already-tagged message
+        # — edits are never recorded, so nothing extra happens there).
+        from navig.telegram import chat_tidy
+
+        with chat_tidy.routine("system"):
+            await self.send_command_output(
+                chat_id,
+                text,
+                command="status",
+                ai_hint="Session and system snapshot. Preserve every name, percentage, count, and timestamp exactly.",
+                parse_mode="HTML",
+                keyboard=nav_keyboard,
+            )
 
     async def _handle_status_fix_callback(
         self,
@@ -2640,7 +2805,7 @@ class TelegramCommandsMixin:
             user_id=user_id,
             chat_id=chat_id,
             mode=state.get("mode") or "active",
-            persona=state.get("persona") or "assistant",
+            persona=state.get("persona"),  # None keeps the stored persona
             context=context,
         )
 
@@ -2766,9 +2931,14 @@ class TelegramCommandsMixin:
                 chat_id, message_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard
             )
         else:
-            sent = await self.send_message(
-                chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard
-            )
+            # Fresh send tagged `system` — swept the next morning like the other
+            # status cards (the edit path above records nothing).
+            from navig.telegram import chat_tidy
+
+            with chat_tidy.routine("system"):
+                sent = await self.send_message(
+                    chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard
+                )
             # Only the fresh-send path pins. The edit path above re-renders a message that
             # is already whatever it was, so pinning there would re-pin on every press.
             await TelegramCommandsMixin._auto_pin_plans(self, chat_id, user_id, sent)
@@ -2869,7 +3039,7 @@ class TelegramCommandsMixin:
         self, chat_id: int, user_id: int = 0, text: str = "", message_id: int | None = None
     ) -> None:
         # Quick-switch: "/spaces devops" delegates directly to /space
-        arg = text[len("/spaces") :].strip() if text.lower().startswith("/spaces") else ""
+        arg = command_args(text) if bare_command(text) == "spaces" else ""
         if arg:
             await self._handle_space(chat_id=chat_id, user_id=user_id, text=f"/space {arg}")
             return
@@ -3280,6 +3450,8 @@ class TelegramCommandsMixin:
 
         for entry in _iter_unique_registry():
             command = entry.command
+            if command in TelegramCommandsMixin._NL_SNIFF_ONLY:
+                continue
             phrases = {command, command.replace("_", " ")}
             phrases.update(alias_map.get(command, ()))
 
@@ -3432,7 +3604,7 @@ class TelegramCommandsMixin:
                 ]
             )
         if rows:
-            rows.append([{"text": "🛑 Cancel", "callback_data": "nl_cancel"}])
+            rows.append([{"text": "🛑 Cancel", "callback_data": "nl_cancel", "style": "danger"}])
         return rows
 
     async def _queue_nl_risky_command_confirmation(
@@ -3470,8 +3642,8 @@ class TelegramCommandsMixin:
             parse_mode="HTML",
             keyboard=[
                 [
-                    {"text": "✅ Yes now", "callback_data": "nl_yes"},
-                    {"text": "🛑 Cancel", "callback_data": "nl_cancel"},
+                    {"text": "✅ Yes now", "callback_data": "nl_yes", "style": "success"},
+                    {"text": "🛑 Cancel", "callback_data": "nl_cancel", "style": "danger"},
                 ]
             ],
         )
@@ -3598,7 +3770,11 @@ class TelegramCommandsMixin:
         username: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> bool:
+        from navig.agent import message_brief
         from navig.store.runtime import get_runtime_store
+
+        # Decision-model brief (shadow-only): record what each check below decided.
+        _brief_msg = (metadata or {}).get("message_id")
 
         # Settings-change intents (focus mode, model tier) — apply the change
         # and reply directly, replacing the deleted /mode /big /small /coder
@@ -3608,12 +3784,20 @@ class TelegramCommandsMixin:
                 try_handle_settings_intent,
             )
 
-            if await try_handle_settings_intent(text, chat_id, user_id, self):
+            _settings_hit = await try_handle_settings_intent(text, chat_id, user_id, self)
+            message_brief.note(chat_id, _brief_msg, "settings_intent", "yes" if _settings_hit else "no")
+            if _settings_hit:
                 return True
         except Exception as _settings_exc:
             logger.debug("nl_settings intent dispatch skipped: %s", _settings_exc)
 
         intent, space = self._infer_nl_space_intent(text)
+        message_brief.note(
+            chat_id,
+            _brief_msg,
+            "space_intent",
+            ("switch" if intent == "space" else intent) if (intent and space) else "none",
+        )
         if intent and space:
             store = get_runtime_store()
             state = store.get_ai_state(user_id) or {}
@@ -3637,8 +3821,8 @@ class TelegramCommandsMixin:
                 parse_mode="HTML",
                 keyboard=[
                     [
-                        {"text": "✅ Yes now", "callback_data": "nl_yes"},
-                        {"text": "🛑 Cancel", "callback_data": "nl_cancel"},
+                        {"text": "✅ Yes now", "callback_data": "nl_yes", "style": "success"},
+                        {"text": "🛑 Cancel", "callback_data": "nl_cancel", "style": "danger"},
                     ]
                 ],
             )
@@ -3652,8 +3836,22 @@ class TelegramCommandsMixin:
             )
             return True
 
+        # ── "send me the X prompt" → the prompt library (only on a real match) ──
+        try:
+            from navig.telegram import prompt_actions
+
+            _prompt_hit = await prompt_actions.try_handle_free_text(
+                self, chat_id, text, reply_to_message_id=(metadata or {}).get("message_id")
+            )
+        except Exception as _prompt_exc:  # noqa: BLE001 — never block the LLM path
+            logger.debug("prompt sniff skipped: %s", _prompt_exc)
+            _prompt_hit = False
+        if _prompt_hit:
+            return True
+
         # ── Multilingual reminder short-circuit (runs before English-only alias map) ──
         reminder_pseudo = self._sniff_reminder_intent(text)
+        message_brief.note(chat_id, _brief_msg, "reminder", "yes" if reminder_pseudo else "no")
         if reminder_pseudo:
             await self._handle_remindme(chat_id, user_id, reminder_pseudo)
             return True
@@ -4027,7 +4225,10 @@ class TelegramCommandsMixin:
         entry_type = str(pending.get("type") or "")
         lowered = text.strip().lower()
 
-        if lowered in {"cancel", "skip", "no", "stop"}:
+        from navig.core.i18n import t as _t
+        from navig.telegram.briefing_cards import CANCEL_WORDS
+
+        if lowered in CANCEL_WORDS:
             context["eve_pending"] = {"active": False}
             # No `channel` parameter, and `mode` is REQUIRED — this raised TypeError, and
             # unlike the keyboards sites it is not inside a try, so the evening-log reply
@@ -4037,10 +4238,10 @@ class TelegramCommandsMixin:
                 user_id=user_id,
                 chat_id=chat_id,
                 mode=state.get("mode") or "active",
-                persona=state.get("persona") or "assistant",
+                persona=state.get("persona"),  # None keeps the stored persona
                 context=context,
             )
-            await self.send_message(chat_id, "👌 Skipped.", parse_mode=None)
+            await self.send_message(chat_id, _t("briefing.reply.skipped"), parse_mode=None)
             return True
 
         # Persist the captured text. A save that did not happen must NOT come back
@@ -4050,17 +4251,23 @@ class TelegramCommandsMixin:
         try:
             from navig.agent.proactive.eve_log import save_priority, save_shipped
 
+            # The operator's text goes into an HTML-parsed message: escaped, or a
+            # line like "fixed <b> parsing" breaks the reply (Telegram rejects it).
+            said = html.escape(text.strip())
             if entry_type == "shipped":
                 save_shipped(text.strip())
-                confirm = f"✅ <b>Logged:</b> <i>{text.strip()}</i>\n\n<i>Have a good evening.</i>"
+                confirm = (
+                    f"✅ <b>{html.escape(_t('briefing.reply.logged'))}</b> <i>{said}</i>\n\n"
+                    f"<i>{html.escape(_t('briefing.reply.logged_tail'))}</i>"
+                )
             elif entry_type == "priority":
                 save_priority(text.strip())
                 confirm = (
-                    f"📌 <b>Anchor set:</b> <i>{text.strip()}</i>\n\n"
-                    "<i>I'll remind you in the morning.</i>"
+                    f"📌 <b>{html.escape(_t('briefing.reply.anchor_set'))}</b> <i>{said}</i>\n\n"
+                    f"<i>{html.escape(_t('briefing.reply.anchor_tail'))}</i>"
                 )
             else:
-                confirm = "✅ Noted."
+                confirm = html.escape(_t("briefing.reply.noted"))
         except Exception as exc:
             logger.warning("eve_pending save failed: %s", exc)
             # Echo the text back: it is the only copy left, and the operator can
@@ -4077,7 +4284,7 @@ class TelegramCommandsMixin:
             user_id=user_id,
             chat_id=chat_id,
             mode=state.get("mode") or "active",
-            persona=state.get("persona") or "assistant",
+            persona=state.get("persona"),  # None keeps the stored persona
             context=context,
         )
         await self.send_message(chat_id, confirm, parse_mode="HTML")
@@ -4097,6 +4304,19 @@ class TelegramCommandsMixin:
             return False
 
         lowered = text.strip().lower()
+        # Decision-model judge (shadow-only): these word lists are exact English, so
+        # "да", "oui" or "yes please" land in "other". Clef reads the same reply.
+        from navig.agent import judges
+
+        judges.confirm_reply(
+            text,
+            " ".join(str(pending.get(k) or "") for k in ("intent", "space", "command", "args")).strip(),
+            "cancel"
+            if lowered in {"cancel", "stop", "no", "abort"}
+            else "confirm"
+            if lowered in {"yes", "ok", "go", "proceed", "run"}
+            else "other",
+        )
         if lowered in {"cancel", "stop", "no", "abort"}:
             context["nl_pending"] = {"active": False}
             self._runtime_state_with_context(user_id, chat_id, context)
@@ -4303,9 +4523,7 @@ class TelegramCommandsMixin:
         """
         from navig.gateway.channels.focus_modes import DEFAULT_MODE, FOCUS_MODES, normalize
 
-        mode_arg = (
-            text[len("/mode") :].strip() if text.lower().startswith("/mode") else text.strip()
-        )
+        mode_arg = command_args(text)
         _uid = user_id or chat_id
         _is_grp = chat_id != _uid
 
@@ -4485,6 +4703,54 @@ class TelegramCommandsMixin:
                 logger.debug("_handle_voiceon_cmd session update failed: %s", _e)
         await self.send_message(chat_id, "🔊 Voice replies enabled.", parse_mode=None)
 
+    async def _handle_incognito_cmd(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        is_group: bool = False,
+        text: str = "",
+    ) -> None:
+        """Toggle incognito for this chat: ``/incognito``, ``/incognito on|off``."""
+        if not _HAS_SESSIONS:
+            await self.send_message(
+                chat_id, "Incognito isn't available: the session store is not loaded.",
+                parse_mode=None,
+            )
+            return
+        parts = (text or "").split()
+        arg = parts[1].lower() if len(parts) > 1 else ""
+        try:
+            sm = get_session_manager()
+            current = bool(
+                sm.get_session_metadata(chat_id, user_id, "incognito", False, is_group=is_group)
+            )
+            if arg in ("on", "off"):
+                on = arg == "on"
+            elif arg in ("", "toggle"):
+                on = not current
+            else:
+                await self.send_message(chat_id, "Usage: /incognito [on|off]", parse_mode=None)
+                return
+            # None clears the key, so an off chat carries no flag at all.
+            sm.set_session_metadata(
+                chat_id, user_id, "incognito", True if on else None, is_group=is_group
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("incognito toggle failed: %s", exc)
+            await self.send_message(
+                chat_id, "Couldn't change incognito mode — nothing was changed.", parse_mode=None
+            )
+            return
+        if on:
+            msg = (
+                "🕶 Incognito on. From now on I won't use or save memories, this chat "
+                "starts fresh, and its messages aren't kept in my history or catalog. "
+                "/incognito off to leave."
+            )
+        else:
+            msg = "👤 Incognito off. Memory and history are back on for new messages."
+        await self.send_message(chat_id, msg, parse_mode=None)
+
     async def _handle_voiceoff_cmd(
         self,
         chat_id: int,
@@ -4569,6 +4835,18 @@ class TelegramCommandsMixin:
             return
         await self.send_message(chat_id, "Restart handler unavailable.", parse_mode=None)
 
+    async def _handle_doctor_cmd(self, chat_id: int, user_id: int = 0, text: str = "") -> None:
+        """/doctor - the engine's health check, with Heal / Re-check / Restart buttons."""
+        from navig.telegram import engine_actions
+
+        await engine_actions.send_doctor(self, chat_id)
+
+    async def _handle_os_cmd(self, chat_id: int, user_id: int = 0, text: str = "") -> None:
+        """/os - whether NAVIG OS is running on this computer, and its paired devices."""
+        from navig.telegram import engine_actions
+
+        await engine_actions.send_os(self, chat_id)
+
     async def _handle_skill_cmd(
         self,
         chat_id: int,
@@ -4577,7 +4855,7 @@ class TelegramCommandsMixin:
         metadata: dict | None = None,
     ) -> None:
         """Delegate /skill from dynamic slash dispatch to TelegramChannel implementation."""
-        skill_arg = text.strip()[len("/skill") :].strip() if text else ""
+        skill_arg = command_args(text) if text else ""
         if hasattr(self, "_handle_skill"):
             await self._handle_skill(chat_id, user_id, skill_arg, metadata or {})
             return
@@ -5095,7 +5373,7 @@ class TelegramCommandsMixin:
         if provider_arg:
             await self.send_message(
                 chat_id,
-                f"<b>Provider: <code>{html.escape(provider_arg)}</code></b>\n\nUse /settings \u2192 Providers to configure connection details, or check <code>~/.navig/config.yaml</code> under <code>llm_router.modes</code>.",
+                f"<b>Provider: <code>{html.escape(provider_arg)}</code></b>\n\nConfigure connection details in the Mini App \u2192 Settings \u2192 AI &amp; Models \u2192 LLM providers, or check <code>~/.navig/config.yaml</code> under <code>llm_router.modes</code>.",
                 parse_mode="HTML",
             )
             return
@@ -5394,7 +5672,8 @@ class TelegramCommandsMixin:
             f"🧠 Big: <code>{_short(defaults.get('big', ''))}</code>",
             f"💻 Code: <code>{_short(defaults.get('coder_big', ''))}</code>",
             "",
-            "<i>Saved to config. Use /models to customise per tier.</i>",
+            "<i>Saved to config. Customise per tier in the Mini App → Settings → "
+            "AI &amp; Models → Model tier.</i>",
         ]
 
         keyboard = [
@@ -5619,7 +5898,12 @@ class TelegramCommandsMixin:
                     session.get(endpoint, headers=headers, timeout=_PROBE_TIMEOUT) as response,
                 ):
                     data = await response.json()
-                    live = [m["id"] for m in data.get("data", []) if m.get("id")]
+                    # Cloud catalogs list ids that cannot chat (NVIDIA: guard,
+                    # embed, reward models) — keep them out of the keyboard and
+                    # out of the tier-default fallback, which takes models[0].
+                    from navig.providers.capabilities import is_chat_model
+
+                    live = [m["id"] for m in data.get("data", []) if m.get("id") and is_chat_model(m["id"])]
                     if live:
                         models = live
         except Exception as exc:  # noqa: BLE001
@@ -6594,7 +6878,8 @@ class TelegramCommandsMixin:
         if not active_prov:
             await self.send_message(
                 chat_id,
-                "⚠️ No active provider detected. Use /providers to activate one first.",
+                "⚠️ No active provider detected. Activate one first in the Mini App → "
+                "Settings → AI & Models → LLM providers.",
                 parse_mode=None,
             )
             return
@@ -6644,7 +6929,8 @@ class TelegramCommandsMixin:
             f"🧠 Big: <code>{_short(defaults.get('big', ''))}</code>",
             f"💻 Code: <code>{_short(defaults.get('coder_big', ''))}</code>",
             "",
-            "<i>Saved to config. Use /models to customise per tier.</i>",
+            "<i>Saved to config. Customise per tier in the Mini App → Settings → "
+            "AI &amp; Models → Model tier.</i>",
         ]
 
         keyboard: list[list[dict[str, str]]] = [
@@ -6945,6 +7231,22 @@ class TelegramCommandsMixin:
         lines.append(f"<b>Vault</b> - {vault_msg}")
         lines.append(SEP)
 
+        # ── Latency X-ray: the last 20 turns as stage bars ──────────────────
+        # Answers "why was that slow?" without log archaeology: each row splits
+        # one turn into preparation, time-to-first-token, generation and tools.
+        # Sized to the 4096 message cap — rows are dropped oldest-first and the
+        # whole block is skipped if the rest of the trace leaves no room, so the
+        # X-ray can never be the reason /trace fails to send.
+        try:
+            from navig.agent.turn_latency import read_last, render_trace_block
+
+            _lat_block = render_trace_block(len("\n".join(lines)), read_last(20), width=24)
+            if _lat_block:
+                lines.extend(_lat_block)
+                lines.append(SEP)
+        except Exception as exc:  # noqa: BLE001 — the trace must render without it
+            logger.debug("trace latency block skipped: %s", exc)
+
         trace_keyboard = [
             [
                 {"text": "- Refresh", "callback_data": "trace_refresh"},
@@ -7049,11 +7351,7 @@ class TelegramCommandsMixin:
         metadata: MessageMetadata,
         arg: str,
     ) -> None:
-        """/restart [target] - systemd daemon restart or docker container restart.
-
-        SEC-3 fix: sudo password is passed via a dedicated environment variable
-        instead of being interpolated into the shell command string.
-        """
+        """/restart [target] - restart the NAVIG engine, or a docker container by name."""
         DAEMON_ALIASES = {
             "daemon",
             "navig",
@@ -7068,7 +7366,7 @@ class TelegramCommandsMixin:
         if target in DAEMON_ALIASES:
             # Dynamic countdown: send initial message then edit it each second
             msg = await self.send_message(
-                chat_id, "\U0001f504 Restarting navig-daemon in 3s\u2026", parse_mode=None
+                chat_id, "\U0001f504 Restarting NAVIG in 3s\u2026", parse_mode=None
             )
             msg_id = (msg or {}).get("message_id")
             for remaining in (2, 1):
@@ -7077,7 +7375,7 @@ class TelegramCommandsMixin:
                     await self.edit_message(
                         chat_id,
                         msg_id,
-                        f"\U0001f504 Restarting navig-daemon in {remaining}s\u2026",
+                        f"\U0001f504 Restarting NAVIG in {remaining}s\u2026",
                         parse_mode=None,
                     )
             await asyncio.sleep(1)
@@ -7085,33 +7383,15 @@ class TelegramCommandsMixin:
                 await self.edit_message(
                     chat_id,
                     msg_id,
-                    "\U0001f504 Restarting navig-daemon now\u2026",
+                    "\U0001f504 Restarting NAVIG now\u2026",
                     parse_mode=None,
                 )
-            sudo_pass = os.environ.get("SUDO_PASS", "")
-            if sudo_pass:
-                # Pass password via env var - never interpolated into shell string (SEC-3 fix)
-                cmd = [
-                    "bash",
-                    "-c",
-                    "printf '%s\n' \"$_NAVIG_SUDOPW\" | sudo -S systemctl restart navig-daemon",
-                ]
-                await asyncio.create_subprocess_exec(
-                    *cmd,
-                    env={**os.environ, "_NAVIG_SUDOPW": sudo_pass},
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL,
-                    start_new_session=True,
-                )
-            else:
-                await asyncio.create_subprocess_exec(
-                    "bash",
-                    "-c",
-                    "sudo systemctl restart navig-daemon",
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL,
-                    start_new_session=True,
-                )
+            # One restart path for every surface (deck, NAVIG OS, here): on Windows
+            # the on-demand scheduled task, never a restarter spawned inside the
+            # daemon's own tree — that one dies mid-stop and leaves autostart off.
+            from navig.telegram import engine_actions
+
+            await engine_actions.restart_daemon(self, chat_id, msg_id, user_id)
         else:
             await self._handle_cli_command(chat_id, user_id, metadata, f"docker restart {arg}")
 
@@ -7422,8 +7702,10 @@ class TelegramCommandsMixin:
             )
             return
 
+        from navig.gateway.channels.telegram_keyboards import strip_explore_marker
         from navig.gateway.channels.telegram_navigator import CardNavigator
 
+        llm_text = strip_explore_marker(llm_text)
         nav = CardNavigator(self)
         await nav.create(chat_id=chat_id, user_id=user_id, topic=topic, llm_text=llm_text)
 
@@ -9499,7 +9781,14 @@ class TelegramCommandsMixin:
                 {"text": "📋 Plans", "callback_data": "nav:cmd:/plans"},
             ],
         ]
-        result = await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+        # Tagged `system`: the infrastructure briefing is day-bound (group sends
+        # are never recorded — chat_tidy only ever covers private chats).
+        from navig.telegram import chat_tidy
+
+        with chat_tidy.routine("system"):
+            result = await self.send_message(
+                chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard
+            )
 
         # Auto-pin briefing in group chats when enabled
         await TelegramCommandsMixin._auto_pin_briefing(self, chat_id, user_id, result)
@@ -9984,6 +10273,9 @@ class TelegramCommandsMixin:
                 ):
                     self._mark_chat_onboarding_step("first-host")
 
+                from navig.gateway.channels.telegram_keyboards import strip_explore_marker
+
+                response = strip_explore_marker(response)
                 rendered_response = (
                     self._md_to_html(response) if hasattr(self, "_md_to_html") else response
                 )
@@ -10097,11 +10389,54 @@ class TelegramCommandsMixin:
         await self.send_message(chat_id, msg, parse_mode="HTML")
 
     async def _handle_auto_start(self, chat_id: int, user_id: int, text: str) -> None:
-        """Start AI conversational auto-reply using durable runtime state.
+        """Turn on auto mode for this chat, optionally with a persona.
 
-        Note: For persona-only changes without enabling auto-reply, prefer /persona <name>.
+        Auto mode is two things: in a group the bot answers every message, not only
+        an @mention or a reply; and autonomous continuation (/continue) may run.
+        The persona name is checked against the installed personas first -- an
+        unknown name used to be stored anyway and reported as "ACTIVATED".
         """
-        role = text[len("/auto_start") :].strip() or "assistant"
+        args = command_args(text).split()
+        # No name → keep the current persona (NAVIG unless one was chosen). Switching
+        # to it would mark an incidental persona as an explicit choice.
+        role = args[0].strip().lower() if args else _active_persona_name(user_id)
+        if args:
+            try:
+                from navig.personas.resolver import discover_persona_paths
+
+                available = sorted(discover_persona_paths())
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("persona discovery failed during /auto_start: %s", exc)
+                available = []
+            if role not in available:
+                listing = ", ".join(f"<code>{html.escape(n)}</code>" for n in available) or "none found"
+                await self.send_message(
+                    chat_id,
+                    f"❌ No persona named <code>{html.escape(role)}</code>. Auto mode is still off.\n"
+                    f"Available: {listing}",
+                    parse_mode="HTML",
+                )
+                return
+
+            try:
+                from navig.personas.manager import switch_persona
+
+                await switch_persona(
+                    name=role,
+                    user_id=user_id,
+                    chat_id=chat_id,
+                    deliver_assets=False,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("persona switch during /auto_start failed: %s", exc)
+                await self.send_message(
+                    chat_id,
+                    f"❌ Couldn't switch to persona <code>{html.escape(role)}</code>. "
+                    "Auto mode is still off.",
+                    parse_mode="HTML",
+                )
+                return
+
         try:
             from navig.store.runtime import get_runtime_store
 
@@ -10112,27 +10447,20 @@ class TelegramCommandsMixin:
                 persona=role,
                 context={"source": "telegram", "command": "auto_start"},
             )
-            # Also update the unified persona system (best-effort)
-            try:
-                from navig.personas.manager import switch_persona
-
-                await switch_persona(
-                    name=role,
-                    user_id=user_id,
-                    chat_id=chat_id,
-                    deliver_assets=False,
-                )
-            except Exception as _pe:
-                logger.debug("Persona sync during auto_start skipped: %s", _pe)
-
-            await self.send_message(
-                chat_id,
-                f"✅ Auto-replies <b>ACTIVATED</b> with persona: <code>{role}</code>\n"
-                f"<i>Tip: use <code>/persona {role}</code> to switch personas without enabling auto-reply.</i>",
-            )
         except Exception as e:
             logger.error("Failed to start auto-reply state: %s", e)
-            await self.send_message(chat_id, "❌ Failed to activate auto-replies.")
+            await self.send_message(chat_id, "❌ Failed to activate auto-replies.", parse_mode=None)
+            return
+
+        await self.send_message(
+            chat_id,
+            f"✅ Auto mode <b>ACTIVATED</b> with persona <code>{html.escape(role)}</code>.\n"
+            "<i>In groups I now reply without an @mention. "
+            "/continue lets me keep going on my own; /auto_stop turns it all off. "
+            "To change persona without auto mode: Mini App → Settings → AI &amp; Models → "
+            "AI persona.</i>",
+            parse_mode="HTML",
+        )
 
     async def _handle_auto_stop(self, chat_id: int, user_id: int) -> None:
         """Stop AI conversational auto-reply."""
@@ -10157,7 +10485,7 @@ class TelegramCommandsMixin:
             logger.error("Failed to read auto-reply state: %s", e)
 
         if state and state.get("mode") == "active":
-            role = state.get("persona") or "assistant"
+            role = state.get("persona") or "default"
             context = state.get("context") or {}
             policy = policy_from_context(context)
             continuation_meta = (
@@ -10216,11 +10544,12 @@ class TelegramCommandsMixin:
             if state.get("mode") != "active":
                 await self.send_message(
                     chat_id,
-                    "Start auto mode first with `/auto_start <persona>`. ",
+                    "Start auto mode first with <code>/auto_start [persona]</code>.",
+                    parse_mode="HTML",
                 )
                 return
 
-            raw_args = text[len("/continue") :].strip().split() if text else []
+            raw_args = command_args(text).split() if text else []
             profile = "conservative"
             preferred_space = ""
 
@@ -10256,7 +10585,7 @@ class TelegramCommandsMixin:
                 user_id=user_id,
                 chat_id=chat_id,
                 mode="active",
-                persona=state.get("persona") or "assistant",
+                persona=state.get("persona"),  # None keeps the stored persona
                 context=context,
             )
             await self.send_message(
@@ -10284,7 +10613,7 @@ class TelegramCommandsMixin:
                 user_id=user_id,
                 chat_id=chat_id,
                 mode=state.get("mode") or "inactive",
-                persona=state.get("persona") or "assistant",
+                persona=state.get("persona"),  # None keeps the stored persona
                 context=context,
             )
             await self.send_message(chat_id, "⏸️ Continuation paused. Use <code>/continue</code> to resume.")
@@ -10305,7 +10634,7 @@ class TelegramCommandsMixin:
                 user_id=user_id,
                 chat_id=chat_id,
                 mode=state.get("mode") or "inactive",
-                persona=state.get("persona") or "assistant",
+                persona=state.get("persona"),  # None keeps the stored persona
                 context=context,
             )
             await self.send_message(chat_id, "⏭️ Next continuation turn will be skipped.")
@@ -10350,7 +10679,7 @@ class TelegramCommandsMixin:
 
                 roles = "\n".join(f"• <code>{p}</code>" for p in BUILTIN_PERSONAS)
             except Exception:
-                roles = "• <code>default</code>\n• <code>assistant</code>\n• <code>tyler</code>\n• <code>storyteller</code>\n• <code>philosopher</code>\n• <code>teacher</code>"
+                roles = "• <code>default</code>\n• <code>assistant</code>\n• <code>tyler</code>\n• <code>storyteller</code>"
             await self.send_message(
                 chat_id,
                 f"🎭 <b>Available AI Personas:</b>\n\n{roles}\n\nUse <code>/persona &lt;name&gt;</code> to switch.",
@@ -10399,15 +10728,12 @@ class TelegramCommandsMixin:
         await TelegramCommandsMixin._handle_persona_switch(self, chat_id, user_id, "default")
 
     async def _handle_explain_ai(self, chat_id: int, user_id: int = 0, text: str = "") -> None:
-        topic = (
-            text[len("/explain_ai") :].strip()
-            if text.lower().startswith("/explain_ai")
-            else text.strip()
-        )
+        topic = command_args(text)
         if not topic:
             await self.send_message(
                 chat_id,
-                "Please provide a topic. Example: `/explain_ai quantum computing`",
+                "Please provide a topic. Example: <code>/explain_ai quantum computing</code>",
+                parse_mode="HTML",
             )
             return
 
@@ -10440,17 +10766,26 @@ class TelegramCommandsMixin:
                     # (#1119, #1129). The instruction is already carried by `prompt` above,
                     # in the USER turn, where it cannot displace the floor.
                 )
-            if not llm_text:
-                # Minimal fallback: call llm_router directly
-                from navig.llm.router import get_llm_router
+            # No second path. A direct `get_llm_router().route(...)` fallback used to
+            # sit here; LLMModeRouter has no `route`, so it could only raise
+            # AttributeError and print that as "Failed to explain".
+            if not str(llm_text or "").strip():
+                await self.send_message(
+                    chat_id,
+                    "🤔 Couldn't generate an explanation right now. Try again in a moment.",
+                    parse_mode=None,
+                )
+                return
+            from navig.gateway.channels.telegram_keyboards import strip_explore_marker
 
-                lr = get_llm_router()
-                if lr is None:
-                    raise RuntimeError("LLM router not initialised")
-                llm_text = await lr.route(prompt, tier="small")
-            await self.send_message(chat_id, str(llm_text))
+            await self.send_message(chat_id, strip_explore_marker(str(llm_text)))
         except Exception as e:  # noqa: BLE001
-            await self.send_message(chat_id, f"❌ Failed to explain: {e}", parse_mode=None)
+            logger.warning("/explain_ai failed: %s", e)
+            await self.send_message(
+                chat_id,
+                "🤔 Couldn't generate an explanation right now. Try again in a moment.",
+                parse_mode=None,
+            )
 
     async def _handle_music(self, chat_id: int) -> None:
         await self.send_message(
@@ -10464,7 +10799,7 @@ class TelegramCommandsMixin:
         if not prompt:
             await self.send_message(
                 chat_id,
-                "Please provide a prompt. Example: `/imagegen cybernetic city sunset`",
+                "Please provide a prompt. Example: <code>/imagegen cybernetic city sunset</code>",
                 parse_mode="HTML",
             )
             return
@@ -10502,125 +10837,65 @@ class TelegramCommandsMixin:
 
     @staticmethod
     def _sniff_reminder_intent(text: str) -> str | None:
-        """Detect a reminder request in any language; return a normalised /remindme string or None.
+        """Detect a reminder request in any language; return a ``/remindme …`` string or None.
 
-        Supports: English, Russian, French, German, Spanish, Chinese, Korean.
-        Pattern matching is script/script-mixing-agnostic so it works even when
-        the verb and message are in different Unicode blocks.
+        Fires on a remind VERB ("remind me", "rappelle-moi", "напомни", …) plus a time
+        that `pim.dates.extract_when` can read. The verb is removed and everything else
+        is handed to `/remindme` UNCHANGED, so "rappelle-moi lundi prochain à 9h
+        d'appeler Sarah" keeps its date — this used to keep only an HH:MM and drop the
+        day, turning "lundi prochain" into "today or tomorrow".
         """
-        lowered = (text or "").lower()
-        _VERBS = (
-            "remind me", "set reminder", "set a reminder",
-            "напомни", "напомните",          # Russian
-            "rappelle-moi", "rappelle moi",   # French
-            "erinnere mich",                  # German
-            "recuérdame",                     # Spanish
-            "提醒我",                          # Chinese
-            "알려줘",                           # Korean
-        )
-        if not any(v in lowered for v in _VERBS):
+        from navig.pim.clock import local_now
+        from navig.pim.dates import extract_when
+        from navig.telegram.appointments import strip_remind_verb
+
+        rest = strip_remind_verb(text or "")
+        if rest is None or extract_when(rest, local_now()) is None:
             return None
-
-        # ── Absolute time HH:MM ────────────────────────────────────────────
-        abs_m = re.search(r"\b(\d{1,2}):(\d{2})\b", text)
-        if abs_m:
-            hour, minute = int(abs_m.group(1)), int(abs_m.group(2))
-            if 0 <= hour <= 23 and 0 <= minute <= 59:
-                msg = (text[: abs_m.start()] + " " + text[abs_m.end() :]).strip()
-                for v in sorted(_VERBS, key=len, reverse=True):
-                    msg = re.sub(rf"\b{re.escape(v)}\b", "", msg, flags=re.IGNORECASE)
-                msg = re.sub(
-                    r"\b(мне|at|в|um|à|me|mir|to|for|in)\b", "", msg, flags=re.IGNORECASE
-                )
-                msg = re.sub(r"\s+", " ", msg).strip(" .,!?:;-–—")
-                return f"/remindme at {hour:02d}:{minute:02d} {msg or 'reminder'}"
-
-        # ── Relative time N min / hour / day ──────────────────────────────
-        rel_m = re.search(
-            r"\b(\d+)\s*(мин(?:уты?|ут?)?|min(?:utes?)?|час(?:а|ов)?|hours?|hr?s?|day?s?)\b",
-            text,
-            flags=re.IGNORECASE,
-        )
-        if rel_m:
-            qty = int(rel_m.group(1))
-            unit_raw = rel_m.group(2).lower()
-            if unit_raw.startswith(("ч", "h")):
-                unit_word = "hour" if qty == 1 else "hours"
-            elif unit_raw.startswith("d"):
-                unit_word = "day" if qty == 1 else "days"
-            else:
-                unit_word = "minute" if qty == 1 else "minutes"
-            msg = (text[: rel_m.start()] + " " + text[rel_m.end() :]).strip()
-            for v in sorted(_VERBS, key=len, reverse=True):
-                msg = re.sub(rf"\b{re.escape(v)}\b", "", msg, flags=re.IGNORECASE)
-            msg = re.sub(
-                r"\b(мне|через|in|nach|me|mir|to|for)\b", "", msg, flags=re.IGNORECASE
-            )
-            msg = re.sub(r"\s+", " ", msg).strip(" .,!?:;-–—")
-            return f"/remindme in {qty} {unit_word} {msg or 'reminder'}"
-
-        return None
+        return f"/remindme {rest}"
 
     def _parse_remindme_request(self, text: str) -> tuple[datetime | None, str, str | None]:
-        """Parse /remindme payload to (remind_at_local→UTC, message, error)."""
+        """Parse a /remindme payload to (remind_at in UTC, message, error).
+
+        One reader for every way a reminder is added — `pim.dates.extract_when`, the
+        same grammar `/todo` and the appointment capture use: "in 30 min …",
+        "at 18:45 …", "demain 10h …", "lundi 26 octobre 10h30 …", "через 2 дня в 9:00 …",
+        in any position.
+        """
+        from navig.pim.clock import local_now
+        from navig.pim.dates import extract_when
+        from navig.telegram.todo_actions import _t
+
+        usage = _t("pim.remind.usage") or (
+            "Usage: <code>/remindme in 30 min check logs</code> · "
+            "<code>/remindme tomorrow 9:00 call mom</code> · "
+            "<code>/remindme lundi 26 octobre 10h30 appeler Sarah</code>"
+        )
         arg = text[len("/remindme") :].strip()
         if not arg:
-            return (
-                None,
-                "",
-                "Usage: <code>/remindme in 30 minutes check logs</code> or <code>/remindme at 21:30 deploy review</code>",
-            )
+            return None, "", usage
 
-        rel_match = re.match(
-            r"^(?:in\s+)?(\d+)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)\s+(?:to\s+)?(.+)$",
-            arg,
-            flags=re.IGNORECASE,
-        )
-        if rel_match:
-            qty = int(rel_match.group(1))
-            unit = rel_match.group(2).lower()
-            msg = rel_match.group(3).strip()
-            if not msg:
-                return None, "", "Reminder message cannot be empty."
-            now = datetime.now(timezone.utc)
-            if unit.startswith("m"):
-                remind_at = now + timedelta(minutes=qty)
-            elif unit.startswith("h"):
-                remind_at = now + timedelta(hours=qty)
-            else:
-                remind_at = now + timedelta(days=qty)
-            return remind_at, msg, None
-
-        abs_match = re.match(r"^at\s+(\d{1,2}):(\d{2})\s+(.+)$", arg, flags=re.IGNORECASE)
-        if abs_match:
-            hour = int(abs_match.group(1))
-            minute = int(abs_match.group(2))
-            msg = abs_match.group(3).strip()
-            if hour > 23 or minute > 59:
-                return None, "", "Time must be in 24h format, e.g. <code>at 21:30</code>."
-            if not msg:
-                return None, "", "Reminder message cannot be empty."
-            # Build time in server-local timezone, then convert to UTC for DB storage
-            now_local = datetime.now().astimezone()
-            remind_at = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            if remind_at <= now_local:
-                remind_at += timedelta(days=1)
-            remind_at = remind_at.astimezone(timezone.utc)
-            return remind_at, msg, None
-
-        return (
-            None,
-            "",
-            "Could not parse reminder. Use <code>/remindme in 10 minutes &lt;message&gt;</code> or <code>/remindme at 18:45 &lt;message&gt;</code>.",
-        )
+        now = local_now()
+        found = extract_when(arg, now)
+        if found is None:
+            unreadable = _t("pim.remind.unreadable") or "I could not find a time in that."
+            return None, "", f"{unreadable}\n{usage}"
+        when, message = found
+        if when <= now:
+            past = _t("pim.remind.past") or "That time has already passed."
+            return None, "", f"{past}\n{usage}"
+        return when.astimezone(timezone.utc), message, None
 
     async def _handle_remindme(self, chat_id: int, user_id: int, text: str) -> None:
         remind_at, message, err = self._parse_remindme_request(text)
         if err or remind_at is None:
-            await self.send_message(chat_id, err or "Invalid reminder format.")
+            await self.send_message(chat_id, err or "Invalid reminder format.", parse_mode="HTML")
             return
 
+        from navig.pim.clock import local_now, to_local
+        from navig.pim.dates import format_local
         from navig.store.runtime import get_runtime_store
+        from navig.telegram.todo_actions import _t
 
         reminder_id = get_runtime_store().create_reminder(
             user_id=user_id,
@@ -10628,55 +10903,29 @@ class TelegramCommandsMixin:
             message=message,
             remind_at=remind_at,
         )
-        # Show the time in server-local timezone so the user sees what they typed
-        local_when = remind_at.astimezone().strftime("%Y-%m-%d %H:%M")
-        await self.send_message(
-            chat_id,
-            f"⏰ Reminder set.\nID: <code>{reminder_id}</code>\nWhen: <code>{local_when}</code>\nMessage: {html.escape(message)}",
-            parse_mode="HTML",
+        # The operator's clock and language — the same rendering as /reminders.
+        when = format_local(to_local(remind_at), local_now())
+        safe = html.escape(message)
+        body = _t("pim.remind.set", when=when, message=safe, id=reminder_id) or (
+            f"⏰ Reminder set — {when}\n{safe}\n<i>#{reminder_id} · /reminders</i>"
         )
+        await self.send_message(chat_id, body, parse_mode="HTML")
 
     async def _handle_myreminders(self, chat_id: int, user_id: int, metadata: MessageMetadata | None = None) -> None:
-        from navig.store.runtime import get_runtime_store
+        """Every upcoming ping, grouped by day with its exact time — todo leads and
+        one-off `/remindme`s together, each named by its task (`reminders_view`)."""
+        from navig.telegram import reminders_view
 
-        reminders = get_runtime_store().get_user_reminders(user_id)
-        if not reminders:
-            await self.send_command_output(
-                chat_id,
-                "📭 You have no active reminders.",
-                command="myreminders",
-                ai_hint="The user has no reminders. Say so warmly in one short line.",
-                parse_mode=None,
-            )
-            return
-
-        lines = ["⏰ <b>Your Active Reminders</b>", ""]
-        for row in reminders:
-            rid = row.get("id")
-            remind_at_raw = str(row.get("remind_at") or "")
-            # Convert UTC DB timestamp to server-local time so it matches what the user typed.
-            try:
-                from datetime import timezone as _tz
-                _due_dt = datetime.fromisoformat(remind_at_raw.rstrip("Z")).replace(tzinfo=_tz.utc)
-                remind_at = _due_dt.astimezone().strftime("%Y-%m-%d %H:%M")
-            except Exception:
-                remind_at = remind_at_raw.replace("T", " ")[:16]
-            msg = html.escape(str(row.get("message") or "").strip())
-            lines.append(f"<code>#{rid}</code> — <code>{remind_at}</code>\n  {msg}")
-        lines.append("\n<i>Use /cancelreminder &lt;id&gt; to remove one.</i>")
-        keyboard = [
-            [
-                {"text": "🔄 Refresh", "callback_data": "slash:reminders"},
-                {"text": "➕ Add reminder", "callback_data": "slash:remindme"},
-            ]
-        ]
+        text, keyboard = reminders_view.build(user_id)
+        # Through send_command_output, so the Deck's AI/Plain toggle (ai_capable) for
+        # this command actually does something; plain is a byte-identical send.
         await self.send_command_output(
             chat_id,
-            "\n".join(lines),
+            text,
             command="myreminders",
-            ai_hint="List active reminders by their due time. Preserve every ID and timestamp.",
+            ai_hint="Upcoming reminders grouped by day; keep every time and task name.",
             parse_mode="HTML",
-            keyboard=keyboard,
+            keyboard=keyboard["inline_keyboard"],
         )
 
     async def _handle_cancelreminder(self, chat_id: int, user_id: int, text: str) -> None:
@@ -10883,9 +11132,28 @@ class TelegramCommandsMixin:
             logger.warning("/weigh could not write: %s", exc)
             await self.send_message(chat_id, "⚠️ Could not record that.")
             return
-        await self.send_message(
-            chat_id, f"✅ {html.escape(ba.t('weigh.recorded', value=f'{value:g}'))}"
-        )
+        # The weight answers the morning's question too. While that prompt still
+        # exists its force_reply box keeps re-arming in the client, so it reads as
+        # being asked again — clear it and delete the message (rewrite it when it
+        # is too old to delete). Best-effort: the weight is already recorded.
+        try:
+            pending = bm.take_weigh_prompt(chat_id)
+            if pending is not None:
+                _pday, prompt_id = pending
+                if not await ba.dismiss_prompt(self, chat_id, prompt_id):
+                    await ba.settle_prompt(
+                        self, chat_id, prompt_id, ba.settled_text(path, day, value)
+                    )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("/weigh could not clear the pending prompt: %s", exc)
+        # A receipt for something just done — the same as the reply-to-the-prompt
+        # path's, which was always tidied; this one stayed forever.
+        from navig.telegram import chat_tidy  # noqa: PLC0415
+
+        with chat_tidy.routine("body"):
+            await self.send_message(
+                chat_id, f"✅ {html.escape(ba.t('weigh.recorded', value=f'{value:g}'))}"
+            )
 
     async def _handle_body(self, chat_id: int, user_id: int = 0) -> None:
         """Send the weekly check-in card on demand."""
@@ -10908,6 +11176,21 @@ class TelegramCommandsMixin:
         message_id = ((result or {}).get("result") or {}).get("message_id")
         bm.remember_target(chat_id, path, message_id=message_id, day=day)
 
+
+    async def _handle_checkins(self, chat_id: int, user_id: int = 0) -> None:
+        """Today's check-ins — pills, water and the weigh-in, with their state."""
+        from navig.checkins import engine as ci
+
+        try:
+            text, markup = ci.list_card(chat_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("/checkins could not build the card: %s", exc)
+            await self.send_message(chat_id, "⚠️ Could not read the check-ins.")
+            return
+        payload: dict = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+        if markup:
+            payload["reply_markup"] = markup
+        await self._api_call("sendMessage", payload)
 
     async def _handle_workout(self, chat_id: int, user_id: int, text: str) -> None:
         """Quick-add a workout reminder.
@@ -11058,3 +11341,10 @@ class TelegramCommandsMixin:
     async def _handle_search(self, chat_id: int, text: str) -> None:
         query = text[len("/search") :].strip()
         await self.send_message(chat_id, f"🔍 User search proxy offline for query: <code>{html.escape(query)}</code>", parse_mode="HTML")
+
+
+def _active_persona_name(user_id: int) -> str:
+    """The user's current persona ("default" = NAVIG) — never an invented one."""
+    from navig.personas.store import get_active_persona
+
+    return get_active_persona(user_id)

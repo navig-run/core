@@ -53,6 +53,11 @@ class RemoteExecuteTool(BaseTool):
         "base64-encoded when necessary."
     )
     owner_only = True
+    #: Runs an arbitrary shell command over SSH on the operator's hosts, and the
+    #: executor's `navig run` subprocess carries `--yes`, so the ApprovalGate is the
+    #: only authorization decision for this tool. `owner_only` is authorization, not
+    #: confirmation — `safety` is what the approval gate reads.
+    safety = "dangerous"
     parameters = [
         {
             "name": "command",
@@ -296,6 +301,10 @@ class RemoteMultiHostTool(BaseTool):
         "This tool is internally parallel — do NOT call it in parallel with itself."
     )
     owner_only = True
+    #: The same arbitrary-command execution as `remote_execute`, fanned out across
+    #: hosts — one ungated call would touch every host at once. `owner_only` is
+    #: authorization, not confirmation; `safety` is what the approval gate reads.
+    safety = "dangerous"
     parameters = [
         {
             "name": "command",

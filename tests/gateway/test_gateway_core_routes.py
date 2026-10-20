@@ -11,8 +11,14 @@ import pytest
 
 pytestmark = pytest.mark.integration
 
+# require_bearer_auth fails closed (503) when the gateway has no token, so the default
+# gateway carries a test token and every guarded request (including the WS handshake)
+# authenticates with it. Tests that pin the 401 path pass their own token explicitly.
+_TEST_TOKEN = "top-secret"
+_AUTH = {"Authorization": f"Bearer {_TEST_TOKEN}"}
 
-def _build_gateway(*, auth_token: str | None = None):
+
+def _build_gateway(*, auth_token: str | None = _TEST_TOKEN):
     now = datetime.now()
     session = SimpleNamespace(messages=["hi"], created_at=now, updated_at=now)
 
@@ -65,7 +71,7 @@ async def test_core_health_status_and_message():
         assert health_body["ok"] is True
         assert health_body["data"]["status"] == "ok"
 
-        status = await client.get("/status")
+        status = await client.get("/status", headers=_AUTH)
         assert status.status == 200
         status_body = await status.json()
         assert status_body["ok"] is True
@@ -75,6 +81,7 @@ async def test_core_health_status_and_message():
         message = await client.post(
             "/message",
             json={"channel": "http", "user_id": "u1", "message": "hello"},
+            headers=_AUTH,
         )
         assert message.status == 200
         message_body = await message.json()
@@ -90,7 +97,7 @@ async def test_core_websocket_flow():
     app = _build_core_app(gateway)
 
     async with TestClient(TestServer(app)) as client:
-        ws = await client.ws_connect("/ws")
+        ws = await client.ws_connect("/ws", headers=_AUTH)
 
         assert hasattr(gateway, "ws_connections")
         assert len(gateway.ws_connections) == 1
@@ -142,10 +149,10 @@ async def test_ws_topic_filtering_end_to_end():
     app = _build_core_app(gateway)
 
     async with TestClient(TestServer(app)) as client:
-        ws_match = await client.ws_connect("/ws")  # subscribes to "status"
-        ws_glob = await client.ws_connect("/ws")  # subscribes to "stat*"
-        ws_other = await client.ws_connect("/ws")  # subscribes to "other.topic"
-        ws_legacy = await client.ws_connect("/ws")  # never subscribes
+        ws_match = await client.ws_connect("/ws", headers=_AUTH)  # subscribes to "status"
+        ws_glob = await client.ws_connect("/ws", headers=_AUTH)  # subscribes to "stat*"
+        ws_other = await client.ws_connect("/ws", headers=_AUTH)  # subscribes to "other.topic"
+        ws_legacy = await client.ws_connect("/ws", headers=_AUTH)  # never subscribes
 
         for sock, topic in ((ws_match, "status"), (ws_glob, "stat*"), (ws_other, "other.topic")):
             await sock.send_json({"action": "subscribe", "topic": topic})
@@ -226,7 +233,7 @@ async def test_ws_server_heartbeat_reaps_dead_client(monkeypatch):
 
     async with TestClient(TestServer(app)) as client:
         # autoping=False: this client never answers protocol PINGs — a zombie.
-        ws = await client.ws_connect("/ws", autoping=False)
+        ws = await client.ws_connect("/ws", headers=_AUTH, autoping=False)
         assert len(gateway.ws_connections) == 1
 
         saw_ping = False
@@ -272,7 +279,7 @@ async def test_ws_heartbeat_transparent_to_normal_clients(monkeypatch):
     app = _build_core_app(gateway)
 
     async with TestClient(TestServer(app)) as client:
-        ws = await client.ws_connect("/ws")  # autoping=True (default)
+        ws = await client.ws_connect("/ws", headers=_AUTH)  # autoping=True (default)
 
         # Sit in a receive loop for ~5 heartbeat intervals, like every real
         # consumer of /ws does (waiting for events). autoping answers the
@@ -530,3 +537,60 @@ async def test_proactive_status_reports_the_engine_with_the_token(monkeypatch):
         payload = (await resp.json())["data"]
         assert payload["started"] is True
         assert payload["providers"] == {"email": "ready"}
+
+
+# ── /health identity: telling two local gateways apart ──────────────────────────
+#
+# One config dir can run two processes that both answer /health: the dedicated
+# gateway child (self-healing bind, records its live port to gateway.json) and the
+# telegram worker's embedded copy (binds the CONFIGURED port and never records).
+# Both serve /api/deck/*, but only one runs whatever build a surface fast-forwarded
+# to — so a client taking the first 200 can land on the process that lacks a route
+# it just added.
+
+
+def _health_app(served_port: int):
+    pytest.importorskip("aiohttp")
+    from aiohttp import web
+
+    from navig.gateway.routes.core import register
+
+    gw = _build_gateway()
+    gw.config.port = served_port
+    app = web.Application()
+    register(app, gw)
+    return app
+
+
+async def _health_data(monkeypatch, recorded_port: int | None, served_port: int) -> dict:
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from navig import gateway_client
+
+    monkeypatch.setattr(
+        gateway_client,
+        "read_gateway_discovery",
+        lambda: None if recorded_port is None else (recorded_port, "127.0.0.1"),
+    )
+    async with TestClient(TestServer(_health_app(served_port))) as client:
+        resp = await client.get("/health")
+        assert resp.status == 200
+        return (await resp.json())["data"]
+
+
+async def test_health_names_the_recorded_gateway_canonical(monkeypatch):
+    record = await _health_data(monkeypatch, recorded_port=8790, served_port=8790)
+    assert record["canonical"] is True
+    assert record["port"] == 8790
+
+    other = await _health_data(monkeypatch, recorded_port=8790, served_port=8789)
+    assert other["port"] == 8789
+    assert other["canonical"] is False, "the telegram worker's copy must not claim canonical"
+
+
+async def test_health_stays_unambiguous_when_nothing_is_recorded(monkeypatch):
+    # No gateway.json (fresh install, or a single-server setup): nothing to
+    # disqualify, so a lone server is still the canonical one.
+    rec = await _health_data(monkeypatch, recorded_port=None, served_port=8789)
+    assert rec["canonical"] is True
+    assert rec["port"] == 8789

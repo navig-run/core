@@ -529,9 +529,10 @@ def _ensure_dirs() -> None:
     _local_log_dir().mkdir(parents=True, exist_ok=True)
 
 
-def _migrate_legacy_documents_dir(target_dir: Path) -> None:
+def _migrate_legacy_documents_dir(target_dir: Path) -> bool:
     """Move config files from the legacy Documents/.navig path to *target_dir*.
 
+    Returns True when something was moved, False when there was nothing to move.
     Raises :class:`typer.Exit` if a path conflict is detected so
     that the caller can abort without clobbering existing data.
     """
@@ -539,7 +540,7 @@ def _migrate_legacy_documents_dir(target_dir: Path) -> None:
 
     source_dir = _legacy_documents_config_dir()
     if not source_dir.exists():
-        return
+        return False
 
     # Detect conflicts: any item that already exists in the target
     conflicts = [item.name for item in source_dir.iterdir() if (target_dir / item.name).exists()]
@@ -561,9 +562,10 @@ def _migrate_legacy_documents_dir(target_dir: Path) -> None:
         pass  # best-effort cleanup
 
     _write_init_log(f"legacy migration: moved {source_dir} -> {target_dir}")
+    return True
 
 
-def _migrate_legacy_windows_runtime_layout() -> None:
+def _migrate_legacy_windows_runtime_layout() -> bool:
     """Flatten the nested legacy Windows platformdirs layout into canonical dirs.
 
     Old layout (created by old platformdirs):
@@ -575,10 +577,12 @@ def _migrate_legacy_windows_runtime_layout() -> None:
         user_log_dir/…
         user_state_dir/memory/…
         user_cache_dir/…
+
+    Returns True when a legacy layout was found and flattened, False otherwise.
     """
     legacy_root = _legacy_windows_platformdirs_root()
     if not legacy_root.exists():
-        return
+        return False
 
     log_dir = _local_log_dir()
     state_dir = _local_state_dir()
@@ -623,6 +627,7 @@ def _migrate_legacy_windows_runtime_layout() -> None:
         legacy_root.rmdir()
     except OSError:
         pass  # best-effort cleanup
+    return True
 
 
 def _maybe_send_first_run_ping() -> None:
@@ -1441,9 +1446,19 @@ def run_init_command(
             )
             raise SystemExit(1)
 
-        run_install(profile=effective_profile, dry_run=dry_run, quiet=quiet)
+        results = run_install(profile=effective_profile, dry_run=dry_run, quiet=quiet)
         if profile == "quickstart":
             run_chat_first_handoff(profile=profile, dry_run=dry_run, quiet=quiet)
+        # A FAILED step (e.g. the service never registered) must not exit 0: install.sh
+        # turns this exit code into "profile server applied" — printed on a clean Ubuntu
+        # VM for a server whose watcher service had not been registered.
+        from navig.installer.contracts import ModuleState
+
+        failed = [r for r in (results or []) if r.state == ModuleState.FAILED]
+        if failed and not dry_run:
+            for r in failed:
+                typer.echo(f"✗ {r.action_id}: {r.message}" + (f" — {r.error}" if r.error else ""), err=True)
+            raise SystemExit(1)
         return
 
     # ── Interactive onboarding ────────────────────────────────────────────────

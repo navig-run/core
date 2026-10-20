@@ -13,7 +13,12 @@ import json
 from pathlib import Path
 
 from navig.contracts.capability import TrustScore
-from navig.contracts.execution_receipt import ExecutionReceipt, ReceiptOutcome
+from navig.contracts.execution_receipt import (
+    ExecutionReceipt,
+    ReceiptOutcome,
+    result_digest,
+    sign_receipt,
+)
 from navig.contracts.mission import Mission, MissionStatus
 from navig.contracts.node import Node, NodeStatus
 from navig.core.dict_utils import now_iso
@@ -42,6 +47,12 @@ _STATUS_TO_OUTCOME = {
     MissionStatus.CANCELLED: ReceiptOutcome.CANCELLED,
     MissionStatus.TIMED_OUT: ReceiptOutcome.TIMED_OUT,
 }
+
+
+def _result_artifacts(result) -> dict:
+    """Receipt artifacts for a mission result: its digest, so the signature covers it."""
+    digest = result_digest(result)
+    return {"result_digest": digest} if digest else {}
 
 
 class RuntimeStore:
@@ -176,7 +187,9 @@ class RuntimeStore:
             started_at=mission.started_at,
             duration_secs=mission.duration_secs,
             error=mission.error,
+            artifacts=_result_artifacts(result),
         )
+        sign_receipt(receipt)
         self._receipts[receipt.receipt_id] = receipt
         return receipt
 
@@ -205,7 +218,9 @@ class RuntimeStore:
             started_at=mission.started_at,
             duration_secs=mission.duration_secs,
             error=mission.error,
+            artifacts=_result_artifacts(mission.result),
         )
+        sign_receipt(receipt)
         self._receipts[receipt.receipt_id] = receipt
         return receipt
 

@@ -34,7 +34,7 @@ _EXEMPT: dict[tuple[str, str, str], str] = {
         "a wiki page NAME like 'guides/setup', joined under the wiki dir — never a "
         "filesystem path relative to where the operator stands"
     ),
-    ("core/navig/commands/cdp.py", "cdp_screenshot", "out"): (
+    ("plugins/navig-browser/navig_browser/commands/cdp.py", "cdp_screenshot", "out"): (
         "inspects the typed string's SHAPE (bare name vs path) to decide whether to "
         "resolve it — the resolution itself goes through resolve_user_path"
     ),

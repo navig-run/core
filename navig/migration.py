@@ -227,7 +227,14 @@ def save_config(config: dict[str, Any], path: Path) -> None:
         config: Configuration dictionary
         path: Path where to save configuration
     """
+    from navig.core.host_secrets import secrets_for_storage
     from navig.core.yaml_io import atomic_write_yaml
+
+    # Legacy apps/ → hosts/ migration is a write path that bypasses
+    # HostManager.save, so it vaults host secrets itself (Gate 0F): the file
+    # this writes carries *_ref only. Raises HostSecretError instead of writing
+    # plaintext when the vault is unavailable.
+    config = secrets_for_storage(config, path.stem)
 
     atomic_write_yaml(config, path, allow_unicode=True)
 

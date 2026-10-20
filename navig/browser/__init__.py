@@ -1,9 +1,13 @@
-"""Browser automation module using Playwright."""
+"""Browser automation — the engine lives in navig-browser; these names re-export it.
 
-from .controller import BrowserConfig, BrowserController
-from .orchestrator import CortexOrchestrator
-from .router import cdp_browser, fast_browser, get_browser, stealth_browser
-from .template_runner import TemplateRunner
+Every ``navig.browser.<module>`` beside this file is an identity alias of
+``navig_browser.<module>``. This package stays a real package (not an alias of
+``navig_browser``) so each submodule is loaded exactly once, under its new name.
+"""
+from navig.browser.controller import BrowserConfig, BrowserController
+from navig.browser.orchestrator import CortexOrchestrator
+from navig.browser.router import cdp_browser, fast_browser, get_browser, stealth_browser
+from navig.browser.template_runner import TemplateRunner
 
 __all__ = [
     "BrowserController",

@@ -149,9 +149,12 @@ class AIClient:
                 from navig.vault import get_vault
 
                 vault = get_vault()
-                secret = vault.get_secret("openrouter", "api_key", caller="ai_client")
-                if secret:
-                    api_key = secret.reveal().strip()
+                # `get_secret(label)` takes ONE argument; this passed three, so it raised
+                # TypeError into the handler below and a key stored with
+                # `navig vault add openrouter` was never read (the same defect the
+                # github_models reader below already fixed). get_api_key is the reader
+                # for a provider's key.
+                api_key = (vault.get_api_key("openrouter", caller="ai_client") or "").strip() or None
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 

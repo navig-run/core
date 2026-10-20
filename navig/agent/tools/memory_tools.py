@@ -45,6 +45,21 @@ def _check_security(text: str) -> str | None:
     return None
 
 
+def _memory_blocked(name: str, t0: float) -> ToolResult | None:
+    """A failed result when memory is off or the chat is incognito, else None.
+
+    Delete is deliberately NOT gated: removing a memory is always the user's right.
+    """
+    from navig.memory.controls import memory_off_reason
+
+    reason = memory_off_reason()
+    if reason is None:
+        return None
+    return ToolResult(
+        name=name, success=False, error=reason, elapsed_ms=(time.monotonic() - t0) * 1000
+    )
+
+
 def _get_store():  # type: ignore[return]
     """Return the global KeyFactStore instance (lazy import)."""
     from navig.memory.key_facts import KeyFactStore
@@ -93,17 +108,23 @@ class MemoryReadTool(BaseTool):
         query = args.get("query", "").strip()
         if not query:
             return ToolResult(name=self.name, success=False, error="'query' arg is required")
+        if blocked := _memory_blocked(self.name, t0):
+            return blocked
 
         limit = int(args.get("limit") or _DEFAULT_LIMIT)
         category = args.get("category") or None
 
         try:
-            store = _get_store()
-            # Try FTS search first
-            if hasattr(store, "search"):
-                results = store.search(query, limit=limit, category=category)
-            else:
-                results = []
+            # The same retriever the chat's recall uses: approved facts only (pending
+            # proposals never reach the model), keyword + vector ranking. This used to
+            # call a `store.search` that KeyFactStore never had, behind a hasattr guard,
+            # so every memory_read answered "No matching memories found."
+            from navig.memory.fact_retriever import FactRetriever
+
+            ranked = FactRetriever(_get_store()).retrieve(
+                query=query, category=category, max_tokens=4000
+            )
+            results = [rf.fact for rf in (getattr(ranked, "facts", None) or [])][:limit]
         except Exception as exc:
             return ToolResult(
                 name=self.name,
@@ -179,6 +200,8 @@ class MemoryWriteTool(BaseTool):
         content = args.get("content", "").strip()
         if not content:
             return ToolResult(name=self.name, success=False, error="'content' arg is required")
+        if blocked := _memory_blocked(self.name, t0):
+            return blocked
 
         if len(content) > _MAX_VALUE_CHARS:
             return ToolResult(
@@ -201,6 +224,8 @@ class MemoryWriteTool(BaseTool):
         confidence = float(args.get("confidence") or 0.9)
         confidence = max(0.0, min(1.0, confidence))
 
+        from navig.memory.fact_redaction import SensitiveContentError
+
         try:
             from navig.memory.key_facts import KeyFact, KeyFactStore
 
@@ -212,15 +237,33 @@ class MemoryWriteTool(BaseTool):
                 source_platform="agent",
             )
             stored_fact = store.upsert(fact)
+            stored_text = str(getattr(stored_fact, "content", content))
+            output: dict[str, Any] = {
+                "stored": True,
+                "id": getattr(stored_fact, "id", ""),
+                "content": stored_text[:100] + ("…" if len(stored_text) > 100 else ""),
+                "category": category,
+            }
+            if (getattr(stored_fact, "metadata", None) or {}).get("redacted"):
+                output["redacted"] = True
+                output["note"] = (
+                    "Saved with the secret removed. Keep the value itself in the vault "
+                    "(`navig vault`), never in memory."
+                )
             return ToolResult(
                 name=self.name,
                 success=True,
-                output={
-                    "stored": True,
-                    "id": getattr(stored_fact, "id", ""),
-                    "content": content[:100] + ("…" if len(content) > 100 else ""),
-                    "category": category,
-                },
+                output=output,
+                elapsed_ms=(time.monotonic() - t0) * 1000,
+            )
+        except SensitiveContentError:
+            return ToolResult(
+                name=self.name,
+                success=False,
+                error=(
+                    "Not saved: that is only a secret. Store secrets in the vault "
+                    "(`navig vault`), never in memory."
+                ),
                 elapsed_ms=(time.monotonic() - t0) * 1000,
             )
         except Exception as exc:

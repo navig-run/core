@@ -42,6 +42,11 @@ def test_visible_registry_commands_have_nl_resolution_coverage(_nl_bot):
 
     failures = []
     for entry in visible_entries:
+        # Sniff-only commands are DELIBERATELY unreachable from the phrase resolver
+        # ("write me a prompt for…" must reach the LLM, not /prompt); they have their own
+        # narrow free-text route, covered in tests/prompts/test_prompt_library_surfaces.py.
+        if entry.command in _nl_bot._NL_SNIFF_ONLY:
+            continue
         text = _sample_phrase(_nl_bot, entry)
         resolved = _nl_bot._resolve_nl_command_intent(text)
         if not resolved:

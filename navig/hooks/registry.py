@@ -51,6 +51,8 @@ class HookDefinition:
     tool_filter: str = ""  # empty = match all tools; supports glob (e.g. "bash*")
     timeout_seconds: int = _DEFAULT_HOOK_TIMEOUT_SECONDS
     description: str = ""
+    #: Where it was declared — a hooks.yaml path or ``plugin:<id>`` — for display.
+    source: str = ""
 
     def matches_tool(self, tool_name: str) -> bool:
         """Return True if this hook applies to *tool_name*."""
@@ -138,6 +140,16 @@ class HookRegistry:
     def default_timeout(self) -> int:
         return self._timeout_seconds
 
+    def all_definitions(self) -> list[HookDefinition]:
+        """Every loaded definition regardless of event — for listing surfaces."""
+        if not self._loaded:
+            self.load()
+        return list(self._definitions)
+
+    def config_paths(self) -> list[Path]:
+        """The two hooks.yaml files this registry reads (existing or not)."""
+        return [self._global_dir / _HOOKS_FILENAME, self._project_dir / _HOOKS_FILENAME]
+
     # ------------------------------------------------------------------ #
     # Internal helpers                                                     #
     # ------------------------------------------------------------------ #
@@ -155,11 +167,19 @@ class HookRegistry:
             logger.warning("hooks.registry: failed to read %s: %s", path, exc)
             return
 
-        hooks_section = raw.get("hooks", {})
+        hooks_section = raw.get("hooks", {}) if isinstance(raw, dict) else None
+        if not isinstance(hooks_section, dict):
+            logger.warning("hooks.registry: %s has no `hooks:` mapping — skipping", path)
+            return
 
         # Master switch (default True if file exists + has a definitions key)
+        # coerce_bool, not bool(): a quoted `"false"` is a truthy string, so the
+        # master switch read as ON and — worse — `allow_network: "false"` below
+        # read as ALLOW, failing a network guard open.
+        from navig.core.coerce import coerce_bool
+
         enabled_val = hooks_section.get("enabled", True)
-        self._enabled = bool(enabled_val)
+        self._enabled = coerce_bool(enabled_val, default=True)
         if not self._enabled:
             return
 
@@ -171,12 +191,17 @@ class HookRegistry:
                 pass
 
         # Network allow flag
-        self._allow_network = bool(hooks_section.get("allow_network", False))
+        self._allow_network = coerce_bool(hooks_section.get("allow_network"), default=False)
 
         # Parse definitions
-        for entry in hooks_section.get("definitions", []):
+        definitions = hooks_section.get("definitions") or []
+        for entry in definitions if isinstance(definitions, list) else []:
+            if not isinstance(entry, dict):
+                logger.warning("hooks.registry: non-mapping entry in %s — skipping", path)
+                continue
             defn = self._parse_entry(entry)
             if defn is not None:
+                defn.source = str(path)
                 self._definitions.append(defn)
 
     def _load_plugin_hooks(self) -> None:
@@ -210,7 +235,12 @@ class HookRegistry:
         # Expand ~ in command path
         command = os.path.expanduser(command)
 
-        timeout = int(entry.get("timeout_seconds", self._timeout_seconds))
+        try:
+            timeout = int(entry.get("timeout_seconds", self._timeout_seconds))
+        except (TypeError, ValueError):
+            # One bad timeout raised out of load() and dropped EVERY hook in every file.
+            logger.warning("hooks.registry: bad timeout_seconds for %s — using default", event_raw)
+            timeout = self._timeout_seconds
 
         return HookDefinition(
             event=event,

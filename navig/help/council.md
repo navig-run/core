@@ -6,12 +6,12 @@ insights, and the default agent synthesizes a final decision.
 
 ## Commands
 
-### `navig council run <question>`
+### `navig formation council <question>`
 Run a council deliberation on a question or topic.
 
 Options:
-- `--rounds, -r`: Number of deliberation rounds (default: 3)
-- `--timeout, -t`: Per-agent timeout in seconds (default: 30)
+- `--rounds, -r`: Number of deliberation rounds (default: 1)
+- `--timeout, -t`: Per-agent timeout in seconds (default: none)
 - `--plain`: Plain text output
 - `--json`: JSON structured output
 
@@ -19,16 +19,16 @@ Options:
 
 ```bash
 # Basic deliberation
-navig council run "Should we adopt Kubernetes?"
+navig formation council "Should we adopt Kubernetes?"
 
 # Quick 1-round deliberation
-navig council run "Best database for our use case?" --rounds 1
+navig formation council "Best database for our use case?" --rounds 1
 
 # Extended deliberation with longer timeout
-navig council run "5-year technology roadmap" --rounds 5 --timeout 60
+navig formation council "5-year technology roadmap" --rounds 5 --timeout 60
 
 # JSON output for scripting
-navig council run "Budget priorities for Q3" --json
+navig formation council "Budget priorities for Q3" --json
 ```
 
 ## How It Works

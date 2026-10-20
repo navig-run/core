@@ -13,6 +13,43 @@ def _first_line(text: str | None) -> str:
     return text.strip().splitlines()[0].strip()
 
 
+def _click_params(callback: Any) -> list[Any] | None:
+    """The command's parameters as Typer itself builds them for the real CLI, or ``None``.
+
+    The manifest used to read the handler's raw signature, which is wrong three ways at once:
+    under ``from __future__ import annotations`` every annotation is a STRING, so no flag ever
+    looked boolean (730 options recorded as taking a value); a parameter declared
+    ``Annotated[bool, typer.Option(...)] = False`` has no ``OptionInfo`` default, so it was
+    skipped outright (863 options missing — whole plugins' worth); and a bare ``name: str`` /
+    ``dry_run: bool`` was skipped too although the CLI accepts it. Typer already resolves all
+    of that to click parameters, so ask it: register the callback on a throwaway one-command
+    app (no completion options) and read the click command it builds. ``None`` when Typer
+    cannot build it, and the caller falls back to the signature.
+    """
+    import inspect
+
+    if inspect.isbuiltin(callback) or not callable(callback):
+        return None  # a C callable has no Python signature for Typer to read
+    try:
+        import typer
+        from typer.main import get_command
+
+        app = typer.Typer(add_completion=False)
+        app.command()(callback)
+        return list(get_command(app).params)
+    except Exception:  # noqa: BLE001 — a command Typer cannot build still gets a manifest row
+        return None
+
+
+def _flags_of(option: Any) -> list[str]:
+    """``["--play/--no-play", "-p"]`` — the shape the manifest has always used for a switch."""
+    opts = list(getattr(option, "opts", []) or [])
+    secondary = list(getattr(option, "secondary_opts", []) or [])
+    if opts and secondary:
+        return [f"{opts[0]}/{secondary[0]}", *opts[1:], *secondary[1:]]
+    return opts + secondary
+
+
 def _extract_arguments(callback: Any) -> list[dict[str, Any]]:
     """Positional CLI arguments of a Typer command, in declaration order.
 
@@ -28,6 +65,18 @@ def _extract_arguments(callback: Any) -> list[dict[str, Any]]:
     """
     import inspect
     import typing
+
+    built = _click_params(callback)
+    if built is not None:
+        return [
+            {
+                "name": str(p.name).replace("_", "-"),
+                "required": bool(p.required),
+                "variadic": p.nargs == -1,
+            }
+            for p in built
+            if type(p).__name__ in ("Argument", "TyperArgument") and not getattr(p, "hidden", False)
+        ]
 
     try:
         params = inspect.signature(callback).parameters
@@ -62,6 +111,20 @@ def _extract_options(callback: Any) -> list[dict[str, Any]]:
     Never raises — a signature it can't read yields ``[]``.
     """
     import inspect
+
+    built = _click_params(callback)
+    if built is not None:
+        return [
+            {
+                "flags": _flags_of(p),
+                # A switch (is_flag) or a counter (-vvv) is given without a value.
+                "takes_value": not (getattr(p, "is_flag", False) or getattr(p, "count", False)),
+            }
+            for p in built
+            if type(p).__name__ in ("Option", "TyperOption")
+            and not getattr(p, "hidden", False)
+            and _flags_of(p)
+        ]
 
     try:
         params = inspect.signature(callback).parameters
@@ -130,6 +193,33 @@ def _iter_typer_commands(
 
         this_hidden = bool(getattr(group_info, "hidden", False))
         if depth == 0:
+            # A top-level group that RUNS bare (`navig doctor`, `navig cost`, …) is a verb:
+            # its callback is a real command. The recursion below yields only the group's
+            # SUBCOMMANDS, which is how `navig doctor` stayed runnable for years while
+            # missing from commands.md — `help --schema` and the website's /commands page
+            # had no page for the most-used verb.
+            cb_info = getattr(group_typer, "registered_callback", None)
+            cb = getattr(cb_info, "callback", None) or (
+                cb_info if callable(cb_info) else None
+            )
+            if cb is not None:
+                # typer stores `.help` as a DefaultPlaceholder when unset — never hand
+                # that object to _first_line (no .splitlines); a string only.
+                cb_help = getattr(cb_info, "help", None)
+                grp_help = getattr(group_info, "help", None)
+                help_text = (
+                    (_first_line(cb_help) if isinstance(cb_help, str) else None)
+                    or _first_line(getattr(cb, "__doc__", None))
+                    or (_first_line(grp_help) if isinstance(grp_help, str) else None)
+                )
+                yield {
+                    "path_parts": [*prefix, group_name],
+                    "path": " ".join([*prefix, group_name]),
+                    "callback": cb,
+                    "help": help_text,
+                    "top_hidden": this_hidden,
+                    "nested_hidden": False,
+                }
             # A top-level `navig <group>`.
             yield from _iter_typer_commands(
                 group_typer,
@@ -168,18 +258,20 @@ def _public_status(item: dict[str, Any]) -> str:
 
 
 def _is_alias_path(item: dict[str, Any]) -> bool:
-    """True when this path sits under a top-level ALIAS group.
+    """True when this path sits under a top-level ALIAS (or superseded) group.
 
     An alias registers the SAME callbacks under a second name, so it inherits the
     canonical command's ``CommandMeta`` too — and `meta.status` used to win over the
     hidden flag, which is how `navig database list` / `navig database query` shipped in
     the public manifest as duplicates of `navig db list` / `navig db query`. An alias is
     never public, meta or not: the canonical group already documents every subcommand.
+    A superseded group (``_RETIRED_COMMANDS``) is treated the same way: it still answers,
+    but its replacement is what the manifest documents.
     """
-    from navig.cli.registration import _ALIAS_COMMANDS  # noqa: PLC0415 — avoid a cycle
+    from navig.cli.registration import _NOT_PUBLISHED  # noqa: PLC0415 — avoid a cycle
 
     parts = item.get("path_parts") or []
-    return len(parts) > 1 and parts[1] in _ALIAS_COMMANDS
+    return len(parts) > 1 and parts[1] in _NOT_PUBLISHED
 
 
 def _entry_from_command(item: dict[str, Any]) -> dict[str, Any]:
@@ -247,24 +339,80 @@ def _prefer_new_entry(new: dict[str, Any], current: dict[str, Any]) -> bool:
     return False
 
 
+def _plugin_mount() -> Any | None:
+    """A throwaway Typer carrying every BUILTIN PluginManager plugin app, or ``None``.
+
+    ``_register_external_commands`` only walks the CLI app's OWN sub-apps. A plugin
+    mounted by ``navig.main.load_plugins_into_app`` never passes through that seam —
+    that is how the builtin plugin host reaches the CLI (``navig mini status``), and
+    none of those commands reached ``generated/commands.json``: no completion, no
+    markdown reference, no deck CLI schema.
+
+    The mount is rebuilt here on a FRESH Typer rather than on the process-global
+    ``navig.cli.app``, so building a manifest has no side effect on a CLI run that
+    shares the process, and calling it twice cannot register a group twice. It mirrors
+    the runtime loop exactly (``add_typer(plugin_app, name=name)``), so every path
+    recorded is the path a real invocation parses.
+
+    ``None`` when the plugin host cannot be consulted or loads nothing — the exporter
+    then records core commands only, which a caller can still validate.
+
+    Scoped to ``source == "builtin"``: this is a SHIPPED artifact, so it may only document
+    commands a navig install actually contains. The host also discovers the operator's own
+    ``~/.navig/plugins`` and ``<space>/.navig/plugins`` — mounting those here would bake a
+    private, unshipped command into ``generated/commands.json`` on the next regen, which is
+    the phantom-command class the freshness gate exists to catch.
+    """
+    try:
+        from navig.plugins import get_plugin_manager  # noqa: PLC0415 — avoid a cycle
+
+        manager = get_plugin_manager()
+        discovered = manager.discover_plugins()
+        manager.load_all_plugins(silent=True)
+        shipped = {info.name for info in discovered.values() if info.source == "builtin"}
+        plugin_apps = {
+            name: app
+            for name, app in manager.get_loaded_apps().items()
+            if name in shipped
+        }
+    except Exception:  # noqa: BLE001 — a broken plugin host must not break the export
+        return None
+    if not plugin_apps:
+        return None
+
+    import typer  # noqa: PLC0415 — heavy-ish; only paid for when plugins exist
+
+    mount = typer.Typer(add_completion=False)
+    for name, plugin_app in sorted(plugin_apps.items()):
+        try:
+            mount.add_typer(plugin_app, name=name)
+        except Exception:  # noqa: BLE001 — one bad app must not drop the others
+            continue
+    return mount
+
+
 def _build_manifest(include_hidden: bool) -> dict[str, Any]:
     import navig.cli as cli_mod
 
     cli_mod._register_external_commands(register_all=True)
-    app = cli_mod.app
+    roots: list[Any] = [cli_mod.app]
+    plugin_mount = _plugin_mount()
+    if plugin_mount is not None:
+        roots.append(plugin_mount)
 
     by_path: dict[str, dict[str, Any]] = {}
-    for cmd in _iter_typer_commands(app, ["navig"]):
-        entry = _entry_from_command(cmd)
-        status = str(entry.get("status", "stable"))
+    for root in roots:
+        for cmd in _iter_typer_commands(root, ["navig"]):
+            entry = _entry_from_command(cmd)
+            status = str(entry.get("status", "stable"))
 
-        if not include_hidden and status in {"hidden", "internal"}:
-            continue
+            if not include_hidden and status in {"hidden", "internal"}:
+                continue
 
-        key = entry["path"]
-        existing = by_path.get(key)
-        if existing is None or _prefer_new_entry(entry, existing):
-            by_path[key] = entry
+            key = entry["path"]
+            existing = by_path.get(key)
+            if existing is None or _prefer_new_entry(entry, existing):
+                by_path[key] = entry
 
     commands = []
     for entry in by_path.values():
@@ -279,11 +427,11 @@ def _build_manifest(include_hidden: bool) -> dict[str, Any]:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "total": len(commands),
         "commands": commands,
-        "groups": _group_help(app, {c["path"].split()[1] for c in commands if len(c["path"].split()) > 1}),
+        "groups": _group_help(roots, {c["path"].split()[1] for c in commands if len(c["path"].split()) > 1}),
     }
 
 
-def _group_help(app: Any, present: set[str]) -> dict[str, str]:
+def _group_help(apps: list[Any], present: set[str]) -> dict[str, str]:
     """``navig <group>`` → the group's OWN one-line help (additive key, schema 1.0.0).
 
     Every command carries a summary, but a group's description lived only in its
@@ -291,19 +439,24 @@ def _group_help(app: Any, present: set[str]) -> dict[str, str]:
     fell back to "the first command's summary": `navig blackbox` read "Record and replay
     an operations session" and `navig vault` read "Set a credential as the active…".
     Only groups that contribute public commands are listed; aliases never are.
+
+    Takes the SAME roots ``_build_manifest`` walks — the CLI app plus the plugin mount —
+    so a group contributed only by a plugin (``navig mini``) gets its own description
+    instead of being silently absent from ``groups``.
     """
-    from navig.cli.registration import _ALIAS_COMMANDS  # noqa: PLC0415 — avoid a cycle
+    from navig.cli.registration import _NOT_PUBLISHED  # noqa: PLC0415 — avoid a cycle
 
     out: dict[str, str] = {}
-    for info in getattr(app, "registered_groups", []):
-        name = getattr(info, "name", None)
-        if not name or name not in present or name in _ALIAS_COMMANDS:
-            continue
-        typer_instance = getattr(info, "typer_instance", None)
-        inner = getattr(getattr(typer_instance, "info", None), "help", None)
-        text = _first_line(getattr(info, "help", None)) or _first_line(inner)
-        if text and name not in out:
-            out[name] = text
+    for app in apps:
+        for info in getattr(app, "registered_groups", []):
+            name = getattr(info, "name", None)
+            if not name or name not in present or name in _NOT_PUBLISHED:
+                continue
+            typer_instance = getattr(info, "typer_instance", None)
+            inner = getattr(getattr(typer_instance, "info", None), "help", None)
+            text = _first_line(getattr(info, "help", None)) or _first_line(inner)
+            if text and name not in out:
+                out[name] = text
     return dict(sorted(out.items()))
 
 
@@ -400,7 +553,16 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         raise ValueError("\n".join(errors))
 
 
-def deprecations_report(manifest: dict[str, Any]) -> dict[str, Any]:
+def deprecations_report(
+    manifest: dict[str, Any], *, include_superseded: bool = True
+) -> dict[str, Any]:
+    """Deprecated commands: those the manifest marks ``deprecated`` (``@command_meta``)
+    plus, by default, the superseded-verb table in :mod:`navig.cli.superseded`.
+
+    The table matters because a superseded verb is hidden and therefore never IN the
+    public manifest — without it the report could not name a single one of them. A
+    manifest row wins over a table row for the same path (it carries more detail).
+    """
     rows = []
     for command in manifest.get("commands", []):
         if command.get("status") != "deprecated":
@@ -415,6 +577,12 @@ def deprecations_report(manifest: dict[str, Any]) -> dict[str, Any]:
                 "note": dep.get("note", ""),
             }
         )
+
+    if include_superseded:
+        from navig.cli.superseded import report_rows  # noqa: PLC0415 — avoid a cycle
+
+        seen = {str(row.get("path")) for row in rows}
+        rows.extend(row for row in report_rows() if row["path"] not in seen)
 
     rows.sort(key=lambda row: str(row.get("path", "")))
     return {

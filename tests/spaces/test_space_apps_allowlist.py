@@ -222,3 +222,170 @@ async def test_books_write_refuses_yaml_manifest(tmp_path, monkeypatch):
 
     resp = await cat.handle_deck_space_books(_Req("yaml-space", {"books": "X"}))
     assert resp.status == 409
+
+
+# ── POST /api/deck/spaces/{id}/info (the desktop's "Edit details" dialog) ──────
+
+async def test_info_write_sets_name_and_description_preserving_keys(tmp_path, monkeypatch):
+    space = _mk_space(tmp_path, {"id": "demo-space", "name": "demo", "apps": ["finance"]})
+    _patch_discovery(monkeypatch, space)
+
+    resp = await cat.handle_deck_space_info(
+        _Req("demo-space", {"display_name": "  Company Business ", "description": "Invoices and clients"})
+    )
+    assert resp.status == 200
+    data = json.loads((space / ".navig" / "space.json").read_text(encoding="utf-8"))
+    assert data["display_name"] == "Company Business"    # trimmed
+    assert data["description"] == "Invoices and clients"
+    assert data["id"] == "demo-space" and data["name"] == "demo"  # identity untouched
+    assert data["apps"] == ["finance"]
+    m = load_space_manifest(space)
+    assert m.resolved_name == "Company Business" and m.resolved_id == "demo-space"
+
+
+async def test_info_write_only_touches_the_keys_sent(tmp_path, monkeypatch):
+    space = _mk_space(tmp_path, {"id": "demo-space", "display_name": "Old", "description": "Keep me"})
+    _patch_discovery(monkeypatch, space)
+
+    resp = await cat.handle_deck_space_info(_Req("demo-space", {"display_name": "New"}))
+    assert resp.status == 200
+    data = json.loads((space / ".navig" / "space.json").read_text(encoding="utf-8"))
+    assert data["display_name"] == "New" and data["description"] == "Keep me"
+
+
+async def test_info_write_empty_or_null_clears(tmp_path, monkeypatch):
+    space = _mk_space(tmp_path, {"id": "demo-space", "display_name": "X", "description": "Y"})
+    _patch_discovery(monkeypatch, space)
+
+    resp = await cat.handle_deck_space_info(_Req("demo-space", {"display_name": "  ", "description": None}))
+    assert resp.status == 200
+    data = json.loads((space / ".navig" / "space.json").read_text(encoding="utf-8"))
+    assert "display_name" not in data and "description" not in data
+
+
+async def test_info_write_pins_the_id_before_a_name_could_become_it(tmp_path, monkeypatch):
+    # display_name is resolved_id's last fallback: without the pin, this space would
+    # start answering to "Company Business" instead of its id.
+    space = _mk_space(tmp_path, {"description": "no id key here"})
+    _patch_discovery(monkeypatch, space)
+
+    resp = await cat.handle_deck_space_info(_Req("demo-space", {"display_name": "Company Business"}))
+    assert resp.status == 200
+    assert load_space_manifest(space).resolved_id == "demo-space"
+
+
+async def test_info_write_bootstraps_bare_space(tmp_path, monkeypatch):
+    space = _mk_space(tmp_path, None)
+    _patch_discovery(monkeypatch, space)
+
+    resp = await cat.handle_deck_space_info(_Req("demo-space", {"description": "Fresh"}))
+    assert resp.status == 200
+    m = load_space_manifest(space)
+    assert m.resolved_id == "demo-space" and m.get("description") == "Fresh"
+
+
+async def test_info_write_rejects_bad_bodies(tmp_path, monkeypatch):
+    _patch_discovery(monkeypatch, _mk_space(tmp_path, {"id": "demo-space"}))
+    for body in ({}, [], {"other": 1}, {"display_name": 7}, {"description": ["x"]}, {"display_name": "x" * 81}):
+        resp = await cat.handle_deck_space_info(_Req("demo-space", body))
+        assert resp.status == 400, body
+
+
+async def test_info_write_unknown_space_404(tmp_path, monkeypatch):
+    _patch_discovery(monkeypatch, _mk_space(tmp_path, None))
+    resp = await cat.handle_deck_space_info(_Req("other-space", {"display_name": "X"}))
+    assert resp.status == 404
+
+
+async def test_info_write_refuses_yaml_and_nested_manifests(tmp_path, monkeypatch):
+    space = tmp_path / "yaml-space"
+    (space / ".navig").mkdir(parents=True)
+    (space / ".navig" / "space.yaml").write_text("id: yaml-space\n", encoding="utf-8")
+    _patch_discovery(monkeypatch, space, sid="yaml-space")
+    resp = await cat.handle_deck_space_info(_Req("yaml-space", {"display_name": "X"}))
+    assert resp.status == 409
+
+    # Fields nested under "space:" win on read, so a top-level write would change
+    # nothing while reporting success — refuse it instead.
+    nested = _mk_space(tmp_path / "n", {"space": {"id": "demo-space", "display_name": "Inner"}})
+    _patch_discovery(monkeypatch, nested)
+    resp = await cat.handle_deck_space_info(_Req("demo-space", {"display_name": "Outer"}))
+    assert resp.status == 409
+
+
+async def test_info_write_sets_and_clears_category(tmp_path, monkeypatch):
+    space = _mk_space(tmp_path, {"id": "demo-space"})
+    _patch_discovery(monkeypatch, space)
+
+    resp = await cat.handle_deck_space_info(_Req("demo-space", {"category": " Admin "}))
+    assert resp.status == 200 and json.loads(resp.body)["data"]["category"] == "Admin"
+    resp = await cat.handle_deck_space_info(_Req("demo-space", {"category": ""}))
+    assert resp.status == 200
+    assert "category" not in json.loads((space / ".navig" / "space.json").read_text(encoding="utf-8"))
+    resp = await cat.handle_deck_space_info(_Req("demo-space", {"category": "x" * 41}))
+    assert resp.status == 400
+
+
+# ── POST /api/deck/spaces/repath · /forget (the desktop's Change folder… / Delete…) ──
+
+
+class _BodyReq:
+    def __init__(self, body: object):
+        self._body = body
+        self.match_info = {}
+
+    async def json(self):
+        return self._body
+
+
+@pytest.fixture
+def registry_file(tmp_path, monkeypatch):
+    import navig.spaces.registry as reg
+
+    path = tmp_path / "spaces.json"
+    monkeypatch.setattr(reg, "_registry_file", lambda: path)
+    return path
+
+
+async def test_repath_carries_the_registered_row_and_its_decisions(tmp_path, registry_file):
+    import navig.spaces.registry as reg
+
+    old = _mk_space(tmp_path / "old", {"id": "demo-space"})
+    reg.register(old, id="demo-space")
+    reg.set_enabled("demo-space", False)  # a decision, not a derivation — must survive
+    new = _mk_space(tmp_path / "new", {"id": "demo-space"})
+
+    resp = await cat.handle_deck_space_repath(_BodyReq({"old_path": str(old), "new_path": str(new)}))
+    assert resp.status == 200 and json.loads(resp.body)["data"]["carried"] is True
+    rows = reg.load_registry()["spaces"]
+    assert len(rows) == 1 and reg._norm(rows[0]["path"]) == reg._norm(new) and rows[0]["enabled"] is False
+
+
+async def test_repath_registers_a_discovery_only_space_at_its_new_place(tmp_path, registry_file):
+    import navig.spaces.registry as reg
+
+    new = _mk_space(tmp_path / "new", {"id": "demo-space", "display_name": "Demo"})
+    resp = await cat.handle_deck_space_repath(_BodyReq({"old_path": str(tmp_path / "gone"), "new_path": str(new)}))
+    assert resp.status == 200 and json.loads(resp.body)["data"]["carried"] is False
+    (row,) = reg.load_registry()["spaces"]
+    assert row["id"] == "demo"  # the canonical id: normalize_space_name drops "-space"
+
+
+async def test_repath_refuses_a_folder_that_is_not_a_space(tmp_path, registry_file):
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    for body in ({"old_path": "a", "new_path": str(plain)}, {"new_path": str(plain)}, {}):
+        resp = await cat.handle_deck_space_repath(_BodyReq(body))
+        assert resp.status == 400, body
+
+
+async def test_forget_drops_the_row_and_leaves_the_folder(tmp_path, registry_file):
+    import navig.spaces.registry as reg
+
+    space = _mk_space(tmp_path, {"id": "demo-space"})
+    reg.register(space, id="demo-space")
+    resp = await cat.handle_deck_space_forget(_BodyReq({"path": str(space)}))
+    assert json.loads(resp.body)["data"]["forgotten"] is True
+    assert reg.load_registry()["spaces"] == [] and space.is_dir()
+    resp = await cat.handle_deck_space_forget(_BodyReq({"path": str(space)}))
+    assert resp.status == 200 and json.loads(resp.body)["data"]["forgotten"] is False

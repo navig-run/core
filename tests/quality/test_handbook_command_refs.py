@@ -75,6 +75,11 @@ def _parse(raw: str) -> tuple[list[str], list[str]]:
     flags: list[str] = []
     seen_flag = False
     for token in raw.split():
+        if token == "--":
+            # End of navig's options: what follows is the CHILD command of a
+            # passthrough verb (`navig vault run -e X=… -- psql -U app`), whose
+            # flags are not navig's to resolve.
+            break
         if token.startswith("-"):
             seen_flag = True
             flags.append(token.split("=", 1)[0])
@@ -116,6 +121,9 @@ def _unresolvable(root) -> set[str]:
         accepted: set[str] = set()
         for param in command.get_params(click.Context(command)):
             accepted.update(getattr(param, "opts", []) or [])
+            # The "off" half of an `--on/--off` switch lives in secondary_opts; reading
+            # only `opts` reported every documented `--off`/`--no-x` as nonexistent.
+            accepted.update(getattr(param, "secondary_opts", []) or [])
         rejected = sorted(set(flags) - accepted)
         if rejected:
             out.add(" ".join(words) + " " + " ".join(rejected))

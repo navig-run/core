@@ -78,7 +78,7 @@ telegram:
 "@ | Set-Content -Encoding UTF8 $configFile
   }
 
-  & $CmdShim service install --bot --gateway --scheduler --no-start | Out-Null
+  & $CmdShim service install --bot --gateway --no-start | Out-Null
   & $CmdShim service start | Out-Null
 }
 

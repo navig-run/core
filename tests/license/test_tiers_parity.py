@@ -281,10 +281,8 @@ def test_license_ts_free_status_matches_spec() -> None:
 #
 # `web/www/content/copy.ts` is the fifth mirror, and the only one a customer
 # sees before money changes hands: the price, the host count, and the module
-# list on the pricing page. `billing.ts` already asserts in prose that
-# TIER_PERPETUAL_PRICE_CENTS "must stay in sync with deckTiers.oneTimeUsd" —
-# nothing checked it. Drift here quotes a price we do not charge or promises a
-# capability the tier does not grant.
+# list on the pricing page. Drift here quotes a price we do not charge or
+# promises a capability the tier does not grant.
 #
 # Capabilities are checked as a SUBSET, not equality: every tier deliberately
 # omits `echo` from its marketing list (it is granted by tier but sold and
@@ -345,21 +343,28 @@ def test_www_copy_prices_match_spec() -> None:
                 f"the pricing page would quote a price we do not charge"
             )
             compared += 1
-    assert compared >= 5, f"only {compared} price points compared"
+    # Pass + Max, annual + monthly. (Was 5 before the Max lifetime was retired.)
+    assert compared >= 4, f"only {compared} price points compared"
 
 
 def test_www_copy_host_limits_match_spec() -> None:
     """A host count SHOWN on the pricing page must be the one the licence grants.
 
-    `null` is the deliberate contact-us marker (Enterprise quotes no number), so
-    only a displayed number is pinned.
+    Enterprise is sold by contract (its number rides in the token as
+    `contract_hosts`), so the page shows no fixed number for it — `null` there
+    is an asserted contract, not a skip. Every other tier must show exactly its
+    spec number.
     """
     tiers = _www()
+    assert tiers["enterprise"]["hosts"] is None, (
+        "Enterprise hosts are negotiated per contract; the page must not quote a fixed number"
+    )
     compared = 0
     for tier, t in _spec()["live"]["tiers"].items():
+        if tier == "enterprise":
+            continue
         shown = tiers[tier]["hosts"]
-        if shown is None:
-            continue  # contact-us tier: no number on the page to be wrong
+        assert shown is not None, f"copy.ts {tier} shows no host count"
         assert shown == t["host_limit"], (
             f"copy.ts {tier} advertises {shown} hosts, spec grants {t['host_limit']}"
         )
@@ -380,31 +385,27 @@ def test_www_copy_never_promises_an_ungranted_capability() -> None:
         )
 
 
-def test_billing_ts_perpetual_price_matches_spec() -> None:
-    """The lifetime price in cents must be the spec's dollars × 100.
+def test_no_live_tier_is_sold_as_a_lifetime() -> None:
+    """Harbor tiers are subscriptions only — in the spec, the billing table and on the page.
 
-    Closes the third leg: spec `live.prices_usd.max.lifetime` → billing.ts
-    `TIER_PERPETUAL_PRICE_CENTS.max` (what upgrade-credit arithmetic subtracts)
-    → `deckTiers.oneTimeUsd` (what the pricing page quotes). All three now move
-    together. The legacy entries have no spec counterpart — those tiers are no
-    longer sold and carry no `prices_usd` — so only the live ones are pinned.
+    The Max lifetime SKU ($1,080) was retired before launch: it capped revenue
+    from the heaviest users while their relay/AI cost kept running. Licences
+    already issued `one_time` still verify (keys.py), but nothing may SELL one:
+    a lifetime price reappearing in any of these three places would quote or
+    charge a product that no longer exists.
     """
+    for tier, prices in _spec()["live"]["prices_usd"].items():
+        if tier.startswith("_"):
+            continue
+        assert "lifetime" not in prices, f"tiers.json prices {tier} as a lifetime"
+
     text = _read("services/api/src/lib/billing.ts")
     if text is None:
         pytest.skip("services/api/src/lib/billing.ts not present in this checkout")
     cents = _ts_number_record(text, "TIER_PERPETUAL_PRICE_CENTS")
     assert cents, "could not parse TIER_PERPETUAL_PRICE_CENTS from billing.ts"
+    live_sold = set(cents) & set(_spec()["live"]["tiers"])
+    assert not live_sold, f"billing.ts still prices live tiers as perpetual: {sorted(live_sold)}"
 
-    prices = {k: v for k, v in _spec()["live"]["prices_usd"].items() if not k.startswith("_")}
-    compared = 0
-    for tier, want in prices.items():
-        if "lifetime" not in want:
-            continue  # no lifetime SKU for this tier
-        assert tier in cents, f"billing.ts has no perpetual price for {tier}"
-        assert cents[tier] == want["lifetime"] * 100, (
-            f"billing.ts {tier} perpetual price is {cents[tier]}c, "
-            f"spec says ${want['lifetime']} ({want['lifetime'] * 100}c) — "
-            f"upgrade credit would subtract the wrong amount"
-        )
-        compared += 1
-    assert compared >= 1, "no lifetime price compared — spec shape changed?"
+    for tier, t in _www().items():
+        assert t["lifetime"] is None, f"copy.ts quotes a lifetime price for {tier}"

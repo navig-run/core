@@ -461,11 +461,20 @@ class EventTypes:
     HOST_DOWN = "host_down"
     HOST_UP = "host_up"
     HOST_DISK_WARNING = "host_disk_warning"
+    HOST_DISK_OK = "host_disk_ok"
     HOST_MEMORY_WARNING = "host_memory_warning"
+    HOST_MEMORY_OK = "host_memory_ok"
+    HOST_CPU_WARNING = "host_cpu_warning"
+    HOST_CPU_OK = "host_cpu_ok"
 
     # Certificate events
     CERT_EXPIRY_WARNING = "cert_expiry_warning"
     CERT_EXPIRED = "cert_expired"
+    CERT_OK = "cert_ok"
+
+    # Site uptime events (the site-probe monitor)
+    SITE_DOWN = "site_down"
+    SITE_UP = "site_up"
 
     # Service events
     SERVICE_DOWN = "service_down"

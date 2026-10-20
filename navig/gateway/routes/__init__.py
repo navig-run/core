@@ -82,3 +82,15 @@ def register_all_routes(app: web.Application, gateway: NavigGateway) -> None:
     from navig.gateway.routes import ingest
 
     ingest.register(app, gateway)
+
+    # Vault authority (POST /api/vault/v1/*). Always registered, 404 unless
+    # vault.authority.enabled — self-auths with per-device HMAC, values sealed.
+    from navig.gateway.routes import vault_federation
+
+    vault_federation.register(app, gateway)
+
+    # NAVIG Dock bridge, agent side (POST /dock/call, GET /dock/status). Bearer-only;
+    # answers "not connected" until the Dock pairs and opens its socket.
+    from navig.gateway.routes import dock
+
+    dock.register(app, gateway)

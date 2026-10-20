@@ -315,3 +315,63 @@ FRESH_EOF
     _parse_args "frobnicate"
     [ "$_ACTION" = "install" ]
 }
+
+# ---------------------------------------------------------------------------
+# -p/--profile — the installation-profile flag (Gate 2)
+# ---------------------------------------------------------------------------
+
+@test "profile flag defaults to empty when nothing is passed" {
+    load_functions
+    _PROFILE="pre-set"
+    _parse_args
+    # No -p/--profile and no NAVIG_PROFILE in the environment → untouched default.
+    [ "$_PROFILE" = "pre-set" ]
+    # And the sourced default itself is empty (the installer's own baseline).
+    _PROFILE=""
+    _parse_args -y
+    [ -z "$_PROFILE" ]
+}
+
+@test "profile flag parses -p, --profile and --profile= forms" {
+    load_functions
+    _PROFILE=""; _parse_args -p server
+    [ "$_PROFILE" = "server" ]
+    _PROFILE=""; _parse_args --profile minimal
+    [ "$_PROFILE" = "minimal" ]
+    _PROFILE=""; _parse_args --profile=full
+    [ "$_PROFILE" = "full" ]
+}
+
+@test "other flags leave the profile untouched" {
+    load_functions
+    _PROFILE="sentinel"
+    _parse_args -y --dry-run --verbose
+    [ "$_PROFILE" = "sentinel" ]
+}
+
+@test "usage documents the profile flag and its values" {
+    load_functions
+    run show_usage
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"-p <name>"* ]]
+    [[ "$output" == *"cli | minimal | server | full"* ]]
+}
+
+@test "dry run with a profile prints the profile row and changes nothing" {
+    load_functions
+    unset NAVIG_INSTALL_SH_NO_RUN
+    run main --dry-run -p server
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Profile"* ]]
+    [[ "$output" == *"server"* ]]
+    [[ "$output" == *"Dry run complete"* ]]
+}
+
+@test "dry run without a profile prints no profile row" {
+    load_functions
+    unset NAVIG_INSTALL_SH_NO_RUN
+    run main --dry-run
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Profile"* ]]
+    [[ "$output" == *"Dry run complete"* ]]
+}

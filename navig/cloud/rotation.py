@@ -16,8 +16,14 @@ derivative                       stored where                on rotation
 ``/connect?key=`` Mini App btn   **on Telegram**             deck can't reach brain
 ``/ingest/<hash>/<src>``         **on the user's website**   events silently dropped
 ``/sms/<hash>``                  **in the Twilio console**   inbound SMS dead
+``/os/<hash>/connect``           **on each paired phone**    remote NAVIG OS dead
 broker registration              api.navig.run               re-sent on gateway start
 ===============================  ==========================  ====================
+
+Paired NAVIG OS devices keep their own device tokens (they are not derived from the
+key), but each one stored the old tenant as its relay address. Before the key changes,
+:func:`retire_os_relay` tells the edge the old tenant is retired, so those devices get
+"pair again" (4404) instead of an "offline" that would never clear.
 
 The first two we own and can repair automatically (:func:`repoint_owned`). The next two
 live in systems we cannot reach, so the only honest thing is to hand the operator the
@@ -271,6 +277,17 @@ def manual_repoint_urls(cfg=None) -> list[tuple[str, str]]:
     except Exception:  # noqa: BLE001 — signals may never have been configured
         logger.debug("signals sources unavailable", exc_info=True)
 
+    # Remote NAVIG OS: each paired device holds the old tenant as its relay address.
+    try:
+        from navig.store.os_devices import get_os_device_store
+
+        if get_os_device_store().list_devices():
+            out.append(
+                ("paired NAVIG OS devices", "pair each again: NAVIG OS > Settings > Remote access")
+            )
+    except Exception:  # noqa: BLE001 — no devices store yet means nothing was paired
+        logger.debug("os device store unavailable", exc_info=True)
+
     # SMS: the inbound webhook lives in the Twilio (or equivalent) console.
     try:
         sms = cfg.get("adapters.sms")
@@ -281,3 +298,26 @@ def manual_repoint_urls(cfg=None) -> list[tuple[str, str]]:
         logger.debug("sms config unreadable", exc_info=True)
 
     return out
+
+
+def retire_os_relay(timeout: float = 3.0) -> bool | None:
+    """Ask the running daemon to retire the CURRENT relay tenant — call before rotating.
+
+    Only the daemon holds the uplink, and only the old key's uplink can reach the old
+    tenant's Durable Object, so this has to happen while the old key is still live.
+    Returns True when the edge was told, False when the daemon is up but has no live
+    uplink, None when no daemon answered (the devices will then see "offline").
+    Uses the plain loopback path: the deck's local-desktop bypass, which is the only
+    thing /api/deck/os/retire accepts.
+    """
+    try:
+        import requests
+
+        from navig.gateway_client import gateway_base_url
+
+        res = requests.post(f"{gateway_base_url()}/api/deck/os/retire", timeout=timeout)
+        if res.status_code != 200:
+            return False
+        return bool((res.json() or {}).get("retired"))
+    except Exception:  # noqa: BLE001 — a missing daemon is an answer, not an error
+        return None

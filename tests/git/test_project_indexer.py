@@ -173,7 +173,7 @@ class TestClassifyContentType:
     def test_config_files(self):
         assert classify_content_type("package.json") == "config"
         assert classify_content_type("config/settings.yaml") == "config"
-        assert classify_content_type(".env") == "config"
+        assert classify_content_type(".env") == "config"  # classified, but never indexable (below)
 
     def test_doc_files(self):
         assert classify_content_type("README.md") == "docs"
@@ -668,3 +668,95 @@ class TestWikiRAGUnifiedDelegation:
             assert any("auth-guide" in r["path"] for r in results), (
                 f"Expected auth-guide.md in results, got: {[r['path'] for r in results]}"
             )
+
+
+# ============================================================================
+# Secret files never reach the index (indexed chunks feed AI prompts)
+# ============================================================================
+
+_FAKE_SECRET = "sk-live-NOTREALfakeTOKENzz9"
+
+
+class TestSecretFilesNeverIndexed:
+    @pytest.mark.parametrize(
+        "name",
+        [
+            ".env",
+            ".env.production",
+            ".env.local",
+            "prod.env",
+            ".envrc",
+            ".dev.vars",
+            "secrets.yaml",
+            "app.secrets.json",
+            "gcp-credentials.json",
+            "credentials.yaml",
+            "aws-credentials.yml",
+            "service-account.yaml",
+            "service-account.yml",
+            "gke-serviceaccount.yml",
+            "service_account.json",
+            "service_account.yaml",
+            "config/.ENV",
+        ],
+    )
+    def test_secret_names_are_not_indexable(self, name: str):
+        assert not _is_indexable(name)
+
+    def test_ordinary_config_still_indexable(self):
+        assert _is_indexable("config.yaml")
+        assert _is_indexable("config.yml")
+        assert _is_indexable("package.json")
+        assert _is_indexable("docs/environment.md")  # a doc ABOUT env vars is fine
+        assert _is_indexable(".gitignore")
+
+    def test_scan_never_indexes_or_finds_a_secret(self, project_dir: Path):
+        (project_dir / ".env").write_text(f"OPENAI_API_KEY={_FAKE_SECRET}\n")
+        (project_dir / ".env.production").write_text(f"STRIPE_KEY={_FAKE_SECRET}\n")
+        (project_dir / "deploy.env").write_text(f"TOKEN={_FAKE_SECRET}\n")
+        with ProjectIndexer(project_dir) as idx:
+            idx.scan()
+            paths = {row[0] for row in idx._get_conn().execute("SELECT path FROM file_meta")}
+            assert paths, "scan indexed nothing - the assertion below would be vacuous"
+            assert not {p for p in paths if "env" in p.lower()}, paths
+            leaked = idx._get_conn().execute(
+                "SELECT COUNT(*) FROM chunks WHERE content LIKE ?", (f"%{_FAKE_SECRET}%",)
+            ).fetchone()[0]
+            assert leaked == 0
+            assert _FAKE_SECRET not in idx.get_context("OPENAI_API_KEY STRIPE_KEY TOKEN")
+
+    def test_incremental_update_purges_a_previously_indexed_env(self, project_dir: Path):
+        """An index built by an older navig (which indexed .env) is cleaned on the next update."""
+        (project_dir / ".env").write_text(f"OPENAI_API_KEY={_FAKE_SECRET}\n")
+        with ProjectIndexer(project_dir) as idx:
+            idx.scan()
+            conn = idx._get_conn()
+            # Simulate the old index: a stored .env row + chunk.
+            conn.execute(
+                "INSERT INTO file_meta (path, content_type, content_hash, line_count, char_count,"
+                " mtime, indexed_at) VALUES ('.env', 'config', 'old', 1, 40, 1.0, 1.0)"
+            )
+            conn.execute(
+                "INSERT INTO chunks (file_path, content, start_line, end_line, content_type,"
+                " section_title, content_hash) VALUES ('.env', ?, 1, 1, 'config', '', 'old')",
+                (f"OPENAI_API_KEY={_FAKE_SECRET}",),
+            )
+            idx._file_hashes[".env"] = "old"
+            conn.commit()
+            assert _FAKE_SECRET in idx.get_context("OPENAI_API_KEY")  # the old leak, reproduced
+
+            idx.update_incremental()
+
+            assert conn.execute("SELECT COUNT(*) FROM file_meta WHERE path = '.env'").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM chunks WHERE file_path = '.env'").fetchone()[0] == 0
+            assert _FAKE_SECRET not in idx.get_context("OPENAI_API_KEY")
+
+    def test_scan_never_indexes_credential_yaml(self, project_dir: Path):
+        (project_dir / "credentials.yaml").write_text(f"api_key: {_FAKE_SECRET}\n")
+        (project_dir / "config.yaml").write_text("port: 8080\n")  # ordinary config indexes fine
+        with ProjectIndexer(project_dir) as idx:
+            idx.scan()
+            paths = {row[0] for row in idx._get_conn().execute("SELECT path FROM file_meta")}
+            assert "config.yaml" in paths  # the scan did run
+            assert not any("credentials" in p.lower() for p in paths), paths
+            assert _FAKE_SECRET not in idx.get_context("api_key")

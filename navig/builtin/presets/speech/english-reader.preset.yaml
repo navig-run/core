@@ -1,0 +1,17 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: speech/english-reader
+name: English neutral reader
+tool: speech
+layer: style
+category: Voice
+tags:
+- english
+- reading
+description: A clear, neutral English reading voice.
+params:
+  provider: edge
+  voice: en-US-JennyNeural
+  lang: en
+  speed: 1.0

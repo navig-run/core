@@ -157,7 +157,10 @@ class ConnectorAuthManager:
         finally:
             ConnectorAuthManager._pending_auth.pop(state, None)
 
-        self._save_to_vault(connector_id, creds)
+        # A second account (a personal Gmail beside the work one) gets its own slot,
+        # exactly as the CLI flow does — the app's callback always wrote the default
+        # slot, so linking another account from the app silently replaced the first.
+        self._save_to_vault(connector_id, creds, self._slot_for_new(connector_id, creds))
         logger.info("Completed OAuth exchange for %s (account=%s)", connector_id, creds.email)
         return creds
 
@@ -171,10 +174,14 @@ class ConnectorAuthManager:
         out: list[str] = []
         try:
             for cred in self._vault.list(provider=connector_id) or []:
-                prof = str(getattr(cred, "profile_id", "") or "")
+                # The vault's list() returns VaultItems, whose profile lives in metadata;
+                # only the old credential objects carried it as an attribute. Reading the
+                # attribute alone skipped every row, so this always returned [] on a real
+                # vault while a fake with the attribute kept its test green.
+                meta = getattr(cred, "metadata", None) or {}
+                prof = str(getattr(cred, "profile_id", "") or meta.get("profile_id") or "")
                 if prof != DEFAULT_PROFILE and not prof.startswith(DEFAULT_PROFILE + ":"):
                     continue
-                meta = getattr(cred, "metadata", None) or {}
                 email = str(meta.get("email") or "").strip().lower()
                 if prof == DEFAULT_PROFILE:
                     out.insert(0, email or "(default)")
@@ -394,20 +401,41 @@ class ConnectorAuthManager:
             logger.error("Token refresh failed for %s: %s", connector_id, exc)
             raise ConnectorAuthError(connector_id, f"Token refresh failed: {exc}") from exc
 
-    async def revoke(self, connector_id: str, account: str | None = None) -> None:
-        """Remove stored credentials for *connector_id* (one account, default when None)."""
-        try:
-            slot = self.resolve_account(connector_id, account) if account else None
-            cred = self._vault.get(connector_id, profile_id=profile_for(slot))
-            if cred:
-                self._vault.remove(cred.id)
-                logger.info("Revoked credentials for %s", connector_id)
-        except Exception as exc:
-            logger.debug(
-                "Failed to remove vault entry for %s: %s (non-critical)",
-                connector_id,
-                exc,
-            )
+    async def revoke(self, connector_id: str, account: str | None = None) -> bool:
+        """Remove one account's stored credentials (the default account when None).
+
+        Returns True when a credential was removed. Raises ``ConnectorAuthError`` for an
+        account that is not linked. When the default account goes and another is still
+        linked, that one moves into the default slot, so the connector stays connected.
+
+        This used to call ``vault.remove()``, which the vault does not have; the
+        AttributeError was swallowed at debug level, so every Disconnect answered success
+        and the account stayed connected.
+        """
+        slot = self.resolve_account(connector_id, account) if account else None
+        cred = self._vault.get(connector_id, profile_id=profile_for(slot))
+        if cred is None:
+            return False
+        if not self._vault.delete(cred.id):
+            raise ConnectorAuthError(connector_id, "the stored credential could not be removed")
+        logger.info("Revoked credentials for %s%s", connector_id, f" ({slot})" if slot else "")
+        if slot is None:
+            self._promote_next_account(connector_id)
+        return True
+
+    def _promote_next_account(self, connector_id: str) -> None:
+        """Move the first extra account into the empty default slot."""
+        extras = [a for a in self.list_accounts(connector_id) if a and a != "(default)"]
+        if not extras:
+            return
+        nxt = extras[0]
+        creds = self._load_from_vault(connector_id, nxt)
+        old = self._vault.get(connector_id, profile_id=profile_for(nxt))
+        if creds is None or old is None:
+            return
+        self._save_to_vault(connector_id, creds)
+        self._vault.delete(old.id)
+        logger.info("%s: %s is now the default account", connector_id, nxt)
 
     # -- Vault helpers (private) -------------------------------------------
 

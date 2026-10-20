@@ -16,14 +16,24 @@ broken; navig's spawn flags are used when importable and skipped when not).
 Fail-open: any error prints nothing and exits 0. Output is pure
 ASCII — the Windows hook pipe garbles non-ASCII. Rich human version:
 ``navig repo stale``. Wiring: see scripts/agent-hooks/README.md.
+
+Bounded: the hook returns within FOREGROUND_BUDGET_S. The briefing runs in a
+detached ``--refresh`` child that writes .dev/cache/session-briefing.txt; the
+hook prints it if the child finishes in time, else the last cached copy with
+its age. Measured 2026-10-03: on a loaded box with 16 worktrees a full briefing
+took 366 s, so the hook hit its 30 s ceiling on EVERY session start — no
+briefing, plus 30 s added to a startup the VS Code extension caps at 60 s
+("Subprocess initialization did not complete within 60000ms").
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -165,6 +175,241 @@ def conflict_lines(root: Path) -> list[str]:
 LOCK_TTL_MINUTES = 60
 
 
+#: How far back the lost-work radar looks. Unreachable reflog entries expire after
+#: gc.reflogExpireUnreachable (30 days by default); a week leaves time to act.
+LOST_WORK_DAYS = 7
+#: Lines the radar prints at most; the count says how many more there are.
+LOST_WORK_SHOWN = 5
+#: Candidates judged per briefing -- each costs a handful of batched git calls.
+LOST_WORK_JUDGED = 12
+#: The subjects git gives a stash's commits -- a dropped stash, not lost work.
+_STASH_SHAPED = re.compile(r"(?:WIP on|index on|untracked files on) |On [^\s:]+: ")
+_SQUASH_SUFFIX = re.compile(r" \(#\d+\)$")
+
+
+def _ascii(text: str) -> str:
+    return text.encode("ascii", "replace").decode("ascii")
+
+
+#: Basenames too common to prove a move: an unrelated ``index.ts`` elsewhere on the ref
+#: says nothing about the commit's file. Losing a generically-named file stays reported.
+_GENERIC_NAMES = frozenset({
+    "index.ts", "index.tsx", "index.js", "index.mjs", "index.md",
+    "types.ts", "types.tsx", "utils.ts", "constants.ts", "helpers.ts",
+    "config.ts", "entries.ts", "styles.css", "package.json", "readme.md",
+})
+
+#: ref -> basename -> paths, cached for the hook's one run. Keyed by root AND ref:
+#: tests create many scratch repos that all name their branch ``main``.
+_NAME_CACHE: dict[tuple[str, str], dict[str, list[str]]] = {}
+
+
+def _paths_by_basename(root: Path, ref: str) -> dict[str, list[str]]:
+    key = (str(root), ref)
+    if key not in _NAME_CACHE:
+        by_name: dict[str, list[str]] = {}
+        for p in (_git(["ls-tree", "-r", "--name-only", ref], root) or "").splitlines():
+            if p:
+                by_name.setdefault(p.rsplit("/", 1)[-1].lower(), []).append(p)
+        _NAME_CACHE[key] = by_name
+    return _NAME_CACHE[key]
+
+
+def _row_superseded(
+    status: str,
+    path: str,
+    *,
+    on_ref: dict[str, str],
+    since: set[str],
+    in_commit: dict[str, str],
+    twin_of: dict[str, list[str]],
+    twin_blobs: dict[str, str],
+    touched_twins: set[str],
+) -> bool:
+    """One row of the supersession test (see ``_superseded``). Keyword-only so the
+    caller's loop variables are bound by value -- a closure over them is the classic
+    loop-capture bug (ruff B023)."""
+    if status == "D":
+        return path not in on_ref or path in since
+    if path in on_ref:
+        return on_ref[path] == in_commit.get(path) or path in since
+    mine = in_commit.get(path)
+    return any(twin_blobs.get(t) == mine or t in touched_twins for t in twin_of.get(path, []))
+
+
+def _superseded(root: Path, refs: list[str], sha: str, when: str) -> bool:
+    """Is this commit's work on one of ``refs`` by another road (a squash, a redo, a move)?
+
+    True when, on some ref, every file it touched is: the identical blob, a file ref
+    has changed since the commit (a later edit of the same work), or -- for a deletion
+    -- already gone. For a file the commit ADDED that ref lacks, the ref may simply
+    have received it at a new path: this repo renames paths as a workflow (a manual
+    moved blackbook/ -> cookbook/ with edits -- 59 of its paths went absent and a path
+    check alone called the work "lost"; 14 of the 59 are provable as this move). What a
+    reader must judge stays reported on purpose: a test whose RULE a renamed module
+    re-asserted is provable by neither path, name nor blob, and guessing there would
+    hide a real loss the next time. An absent added file counts as
+    superseded when a same-named file exists on ref AND that path was created or
+    changed there after this commit (a rename arriving later) or carries our exact
+    blob (a verbatim move). A generically-named file never counts: an unrelated
+    ``index.ts`` must not mask a real loss.
+
+    The commit's file list is read once; each ref costs a handful of batched calls
+    whatever the commit's size (a 267-file rename was measured).
+    """
+    rows = [
+        r.split("\t", 1)
+        for r in (_git(["diff", "--name-status", "--no-renames", f"{sha}^", sha], root) or "").splitlines()
+        if "\t" in r
+    ]
+    if not when or not rows:
+        return False
+    paths = [p for _, p in rows]
+
+    def blob_map(ref: str, wanted: list[str]) -> dict[str, str]:
+        if not wanted:
+            return {}
+        out = _git(["ls-tree", "-r", ref, "--", *wanted], root) or ""
+        found: dict[str, str] = {}
+        for line in out.splitlines():
+            meta, _, path = line.partition("\t")
+            parts = meta.split()
+            if len(parts) == 3:
+                found[path] = parts[2]
+        return found
+
+    in_commit = blob_map(sha, paths)
+    added = [p for s, p in rows if s != "D"]
+    for ref in refs:
+        on_ref = blob_map(ref, paths)
+        since = set(
+            (_git(["log", f"--since={when}", "--format=", "--name-only", ref, "--", *paths], root) or "")
+            .split("\n")
+        )
+
+        # Rename twins: absent added files, matched by a distinctive basename on ref.
+        absent = [p for p in added if p not in on_ref]
+        by_name = _paths_by_basename(root, ref) if absent else {}
+        twin_of: dict[str, list[str]] = {}
+        for p in absent:
+            name = p.rsplit("/", 1)[-1].lower()
+            if name not in _GENERIC_NAMES:
+                twin_of[p] = by_name.get(name, [])
+        all_twins = [t for twins in twin_of.values() for t in twins]
+        twin_blobs = blob_map(ref, all_twins)
+        touched_twins = (
+            set(
+                (_git(["log", f"--since={when}", "--format=", "--name-only", ref, "--", *all_twins], root) or "")
+                .split("\n")
+            )
+            if all_twins
+            else set()
+        )
+
+        if all(
+            _row_superseded(
+                s,
+                p,
+                on_ref=on_ref,
+                since=since,
+                in_commit=in_commit,
+                twin_of=twin_of,
+                twin_blobs=twin_blobs,
+                touched_twins=touched_twins,
+            )
+            for s, p in rows
+        ):
+            return True
+    return False
+
+
+def _git_stdin(args: list[str], cwd: Path, text: str) -> str | None:
+    """`git <args>` fed ``text`` on stdin -- for revision lists longer than a Windows
+    command line (32 767 chars) takes. None on any failure."""
+    try:
+        res = subprocess.run(
+            ["git", *args], cwd=str(cwd), input=text, capture_output=True, text=True, timeout=10,
+            encoding="utf-8", errors="replace", **_spawn_kwargs()
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return res.stdout if res.returncode == 0 else None
+
+
+def lost_work_lines(root: Path, base: str) -> list[str]:
+    """Commits from the last LOST_WORK_DAYS that NO ref holds -- kept only by a reflog.
+
+    On 2026-10-13 a reset dropped seven unpushed Schema commits; they were found a day
+    later only because someone read the reflog by hand. The same reflog held two more
+    nobody had noticed (a lost test file among them) until this radar read it three
+    days on. The agent-lock hook now refuses such resets; this shows what was already
+    dropped, before gc expires it.
+
+    Filters, measured in a week of real reflogs (Schema 177 raw orphans -> 2, navig
+    479 -> 3): merges are skipped; a commit whose SUBJECT is on a ref (squash suffix
+    "(#123)" ignored) is a rebased/amended copy; a stash-shaped commit is a dropped
+    stash; and a commit whose files are all on ``base`` -- at their path, at a RENAMED
+    path (``_superseded``), or on the current tip of the ref whose reflog held it, a
+    branch its own session rewrote -- is superseded.
+
+    Cost: the walk starts from the last LOST_WORK_DAYS of reflog TIPS, not every reflog
+    entry ever (``rev-list --reflog`` walked 90 days of entries: 4.3 s vs 1.6 s on
+    navig, identical result).
+    """
+    # One pass over every reflog (worktrees included): the recent tips, and which ref
+    # last held each ("feat/x@{1}", "worktrees/w/HEAD@{8}").
+    homes: dict[str, str] = {}
+    for line in (
+        _git(["log", "-g", "--all", f"--since={LOST_WORK_DAYS}.days.ago", "--format=%H %gD"], root) or ""
+    ).splitlines():
+        full, _, selector = line.partition(" ")
+        ref = selector.split("@{", 1)[0]
+        if full and ref and ref != "refs/stash":
+            homes.setdefault(full, ref)
+    if not homes:
+        return []
+    out = _git_stdin(
+        ["rev-list", "--no-merges", f"--since={LOST_WORK_DAYS}.days.ago", "--stdin", "--not", "--all"],
+        root,
+        "\n".join(homes) + "\n",
+    )
+    shas = (out or "").split()
+    if not shas:
+        return []
+    # A squash-merge renames the subject to "<subject> (#123)": compare without it.
+    held = {
+        _SQUASH_SUFFIX.sub("", s)
+        for s in (
+            _git(["log", "--all", f"--since={3 * LOST_WORK_DAYS}.days.ago", "--no-merges", "--format=%s"], root)
+            or ""
+        ).splitlines()
+    }
+    shown = _git(["log", "--no-walk=sorted", "--format=%H\t%h\t%cI\t%cr\t%s", *shas[:300]], root) or ""
+    candidates = []
+    for line in shown.splitlines():
+        full, short, when, age, subject = (line.split("\t", 4) + [""] * 4)[:5]
+        if subject in held or _STASH_SHAPED.match(subject):
+            continue
+        candidates.append((short, when, age, subject, homes.get(full)))
+    lost = [
+        (short, age, subject)
+        for short, when, age, subject, home in candidates[:LOST_WORK_JUDGED]
+        if not _superseded(root, [base, *([home] if home else [])], short, when)
+    ]
+    if not lost:
+        return []
+    lines = [
+        f"[!] {len(lost)}{'+' if len(candidates) > LOST_WORK_JUDGED else ''} commit(s) from the "
+        f"last {LOST_WORK_DAYS} days are held by NO branch, tag or remote and are not on {base} "
+        "- only the reflog keeps them, and it expires. Look, then rescue or let go:"
+    ]
+    for short, age, subject in lost[:LOST_WORK_SHOWN]:
+        lines.append(f"    {short} ({age}) {_ascii(subject)[:70]} - rescue: git branch rescue/{short} {short}")
+    if len(lost) > LOST_WORK_SHOWN:
+        lines.append(f"    ... and {len(lost) - LOST_WORK_SHOWN} more: git rev-list --reflog --no-merges --not --all")
+    return lines
+
+
 def _lock_line(lock: dict, sid: str, now: datetime | None = None) -> str:
     """One line that says what to DO about a present lock, not just that it exists.
 
@@ -195,6 +440,30 @@ def _lock_line(lock: dict, sid: str, now: datetime | None = None) -> str:
         f"[!] agent lock LIVE (session {sid}..., branch {branch}, touched {age} ago) - another "
         f"session is working in this folder: edit ONLY in a worktree (navig repo new <slug>), "
         f"or wait (expires after {LOCK_TTL_MINUTES}m idle). Details: navig repo lock status"
+    )
+
+
+# Branches an agent makes to SET WORK ASIDE before resetting a checkout
+# ("kept aside before it is brought current"). Unlike a feature branch, nobody
+# is going to open a PR for one: if the session that made it ends, the work is
+# simply gone from main. Measured 2026-09-28 (Schema): ~240 files of passport,
+# tablet and zone work sat on wip/main-checkout-2026-09-28 for a day, listed
+# as one quiet "* branch not merged" line among routine ones, while every
+# session built on a main that lacked it. So this one is loud and sized.
+SET_ASIDE_PREFIXES = ("wip/", "backup/", "stash/")
+
+
+def _set_aside_line(root: Path, base: str, name: str) -> str:
+    """A loud, sized line for a set-aside branch the base does not contain."""
+    ahead = (_git(["rev-list", "--count", f"{base}..{name}"], root) or "?").strip()
+    files_out = _git(["diff", "--name-only", f"{base}...{name}"], root) or ""
+    n_files = len([f for f in files_out.splitlines() if f.strip()])
+    when = (_git(["log", "-1", "--format=%cr", name], root) or "").strip()
+    return (
+        f"[!] SET-ASIDE WORK not restored: {name} ({ahead} commit(s), {n_files} file(s)"
+        f"{', ' + when if when else ''}) - {base} does NOT have it. Restore it "
+        f"(git cherry-pick --no-commit {name}, resolve, commit) before building on "
+        f"{base}, or delete it deliberately once proven redundant."
     )
 
 
@@ -394,6 +663,9 @@ def briefing(root: Path) -> str:
             ):
                 sweepable.append(name)
                 continue
+            if name.startswith(SET_ASIDE_PREFIXES):
+                lines.append(_set_aside_line(root, base, name))
+                continue
             gone = " (remote gone - merged remotely? verify then delete)" if "gone" in track else ""
             lines.append(f"* branch not merged into {base}: {name}{gone}")
 
@@ -413,6 +685,8 @@ def briefing(root: Path) -> str:
             f"{', ...' if len(finished_wts) > 4 else ''}) - remove: navig repo sweep --yes"
         )
 
+    lines.extend(lost_work_lines(root, base))
+
     out = _git(["stash", "list", "--format=%gd | %cr | %gs"], root)
     if out:
         for line in out.splitlines():
@@ -431,9 +705,140 @@ def briefing(root: Path) -> str:
     return "\n".join([header, *lines])
 
 
-def main() -> int:
+#: How long the hook waits for a fresh briefing before falling back to the cache.
+FOREGROUND_BUDGET_S = 6.0
+#: A refresh lock older than this belongs to a dead refresher and is ignored.
+REFRESH_LOCK_STALE_S = 15 * 60
+CACHE_NAME = "session-briefing.txt"
+
+
+def _cache_path(root: Path) -> Path:
+    return root / ".dev" / "cache" / CACHE_NAME
+
+
+def _write_cache(root: Path, text: str) -> None:
+    """Atomic: a reader never sees a half-written briefing."""
+    path = _cache_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(text, encoding="ascii", errors="replace")
+    os.replace(tmp, path)
+
+
+def _read_cache(root: Path) -> tuple[str, float] | None:
+    """(text, mtime) of the cached briefing, or None."""
+    path = _cache_path(root)
     try:
-        print(briefing(repo_root()))
+        return path.read_text(encoding="ascii", errors="replace"), path.stat().st_mtime
+    except OSError:
+        return None
+
+
+def _age(seconds: float) -> str:
+    if seconds < 90:
+        return f"{int(seconds)}s"
+    if seconds < 90 * 60:
+        return f"{int(seconds // 60)}m"
+    return f"{seconds / 3600:.1f}h"
+
+
+def _cached_with_age(text: str, mtime: float, now: float) -> str:
+    """Mark a cached briefing as such on its first line — it may be out of date."""
+    first, _, rest = text.partition("\n")
+    note = f" [as of {_age(max(now - mtime, 0))} ago; refreshing in the background]"
+    return first + note + ("\n" + rest if rest else "")
+
+
+def _claim_refresh(root: Path) -> bool:
+    """One refresher at a time: ten sessions opening together must not start ten
+    full briefings. A lock older than REFRESH_LOCK_STALE_S is a dead refresher's."""
+    lock = _cache_path(root).with_suffix(".refresh.lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if time.time() - lock.stat().st_mtime > REFRESH_LOCK_STALE_S:
+            lock.unlink()
+    except OSError:
+        pass
+    try:
+        os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+        return True
+    except OSError:
+        return False
+
+
+def _release_refresh(root: Path) -> None:
+    try:
+        _cache_path(root).with_suffix(".refresh.lock").unlink()
+    except OSError:
+        pass
+
+
+def _spawn_refresh(root: Path) -> subprocess.Popen | None:
+    """Start `<this file> --refresh` fully detached, so the hook can return while
+    it runs and Claude Code's pipe is never held open by it."""
+    kwargs: dict = {
+        "cwd": str(root),
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "close_fds": True,
+    }
+    if os.name == "nt":
+        detached = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        breakaway = 0x01000000  # CREATE_BREAKAWAY_FROM_JOB: outlive a hook job object
+        flag_sets = (detached | breakaway, detached)
+    else:
+        kwargs["start_new_session"] = True
+        flag_sets = (0,)
+    for flags in flag_sets:
+        try:
+            if flags:
+                kwargs["creationflags"] = flags
+            return subprocess.Popen([sys.executable, os.path.abspath(__file__), "--refresh"], **kwargs)
+        except OSError:
+            continue  # breakaway refused by the job: retry without it
+    return None
+
+
+def refresh(root: Path) -> None:
+    """Compute the full briefing and cache it (the detached child's job)."""
+    try:
+        _write_cache(root, briefing(root))
+    finally:
+        _release_refresh(root)
+
+
+def bounded_briefing(root: Path, budget_s: float = FOREGROUND_BUDGET_S) -> str:
+    """A briefing within budget_s: fresh if the refresh finishes in time, else
+    the last cached one marked with its age, else a pointer to the full tool."""
+    started = time.time()
+    proc = _spawn_refresh(root) if _claim_refresh(root) else None
+    if proc is not None:  # else another session is refreshing: serve the cache now
+        try:
+            proc.wait(timeout=budget_s)
+        except subprocess.TimeoutExpired:
+            pass
+    cached = _read_cache(root)
+    if cached and cached[1] >= started - 1:
+        return cached[0]
+    if cached:
+        return _cached_with_age(cached[0], cached[1], time.time())
+    return (
+        "[repo-guard] briefing still being computed (first run in this checkout) - "
+        "run `navig repo stale` for it now"
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    try:
+        root = repo_root()
+        if "--refresh" in args:
+            refresh(root)
+        elif "--sync" in args:
+            print(briefing(root))  # the old unbounded behaviour, for debugging
+        else:
+            print(bounded_briefing(root))
     except Exception:  # noqa: BLE001 — a broken hook must never break session start
         pass
     return 0

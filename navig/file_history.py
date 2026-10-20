@@ -9,7 +9,7 @@ Before any agent-driven ``file_write`` / ``file_edit`` operation, calling
 ``file_history.max_snapshots_per_session`` snapshots are kept per session;
 older ones are evicted when the cap is exceeded.
 
-This allows the ``navig snapshot diff`` and ``navig snapshot restore``
+This allows the ``navig history files diff`` and ``navig history files restore``
 subcommands to show what changed or roll back to any prior state.
 
 Usage::

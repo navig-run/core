@@ -887,7 +887,7 @@ def reroute_cmd(
             results.append(entry)
             continue
 
-        dest_inbox = find_best_destination(terms, space_root, spaces_root)
+        dest_inbox = find_best_destination(terms, space_root, spaces_root, text=raw_text)
         if dest_inbox is None:
             entry["status"] = "no_destination"
             entry["reason"] = "exclude rule matched but no suitable sibling space found"

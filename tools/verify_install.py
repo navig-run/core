@@ -165,11 +165,20 @@ def main() -> int:
         ("agent i18n locales", "agent/conv/locales/en.json"),
         ("builtin modes", "modes/builtin.yaml"),
         ("space scaffold templates", "scaffold-templates/space-distillery"),
-        ("browser templates", "browser/templates/generic.yaml"),
         ("block contract schema", "contracts/schemas/block.schema.json"),
         ("license tiers", "license/tiers.json"),
     ):
         check(label, (pkg / rel).exists(), rel)
+
+    # The browser templates ship with the engine (navig-browser) since it left core; check them
+    # where the installed runner reads them, which also proves navig-browser's wheel has them.
+    try:
+        from navig.browser.template_runner import TemplateRunner
+
+        _tpl = Path(TemplateRunner.TEMPLATES_DIR) / "generic.yaml"
+        check("browser templates (navig-browser)", _tpl.exists(), str(_tpl))
+    except Exception as exc:  # noqa: BLE001
+        check("browser templates (navig-browser)", False, f"{type(exc).__name__}: {exc}"[:140])
 
     # ── the daemon, WITHOUT booting one ──────────────────────────────────────
     # This deliberately does NOT run `navig gateway start`. Starting a gateway force-kills
@@ -332,6 +341,28 @@ def main() -> int:
         _ok = (_rt.stdout or "").strip().endswith("OK")
         check("a credential round-trips through the installed vault", _ok,
               "stored and read back" if _ok else (_rt.stderr or _rt.stdout or "").strip()[-160:])
+
+    # -- the engines core moved into its hard dependencies -------------------------------
+    #
+    # contacts, the shared media engine and the browser engine now live in navig-contacts,
+    # navig-media-core and navig-browser; core keeps `sys.modules` identity aliases at the old
+    # paths. Every check above passes with one of them missing or unresolvable (their imports
+    # are lazy), and a copy instead of an alias splits module state in two — two CDP loops,
+    # two launch registries — so both "it resolves" and "it IS the same module" are asserted.
+    section("Moved engines (hard dependencies, aliased from core)")
+
+    for _old, _new, _pkg in (
+        ("navig.store.contacts", "navig_contacts.store", "navig-contacts"),
+        ("navig.media.video_edit", "navig_media_core.media.video_edit", "navig-media-core"),
+        ("navig.browser.targets", "navig_browser.targets", "navig-browser"),
+        ("navig.commands.cdp", "navig_browser.commands.cdp", "navig-browser"),
+    ):
+        try:
+            _a = importlib.import_module(_old)
+            _b = importlib.import_module(_new)
+            check(f"{_old} IS {_new} ({_pkg})", _a is _b, "aliased" if _a is _b else "SHIM IS A COPY")
+        except Exception as exc:  # noqa: BLE001
+            check(f"{_old} IS {_new} ({_pkg})", False, f"{type(exc).__name__}: {exc}"[:140])
 
     print(f"\n{'=' * 62}")
     if FAILURES:

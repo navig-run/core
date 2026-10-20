@@ -12,13 +12,21 @@
     "user": {"type": "string", "minLength": 1},
     "ssh_key": {"type": "string"},
     "ssh_password": {"type": "string"},
+    "ssh_password_ref": {
+      "type": "string",
+      "pattern": "^vault:host/",
+      "description": "Vault reference standing in for ssh_password (never the value)"
+    },
     "default_app": {"type": "string"},
     "database": {
       "type": "object",
       "additionalProperties": true,
       "properties": {
         "root_user": {"type": "string"},
-        "root_password": {"type": "string"}
+        "root_password": {"type": "string"},
+        "root_password_ref": {"type": "string", "pattern": "^vault:host/"},
+        "password": {"type": "string"},
+        "password_ref": {"type": "string", "pattern": "^vault:host/"}
       }
     },
     "metadata": {"type": "object", "additionalProperties": true},
@@ -34,7 +42,8 @@
     {
       "oneOf": [
         {"required": ["ssh_key"]},
-        {"required": ["ssh_password"]}
+        {"required": ["ssh_password"]},
+        {"required": ["ssh_password_ref"]}
       ]
     }
   ]

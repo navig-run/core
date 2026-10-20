@@ -210,11 +210,9 @@ def _result(success: bool, **extra):
 
 
 def _stub_voice(monkeypatch, *, tts=None, stt=None):
-    """Satisfy the voice callback's plugin probe and swap the engines."""
+    """Swap the engines the commands import (navig-audio's, which navig voice mounts)."""
     import sys
 
-    monkeypatch.setitem(sys.modules, "navig_audio", SimpleNamespace(voice=SimpleNamespace()))
-    monkeypatch.setitem(sys.modules, "navig_audio.voice", SimpleNamespace())
     mod_tts = SimpleNamespace(
         TTSProvider=lambda v: (_ for _ in ()).throw(ValueError(v)) if v == "bogus" else v,
         get_tts=lambda: tts or MagicMock(),
@@ -223,8 +221,8 @@ def _stub_voice(monkeypatch, *, tts=None, stt=None):
         STTProvider=lambda v: (_ for _ in ()).throw(ValueError(v)) if v == "bogus" else v,
         get_stt=lambda: stt or MagicMock(),
     )
-    monkeypatch.setitem(sys.modules, "navig.voice.tts", mod_tts)
-    monkeypatch.setitem(sys.modules, "navig.voice.stt", mod_stt)
+    monkeypatch.setitem(sys.modules, "navig_audio.voice.tts", mod_tts)
+    monkeypatch.setitem(sys.modules, "navig_audio.voice.stt", mod_stt)
 
 
 def test_a_failed_tts_exits_non_zero(monkeypatch):

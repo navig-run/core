@@ -113,6 +113,37 @@ def _flatten(node: ast.AST) -> tuple[str, list[str]] | None:
     return cur.id, list(reversed(segs))
 
 
+def _flatten_anchored_on_file(node: ast.AST) -> tuple[int, list[str]] | None:
+    """``Path(__file__).resolve().parents[N] / "a" / "b"`` -> ``(N, ["a", "b"])``.
+
+    The hole this closes: ``_parents_index`` only fires when the WHOLE right-hand side
+    is the ``parents[N]`` expression, and ``_flatten`` only fires when the chain bottoms
+    out at a bare ``NAME``. The way a test actually writes a subject -- ``parents[N]``
+    *extended* by path segments, usually wrapped across lines -- is neither, so the
+    derivation found nothing and the pair was reported as wired.
+
+    That was ``tests/packaging/test_plugin_core_floor_symbols.py`` binding
+    ``scripts/check_plugin_core_floor.py``: the guard's own test ran in NO tier while
+    the detector passed, because an unwired pair it could not see is indistinguishable
+    from a fully wired one. Measured before fixing: ``--explain-selection
+    --changed=scripts/check_plugin_core_floor.py`` selected nothing.
+    """
+    segs: list[str] = []
+    cur = node
+    while isinstance(cur, ast.BinOp) and isinstance(cur.op, ast.Div):
+        seg = cur.right
+        if not (isinstance(seg, ast.Constant) and isinstance(seg.value, str)):
+            return None
+        segs.append(seg.value)
+        cur = cur.left
+    if not segs:
+        return None
+    n = _parents_index(cur)
+    if n is None:
+        return None
+    return n, list(reversed(segs))
+
+
 def _string_sequence(node: ast.AST) -> list[str]:
     """A tuple/list of string literals, as a list. Anything else -> ``[]``.
 
@@ -232,6 +263,22 @@ def _subjects(path: Path) -> set[str]:
                 continue
             if not _reachable_without_an_edge(rel):
                 found.add(rel)
+
+        # `Path(__file__).resolve().parents[N] / "a" / "b"` — the shape neither helper
+        # above could see on its own, and the reason this detector passed green over an
+        # unwired pair.
+        anchored = _flatten_anchored_on_file(node)
+        if anchored is not None:
+            joined = path.resolve().parents[anchored[0]].joinpath(*anchored[1])
+            if joined.is_file():
+                try:
+                    rel = joined.resolve().relative_to(REPO).as_posix()
+                except ValueError:              # outside the repo entirely
+                    pass
+                else:
+                    if not _reachable_without_an_edge(rel):
+                        found.add(rel)
+                continue
 
         flat = _flatten(node)
         if not flat or flat[0] not in roots:

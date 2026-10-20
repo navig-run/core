@@ -129,6 +129,21 @@ def extract_media(message: dict) -> dict[str, Any] | None:
     return None
 
 
+def _chat_is_incognito(chat_id: Any) -> bool:
+    """True when the bot conversation in *chat_id* is in ``/incognito`` mode.
+
+    Fails CLOSED for the catalog (skips ingest) only on a positive answer; an
+    unavailable session store means no chat can be incognito, so ingest proceeds.
+    """
+    try:
+        from navig.gateway.channels.telegram_sessions import get_session_manager
+
+        return get_session_manager().is_incognito_chat(int(chat_id))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("incognito check skipped: %s", exc)
+        return False
+
+
 async def ingest_update(channel: Any, update: dict) -> None:
     """Persist a message-bearing update into the catalog (best-effort)."""
     if not catalog_enabled():
@@ -148,6 +163,8 @@ async def ingest_update(channel: Any, update: dict) -> None:
     chat_id = chat.get("id")
     if chat_id is None:
         return
+    if _chat_is_incognito(chat_id):
+        return  # /incognito: nothing from this chat is kept
 
     from navig.store.telegram_catalog import get_telegram_catalog
 

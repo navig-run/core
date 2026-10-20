@@ -79,7 +79,7 @@ class TestFirstRunSkipConditions:
             _nm._check_first_run()
         engine_cls.assert_not_called()
 
-    @pytest.mark.parametrize("cmd", ["onboard", "quickstart", "service", "update", "version"])
+    @pytest.mark.parametrize("cmd", ["onboard", "quickstart", "service", "update", "version", "mcp"])
     def test_skips_for_guarded_subcommands(self, tmp_path, cmd):
         """Commands listed in _SKIP_CMDS must not trigger onboarding."""
         (tmp_path / ".navig").mkdir(parents=True, exist_ok=True)  # no artifact
@@ -87,6 +87,23 @@ class TestFirstRunSkipConditions:
         with (
             patch("pathlib.Path.home", return_value=tmp_path),
             patch.object(sys, "argv", ["navig", cmd]),
+            patch("navig.onboarding.OnboardingEngine", engine_cls),
+        ):
+            _nm._check_first_run()
+        engine_cls.assert_not_called()
+
+    def test_mcp_serve_never_runs_onboarding(self, tmp_path):
+        """`navig mcp serve` is a JSON-RPC transport: stdout is the protocol stream.
+
+        A client spawns this process, so nobody can answer a wizard. Measured in a clean
+        container before this rule: the 13-step onboarding ran first, printing a welcome
+        banner and a telemetry ping ahead of `initialize`.
+        """
+        (tmp_path / ".navig").mkdir(parents=True, exist_ok=True)
+        engine_cls = MagicMock()
+        with (
+            patch("pathlib.Path.home", return_value=tmp_path),
+            patch.object(sys, "argv", ["navig", "mcp", "serve", "--transport", "stdio"]),
             patch("navig.onboarding.OnboardingEngine", engine_cls),
         ):
             _nm._check_first_run()
@@ -262,3 +279,91 @@ class TestFirstRunNonTTY:
 
         # Artifact written → engine completed without hanging
         assert (navig_dir / "onboarding.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# `navig init --profile` — the installer pipeline never pre-runs the wizard
+# ---------------------------------------------------------------------------
+#
+# The option's own help says "Run installer profile without wizard", and
+# `install.sh -p <name>` shells out to exactly that. First-run onboarding
+# pre-empting it would put an interactive wizard in front of a scripted
+# install; `navig init` WITHOUT --profile must keep triggering it as before.</think>
+def _should_onboard(tmp_path, argv):
+    (tmp_path / ".navig").mkdir(parents=True, exist_ok=True)
+    with (
+        patch("navig.onboarding.runner.config_dir", return_value=tmp_path / ".navig"),
+        patch.object(sys, "argv", argv),
+    ):
+        from navig.onboarding.runner import should_auto_run_onboarding
+
+        return should_auto_run_onboarding(None)
+
+
+def test_init_with_profile_never_triggers_first_run_onboarding(tmp_path):
+    assert _should_onboard(tmp_path, ["navig", "init", "--profile", "server"]) is False
+
+
+def test_init_short_profile_flag_skips_too(tmp_path):
+    assert _should_onboard(tmp_path, ["navig", "init", "-p", "cli"]) is False
+
+
+def test_init_profile_equals_form_skips(tmp_path):
+    assert _should_onboard(tmp_path, ["navig", "init", "--profile=full"]) is False
+
+
+def test_init_without_profile_still_triggers_first_run_onboarding(tmp_path):
+    """The skip is scoped to `init` + --profile — nothing else changes."""
+    assert _should_onboard(tmp_path, ["navig", "init"]) is True
+
+
+def test_another_commands_profile_flag_does_not_skip(tmp_path):
+    assert _should_onboard(tmp_path, ["navig", "cdp", "new", "--profile", "research"]) is True
+
+
+# ---------------------------------------------------------------------------
+# Joined devices and plumbing (2026-10-16): the LAN join script's
+# `navig config set gateway.mesh_token …` launched the 22-step BRAIN wizard on
+# the joining laptop and stalled on the AI-provider prompt.
+# ---------------------------------------------------------------------------
+
+
+def test_config_plumbing_never_triggers_the_wizard(tmp_path):
+    assert _should_onboard(tmp_path, ["navig", "config", "set", "gateway.mesh_token", "x"]) is False
+
+
+def test_a_joined_node_is_never_handed_the_brain_wizard(tmp_path):
+    navig_dir = tmp_path / ".navig"
+    navig_dir.mkdir(parents=True, exist_ok=True)
+    (navig_dir / "config.yaml").write_text("onboarding:\n  role: node\n", encoding="utf-8")
+    assert _should_onboard(tmp_path, ["navig", "status"]) is False
+
+
+def test_a_brain_or_unset_role_still_onboards(tmp_path):
+    navig_dir = tmp_path / ".navig"
+    navig_dir.mkdir(parents=True, exist_ok=True)
+    (navig_dir / "config.yaml").write_text("onboarding:\n  role: brain\n", encoding="utf-8")
+    assert _should_onboard(tmp_path, ["navig", "status"]) is True
+
+
+def test_configured_role_tolerates_missing_and_garbled_config(tmp_path):
+    from navig.onboarding.runner import configured_role
+
+    assert configured_role(tmp_path) == "brain"  # no config.yaml at all
+    (tmp_path / "config.yaml").write_text("{ not: [valid", encoding="utf-8")
+    assert configured_role(tmp_path) == "brain"
+    (tmp_path / "config.yaml").write_text("onboarding:\n  role: NODE\n", encoding="utf-8")
+    assert configured_role(tmp_path) == "node"
+
+
+def test_nerd_font_prompt_defaults_to_no():
+    """Enter used to mean YES — and the installer also rewrites VS Code and
+    Windows Terminal settings. It is opt-in now, and says so."""
+    import inspect
+
+    from navig.onboarding import steps
+
+    src = inspect.getsource(steps)
+    assert "Install JetBrainsMono Nerd Font? [y/N]" in src
+    assert 'if reply in ("y", "yes"):' in src
+    assert "[Y/n] \").strip().lower()\n\n        if reply in (\"\", \"y\"" not in src

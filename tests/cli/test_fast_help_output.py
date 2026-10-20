@@ -205,7 +205,7 @@ def test_main_does_not_duplicate_profile_registration(monkeypatch):
         def add_typer(self, _sub_app, name=None, hidden=False):
             self.added_names.append(name)
 
-        def __call__(self):
+        def __call__(self, *args, **kwargs):  # Typer.__call__ forwards to click main()
             return None
 
     dummy_app = _DummyApp()

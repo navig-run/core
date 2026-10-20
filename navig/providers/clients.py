@@ -5,9 +5,12 @@ Provider-specific adapters with unified interface.
 Based on multi-provider architecture.
 """
 
+import asyncio
 import json
 import logging
 import re
+import threading
+import weakref
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass
@@ -29,6 +32,73 @@ from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
 from .types import BUILTIN_PROVIDERS, ModelApi, ModelDefinition, ProviderConfig
 
 logger = logging.getLogger(__name__)
+
+
+# ── Shared connection pool ────────────────────────────────────────────────────
+#
+# The agent loop builds a fresh provider client every turn and closes it at the
+# end, so every turn opened a new TCP + TLS connection to the provider. Measured
+# to api.anthropic.com from the operator's machine: 407 ms for a request on a
+# fresh connection vs 128 ms on a kept-alive one — ~280 ms added to the first
+# model call of every reply.
+#
+# What is shared is the CONNECTION POOL, not the client. Each provider client
+# still owns its own httpx.AsyncClient with its own auth headers baked in, so
+# one account's credential can never ride on another's request; only the
+# keep-alive sockets underneath are reused. The shared transport ignores
+# aclose(), so every existing per-turn ``client.close()`` keeps working unchanged
+# without tearing the pool down.
+#
+# Connections belong to the event loop that opened them, and the legacy
+# sync-to-async bridge runs short-lived loops in worker threads. So the pool is
+# shared only on the MAIN thread's (long-lived) loop, one pool per loop; any
+# other thread gets a private transport exactly as before.
+
+_SHARED_TRANSPORTS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, Any]" = (
+    weakref.WeakKeyDictionary()
+)
+_SHARED_TRANSPORTS_LOCK = threading.Lock()
+
+
+if HTTPX_AVAILABLE:
+
+    class _NonClosingTransport(httpx.AsyncBaseTransport):
+        """A process-owned transport that per-client ``aclose()`` cannot close."""
+
+        def __init__(self, inner: "httpx.AsyncBaseTransport") -> None:
+            self._inner = inner
+
+        async def handle_async_request(self, request: "httpx.Request") -> "httpx.Response":
+            return await self._inner.handle_async_request(request)
+
+        async def aclose(self) -> None:
+            # Owned by the process-level pool; a client closing at the end of a
+            # turn must not drop the warm connections the next turn will use.
+            return None
+
+
+def _make_pooled_transport() -> "httpx.AsyncBaseTransport":
+    return httpx.AsyncHTTPTransport(
+        limits=httpx.Limits(
+            max_connections=100, max_keepalive_connections=20, keepalive_expiry=60.0
+        )
+    )
+
+
+def _shared_transport() -> "httpx.AsyncBaseTransport | None":
+    """The keep-alive transport for this loop, or None where sharing is unsafe."""
+    if not HTTPX_AVAILABLE or threading.current_thread() is not threading.main_thread():
+        return None
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+    with _SHARED_TRANSPORTS_LOCK:
+        transport = _SHARED_TRANSPORTS.get(loop)
+        if transport is None:
+            transport = _NonClosingTransport(_make_pooled_transport())
+            _SHARED_TRANSPORTS[loop] = transport
+        return transport
 
 
 # OpenAI's reasoning models reject TWO parameters the rest of the API requires, and
@@ -442,9 +512,11 @@ class BaseProviderClient(ABC):
             raise ImportError("httpx is required for provider clients. Install: pip install httpx")
 
         if self._client is None or self._client.is_closed:
+            shared = _shared_transport()
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(self.timeout),
                 headers=self._build_headers(),
+                **({"transport": shared} if shared is not None else {}),
             )
         return self._client
 

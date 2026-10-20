@@ -138,11 +138,16 @@ def _engagement_tick(gw):
             result = coordinator.engagement_tick()
             if result:
                 if "telegram" in gw.channels:
-                    await gw.deliver_message(
-                        channel="telegram",
-                        to=None,
-                        content=result.message,
-                    )
+                    from navig.telegram import chat_tidy
+
+                    # Same message as the scheduled engagement tick, which is
+                    # tidied overnight; this manual trigger was not.
+                    with chat_tidy.routine("greeting"):
+                        await gw.deliver_message(
+                            channel="telegram",
+                            to=None,
+                            content=result.message,
+                        )
                 return json_ok(
                     {
                         "status": "sent",

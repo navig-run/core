@@ -48,6 +48,8 @@ class ConversationHistory:
         user_id: str,
         max_tokens: int = _DEFAULT_MAX_TOKENS,
         summarizer: Callable[[list[dict[str, str]]], str] | None = None,
+        *,
+        persist: bool = True,
     ) -> None:
         if max_tokens <= 0:
             raise ValueError(f"max_tokens must be a positive integer, got {max_tokens!r}")
@@ -61,7 +63,10 @@ class ConversationHistory:
         # the LLM to start fresh and not continue any prior conversation topic.
         self._session_is_fresh: bool = True
         self._jsonl_path = config_dir() / "history" / f"{safe_id}.jsonl"
-        if self._jsonl_path.exists():
+        #: False for an incognito conversation: messages live in memory only — nothing
+        #: is appended to, or reloaded from, the JSONL file.
+        self.persist = persist
+        if persist and self._jsonl_path.exists():
             self.load_recent()
 
     # ── Public API ──────────────────────────────────────────────────────────
@@ -69,11 +74,18 @@ class ConversationHistory:
     def add(self, role: str, content: str) -> None:
         """Append a message, persist it to JSONL, then truncate if over budget."""
         self._prune_stale()
+        if role == "assistant":
+            # A rendering instruction, not conversation: kept, it teaches the model
+            # to write "EXPLORE_Q: …" on turns that never asked for suggestions.
+            from navig.agent.explore_marker import strip_explore_marker  # noqa: PLC0415
+
+            content = strip_explore_marker(content)
         now = time.time()
         self._messages.append({"role": role, "content": content, "ts": now})
-        self._jsonl_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._jsonl_path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"role": role, "content": content, "ts": now}) + "\n")
+        if self.persist:
+            self._jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+            with self._jsonl_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({"role": role, "content": content, "ts": now}) + "\n")
         if self.token_count() > self._max_tokens:
             self._truncate()
 

@@ -74,12 +74,16 @@ def test_measured_an_in_tree_restarter_dies_with_the_tree(tmp_path):
 
 def _app() -> web.Application:
     gw = types.SimpleNamespace(
-        config=types.SimpleNamespace(auth_token=None),
+        # A configured token: require_bearer_auth fails closed (503) without one.
+        config=types.SimpleNamespace(auth_token="test-token"),
         policy_check=_allow,
     )
     app = web.Application()
     daemon_routes.register(app, gw)
     return app
+
+
+_AUTH = {"Authorization": "Bearer test-token"}
 
 
 async def _allow(_action, _actor):
@@ -106,7 +110,7 @@ async def test_on_windows_the_restart_goes_to_the_task_and_answers_at_once(
     monkeypatch.setattr(daemon_routes, "_run_restart_task", lambda: (True, "started"))
 
     async with TestClient(TestServer(_app())) as client:
-        res = await client.post("/api/daemon/restart")
+        res = await client.post("/api/daemon/restart", headers=_AUTH)
         body = await res.json()
 
     assert res.status == 200, body
@@ -127,7 +131,7 @@ async def test_on_windows_without_the_task_the_route_refuses_with_the_remedies(
     )
 
     async with TestClient(TestServer(_app())) as client:
-        res = await client.post("/api/daemon/restart")
+        res = await client.post("/api/daemon/restart", headers=_AUTH)
         body = await res.json()
 
     assert res.status == 409, body
@@ -145,7 +149,7 @@ async def test_on_posix_the_route_restarts_as_before(monkeypatch, in_tree_restar
     monkeypatch.setattr(daemon_routes, "_run_restart_task", boom)
 
     async with TestClient(TestServer(_app())) as client:
-        res = await client.post("/api/daemon/restart")
+        res = await client.post("/api/daemon/restart", headers=_AUTH)
 
     assert res.status == 200 and in_tree_restart == ["restart"]
 

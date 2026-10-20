@@ -153,6 +153,7 @@ def _list_skills(ctx: SkillsContext) -> str:
             "priority": s.priority,
             "activation_paths": s.activation_paths,
             "activation_keywords": s.activation_keywords,
+            "activation_keywords_by_language": s.localized_keywords,
             "summary": s.summary(60),
             "force_activated": s.name in ctx._force_activated,
             "force_deactivated": s.name in ctx._force_deactivated,

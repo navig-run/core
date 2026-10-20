@@ -148,7 +148,9 @@ def _stage_classify(file_bytes: bytes) -> dict:
 
 async def _stage_vision(file_bytes: bytes, budget: BudgetGuard) -> str | None:
     """Describe image using GPT-4o Vision."""
-    api_key = _env("OPENAI_API_KEY")
+    from .credentials import provider_key  # vault-by-provider-id, not only env names
+
+    api_key = provider_key("openai", "OPENAI_API_KEY")
     if not api_key:
         return None
     if not budget.can_afford("openai_vision"):
@@ -477,7 +479,11 @@ class ImageEngine:
         cache_key = MediaCache.key(file_bytes)
 
         cached = self._cache.get(cache_key)
-        if cached:
+        # A cached result WITHOUT a description is a failed vision run, not an
+        # answer: until 2026-09-29 the key lookup missed the vault, and every image
+        # analysed in that time was cached as "nothing to see". Trusting those would
+        # keep failing on exactly the photos the operator already tried. Re-analyse.
+        if cached and cached.get("description"):
             cached["cached"] = True
             return cached
 
@@ -540,7 +546,11 @@ class ImageEngine:
             )
             result["analyzed_ms"] = round(elapsed_ms)
 
-            self._cache.put(cache_key, result)
+            # Only a described image is worth remembering. A missing key, a
+            # timeout or a refused call is a reason to try again next time — not
+            # the answer for this file for the rest of the cache's TTL.
+            if result.get("description"):
+                self._cache.put(cache_key, result)
 
         except Exception as exc:
             logger.exception("ImageEngine.analyze failed: %s", exc)

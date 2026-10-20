@@ -4,7 +4,11 @@ NAVIG Daemon Supervisor
 A lightweight process supervisor that keeps NAVIG subsystems alive:
   - Telegram bot  (primary)
   - Gateway server (optional)
-  - Scheduler/cron (optional)
+
+Cron/scheduler is deliberately NOT a supervised child: the live scheduler is
+gateway-attached (``NavigGateway._start_cron`` instantiates the ``CronService``
+singleton). A former ``scheduler`` child ran ``python -m navig.scheduler.cron_service``,
+which has no module runner — it imported and exited 0, a silent no-op.
 
 Features:
   - Auto-restart crashed children with exponential back-off
@@ -243,6 +247,56 @@ MAX_RESTART_DELAY = 120  # seconds
 INITIAL_RESTART_DELAY = 2
 HEALTH_CHECK_INTERVAL = 30  # seconds
 
+#: Child-log rotation caps — matched to the supervisor's own ``daemon.log``
+#: RotatingFileHandler (5 MB x 3 backups) so every log under the log dir is
+#: bounded the same way. Without this, each child's ``<name>.log`` appended
+#: forever: stdout + stderr both land there and nothing ever trimmed it.
+CHILD_LOG_CAP: int = 5 * 1024 * 1024
+CHILD_LOG_KEEP: int = 3
+
+
+def _rotate_child_log(path: Path, cap: int = CHILD_LOG_CAP, keep: int = CHILD_LOG_KEEP) -> bool:
+    """Rotate ``path`` to ``path.1`` once it exceeds ``cap`` bytes.
+
+    Shifts the existing ``.1 … .keep`` backups up one slot (dropping anything
+    past ``keep``, so the set stays bounded), then renames the live file to
+    ``.1``; the next open recreates a fresh live file. Returns True only when
+    the live file was actually rotated.
+
+    **Never raises.** On Windows a rename of a file that any process holds
+    open (the child's inherited stdout/stderr handle, or our own append
+    handle) fails with a sharing violation — measured: WinError 32, "being
+    used by another process" — so an OSError here means "still locked"; it is
+    logged at debug and the caller retries at the next (re)start, when every
+    handle has been closed. Callers must therefore ``_close_log()`` first and
+    only rotate when no child is writing. A failure part-way through the
+    backup shift is harmless: some generations moved, the live file simply is
+    not rotated on this pass — and never at the cost of a raised exception.
+    """
+    try:
+        if keep < 1 or not path.exists() or path.stat().st_size <= cap:
+            return False
+    except OSError:
+        return False  # vanished or unstatable between check and stat — nothing to do
+    try:
+        # Drop the oldest backup so the shift never exceeds `keep` entries.
+        path.with_name(f"{path.name}.{keep}").unlink(missing_ok=True)
+        for i in range(keep - 1, 0, -1):
+            src = path.with_name(f"{path.name}.{i}")
+            if src.exists():
+                src.rename(path.with_name(f"{path.name}.{i + 1}"))
+        path.rename(path.with_name(f"{path.name}.1"))
+    except OSError as exc:
+        # Almost always ERROR_SHARING_VIOLATION on Windows: a handle is still
+        # open on the live file. Skip silently; the next start retries.
+        logging.getLogger("navig.daemon").debug(
+            "Child log rotation skipped for %s (%s) — file is locked; will retry on next start",
+            path,
+            exc,
+        )
+        return False
+    return True
+
 
 def _ensure_dirs() -> None:
     _daemon_dir().mkdir(parents=True, exist_ok=True)
@@ -315,6 +369,14 @@ class ChildProcess:
             # buffering and the duplicate-line problem where a child
             # writes to both stdout and stderr).
             child_log = _resolve_log_dir() / f"{self.name}.log"
+            # Close the handle from any previous life FIRST: (a) it used to be
+            # overwritten without closing — one leaked fd per restart; (b) on
+            # Windows ANY open handle (ours or a straggler child's) blocks the
+            # rotation rename below with a sharing violation. The child is not
+            # running yet at this point, so after _close_log() nothing holds
+            # the file and the rename succeeds on both platforms.
+            self._close_log()
+            _rotate_child_log(child_log, CHILD_LOG_CAP, CHILD_LOG_KEEP)
             self._log_fh = open(child_log, "a", encoding="utf-8", errors="replace")
 
             kwargs: dict[str, Any] = {
@@ -462,6 +524,7 @@ class NavigDaemon:
         # child bounced.
         self._started_at: str | None = None
         self._last_beat: float = 0.0
+        self._last_log_sweep: float = 0.0
         self._orphan_reported = False
 
     # -- child registration ------------------------------------------------
@@ -532,21 +595,13 @@ class NavigDaemon:
         )
         self.logger.info("Registered gateway (port %d)", port)
 
-    def add_scheduler(self, *, python_exe: str | None = None) -> None:
-        """Register the cron scheduler."""
-        python = python_exe or sys.executable
-        self.add_child(
-            ChildProcess(
-                name="scheduler",
-                command=[python, "-m", "navig.scheduler.cron_service"],
-                env_extra={},
-            )
-        )
+    # NOTE: there is deliberately NO add_scheduler(). Cron runs gateway-attached —
+    # NavigGateway._start_cron() owns THE CronService singleton. The former
+    # registration spawned `python -m navig.scheduler.cron_service`, a module with
+    # no runner that imported and exited 0: a supervised no-op, and a second
+    # scheduler would have double-fired jobs against the gateway's instance.
 
     # -- PID management ----------------------------------------------------
-
-    def _write_pid(self) -> None:
-        atomic_write_text(_pid_file(), str(os.getpid()))
 
     def _remove_pid(self) -> None:
         if _pid_file().exists():
@@ -997,6 +1052,38 @@ class NavigDaemon:
             pass  # best-effort; a missed beat is not worth an outage
         self._page_if_orphan_shaped()
 
+    def _maybe_rotate_child_logs(self) -> None:
+        """Once per heartbeat: size-check each DEAD child's log and rotate if huge.
+
+        A live child's log is deliberately untouched. Its stdout/stderr handle
+        follows the file, not the path, so a mid-run rename would divert every
+        subsequent line into the backup while the live path sits empty until
+        the child restarts — tailers (`navig service logs`, the dashboard)
+        would see nothing new. On Windows the rename is refused outright while
+        any handle is open anyway (WinError 32, measured). So this pass only
+        retries a rotation that was skipped earlier — the usual case being
+        ``start()`` refusing while a dying straggler still held the file.
+        Rotation at every (re)start in :meth:`ChildProcess.start` remains the
+        primary path; this is the cheap periodic safety net.
+        """
+        now = time.monotonic()
+        if now - self._last_log_sweep < HEARTBEAT_S:
+            return
+        self._last_log_sweep = now
+        log_dir = _resolve_log_dir()
+        for child in self.children:
+            if child.is_alive():
+                continue
+            log_path = log_dir / f"{child.name}.log"
+            try:
+                if not log_path.exists() or log_path.stat().st_size <= CHILD_LOG_CAP:
+                    continue
+            except OSError:
+                continue  # vanished under us; nothing to rotate
+            child._close_log()  # release our own append handle so the rename can succeed
+            if _rotate_child_log(log_path, CHILD_LOG_CAP, CHILD_LOG_KEEP):
+                self.logger.info("Rotated oversized child log: %s", log_path)
+
     def _page_if_orphan_shaped(self) -> None:
         """Once per life: tell the operator BEFORE the sweep does.
 
@@ -1067,6 +1154,9 @@ class NavigDaemon:
             await writer.drain()
             writer.close()
 
+        from navig.platform import accept_guard
+
+        accept_guard.install()  # one aborted probe must not end the health endpoint
         try:
             self._health_server = await asyncio.start_server(
                 handler, "127.0.0.1", self._health_port
@@ -1120,34 +1210,85 @@ class NavigDaemon:
         # generation — it is a concurrent boot (2026-09-21: the task launched one,
         # then `service restart` spawned a second while the first was still in
         # its own sweep). The older boot is the one with the living parent; we
-        # yield to it rather than kill it.
+        # yield to it rather than kill it — but ONLY while it actually claims the
+        # boot. An unconditional yield made a sibling wedged before its first
+        # claim untouchable: the yield runs before the sweep, so nothing could
+        # ever reap it, and every retry yielded again (measured 2026-10-17 on a
+        # fresh Windows join: hours of dark gateways, no pid file, every boot a
+        # yield to a sibling that never logged a line). Wait for the claim; if
+        # it never comes, take over and let the sweep below reap the wedged one.
         # One process-table enumeration (WMI, 10–20 s here) serves both the
         # sibling check and the sweep — a second one would double the boot.
         candidates = self._enumerate_navig_pids()
         sibling = self._booting_sibling(candidates)
         if sibling is not None:
-            self.logger.info(
-                "Another daemon (pid=%d) started just before us and is still booting — "
-                "yielding to it",
+            if self._await_sibling_claim(sibling):
+                self.logger.info(
+                    "Another daemon (pid=%d) started just before us and claims the "
+                    "boot — yielding to it%s",
+                    sibling,
+                    self._sibling_detail(sibling),
+                )
+                return
+            self.logger.warning(
+                "A sibling supervisor (pid=%d) started before us but never claimed "
+                "the pid file within %ss — treating it as wedged and taking over%s",
                 sibling,
+                self.SIBLING_CLAIM_WAIT_S,
+                self._sibling_detail(sibling),
             )
-            return
 
         # Sweep stale daemon generations from previous restarts before
         # writing the new PID file so their log handles are released. Never a
         # process younger than us: that is a concurrent boot, and it yields
         # (above) on its own — sweeping it too is how two boots killed each
-        # other.
+        # other. A wedged sibling from BEFORE us is exactly what this reap is
+        # for (see the claim wait above).
         swept = self._kill_orphan_daemons(
             exclude_pid=os.getpid(), only_older_than=_own_create_time(), pids=candidates
         )
         if swept:
             self.logger.info("Swept %d orphan daemon PID(s): %s", len(swept), swept)
 
+        # A concurrent boot may have claimed the pid file while we swept.
+        owner = self.read_pid()
+        if owner is not None and owner != os.getpid():
+            self.logger.info(
+                "Another supervisor (pid=%d) claimed the boot while we swept — exiting", owner
+            )
+            return
+
         self._running = True
         self._started_at = datetime.now(timezone.utc).isoformat()
-        self._write_pid()
-        self.logger.info("=== NAVIG Daemon starting (pid=%d) ===", os.getpid())
+        # A pid file left behind means the previous daemon never ran _shutdown().
+        had_previous_pid = _pid_file().exists()
+        if not self._claim_pid():
+            owner = self.read_pid()
+            self.logger.info(
+                "Another supervisor (pid=%s) claimed the pid file first — exiting", owner
+            )
+            self._running = False
+            return
+        # Post-claim verify: our link was atomic, but a competitor on a
+        # hard-link-less filesystem replaces instead of links. If the file no
+        # longer names US, the other boot owns the daemon — never run as a
+        # second supervisor on someone else's pid file.
+        owner = self.read_pid()
+        if owner != os.getpid():
+            self.logger.warning(
+                "The pid file names pid=%s after our claim — another supervisor took "
+                "over, exiting rather than running twice",
+                owner,
+            )
+            self._running = False
+            return
+        from navig.daemon.restart_cause import boot_cause
+
+        self.logger.info(
+            "=== NAVIG Daemon starting (pid=%d) — cause: %s ===",
+            os.getpid(),
+            boot_cause(had_previous_pid=had_previous_pid),
+        )
 
         # Register signal handlers
         if sys.platform == "win32":
@@ -1207,6 +1348,7 @@ class NavigDaemon:
                         self._write_state()
 
                 self._heartbeat()
+                self._maybe_rotate_child_logs()
                 await asyncio.sleep(2)  # poll interval
         finally:
             if self._health_server is not None:
@@ -1222,6 +1364,9 @@ class NavigDaemon:
         self._remove_pid()
         if _state_file().exists():
             _state_file().unlink(missing_ok=True)
+        from navig.daemon.restart_cause import mark_clean_exit
+
+        mark_clean_exit()
         self.logger.info("=== NAVIG Daemon stopped ===")
 
     # -- external control --------------------------------------------------
@@ -1308,6 +1453,16 @@ class NavigDaemon:
     #: WMI-bound (~10–20 s measured); a minute covers a loaded machine.
     BOOT_GRACE_S: float = 90.0
 
+    #: How long a boot waits for the sibling it would yield to to CLAIM the pid
+    #: file before treating it as wedged and taking over. A healthy sibling
+    #: claims within one sweep (~10–25 s measured); a sibling wedged before its
+    #: first claim never does. Measured on 2026-10-17 (a fresh Windows join):
+    #: every scheduled-task boot yielded to a "booting" sibling that never
+    #: logged a line, the yield ran BEFORE the sweep, so nothing could ever reap
+    #: it — no pid file was ever written and the gateway never came up, for
+    #: hours, across every 5-minute watchdog retry.
+    SIBLING_CLAIM_WAIT_S: float = 30.0
+
     @staticmethod
     def booting_supervisor_pids(
         *, config_dir: Path | None = None, candidates: list[int] | None = None
@@ -1358,6 +1513,80 @@ class NavigDaemon:
             if ours - self.BOOT_GRACE_S <= created < ours:
                 return pid
         return None
+
+    @staticmethod
+    def _sibling_detail(pid: int) -> str:
+        """``" [pythonw -c '…navig.daemon.entry…', started 12s ago]"`` — best effort.
+
+        The 2026-10-17 dark-join incident yielded to a pid that never logged a
+        line, and the log said nothing about WHO was deferred to. One bounded
+        psutil read per yield turns the next occurrence into a diagnosis instead
+        of a mystery. Never raises: an unreadable process is just the bare pid.
+        """
+        try:
+            import psutil  # type: ignore[import-untyped]
+
+            proc = psutil.Process(pid)
+            cmd = " ".join(proc.cmdline() or []) or "?"
+            if len(cmd) > 160:
+                cmd = cmd[:157] + "…"
+            age = max(0, int(time.time() - proc.create_time()))
+            return f" [{cmd}, started {age}s ago]"
+        except Exception:  # noqa: BLE001 — forensics must never break a boot
+            return ""
+
+    def _await_sibling_claim(self, sibling: int) -> bool:
+        """True once *sibling* has claimed the pid file — i.e. it is winning the boot.
+
+        The yield this guards used to be unconditional, which is safe ONLY while
+        the sibling actually completes its boot. A sibling wedged before its
+        first claim (the 2026-10-17 join: silent, unkillable-by-the-yielder,
+        re-encountered by every retry) deferred forever. Poll instead: a healthy
+        sibling claims within one sweep; one that never does is handed to the
+        sweep below. A pid file claimed by anyone else is also not ours to
+        yield to — the pre-write check will arbitrate that case.
+        """
+        deadline = time.monotonic() + self.SIBLING_CLAIM_WAIT_S
+        while True:
+            owner = self.read_pid()
+            if owner == sibling:
+                return True
+            if owner is not None:
+                return False
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.5)
+
+    def _claim_pid(self) -> bool:
+        """Atomically take the pid file; False when someone else owns it already.
+
+        ``_write_pid`` replaced whatever was there, so two boots that both
+        reached the write could both believe they owned the daemon — the
+        measured "three supervisors, two gateways" multiplication. The claim
+        writes the content to a temp file FIRST and hard-links it into place:
+        ``os.link`` fails with EEXIST when the name is taken (a real race lost,
+        not a silent overwrite), and the name only ever becomes visible with
+        complete content, so a concurrent ``read_pid`` never parses an empty
+        file. Filesystems without hard links fall back to the old replace,
+        arbitrated by a live-owner check.
+        """
+        pf = _pid_file()
+        tmp = pf.with_name(f"{pf.name}.{os.getpid()}.tmp")
+        tmp.write_text(str(os.getpid()), encoding="utf-8")
+        try:
+            os.link(tmp, pf)
+            tmp.unlink(missing_ok=True)
+            return True
+        except FileExistsError:
+            tmp.unlink(missing_ok=True)
+            return False
+        except (OSError, NotImplementedError):
+            # No hard links (FAT/exotic FS): replace, but never over a LIVE owner.
+            tmp.unlink(missing_ok=True)
+            if self.read_pid() is not None:
+                return False
+            atomic_write_text(pf, str(os.getpid()))
+            return True
 
     @staticmethod
     def _kill_orphan_daemons(

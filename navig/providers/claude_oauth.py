@@ -22,6 +22,7 @@ import hashlib
 import secrets
 import time
 from dataclasses import dataclass, field
+from typing import Any
 from urllib.parse import urlencode
 
 # Public OAuth client config — the same public PKCE client the official CLI uses.
@@ -169,3 +170,30 @@ async def refresh_tokens(refresh_token: str) -> dict:
     if not out["refresh_token"]:
         out["refresh_token"] = refresh_token
     return out
+
+
+#: Seconds before expiry at which an access token is treated as stale.
+REFRESH_BUFFER_S = 300
+
+_refresh_locks: dict[int, Any] = {}
+
+
+def refresh_lock():
+    """The one lock every in-process Claude token refresh takes.
+
+    A refresh response can carry a NEW refresh token, which retires the old one.
+    Two refreshes racing on the same bundle therefore leave one of them holding a
+    dead token, and whichever writes last may store it. Dispatch
+    (``NativeDriver._oauth_access_token``) and the OS token lease
+    (``connect.lease_claude_access_token``) both refresh, so both take this lock
+    and re-read the stored bundle once they hold it.
+
+    One lock per event loop: an ``asyncio.Lock`` must not be shared across loops.
+    """
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+    lock = _refresh_locks.get(id(loop))
+    if lock is None:
+        lock = _refresh_locks[id(loop)] = asyncio.Lock()
+    return lock

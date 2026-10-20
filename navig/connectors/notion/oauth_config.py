@@ -1,9 +1,8 @@
 """Notion OAuth configuration."""
 from __future__ import annotations
 
-import os
-
 from navig.connectors.oauth_redirect import connector_redirect_uri
+from navig.connectors.secrets import oauth_app_credentials
 from navig.providers.oauth import OAuthProviderConfig
 
 
@@ -20,7 +19,9 @@ def build_notion_oauth_config(client_id: str, client_secret: str | None = None) 
     )
 
 def get_notion_oauth_config() -> OAuthProviderConfig | None:
-    client_id = os.getenv("NOTION_CLIENT_ID", "")
+    """Env ``NOTION_CLIENT_ID``/``NOTION_CLIENT_SECRET`` first, then the vault labels
+    ``notion/oauth_client_id`` / ``notion/oauth_client_secret`` (what the app saves)."""
+    client_id, client_secret = oauth_app_credentials("notion", "NOTION")
     if not client_id:
         return None
-    return build_notion_oauth_config(client_id, os.getenv("NOTION_CLIENT_SECRET"))
+    return build_notion_oauth_config(client_id, client_secret)

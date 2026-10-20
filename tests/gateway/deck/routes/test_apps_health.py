@@ -184,25 +184,94 @@ async def test_a_healthy_read_leaves_unavailable_null(record, no_habits):
     assert (await _get())["unavailable"] is None
 
 
-# ── habit counts, which were always real, still work ──────────────────────────
+# ── "done today" comes from the RECORD, never from a job having run ───────────
 
 
-async def test_habit_counts_are_still_reported(record, monkeypatch):
+@pytest.fixture
+def habits_csv(tmp_path, monkeypatch):
+    """An isolated habits.csv the endpoint resolves to."""
     from navig.gateway.deck.routes import apps as apps_mod
 
+    path = tmp_path / "habits.csv"
+    path.write_text("date,habit,completed,notes\n", encoding="utf-8")
+    monkeypatch.setattr(apps_mod, "_habits_path", lambda: path)
+    return path
+
+
+async def test_habit_counts_are_still_reported(record, habits_csv, monkeypatch):
+    from navig.gateway.deck.routes import apps as apps_mod
+    from navig.spaces import habit_tracker as ht
+
     today = date.today().isoformat()
+    ht.upsert(habits_csv, today, "ship", "yes")
 
     async def _jobs():
         return [
-            {"name": "habit:weigh", "last_run": f"{today}T08:10:00"},
-            {"name": "habit:ship", "last_run": "2020-01-01T00:00:00"},
+            {"name": "habit:ship", "command": "NAVIG_HABIT_REMINDER:1:eA==", "last_run": "2020-01-01T00:00:00"},
+            {"name": "habit:wake", "command": "NAVIG_HABIT_REMINDER:1:eA==", "last_run": f"{today}T07:00:00"},
             {"name": "not-a-habit", "last_run": f"{today}T09:00:00"},
         ], None
 
     monkeypatch.setattr(apps_mod, "_async_load_cron_jobs", _jobs)
     data = await _get()
     assert data["habits_total"] == 2          # the non-habit job is excluded
+    # `ship` has a done row; `wake` only had its reminder fire — that is not done.
     assert data["habits_done_today"] == 1
+
+
+async def test_a_reminder_that_fired_is_not_a_habit_done(record, habits_csv, monkeypatch):
+    """The regression: done used to mean "its job's last_run is today"."""
+    from navig.gateway.deck.routes import apps as apps_mod
+
+    today = date.today().isoformat()
+
+    async def _jobs():
+        return [{"name": "habit:wake", "command": "NAVIG_HABIT_REMINDER:1:eA==", "last_run": f"{today}T07:00:00"}], None
+
+    monkeypatch.setattr(apps_mod, "_async_load_cron_jobs", _jobs)
+    assert (await _get())["habits_done_today"] == 0
+
+
+async def test_the_legacy_weigh_job_is_done_by_todays_weight(record, habits_csv, monkeypatch):
+    from navig.gateway.deck.routes import apps as apps_mod
+    from navig.spaces import body_metrics as bm
+
+    today = date.today().isoformat()
+
+    async def _jobs():
+        return [
+            {"name": "habit:weigh", "command": "navig body checkin --send --space x", "last_run": f"{today}T08:10:00"},
+            {"name": "habit:bodyreview", "command": "navig body checkin --weekly --send --space x", "last_run": f"{today}T18:45:00"},
+        ], None
+
+    monkeypatch.setattr(apps_mod, "_async_load_cron_jobs", _jobs)
+    assert (await _get())["habits_done_today"] == 0, "asked is not answered"
+    bm.upsert(record, today, {"weight_kg": "88"})
+    assert (await _get())["habits_done_today"] == 1
+    bm.upsert(record, today, {"mood_1_10": "8"})
+    assert (await _get())["habits_done_today"] == 2
+
+
+async def test_checkins_report_done_from_their_records(record, habits_csv, no_habits, monkeypatch):
+    """Water is done at its target, read from checkins.jsonl beside metrics.csv."""
+    from navig.checkins import defs as d
+    from navig.checkins import records
+    from navig.config import reset_config_manager
+
+    reset_config_manager()
+    d.save_item(d.validate("water", {"target": 2}))
+    path = record.parent / records.RECORDS_FILE
+    today = date.today().isoformat()
+
+    data = await _get()
+    water = next(c for c in data["checkins"] if c["id"] == "water")
+    assert water["done"] is False
+    for _ in range(2):
+        records.append(path, {"date": today, "item": "water", "kind": "count", "status": "add", "value": 1})
+    data = await _get()
+    water = next(c for c in data["checkins"] if c["id"] == "water")
+    assert water["done"] is True and water["state"] == "2/2"
+    reset_config_manager()
 
 
 # ── which file it reads ───────────────────────────────────────────────────────

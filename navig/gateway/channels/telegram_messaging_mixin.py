@@ -140,14 +140,15 @@ class TelegramMessagingMixin:
 
     # ── Natural-language messaging (voice or text) ────────────
     async def _try_nl_messaging_intent(
-        self, chat_id: int, text: str, metadata: dict | None = None
+        self, chat_id: int, text: str, metadata: dict | None = None, *, user_id: int = 0
     ) -> bool:
         """Detect a free-form 'send SMS/message to <contact>' instruction (any
-        language, incl. a requested translation) and dispatch it. Returns True
-        when handled. Powers voice commands like
-        «Навиг отправь смс Алексу на французском "Привет бро"»: the transcribed
-        text is parsed by the LLM, translated into the requested language, the
-        contact is resolved to a phone number, and the SMS is sent."""
+        language, incl. a requested translation) and turn it into a DRAFT card.
+        Returns True when handled. Powers voice commands like
+        «Навиг отправь смс Алексу на французском "Привет бро"»: the text is parsed
+        by the LLM and translated if asked — and then NOTHING is sent until the
+        operator taps ✅ Send on the card (``navig.telegram.send_drafts``). An LLM's
+        reading of free text is never the last step before a real message leaves."""
         low = (text or "").lower()
         # Cheap gate: only spend an LLM call when a messaging channel is named.
         if not any(g in low for g in ("sms", "смс", "whatsapp", "ватсап", "envoie", "manda")):
@@ -197,24 +198,18 @@ class TelegramMessagingMixin:
         if not contact or not message:
             return False
 
-        try:
-            receipt = await self._messaging_dispatch(contact, message, network=channel)
-        except Exception as exc:
-            await self.send_message(chat_id, f"❌ Couldn't send to {html.escape(contact)}: {exc}")
-            return True
-        if getattr(receipt, "ok", False):
-            lang = data.get("language")
-            tail = f" (in {lang})" if lang else ""
-            await self.send_message(
-                chat_id,
-                f"✅ {channel.upper()} sent to <b>{html.escape(contact)}</b>{html.escape(tail)}:\n{html.escape(message)}",
-                parse_mode="HTML",
-            )
-        else:
-            await self.send_message(
-                chat_id,
-                f"❌ Couldn't send to {html.escape(contact)}: {getattr(receipt, 'error', 'failed')}",
-            )
+        from navig.telegram import send_drafts
+
+        draft = send_drafts.create(
+            chat_id=chat_id,
+            user_id=user_id or chat_id,
+            contact=contact,
+            channel=channel,
+            message=message,
+            language=(str(data.get("language")).strip() or None) if data.get("language") else None,
+        )
+        card_text, keyboard = send_drafts.card(draft)
+        await self.send_message(chat_id, card_text, parse_mode="HTML", keyboard=keyboard)
         return True
 
     # ── /wa @alias message ────────────────────────────────────

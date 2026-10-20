@@ -1,25 +1,33 @@
 """
-Install routes — serve one-liner bootstrap scripts over HTTP.
+Install routes — the LAN "add a device" flow.
 
-GET  /install               → HTML page with copy-buttons for every OS
-GET  /install/windows       → PowerShell one-liner (plain text)
-GET  /install/linux         → Bash one-liner (plain text)
+GET  /install               → the join page (NAVIG OS look, OS tabs, QR, copy buttons)
+GET  /install/windows.ps1   → the Windows join script     (run: irm <url> | iex)
+GET  /install/unix.sh       → the macOS/Linux join script (run: curl -fsSL <url> | bash)
 GET  /install/config        → JSON mesh bootstrap config (token + gateway url)
 
-Design intent:
-  Sits behind NO auth — user must be on the same LAN.
-  The mesh_token in /install/config is a shared LAN secret,
-  not a personal bearer token.
+Aliases kept for every command ever printed: ``/install/windows`` serves the
+Windows script, ``/install/linux`` and ``/install/mac`` the unix one — the old
+``& ([scriptblock]::Create((iwr …/install/windows).Content))`` and
+``curl -fsSL …/install/linux | bash`` forms keep working.
 
-Usage:
-  On the new machine, open a browser or run:
-    Windows: & ([scriptblock]::Create((iwr http://10.0.x.x:8789/install/windows).Content))
-    Linux:   curl -fsSL http://10.0.x.x:8789/install/linux | bash
+Design intent:
+  The join flow is a LAN service. Every route is gated to private/loopback
+  requesters (`mesh.url_guard.ip_is_lan`) — a gateway that happens to be
+  reachable from the internet hands NOTHING out here. Inside the LAN the
+  mesh_token is a shared fleet secret (the same value `flux install --push`
+  distributes), not a personal bearer token: it authenticates the joiner's
+  `/mesh/ping` and later peer hops, never an admin route.
+
+  The PAGE never shows the token: the visible commands only fetch a script,
+  and the token travels inside that script. (The old page printed it in the
+  one-liner, so it ended up in screenshots and chat logs.)
 """
 
 from __future__ import annotations
 
-import textwrap
+import json
+import socket
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -32,112 +40,66 @@ except ImportError as _exc:
 
 from navig._daemon_defaults import _GATEWAY_PORT
 from navig.debug_logger import get_debug_logger
+from navig.gateway.routes import _install_assets as assets
 
 logger = get_debug_logger()
 
-_HTML_TEMPLATE = """\
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NAVIG Installer</title>
-<style>
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
-          background: #080E1A; color: #E5E7EB; padding: 40px 20px; }}
-  h1   {{ color: #0EA5E9; font-size: 1.4rem; margin-bottom: 8px; }}
-  p    {{ color: #6B7280; font-size: .85rem; margin-bottom: 32px; }}
-  .card {{ background: #0D1626; border: 1px solid #1E3A5A; border-radius: 10px;
-           padding: 20px; margin-bottom: 20px; }}
-  .card h2 {{ font-size: 1rem; margin-bottom: 12px; color: #38BDF8; }}
-  pre  {{ background: #050E1A; border: 1px solid #1E2A3A; border-radius: 6px;
-          padding: 14px; font-size: .82rem; color: #A5F3FC; white-space: pre-wrap;
-          word-break: break-all; cursor: text; user-select: all; }}
-  .btn {{ display: inline-block; margin-top: 10px; padding: 8px 18px;
-          background: #0EA5E9; border: none; border-radius: 6px; color: #fff;
-          font-family: inherit; font-size: .82rem; cursor: pointer; }}
-  .btn:hover {{ background: #0284C7; }}
-  .badge {{ display: inline-block; padding: 2px 8px; border-radius: 10px;
-             font-size: .75rem; background: #10B981; color: #fff;
-             vertical-align: middle; margin-left: 8px; }}
-  .note {{ font-size:.78rem; color:#4B5563; margin-top:8px; }}
-  .qr-card {{ text-align:center; }}
-  .qr-card img {{ display:block; margin:12px auto; border-radius:8px;
-                  border:2px solid #1E3A5A; image-rendering:crisp-edges; }}
-  .qr-url {{ font-size:.78rem; color:#38BDF8; margin-top:8px; word-break:break-all; }}
-</style>
-</head>
-<body>
-<h1>NAVIG — Join this mesh</h1>
-<p>Run the command below on the machine you want to add. It will install NAVIG and
-   automatically join the mesh hosted at <strong>{gateway_url}</strong>.</p>
-
-<div class="card qr-card">
-  <h2>Scan to open on another device</h2>
-    <img src="{qr_img_src}"
-       alt="QR — scan to open this page" width="200" height="200">
-  <p class="qr-url">{gateway_url}/install</p>
-  <p class="note">Scan with phone or tablet — opens this page without
-      typing the URL.</p>
-</div>
-
-<div class="card">
-  <h2>Windows <span class="badge">PowerShell</span></h2>
-  <pre id="win">{win_cmd}</pre>
-  <button class="btn" onclick="copy('win')">Copy</button>
-  <p class="note">Open PowerShell (any, no admin needed for install). Paste and press Enter.</p>
-</div>
-
-<div class="card">
-  <h2>Linux / macOS <span class="badge">bash</span></h2>
-  <pre id="nix">{nix_cmd}</pre>
-  <button class="btn" onclick="copy('nix')">Copy</button>
-  <p class="note">Tested on Ubuntu 20+, Debian 11+, macOS 12+.</p>
-</div>
-
-<div class="card">
-  <h2>After install</h2>
-  <pre>navig service start
-navig host list     # your new machine should appear here within 15 s</pre>
-  <p class="note">Both machines must be on the same LAN. The mesh_token is shared automatically.</p>
-</div>
-
-<script>
-function copy(id) {{
-  const t = document.getElementById(id).textContent;
-  navigator.clipboard.writeText(t).then(() => alert('Copied!'));
-}}
-</script>
-</body>
-</html>
-"""
+_TEXT = "text/plain"
 
 
 def register(app: web.Application, gateway: NavigGateway) -> None:
     app.router.add_get("/install", _html(gateway))
-    app.router.add_get("/install/windows", _windows(gateway))
-    app.router.add_get("/install/linux", _linux(gateway))
-    app.router.add_get("/install/mac", _linux(gateway))  # same script
+    app.router.add_get("/install/windows.ps1", _windows(gateway))
+    app.router.add_get("/install/unix.sh", _unix(gateway))
     app.router.add_get("/install/config", _config(gateway))
+    # Aliases — every command ever printed for this flow keeps working.
+    app.router.add_get("/install/windows", _windows(gateway))
+    app.router.add_get("/install/linux", _unix(gateway))
+    app.router.add_get("/install/mac", _unix(gateway))
 
 
 # ─────────────────────────── helpers ─────────────────────────────────────────
 
 
+def _lan_only(request: web.Request) -> web.Response | None:
+    """Refuse token-bearing bootstrap content to non-LAN requesters.
+
+    Every route on this module embeds or returns the fleet-shared mesh_token,
+    so every route inherits this gate. `ip_is_lan` accepts private + loopback
+    (not link-local): a gateway accidentally exposed to the public internet
+    answers 403 here instead of handing out its join secret.
+    """
+    from navig.mesh.url_guard import ip_is_lan
+
+    remote = str(getattr(request, "remote", "") or "")
+    if ip_is_lan(remote):
+        return None
+    logger.warning(
+        "[install] refused bootstrap from non-LAN remote %s", remote or "?"
+    )
+    return web.json_response(
+        {
+            "ok": False,
+            "error": "The join page is served on the LAN only",
+            "error_code": "not_lan",
+        },
+        status=403,
+    )
+
+
 def _get_my_url(gw: NavigGateway) -> str:
     """Best guess at this machine's reachable gateway URL from other LAN machines."""
     try:
-        ip = gw.config.get("gateway", {}).get("host") or _lan_ip()
-        port = gw.config.get("gateway", {}).get("port", _GATEWAY_PORT)
-        return f"http://{ip}:{port}"
+        host = str(getattr(gw.config, "host", "") or "")
+        if host in ("", "0.0.0.0", "::", "[::]"):
+            host = _lan_ip()
+        port = int(getattr(gw.config, "port", None) or _GATEWAY_PORT)
+        return f"http://{host}:{port}"
     except Exception:
         return f"http://localhost:{_GATEWAY_PORT}"
 
 
 def _lan_ip() -> str:
-    import socket
-
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(("8.8.8.8", 80))
@@ -149,7 +111,44 @@ def _lan_ip() -> str:
 
 
 def _mesh_token(gw: NavigGateway) -> str:
-    return gw.config.get("gateway", {}).get("mesh_token", "")
+    """The fleet-shared peer secret — request-time read (first-boot mint safe)."""
+    from navig.gateway.routes.common import gateway_mesh_token
+
+    return gateway_mesh_token(gw) or ""
+
+
+def _hub_name() -> str:
+    return socket.gethostname() or "your NAVIG"
+
+
+def _peer_count(gw: NavigGateway) -> int | None:
+    """Devices already linked — a page decoration, so any failure is just 'unknown'."""
+    try:
+        from navig.mesh.registry import get_registry
+
+        return len(get_registry(gw.storage_dir).get_peers())
+    except Exception:  # noqa: BLE001 — never let the badge break the page
+        return None
+
+
+def windows_command(gateway_url: str) -> str:
+    """What the page shows for Windows — a fetch, never the token itself."""
+    return f"irm {gateway_url}/install/windows.ps1 | iex"
+
+
+def unix_command(gateway_url: str) -> str:
+    """What the page shows for macOS / Linux — a fetch, never the token itself."""
+    return f"curl -fsSL {gateway_url}/install/unix.sh | bash"
+
+
+def _qr_svg(page_url: str) -> str:
+    try:
+        from navig.core.qr import qr_svg
+
+        return qr_svg(page_url, title="Scan to open the NAVIG join page")
+    except Exception as exc:  # noqa: BLE001 — a missing QR must never break the page
+        logger.warning("[install] QR render failed: %s", exc)
+        return ""
 
 
 # ─────────────────────────── route handlers ──────────────────────────────────
@@ -157,41 +156,56 @@ def _mesh_token(gw: NavigGateway) -> str:
 
 def _html(gw: NavigGateway):
     async def h(r: web.Request) -> web.Response:
+        blocked = _lan_only(r)
+        if blocked is not None:
+            return blocked
         url = _get_my_url(gw)
-        token = _mesh_token(gw)
-        win = _ps1_oneliner(url, token)
-        nix = _bash_oneliner(url, token)
-        qr_img_src = (
-            "https://api.qrserver.com/v1/create-qr-code/"
-            f"?size=200x200&color=A5F3FC&bgcolor=050E1A&data={url}/install"
-        )
-        body = _HTML_TEMPLATE.format(
+        body = assets.page_html(
+            hub_name=_hub_name(),
             gateway_url=url,
-            qr_img_src=qr_img_src,
-            win_cmd=win,
-            nix_cmd=nix,
+            win_cmd=windows_command(url),
+            nix_cmd=unix_command(url),
+            qr_svg=_qr_svg(f"{url}/install"),
+            peer_count=_peer_count(gw),
         )
-        return web.Response(text=body, content_type="text/html")
+        return web.Response(
+            text=body,
+            content_type="text/html",
+            charset="utf-8",
+            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+        )
 
     return h
 
 
 def _windows(gw: NavigGateway):
     async def h(r: web.Request) -> web.Response:
-        url = _get_my_url(gw)
-        token = _mesh_token(gw)
-        script = _ps1_oneliner(url, token)
-        return web.Response(text=script, content_type="text/plain")
+        blocked = _lan_only(r)
+        if blocked is not None:
+            return blocked
+        script = assets.windows_script(
+            hub_name=_hub_name(), gateway_url=_get_my_url(gw), mesh_token=_mesh_token(gw)
+        )
+        # PowerShell 5.1 decodes `irm` bodies by this charset — without it the
+        # script's non-ASCII bytes arrive as mojibake.
+        return web.Response(
+            text=script, content_type=_TEXT, charset="utf-8", headers={"Cache-Control": "no-store"}
+        )
 
     return h
 
 
-def _linux(gw: NavigGateway):
+def _unix(gw: NavigGateway):
     async def h(r: web.Request) -> web.Response:
-        url = _get_my_url(gw)
-        token = _mesh_token(gw)
-        script = _bash_oneliner(url, token)
-        return web.Response(text=script, content_type="text/plain")
+        blocked = _lan_only(r)
+        if blocked is not None:
+            return blocked
+        script = assets.unix_script(
+            hub_name=_hub_name(), gateway_url=_get_my_url(gw), mesh_token=_mesh_token(gw)
+        )
+        return web.Response(
+            text=script, content_type=_TEXT, charset="utf-8", headers={"Cache-Control": "no-store"}
+        )
 
     return h
 
@@ -200,79 +214,20 @@ def _config(gw: NavigGateway):
     """Return a minimal JSON bootstrap config so a new node can join without browsing."""
 
     async def h(r: web.Request) -> web.Response:
-        import json
-
+        blocked = _lan_only(r)
+        if blocked is not None:
+            return blocked
         url = _get_my_url(gw)
-        token = _mesh_token(gw)
         data = {
             "gateway_url": url,
-            "mesh_token": token,
-            "install_hint": f"curl -fsSL {url}/install/linux | bash",
+            "mesh_token": _mesh_token(gw),
+            "install_hint": unix_command(url),
+            "install_hint_windows": windows_command(url),
         }
         return web.Response(
             text=json.dumps(data, indent=2),
             content_type="application/json",
+            headers={"Cache-Control": "no-store"},
         )
 
     return h
-
-
-# ─────────────────────────── script builders ─────────────────────────────────
-
-
-def _ps1_oneliner(gateway_url: str, mesh_token: str) -> str:
-    """
-    Single PowerShell expression that:
-      1. Downloads install.ps1 from GitHub (latest release)
-         OR falls back to pip install navig
-      2. After install, writes mesh_token to the global config
-      3. Starts the NAVIG service
-      4. Posts /mesh/ping back to the source gateway
-
-    Designed to run without admin rights (installs into user site-packages).
-    Admin is requested automatically if the service requires it.
-    """
-    token_line = ""
-    if mesh_token:
-        token_line = f"navig config set gateway.mesh_token '{mesh_token}'; "
-
-    script = textwrap.dedent(
-        f"""\
-        $NAVIG_GATEWAY='{gateway_url}'; \
-        $NAVIG_TOKEN='{mesh_token}'; \
-        $env:PYTHONUTF8='1'; \
-        try {{ \
-          Invoke-RestMethod "$NAVIG_GATEWAY/install/windows.ps1" | Invoke-Expression \
-        }} catch {{ \
-          Write-Host 'Direct download failed, falling back to pip...' -ForegroundColor Yellow; \
-          python -m pip install --user --upgrade navig \
-        }}; \
-        {token_line}\
-
-        navig service install; navig service start; \
-        Start-Sleep 3; \
-        Invoke-RestMethod -Method Post -Uri "$NAVIG_GATEWAY/mesh/ping" \
-          -ContentType 'application/json' \
-          -Body (@{{gateway_url="http://localhost:{_GATEWAY_PORT}"}}|ConvertTo-Json) | Out-Null; \
-        Write-Host '✓ NAVIG joined the mesh!' -ForegroundColor Green\
-    """
-    ).replace("\n", "")
-
-    return script
-
-
-def _bash_oneliner(gateway_url: str, mesh_token: str) -> str:
-    token_export = f"export NAVIG_MESH_TOKEN='{mesh_token}'; " if mesh_token else ""
-    return (
-        f"export NAVIG_GATEWAY='{gateway_url}'; "
-        f"{token_export}"
-        f"curl -fsSL https://raw.githubusercontent.com/navig-run/core/main/install.sh | bash || "
-        f"pip install --user --upgrade navig; "
-        f'navig config set gateway.mesh_token "$NAVIG_MESH_TOKEN"; '
-        f"navig service install && navig service start; "
-        f"sleep 3 && "
-        f"curl -s -X POST '$NAVIG_GATEWAY/mesh/ping' "
-        f"  -H 'Content-Type: application/json' "
-        f'  -d \'{{"gateway_url":"http://localhost:8789"}}\' > /dev/null && '
-        f"echo '✓ NAVIG joined the mesh!'"
-    )

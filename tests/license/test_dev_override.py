@@ -107,13 +107,29 @@ def test_override_ignored_on_shipped_install(isolated_config, monkeypatch):
     assert st.license_id != "dev-override"          # fell through to the real path
 
 
-def test_env_opt_in_allows_override(isolated_config, monkeypatch):
-    """An explicit NAVIG_DEV_LICENSE opt-in honors the override even without the
-    source tool (for testing a shipped build)."""
+def test_env_var_no_longer_unlocks_a_shipped_install(isolated_config, monkeypatch):
+    """SECURITY: ``NAVIG_DEV_LICENSE=1`` used to honour the override on ANY
+    install, so an env var plus one JSON file granted Enterprise unsigned.
+
+    This replaces a test that monkeypatched ``_dev_overrides_allowed`` itself
+    with a reimplementation — it asserted its own lambda, never the real rule.
+    Here only the source-detection is simulated; the decision is the real one.
+    """
     lic = isolated_config
-    monkeypatch.setattr(lic, "_dev_overrides_allowed",
-                        lambda: lic._coerce_bool(__import__("os").environ.get("NAVIG_DEV_LICENSE"), False))
+    monkeypatch.setattr(lic, "_is_source_checkout", lambda: False)
     monkeypatch.setenv("NAVIG_DEV_LICENSE", "1")
+    _write_override(lic, {"tier": "enterprise"})
+    lic._invalidate_cache()
+    st = lic.current_status()
+    assert st.effective_tier != "enterprise"
+    assert st.license_id != "dev-override"
+
+
+def test_source_checkout_still_honours_the_override(isolated_config, monkeypatch):
+    """Anti-vacuity partner: the dev switcher keeps working where it runs."""
+    lic = isolated_config
+    monkeypatch.setattr(lic, "_is_source_checkout", lambda: True)
+    monkeypatch.delenv("NAVIG_DEV_LICENSE", raising=False)
     _write_override(lic, {"tier": "max"})
     lic._invalidate_cache()
     assert lic.current_status().effective_tier == "max"

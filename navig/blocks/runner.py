@@ -460,7 +460,7 @@ def _step_block(step, ctx, project_root, workdir, depth, ancestry, approvals, ye
     if child is None:
         return StepResult(step.id, step.kind, "failed", risk=risk,
                           detail=f"child block '{step.use}' not installed "
-                                 f"(navig install add block:navig-run/community/blocks/{step.use})")
+                                 f"(navig install add block:navig-run/registry/blocks/{step.use})")
     # The parent was validated by its caller; the child never was. Without this a
     # valid parent could pull in an invalid child and inherit its outcome — the
     # child's failure to verify anything becomes the parent's "succeeded".

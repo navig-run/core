@@ -1,13 +1,17 @@
-"""Domain tool packs (image/video/audio) — the async→sync bridge.
+"""Domain tool packs (image/video/audio) — async handlers, no sync bridge.
 
-Regression: when the handler runs inside a thread that already has a running
-event loop, `generate()` is bridged through a worker thread — but the generator
-must ALSO be closed on that worker loop. Closing via `asyncio.run()` in the
-caller's thread raises `RuntimeError: asyncio.run() cannot be called from a
-running event loop` and torpedoed every successful in-loop invocation.
+The packs used to bridge async→sync: inside a running loop they ran `generate()` on a
+worker thread and blocked the caller's event loop on ``.result()`` for the whole render.
+They are now ``async def`` handlers: the ToolRouter awaits them (``async_execute``) or
+drives them to completion where no loop runs (``execute``). Generate and close still
+happen on the SAME loop — the client is bound to it.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
 
 import navig.tools.audio_generation as ag
 import navig.tools.image_generation as ig
@@ -41,24 +45,87 @@ def _stub_gen(result):
     return _StubGen
 
 
-async def test_image_pack_bridge_survives_running_loop(monkeypatch):
+def test_every_pack_handler_is_async_so_it_cannot_block_a_loop():
+    import inspect
+
+    for pack in (image_pack, audio_pack, video_pack):
+        assert inspect.iscoroutinefunction(pack._generate), pack.__name__
+        assert not hasattr(pack, "_sync_generate"), f"{pack.__name__} still has the sync bridge"
+
+
+async def test_image_pack_awaits_inside_a_running_loop(monkeypatch):
     monkeypatch.setattr(ig, "ImageGenerator", _stub_gen([]))
-    assert image_pack._sync_generate(prompt="x") == []
+    assert await image_pack._generate(prompt="x") == []
 
 
-async def test_video_pack_bridge_survives_running_loop(monkeypatch):
+async def test_video_pack_awaits_inside_a_running_loop(monkeypatch):
     monkeypatch.setattr(vg, "VideoGenerator", _stub_gen(_Result()))
-    out = video_pack._sync_generate(prompt="x")
+    out = await video_pack._generate(prompt="x")
     assert out["provider"] == "stub"
 
 
-async def test_audio_pack_bridge_survives_running_loop(monkeypatch):
+async def test_audio_pack_awaits_inside_a_running_loop(monkeypatch):
     monkeypatch.setattr(ag, "AudioGenerator", _stub_gen(_Result()))
-    out = audio_pack._sync_generate(prompt="x")
+    out = await audio_pack._generate(prompt="x")
     assert out["kind"] == "stub"
 
 
-def test_image_pack_bridge_without_running_loop(monkeypatch):
-    """The no-loop path (plain sync caller) keeps working."""
+def test_image_pack_runs_where_no_loop_is_running(monkeypatch):
+    """The no-loop path (a plain sync caller, as router.execute drives it) keeps working."""
+    import asyncio
+
     monkeypatch.setattr(ig, "ImageGenerator", _stub_gen([]))
-    assert image_pack._sync_generate(prompt="x") == []
+    assert asyncio.run(image_pack._generate(prompt="x")) == []
+
+
+async def test_the_generator_is_closed_even_when_generate_fails(monkeypatch):
+    closed: list[bool] = []
+
+    class _Failing:
+        def __init__(self, config=None):
+            pass
+
+        async def generate(self, **kwargs):
+            raise RuntimeError("provider down")
+
+        async def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(ag, "AudioGenerator", _Failing)
+    with pytest.raises(RuntimeError, match="provider down"):
+        await audio_pack._generate(prompt="x")
+    assert closed == [True]
+
+
+# -- seed-image guard (a model-supplied local path is read, never exfiltrated) ---
+
+
+def test_seed_image_http_url_passes_untouched():
+    url = "https://cdn.example/frame.png"
+    assert video_pack._safe_seed_image(url) == url
+
+
+def test_seed_image_inside_the_media_home_is_allowed(tmp_path, monkeypatch):
+    """Flows inlines a local seed — allowed only under a NAVIG-owned root."""
+    import navig_sdk.host as host
+
+    home = tmp_path / "data"
+    monkeypatch.setattr(host, "media_dir", lambda kind="": home / kind)
+    seed = home / "videos" / "frame.png"
+    seed.parent.mkdir(parents=True)
+    seed.write_bytes(b"png")
+
+    got = video_pack._safe_seed_image(str(seed))
+    assert Path(got).resolve() == seed.resolve()
+
+
+def test_seed_image_outside_every_root_is_refused(tmp_path, monkeypatch):
+    """The exfil shape: a model points image_url at a secret outside every root."""
+    import navig_sdk.host as host
+
+    monkeypatch.setattr(host, "media_dir", lambda kind="": tmp_path / "data" / kind)
+    secret = tmp_path / "outside.env"
+    secret.write_text("SECRET", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="http"):
+        video_pack._safe_seed_image(str(secret))

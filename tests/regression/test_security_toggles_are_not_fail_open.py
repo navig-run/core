@@ -80,12 +80,26 @@ def _tunnel_ssh_argv(monkeypatch: pytest.MonkeyPatch, value: Any) -> list[str]:
                 "trust_new_host": value,
                 "database": {"remote_port": 3306},
             },
+            # When port 3307 is ALREADY HELD (another test's tunnel, a live
+            # session), start_tunnel's conflict branch reads global_config.
+            # The stub lacked it → AttributeError → swallowed by the
+            # pytest.raises below → "never reached the ssh spawn", which
+            # fails only under batch load and reads like a code regression.
+            # Measured 2026-10-14 by binding 3307 and watching all six
+            # tunnel tests fail exactly that way — on pristine main too.
+            "global_config": {},
         },
     )()
     monkeypatch.setattr(tunnel_mod.TunnelManager, "get_tunnel_status", lambda *a: None)
     monkeypatch.setattr(
         tunnel_mod.TunnelManager, "_find_available_port", lambda *a, **k: 3307
     )
+    # start_tunnel's `except` handler calls self._log(...), which on a bare
+    # __new__ instance raises AttributeError('log_file') and REPLACES the
+    # stub's RuntimeError ("exception while handling"). Silence it so the
+    # real exception reaches pytest.raises and a pre-spawn defect cannot be
+    # relabeled as a spawn success.
+    mgr._log = lambda *a, **k: None
 
     captured: list[list[str]] = []
 
@@ -94,7 +108,10 @@ def _tunnel_ssh_argv(monkeypatch: pytest.MonkeyPatch, value: Any) -> list[str]:
         raise RuntimeError("stop before spawning ssh")
 
     monkeypatch.setattr(tunnel_mod.subprocess, "Popen", _popen)
-    with pytest.raises(Exception):  # noqa: B017 - the stub aborts the call
+    # The SPECIFIC exception our stub raises — a bare `Exception` also swallows
+    # real defects in start_tunnel's pre-spawn path and reports them as the
+    # misleading "never reached the ssh spawn" assertion.
+    with pytest.raises(RuntimeError, match="stop before spawning ssh"):
         mgr.start_tunnel("srv")
     assert captured, "start_tunnel never reached the ssh spawn"
     return captured[0]

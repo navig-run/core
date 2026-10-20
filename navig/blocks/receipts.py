@@ -18,7 +18,7 @@ from loguru import logger
 from navig.blocks.loader import Block
 from navig.blocks.policy import Redactor
 from navig.blocks.runner import BlockRunResult
-from navig.contracts.execution_receipt import ExecutionReceipt, ReceiptOutcome
+from navig.contracts.execution_receipt import ExecutionReceipt, ReceiptOutcome, sign_receipt
 
 RUNNER_VERSION = "blocks/1"
 
@@ -82,7 +82,7 @@ def build_receipt(
         "chain": [s.child_receipt for s in run.steps if s.child_receipt],
         "run_id": run.run_id,
         "journal": run.journal_path,
-        "signature": None,  # device signing: Stage 3
+        "signature": None,  # filled by _sign() below (device Ed25519)
         "signer_kind": None,
     }
 
@@ -104,15 +104,8 @@ def build_receipt(
 
 
 def _sign(receipt: ExecutionReceipt) -> None:
-    """Attach a device signature in-place. The frozen dataclass forbids field
-    reassignment but the ``artifacts`` dict is mutable, so we update it there."""
-    try:
-        from navig.license.device_keys import sign_receipt_dict
-
-        sig = sign_receipt_dict(receipt.to_dict())
-        receipt.artifacts.update(sig)
-    except Exception as exc:  # noqa: BLE001 — signing is best-effort; unsigned stays valid
-        logger.debug("blocks.receipts: signing skipped: {}", exc)
+    """Attach a device signature in-place (shared with mission receipts)."""
+    sign_receipt(receipt)
 
 
 def receipts_dir() -> Path:

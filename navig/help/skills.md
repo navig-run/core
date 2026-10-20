@@ -4,10 +4,10 @@ Manage AI skill definitions stored under the skills/ directory.
 
 ## Commands
 
-- `navig skills list`           List available skills
-- `navig skills tree`           Show skills grouped by category
-- `navig skills show <name>`    Show skill details, commands, and examples
-- `navig skills run <spec>`     Run a skill command
+- `navig skill list`           List available skills
+- `navig skill tree`           Show skills grouped by category
+- `navig skill show <name>`    Show skill details, commands, and examples
+- `navig skill run <spec>`     Run a skill command
 
 ## Skill Run
 
@@ -22,23 +22,22 @@ The `run` command routes to skill commands or entrypoints.
 
 ```bash
 # List and discover
-navig skills list
-navig skills list --plain
-navig skills list --json
-navig skills tree
+navig skill list
+navig skill list --plain
+navig skill list --json
+navig skill tree
 
 # Show skill details
-navig skills show docker-manage
-navig skills show file-operations --json
+navig skill show docker-manage
+navig skill show official/docker-ops --json
 
 # Run skill commands
-navig skills run docker-manage:ps
-navig skills run docker-manage:stats
-navig skills run file-operations:list-files /var/log
-navig skills run git-basics:git-status
+navig skill run docker-manage:ps
+navig skill run docker-manage:stats
+navig skill run docker-manage:restart web-1   # fills the {container} placeholder
 
 # Override the skills directory
-navig skills list --dir C:/path/to/skills
+navig skill list --dir C:/path/to/skills
 ```
 
 ## Notes

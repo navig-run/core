@@ -6,10 +6,14 @@ streaming command runner that executes the navig CLI faithfully.
     GET  /api/deck/cli/commands   → command catalog (groups + flat + byPath)
     POST /api/deck/cli/exec       → run a navig command, stream output (SSE)
 
-Safety: only commands whose first token is ``navig`` run. Each command is
-classified by the EXISTING approval policy; dangerous/confirm-level commands go
-through ``gateway.approval_manager.request_approval`` (which already notifies the
-user's channels + the Inbox) before executing. ``never`` commands are blocked.
+Safety: only commands whose first token is ``navig`` run. Classification and
+approval go through the ONE composite authorization path — ``action_for_shell``
+maps the command to a policy slug, then ``gateway.policy_check`` runs
+policy → cooldown → ApprovalManager (fail-closed) → audit, with a server-derived
+``deck_actor`` identity (never a client-settable header). ``never`` commands are
+blocked up front with an explicit message, and a child spawned from here runs
+with ``NAVIG_NONINTERACTIVE=1`` so a confirmation prompt in the child fails
+closed instead of hanging on stdin nobody can answer.
 
 Registered in ``navig/gateway/deck/__init__.py``.
 """
@@ -97,26 +101,6 @@ async def handle_deck_cli_commands(request: "web.Request") -> "web.Response":
 # ── Command execution (streaming) ────────────────────────────
 
 
-def _classify(gw, sub_command: str) -> str:
-    """Classify the prefix-stripped command via the live approval policy."""
-    policy = None
-    am = getattr(gw, "approval_manager", None) if gw else None
-    if am is not None:
-        policy = getattr(am, "policy", None)
-    if policy is None:
-        try:
-            from navig.approval.policies import ApprovalPolicy
-
-            policy = ApprovalPolicy()
-        except Exception:
-            return "confirm"
-    try:
-        level = policy.classify_command(sub_command)
-        return level.value if hasattr(level, "value") else str(level)
-    except Exception:
-        return "confirm"
-
-
 async def handle_deck_cli_exec(request: "web.Request") -> "web.Response":
     """Run a navig command and stream output as an event-stream.
 
@@ -174,43 +158,51 @@ async def handle_deck_cli_exec(request: "web.Request") -> "web.Response":
     sub = " ".join(argv[1:]).strip()
     gw = _gateway(request)
 
-    # ── Classify + approval gate (reuses existing security) ──
+    # ── Classify + ONE approval path (policy_check: the composite) ──
+    from navig.gateway.deck.routes._enforce import action_for_shell, deck_actor
+
     await send({"type": "status", "stage": "classifying"})
-    level = _classify(gw, sub) if sub else "safe"
+    slug, level = action_for_shell(sub, "cli.exec", gw=gw)
     if level == "never":
+        # Explicit fast block for a clear message, before any policy machinery runs.
         await send({"type": "err", "line": f"Blocked: '{command}' is a never-allow command."})
         await send({"type": "exit", "code": -2})
         return resp
 
-    # Only genuinely DANGEROUS commands prompt for approval — CONFIRM is the
-    # default bucket for unlisted commands, so gating it would ask on nearly
-    # every command. NEVER is already blocked above; SAFE/CONFIRM run directly.
+    checker = getattr(gw, "policy_check", None) if gw is not None else None
+    if checker is None:
+        # No policy, no approval manager, no audit — fail closed, do not spawn.
+        await send({"type": "err", "line": "authorization unavailable (gateway not wired)"})
+        await send({"type": "exit", "code": -2})
+        return resp
+
+    # Server-derived identity — the client-settable X-Actor header is never consulted.
+    actor = deck_actor(request)
     if level == "dangerous":
-        am = getattr(gw, "approval_manager", None) if gw else None
-        if am is not None:
-            await send({"type": "status", "stage": "pending_approval", "level": level, "command": command})
-            approve_task = asyncio.ensure_future(
-                am.request_approval(
-                    command=sub,
-                    session_key="deck:console",
-                    channel="deck",
-                    user_id="console",
-                    description=f"Console command: {command}",
-                )
-            )
-            # Keep the stream warm while the user decides elsewhere.
-            while True:
-                try:
-                    approved = await asyncio.wait_for(asyncio.shield(approve_task), timeout=_WAITING_PING_SECS)
-                    break
-                except asyncio.TimeoutError:
-                    if not await send({"type": "status", "stage": "waiting", "level": level}):
-                        approve_task.cancel()
-                        return resp
-            if not approved:
-                await send({"type": "err", "line": "Denied — command was not approved."})
-                await send({"type": "exit", "code": -2})
+        await send({"type": "status", "stage": "pending_approval", "level": level, "command": command})
+
+    # One approval wait: policy → cooldown → approval manager (fail-closed) → audit.
+    # Keep the stream warm with a status ping while the decision pends elsewhere.
+    # policy_check writes the audit record itself — never double-audit here.
+    check_task = asyncio.ensure_future(checker(slug, actor, raw_input=sub))
+    while True:
+        try:
+            block = await asyncio.wait_for(asyncio.shield(check_task), timeout=_WAITING_PING_SECS)
+            break
+        except asyncio.TimeoutError:
+            if not await send({"type": "status", "stage": "waiting", "level": level}):
+                check_task.cancel()
                 return resp
+
+    if block is not None:
+        # A 403/429 Response from policy_check — translate it into SSE frames.
+        try:
+            payload = json.loads(block.body) if block.body else {}
+        except Exception:
+            payload = {}
+        await send({"type": "err", "line": str(payload.get("error") or "authorization denied")})
+        await send({"type": "exit", "code": -2})
+        return resp
 
     # ── Spawn + stream ───────────────────────────────────────
     env = {**os.environ, "NO_COLOR": "1", "NAVIG_NONINTERACTIVE": "1", "PYTHONUNBUFFERED": "1"}

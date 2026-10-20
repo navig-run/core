@@ -2,20 +2,19 @@
 Image Tool Pack - image_generate.
 
 Wraps navig.tools.image_generation for the ToolRouter.
-Note: image generation is async; the handler bridges async->sync.
+The handler is async; the ToolRouter awaits it (async_execute) or drives it (execute).
 """
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from navig.tools.router import ToolRegistry
 
 
-def _sync_generate(**kwargs):
-    """Sync wrapper for async ImageGenerator.generate()."""
+async def _generate(**kwargs):
+    """Run ImageGenerator.generate() — an async tool handler (no sync bridge)."""
     from navig.tools.image_generation import ImageGenerator, ImageProvider
 
     # Map a friendly provider string onto the enum (default: config/env).
@@ -25,24 +24,14 @@ def _sync_generate(**kwargs):
 
     gen = ImageGenerator()
 
-    async def _run():
-        # generate + close on the SAME loop (the client is bound to it).
-        try:
-            return await gen.generate(**kwargs)
-        finally:
-            await gen.close()
-
+    # generate + close on the SAME loop (the client is bound to it). An async handler:
+    # the router awaits it in async_execute and drives it in a loop-less thread for
+    # execute(). The old sync bridge blocked the caller's event loop on .result() for
+    # the whole render.
     try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        # No running loop — safe to call asyncio.run() directly
-        result = asyncio.run(_run())
-    else:
-        # Running inside an active event loop — use a thread to avoid blocking it
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            result = pool.submit(asyncio.run, _run()).result()
+        result = await gen.generate(**kwargs)
+    finally:
+        await gen.close()
     return [
         {"url": img.url, "local_path": str(img.local_path) if img.local_path else None}
         for img in result
@@ -71,7 +60,7 @@ def register_tools(registry: ToolRegistry) -> None:
                     "type": "string",
                     "description": (
                         "recraft | openai_gpt_image | openai | gemini_flash | gemini_pro | "
-                        "stability | local (omit to use configured default)"
+                        "stability | local | elevenlabs (omit to use configured default)"
                     ),
                 },
                 "size": {
@@ -89,5 +78,5 @@ def register_tools(registry: ToolRegistry) -> None:
             required_config=[],
             tags=["image", "generate", "creative", "recraft", "gemini"],
         ),
-        handler=_sync_generate,
+        handler=_generate,
     )

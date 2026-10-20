@@ -63,6 +63,7 @@ def _url_from_summary(args_summary: str) -> str:
 _TOOL_FACE: dict[str, tuple[str, str]] = {
     "search": ("🔎", "Searching the web"),
     "web_fetch": ("📖", "Reading"),
+    "domain_lookup": ("🌐", "Looking up the domain record"),
     "browser_tool": ("🌐", "Browsing"),
     "wiki_search": ("📚", "Checking references"),
     "wiki_read": ("📚", "Reading references"),
@@ -97,6 +98,9 @@ class TelegramProgressRenderer:
     debug:       collect the full X-ray for the appended block.
     send_info:   Telegram-side decision block for the debug header — mode, depth,
                  confidence, language. The rest is filled from StatusEvents.
+    header_html: a fixed first line kept above the live status (already HTML), e.g.
+                 the tapped follow-up question, so the bubble still says what it is
+                 working on while the status line changes under it.
     """
 
     def __init__(
@@ -107,12 +111,14 @@ class TelegramProgressRenderer:
         own_bubble: bool,
         debug: bool,
         send_info: dict[str, Any] | None = None,
+        header_html: str = "",
     ) -> None:
         self._channel = channel
         self._chat_id = chat_id
         self.own_bubble = own_bubble
         self.debug = debug
         self._send_info = dict(send_info or {})
+        self._header_html = header_html
         self._task_info: dict[str, Any] = {}
         self._done_info: dict[str, Any] = {}
         self._steps: list[dict[str, Any]] = []
@@ -193,6 +199,8 @@ class TelegramProgressRenderer:
 
     async def _render(self, *, force: bool = False) -> None:
         text = f"<i>{html.escape(self._current_line)}</i>"
+        if self._header_html:
+            text = f"{self._header_html}\n{text}"
         if not text or text == self._last_rendered:
             return
         now = time.monotonic()

@@ -27,6 +27,11 @@ except ImportError:
     web = None
 
 from navig.core.background import spawn
+from navig.gateway.deck.routes._enforce import (
+    action_for_shell,
+    authorize_deck,
+    authorize_deck_deferred,
+)
 from navig.gateway.deck.routes._utils import run_on_host
 
 logger = logging.getLogger(__name__)
@@ -81,16 +86,21 @@ async def handle_deck_remote_host_use(request: "web.Request") -> "web.Response":
     host = (body.get("host") or "").strip()
     if not host:
         return _err("'host' is required", status=400)
-    try:
-        from navig.config import get_config_manager  # type: ignore[import]
-        cm = get_config_manager()
-        gc = cm.global_config or {}
-        gc.setdefault("hosts", {})["active"] = host
-        cm.update_global_config(gc)
-        return _ok({"active": host})
-    except Exception as exc:
-        logger.exception("host switch failed")
-        return _err(str(exc))
+    async def _switch() -> "web.Response":
+        try:
+            from navig.config import get_config_manager  # type: ignore[import]
+            cm = get_config_manager()
+            gc = cm.global_config or {}
+            gc.setdefault("hosts", {})["active"] = host
+            cm.update_global_config(gc)
+            return _ok({"active": host})
+        except Exception as exc:
+            logger.exception("host switch failed")
+            return _err(str(exc))
+
+    # Local config mutation, not remote execution: gated, but takes no host lock.
+    # Deferred: an approval wait answers 202 pending instead of freezing the deck.
+    return await authorize_deck_deferred(request, "remote.host.select", _switch, raw_input=host)
 
 
 async def handle_deck_remote_host_test(request: "web.Request") -> "web.Response":
@@ -98,6 +108,10 @@ async def handle_deck_remote_host_test(request: "web.Request") -> "web.Response"
     host = (body.get("host") or "").strip()
     if not host:
         return _err("'host' is required", status=400)
+    # Probe: read-class, no host lock.
+    block = await authorize_deck(request, "remote.read", raw_input=host)
+    if block is not None:
+        return block
     ok, out, err = await _ssh(host, "echo navig-ssh-ok && uname -a && uptime", timeout=12)
     return _ok({"host": host, "ok": ok, "stdout": out.strip(), "stderr": err.strip()})
 
@@ -110,6 +124,10 @@ async def handle_deck_remote_files(request: "web.Request") -> "web.Response":
     path = (request.query.get("path") or ".").strip() or "."
     if not host:
         return _err("?host= required", status=400)
+    # Read: no host lock.
+    block = await authorize_deck(request, "remote.read", raw_input=path)
+    if block is not None:
+        return block
     # -A: show dotfiles; -l: long; -h: human sizes; sort by name
     cmd = f"ls -lAh --time-style=long-iso {_q(path)} 2>&1 | head -200"
     ok, out, err = await _ssh(host, cmd, timeout=15)
@@ -125,6 +143,10 @@ async def handle_deck_remote_cat(request: "web.Request") -> "web.Response":
         max_kb = 64
     if not host or not path:
         return _err("?host= and ?path= required", status=400)
+    # Read: no host lock.
+    block = await authorize_deck(request, "remote.read", raw_input=path)
+    if block is not None:
+        return block
     # Truncate output to keep the response small.
     cmd = f"head -c {max_kb * 1024} {_q(path)}"
     ok, out, err = await _ssh(host, cmd, timeout=20)
@@ -145,8 +167,19 @@ async def handle_deck_remote_run(request: "web.Request") -> "web.Response":
         timeout = 30.0
     if not host or not command:
         return _err("'host' and 'command' required", status=400)
-    ok, out, err = await _ssh(host, command, timeout=min(120.0, timeout))
-    return _ok({"host": host, "command": command, "ok": ok, "stdout": out, "stderr": err})
+    # Classify the command into the policy-slug vocabulary (never/dangerous/base),
+    # then policy → approval → host lock → audit before any SSH starts.
+    gw = request.app.get("gateway") if hasattr(request, "app") else None
+    slug, _level = action_for_shell(command, "remote.exec", gw=gw)
+
+    async def _run() -> "web.Response":
+        ok, out, err = await _ssh(host, command, timeout=min(120.0, timeout))
+        return _ok({"host": host, "command": command, "ok": ok, "stdout": out, "stderr": err})
+
+    # An approval wait answers 202 pending at once; the command runs (once) when approved.
+    return await authorize_deck_deferred(
+        request, slug, _run, raw_input=command, host=host, command=command
+    )
 
 
 # ─── Docker ──────────────────────────────────────────────────────────────────
@@ -181,9 +214,23 @@ async def handle_deck_remote_docker(request: "web.Request") -> "web.Response":
     else:
         return _err(f"unknown action '{action}'", status=400)
 
-    ok, out, err = await _ssh(host, cmd, timeout=30)
-    return _ok({"host": host, "action": action, "container": container,
-                 "ok": ok, "stdout": out, "stderr": err})
+    # Mutations gate with the host lock; reads gate without it (reads claim nothing).
+    mutating = action in ("restart", "stop", "start")
+    slug = "remote.docker.mutate" if mutating else "remote.docker.read"
+
+    async def _docker() -> "web.Response":
+        ok, out, err = await _ssh(host, cmd, timeout=30)
+        return _ok({"host": host, "action": action, "container": container,
+                     "ok": ok, "stdout": out, "stderr": err})
+
+    return await authorize_deck_deferred(
+        request,
+        slug,
+        _docker,
+        raw_input=cmd,
+        host=host if mutating else None,
+        command=cmd,
+    )
 
 
 # ─── Backup ──────────────────────────────────────────────────────────────────
@@ -203,7 +250,12 @@ async def handle_deck_remote_backup(request: "web.Request") -> "web.Response":
         except Exception:
             pass
         return _ok({"source": "local", "data": None, "note": "No local backup status found."})
-    # Remote: try a couple of well-known status paths
+    # Remote: try a couple of well-known status paths (read: no host lock)
+    block = await authorize_deck(
+        request, "remote.read", raw_input="~/.navig/backup/status.json"
+    )
+    if block is not None:
+        return block
     cmd = "cat ~/.navig/backup/status.json 2>/dev/null || echo '{}'"
     ok, out, _err = await _ssh(host, cmd, timeout=10)
     try:
@@ -226,6 +278,15 @@ async def handle_deck_remote_deploy(request: "web.Request") -> "web.Response":
     public_url = str(body.get("public_url") or "").strip()
     if not host:
         return _err("'host' is required", 400)
+    # Gated before ANY deploy state is touched or a deploy task spawned. An approval
+    # wait answers 202 pending; the deploy starts only once it is approved.
+    return await authorize_deck_deferred(
+        request, "remote.deploy", lambda: _start_deploy(host, public_url),
+        raw_input=host, host=host, command="navig host deploy",
+    )
+
+
+async def _start_deploy(host: str, public_url: str) -> "web.Response":
     existing = _DEPLOY_STATE.get(host)
     if existing and existing.get("running"):
         return _ok({"host": host, "started": False, "running": True})

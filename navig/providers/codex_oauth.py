@@ -193,7 +193,20 @@ def capture_loopback_code(state: str, *, timeout: float = 180.0) -> str | None:
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
             self.end_headers()
-            self.wfile.write(b"<html><body>You can close this tab and return to NAVIG.</body></html>")
+            self.wfile.write(
+                b"<!doctype html><html lang=en><meta charset=utf-8>"
+                b"<meta name=viewport content='width=device-width,initial-scale=1'>"
+                b"<title>NAVIG</title>"
+                b"<body style='margin:0;background:#050505;color:#eee;"
+                b"font-family:system-ui,-apple-system,Segoe UI,sans-serif'>"
+                b"<main style='position:fixed;inset:0;display:grid;place-items:center;"
+                b"padding:24px;box-sizing:border-box'>"
+                b"<div style='text-align:center;width:min(420px,100%)'>"
+                # neutral on purpose: served even on a state mismatch / missing code
+                b"<h2 style='margin:0 0 8px'>Sign-in received</h2>"
+                b"<p style='margin:0;color:#aaa'>You can close this tab and return to NAVIG.</p>"
+                b"</div></main>"
+            )
             done.set()
 
     try:

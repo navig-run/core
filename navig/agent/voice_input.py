@@ -49,6 +49,7 @@ MAX_AUDIO_DURATION_SECONDS: int = 120  # 2 minutes
 class TranscriptionBackend(str, Enum):
     """Transcription backend selection."""
 
+    MIMO = "mimo"
     FASTER_WHISPER = "faster_whisper"
     WHISPER_API = "whisper_api"
     WHISPER_LOCAL = "whisper_local"
@@ -128,13 +129,18 @@ def detect_transcription_backend() -> TranscriptionBackend:
     """Auto-detect the best available transcription backend.
 
     Priority:
-      1. faster-whisper (local, fast, no API key)
-      2. Deepgram        (API, fast, needs key)
-      3. Whisper API      (API, OpenAI, needs key)
-      4. whisper local    (openai-whisper, slow, no API key)
-      5. NONE             (nothing available)
+      1. MiMo ASR        (API, keyed, $0.074/h — the operator's chosen primary)
+      2. faster-whisper  (local, fast, no API key)
+      3. Deepgram        (API, fast, needs key)
+      4. Whisper API     (API, OpenAI, needs key)
+      5. whisper local   (openai-whisper, slow, no API key)
+      6. NONE            (nothing available)
     """
-    # 1. faster-whisper
+    # 1. MiMo ASR key?
+    if _resolve_key("mimo/api-key", "MIMO_API_KEY"):
+        return TranscriptionBackend.MIMO
+
+    # 2. faster-whisper
     try:
         import faster_whisper  # noqa: F401
 
@@ -142,15 +148,15 @@ def detect_transcription_backend() -> TranscriptionBackend:
     except ImportError:
         pass
 
-    # 2. Deepgram key?
+    # 3. Deepgram key?
     if _resolve_key("deepgram/api-key", "DEEPGRAM_API_KEY", "DEEPGRAM_KEY"):
         return TranscriptionBackend.DEEPGRAM
 
-    # 3. OpenAI Whisper API
+    # 4. OpenAI Whisper API
     if _resolve_key("openai/api-key", "OPENAI_API_KEY"):
         return TranscriptionBackend.WHISPER_API
 
-    # 4. openai-whisper local
+    # 5. openai-whisper local
     try:
         import whisper  # noqa: F401
 
@@ -413,6 +419,7 @@ class VoiceInputHandler:
             from navig.voice.stt import STT, STTConfig, STTProvider
 
         provider_map = {
+            TranscriptionBackend.MIMO: STTProvider.MIMO,
             TranscriptionBackend.DEEPGRAM: STTProvider.DEEPGRAM,
             TranscriptionBackend.WHISPER_API: STTProvider.WHISPER_API,
             TranscriptionBackend.WHISPER_LOCAL: STTProvider.WHISPER_LOCAL,

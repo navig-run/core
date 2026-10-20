@@ -138,3 +138,101 @@ async def test_spaces_endpoint_reports_pruned_file_count(isolated, monkeypatch):
         proj = next(s for s in body["data"]["spaces"] if s["name"] == "proj")
         assert proj["exists"] is True
         assert proj["file_count"] == 1  # keep.md only — node_modules pruned
+
+
+# ─── Bounded counting (a linked NAVIG OS proxies with a 15 s ceiling) ────────
+
+
+@pytest.fixture()
+def fresh_counts(monkeypatch):
+    from navig.gateway.deck.routes import context as context_mod
+
+    monkeypatch.setattr(context_mod, "_count_cache", {})
+    monkeypatch.setattr(context_mod, "_count_refreshing", set())
+    return context_mod
+
+
+def _wait_for(pred, timeout=5.0):
+    import time
+
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if pred():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def test_space_counts_past_the_budget_come_back_pending_then_fill_in(tmp_path, fresh_counts):
+    """Regression: /spaces walked every space on every request (15.7 s cold on 42 spaces),
+    past the 15 s proxy ceiling. Over budget, a count is None + pending, never a wait."""
+    a = tmp_path / "a"
+    a.mkdir()
+    (a / "one.md").write_text("x", encoding="utf-8")
+
+    counts, pending = fresh_counts._space_counts([a], budget_s=0)
+    assert counts == {str(a): None}
+    assert pending is True
+
+    assert _wait_for(lambda: str(a) in fresh_counts._count_cache), "background refresh never ran"
+    counts, pending = fresh_counts._space_counts([a], budget_s=0)
+    assert counts == {str(a): 1}
+    assert pending is False
+
+
+def test_space_counts_reuse_a_fresh_count_without_walking(tmp_path, fresh_counts, monkeypatch):
+    a = tmp_path / "a"
+    a.mkdir()
+    walks = []
+    real = fresh_counts._file_count_in
+    monkeypatch.setattr(fresh_counts, "_file_count_in", lambda p, **k: walks.append(p) or real(p, **k))
+
+    fresh_counts._space_counts([a])
+    fresh_counts._space_counts([a])
+    assert len(walks) == 1
+
+
+def test_space_counts_serve_a_stale_count_and_refresh_behind_it(tmp_path, fresh_counts, monkeypatch):
+    a = tmp_path / "a"
+    a.mkdir()
+    (a / "one.md").write_text("x", encoding="utf-8")
+    fresh_counts._count_cache[str(a)] = (-1e9, 42)  # ancient
+
+    counts, pending = fresh_counts._space_counts([a])
+    assert counts == {str(a): 42}, "a stale count is served at once, not re-walked inline"
+    assert pending is True
+    assert _wait_for(lambda: fresh_counts._count_cache[str(a)][1] == 1)
+
+
+async def test_spaces_endpoint_reports_pending_and_capped(isolated, fresh_counts, monkeypatch):
+    from types import SimpleNamespace
+
+    big = isolated / "big"
+    big.mkdir()
+    for i in range(3):
+        (big / f"f{i}.md").write_text("x", encoding="utf-8")
+    slow = isolated / "slow"
+    slow.mkdir()
+
+    import navig.spaces.resolver as resolver
+    monkeypatch.setattr(
+        resolver,
+        "discover_space_paths",
+        lambda *a, **k: {
+            "big": SimpleNamespace(path=str(big), canonical_name="big", scope="project"),
+            "slow": SimpleNamespace(path=str(slow), canonical_name="slow", scope="project"),
+        },
+    )
+    monkeypatch.setattr(resolver, "get_default_space", lambda: "default")
+    monkeypatch.setattr(fresh_counts, "_COUNT_MAX_WALK", 3)
+    fresh_counts._count_cache[str(big)] = (__import__("time").monotonic(), 3)
+    monkeypatch.setattr(fresh_counts, "_COUNT_BUDGET_S", 0)
+
+    from aiohttp.test_utils import TestClient, TestServer
+
+    async with TestClient(TestServer(_app())) as client:
+        body = await (await client.get("/spaces")).json()
+    rows = {s["name"]: s for s in body["data"]["spaces"]}
+    assert rows["big"]["file_count"] == 3 and rows["big"]["file_count_capped"] is True
+    assert rows["slow"]["file_count"] is None and rows["slow"]["file_count_capped"] is False
+    assert body["data"]["counts_pending"] is True

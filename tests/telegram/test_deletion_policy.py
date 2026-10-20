@@ -317,7 +317,8 @@ def test_status_reports_every_switch_in_one_read(env):
     d.set_muted(42, True)
     st = d.status()
     assert st == {"record": True, "mode": "instant", "window_sec": d.DEFAULT_WINDOW_SEC,
-                  "target": "-100999", "muted_chats": [42]}
+                  "target": "-100999", "muted_chats": [42],
+                  "quiet_expired": True, "quiet_wipes": True}
 
 
 # ── CLI: the ids these commands exist for are all negative ────────────────────
@@ -427,3 +428,227 @@ def test_the_alerts_cli_drives_the_mode(env):
     assert "off" in res.output and d.mode() == "off"
     res = CliRunner().invoke(business, ["alerts", "on"])
     assert res.exit_code == 0 and d.mode() == "digest"
+
+
+# ── clearing what Show revealed ───────────────────────────────────────────────
+#
+# Asked 2026-09-27, under a Show that re-posted two deleted videos: "I want to be
+# able to delete the messages when I press Show". Show posts a report and every
+# cached file back into the chat — two videos are three messages — and nothing
+# recorded which ones, so nothing could offer to take them away again.
+
+
+class _Numbered:
+    """A channel whose every send gets its own message id, like Telegram's."""
+
+    def __init__(self, refuse_delete: set[int] | None = None) -> None:
+        self.calls: list[tuple[str, dict]] = []
+        self.ids: list[int | None] = []  # the id each call produced, aligned with calls
+        self.next_id = 100
+        self.refuse = refuse_delete or set()
+
+    async def _api_call(self, method, data=None):
+        data = data or {}
+        self.calls.append((method, data))
+        if method == "deleteMessage":
+            self.ids.append(None)
+            return None if data.get("message_id") in self.refuse else True
+        self.next_id += 1
+        self.ids.append(self.next_id)
+        return {"message_id": self.next_id}
+
+    def sent(self, method=None):
+        return [(m, p) for m, p in self.calls if method is None or m == method]
+
+
+def _seed_video(chat_id, mid, file_id):
+    store = _store()
+    media_id = store.upsert_media(
+        chat_id,
+        message_id=mid,
+        file_id=file_id,
+        file_unique_id=f"u-{file_id}",
+        kind="video",
+    )
+    store.upsert_message(
+        chat_id,
+        mid,
+        sender_id=777,
+        sender_name="operator",
+        date="1",
+        text=None,
+        kind="business",
+        media_ref=media_id,
+        raw={"business": True},
+    )
+
+
+@pytest.fixture
+def reveals(tmp_path, monkeypatch):
+    path = tmp_path / "deletion_reveals.json"
+    monkeypatch.setattr(d, "_reveals_path", lambda: path)
+    return path
+
+
+async def _show_two_videos(env, ch):
+    env.d[d.CFG_MODE] = "digest"
+    for mid, fid in ((1, "VID-A"), (2, "VID-B")):
+        _seed_video(555, mid, fid)
+        await b.handle_deleted_business_messages(ch, _payload(555, [mid], title="Уск"))
+    await d.flush_digest(ch)
+    card = ch.sent("sendMessage")[-1][1]
+    show = card["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
+    before = len(ch.calls)
+    toast = await d.handle_callback(ch, show, "777", 50, 777)
+    return toast, ch.calls[before:], ch.ids[before:]
+
+
+async def test_show_ends_with_one_button_that_clears_what_it_posted(env, reveals):
+    ch = _Numbered()
+    toast, posted, _ = await _show_two_videos(env, ch)
+
+    assert toast.startswith("Showed 2"), toast
+    videos = [p for m, p in posted if m == "sendVideo"]
+    assert {v["video"] for v in videos} == {"VID-A", "VID-B"}, "both videos came back"
+    control = posted[-1][1]
+    button = control["reply_markup"]["inline_keyboard"][0][0]
+    assert button["callback_data"].startswith("bizdel:clr:"), button
+    assert len(button["callback_data"].encode()) <= 64
+    assert "3" in button["text"], "the report + two videos = three messages to clear"
+
+
+async def test_clear_removes_exactly_what_show_posted_and_the_button(env, reveals):
+    ch = _Numbered()
+    _, _, ids = await _show_two_videos(env, ch)
+    *revealed, control_id = ids  # the report, two videos, then the button message
+    clr = ch.sent("sendMessage")[-1][1]["reply_markup"]["inline_keyboard"][0][0][
+        "callback_data"
+    ]
+
+    toast = await d.handle_callback(ch, clr, "777", control_id, 777)
+
+    deleted = [p["message_id"] for m, p in ch.calls if m == "deleteMessage"]
+    assert deleted == [*revealed, control_id], f"removed {deleted}, Show posted {ids}"
+    assert 50 not in deleted, "the digest card stays — it can be shown again"
+    assert toast == "Cleared 3"
+
+
+async def test_a_second_clear_tap_is_harmless(env, reveals):
+    ch = _Numbered()
+    await _show_two_videos(env, ch)
+    clr = ch.sent("sendMessage")[-1][1]["reply_markup"]["inline_keyboard"][0][0][
+        "callback_data"
+    ]
+    await d.handle_callback(ch, clr, "777", ch.next_id, 777)
+    deletes_after_first = sum(1 for m, _ in ch.calls if m == "deleteMessage")
+
+    toast = await d.handle_callback(ch, clr, "777", ch.next_id, 777)
+
+    assert toast == "Already cleared"
+    assert sum(1 for m, _ in ch.calls if m == "deleteMessage") == deletes_after_first
+
+
+async def test_a_clear_says_so_when_telegram_keeps_some(env, reveals):
+    """A bot can only delete its messages for 48 hours. Past that, the toast has
+    to say how many stayed — "Cleared" over a chat still holding them is a lie."""
+    ch = _Numbered()
+    await _show_two_videos(env, ch)
+    videos = [p for m, p in ch.calls if m == "sendVideo"]
+    assert videos
+    ch.refuse = {ch.next_id - 1}  # the last video refuses
+    clr = ch.sent("sendMessage")[-1][1]["reply_markup"]["inline_keyboard"][0][0][
+        "callback_data"
+    ]
+
+    toast = await d.handle_callback(ch, clr, "777", ch.next_id, 777)
+
+    assert toast.startswith("Cleared 2 of 3"), toast
+
+
+async def test_a_clear_key_from_another_chat_removes_nothing(env, reveals):
+    """The key is only a message id, and ids repeat across chats."""
+    d._remember_reveal("777", "101", [101, 102])
+    ch = _Numbered()
+
+    toast = await d.handle_callback(ch, "bizdel:clr:101", "999", 5, 999)
+
+    assert toast == "Already cleared"
+    assert not [m for m, _ in ch.calls if m == "deleteMessage"]
+
+
+# ── deleting the card itself ──────────────────────────────────────────────────
+#
+# Asked 2026-09-28 under a digest card: "it says Тихо, but what does it do? Can we
+# just have a button to delete it". Тихо switched EVERY future alert off; there was
+# no way to remove THIS card. Delete is now its own button, and the switch says what
+# it switches.
+
+
+async def _card(env):
+    env.d[d.CFG_MODE] = "digest"
+    _seed(555, 1)
+    ch = _ch()
+    await b.handle_deleted_business_messages(ch, _payload(555, [1]))
+    await d.flush_digest(ch)
+    return ch, _sends(ch)[-1]["reply_markup"]["inline_keyboard"]
+
+
+async def test_the_card_has_a_delete_button_beside_show(env):
+    _, rows = await _card(env)
+    first = [btn["callback_data"] for btn in rows[0]]
+    assert first[0].startswith("bizdel:show:")
+    assert "bizdel:del" in first, f"no delete button on the card: {rows}"
+
+
+async def test_the_off_switch_says_what_it_switches_on_its_own_row(env):
+    _, rows = await _card(env)
+    off = [btn for row in rows for btn in row if btn["callback_data"] == "bizdel:off"]
+    assert off and len(rows[-1]) == 1 and rows[-1][0] is off[0], (
+        "kept apart from delete"
+    )
+    assert off[0]["text"] != "🔕 Quiet", "a one-word label is what made it unclear"
+
+
+async def test_delete_removes_this_card_and_changes_nothing_else(env):
+    ch = _ch()
+    ch._api_call = AsyncMock(return_value=True)
+    toast = await d.handle_callback(
+        ch, "bizdel:del", chat_id=777, message_id=42, user_id=777
+    )
+
+    calls = [(c.args[0], c.args[1]) for c in ch._api_call.call_args_list]
+    assert calls == [("deleteMessage", {"chat_id": 777, "message_id": 42})]
+    assert toast == "Deleted"
+    assert d.mode() == "digest", "deleting a card must not switch alerts off"
+
+
+async def test_a_card_too_old_to_delete_says_so(env):
+    ch = _ch()
+    ch._api_call = AsyncMock(return_value=None)  # Telegram refuses past 48 h
+    toast = await d.handle_callback(
+        ch, "bizdel:del", chat_id=777, message_id=42, user_id=777
+    )
+    assert "48" in toast, toast
+
+
+# ── NAVIG's own deletions stay out of the record ──────────────────────────────
+
+
+async def test_a_deletion_navig_made_itself_is_not_recorded_or_reported(
+    env, tmp_path, monkeypatch
+):
+    """The owner's `tyler` trigger is deleted by the bot; Telegram reports that
+    deletion like any other. It is not news — no record, no digest line."""
+    monkeypatch.setattr(d, "_own_deletions_path", lambda: tmp_path / "own.json")
+    env.d[d.CFG_MODE] = "digest"
+    _seed(555, 1, text="tyler")
+    _seed(555, 2, text="a real message")
+    d.note_own_deletion("bc1", [1])
+
+    ch = _ch()
+    await b.handle_deleted_business_messages(ch, _payload(555, [1, 2]))
+
+    assert _store().get_message_by_ref(555, 1)["deleted"] is False, (
+        "our trigger is not a deletion"
+    )
+    assert _store().get_message_by_ref(555, 2)["deleted"] is True, "a real one still is"

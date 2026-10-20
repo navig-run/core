@@ -63,8 +63,12 @@ def notify_operator(
     *,
     parse_mode: str = "HTML",
     chat_id: str | None = None,
+    keyboard: list[list[dict]] | None = None,
+    silent: bool = False,
 ) -> bool:
     """Send *text* to the operator. Returns True only when the Bot API accepted it.
+
+    ``silent`` sends with ``disable_notification`` — it arrives without a sound.
 
     Never raises: a notification is a side effect of some other job, and that
     job's own result must not be masked by a Telegram hiccup. The failure is
@@ -79,9 +83,20 @@ def notify_operator(
     if not text or not text.strip():
         return False
     try:
-        from navig.commands.telegram import telegram_send
+        from navig.telegram.api import telegram_send
 
-        telegram_send(target=target, message=truncate_for_telegram(text), parse_mode=parse_mode)
+        # Each option is passed only when it is set: a plain ringing send keeps the
+        # exact call shape every existing caller (and test double) of telegram_send
+        # expects.
+        extra: dict = {"reply_markup": {"inline_keyboard": keyboard}} if keyboard else {}
+        if silent:
+            extra["disable_notification"] = True
+        telegram_send(
+            target=target,
+            message=truncate_for_telegram(text),
+            parse_mode=parse_mode,
+            **extra,
+        )
         return True
     except Exception as exc:  # noqa: BLE001 — see docstring
         logger.warning("notify_operator: Telegram send failed: %s", exc)

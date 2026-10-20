@@ -30,7 +30,23 @@ logger = logging.getLogger(__name__)
 
 
 def _err(msg: str, status: int = 500) -> "web.Response":
-    return web.json_response({"ok": False, "error": msg}, status=status)
+    return web.json_response({"ok": False, "error": msg, "api_version": STORE_API_VERSION},
+                             status=status)
+
+
+#: Version of the store read/write contract NAVIG OS consumes through the Bun bridge.
+#:
+#: Additive fields (a new key on an item, a new summary figure) do NOT bump it — a
+#: client written against 1 stays valid. A breaking change (removing a key, changing
+#: a type, renaming an action) bumps it, and the previous version keeps serving until
+#: the client that needs it is gone. Same rule the CLI follows: breaking changes are
+#: never made silently.
+#:
+#: This exists so NAVIG OS can tell "I am talking to a core that understands me" from
+#: "I am talking to something older" without sniffing for keys — the versioned
+#: envelope the kernel/plugin plan asks for, attached to the one endpoint the OS
+#: already reads rather than to a second parallel route.
+STORE_API_VERSION = 1
 
 
 async def handle_deck_store(request: "web.Request") -> "web.Response":
@@ -43,6 +59,7 @@ async def handle_deck_store(request: "web.Request") -> "web.Response":
         items = collect_store(include_available=include_available, refresh=refresh)
         return web.json_response({
             "ok": True,
+            "api_version": STORE_API_VERSION,
             "items": [i.to_dict() for i in items],
             "summary": store_status(items),  # fold over the same collection — no second sweep
         })
@@ -73,6 +90,7 @@ async def handle_deck_store_action(request: "web.Request") -> "web.Response":
             await notify_modules_changed(request, {"kind": "install", "id": dest.name})
             return web.json_response({
                 "ok": True,
+                "api_version": STORE_API_VERSION,
                 "message": f"Installed '{dest.name}'",
                 "path": str(dest),
             })
@@ -92,7 +110,9 @@ async def handle_deck_store_action(request: "web.Request") -> "web.Response":
         status = 200 if result.get("ok") else 400
         if result.get("ok") and action in ("install", "enable", "disable", "remove"):
             await notify_modules_changed(request, {"kind": action, "id": item_id})
-        return web.json_response(result, status=status)
+        return web.json_response(
+            {**result, "api_version": STORE_API_VERSION}, status=status
+        )
     except Exception as exc:  # noqa: BLE001
         logger.exception("deck store action failed")
         return _err(str(exc))

@@ -132,7 +132,8 @@ async def _react(
                 f"{labels[key]} back to normal — {value:.0f}%",
                 f"{labels[key]} usage recovered below {int(trackers[key].t.low)}%.",
                 priority="normal",
-                data={"metric": key, "value": value},
+                # The all-clear is routine; the "high" alert above is never swept.
+                data={"metric": key, "value": value, "tidy": "status"},
             )
 
 

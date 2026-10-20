@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -110,10 +111,30 @@ def test_the_lag_line_survives_a_broken_venv(tmp_path: Path, repo: Path):
     hook_copy.parent.mkdir(parents=True)
     hook_copy.write_text(_HOOK.read_text(encoding="utf-8"), encoding="utf-8")
 
+    env = {**os.environ, "PYTHONPATH": str(shadow), "PYTHONUTF8": "1"}
+    want = "local main is 4 commit(s) behind origin/main"
+
+    # The hook as Claude Code runs it is bounded: it may answer from the
+    # background refresh or say the briefing is still being computed — but it
+    # must return cleanly, and that refresh (a child under the same broken
+    # venv) must still produce the lag line.
     res = subprocess.run(
         [sys.executable, str(hook_copy)], cwd=str(repo), capture_output=True, text=True,
-        env={**os.environ, "PYTHONPATH": str(shadow), "PYTHONUTF8": "1"}, timeout=60, encoding="utf-8",
+        env=env, timeout=60, encoding="utf-8",
     )
-
     assert res.returncode == 0
-    assert "local main is 4 commit(s) behind origin/main" in res.stdout
+    assert res.stdout.startswith("[repo-guard]")
+    cache = repo / ".dev" / "cache" / "session-briefing.txt"
+    lock = cache.with_suffix(".refresh.lock")
+    deadline = time.time() + 120
+    while (lock.exists() or not cache.exists()) and time.time() < deadline:
+        time.sleep(0.2)
+    assert want in cache.read_text(encoding="ascii")
+
+    # And the synchronous path prints it directly.
+    res = subprocess.run(
+        [sys.executable, str(hook_copy), "--sync"], cwd=str(repo), capture_output=True, text=True,
+        env=env, timeout=120, encoding="utf-8",
+    )
+    assert res.returncode == 0
+    assert want in res.stdout

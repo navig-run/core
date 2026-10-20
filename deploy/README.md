@@ -26,13 +26,18 @@ Deploy NAVIG + PostgreSQL (pgvector) + Redis + Ollama on Ubuntu:
 curl -fsSL https://navig.run/bootstrap.sh | sudo bash
 ```
 
-Or clone and run:
+Or clone and run the stack directly:
 
 ```bash
 git clone https://github.com/navig-run/core.git
-cd navig/navig-core
-sudo ./bootstrap_navig_linux.sh
+cd core/deploy                      # the deploy assets live at core/deploy/ in the clone
+cp .env.example .env                # then edit it
+sudo docker compose up -d
+sudo ./harden/00-harden.sh          # 8-phase host hardening (optional but recommended)
 ```
+
+There is no `bootstrap_navig_linux.sh` in this folder — the one-line installer in the block above is
+what used to call it.
 
 ## Files
 

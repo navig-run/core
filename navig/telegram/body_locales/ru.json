@@ -28,5 +28,11 @@
   "unit.kg": "кг",
   "unit.h": "ч",
   "weigh.settled": "✅ Записано: {value} кг",
-  "weigh.settled_avg": "✅ Записано: {value} кг · среднее за 7 дней {avg} кг"
+  "weigh.settled_avg": "✅ Записано: {value} кг · среднее за 7 дней {avg} кг",
+  "btn.edit": "✎ Изменить",
+  "week.done_title": "✅ Недельная сверка записана",
+  "week.done_summary": "Настроение {mood} · сон {sleep} · лечение: {treatment}",
+  "week.tx_ok": "всё нормально",
+  "week.tx_note": "есть заметка",
+  "week.tx_pending": "жду ответа"
 }

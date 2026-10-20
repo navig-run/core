@@ -569,3 +569,66 @@ def test_task_bootstrap_gives_a_silent_boot_somewhere_to_speak(tmp_path: Path) -
     # Redirection must be in place BEFORE the daemon is handed control, or a boot-time
     # traceback still goes to the void it came from.
     assert args.index("sys.stdout=sys.stderr=") < args.index("runpy.run_module")
+
+
+# ── Ubuntu VM findings (2026-10-15) ─────────────────────────────────────────
+
+
+def test_system_unit_pins_the_state_dirs_root_cli_reads(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """As root under systemd the daemon resolved /var/lib/navig while root's CLI read
+    ~/.navig/data — the CLI and its own watcher never shared a store. The system unit
+    now pins data/log/cache to what the installing shell resolves."""
+    monkeypatch.setattr(sm, "_python_exe", lambda: "python")
+    monkeypatch.setattr(sm, "_navig_home", lambda: tmp_path)
+    monkeypatch.setattr(sm, "_log_dir", lambda: tmp_path / "logs")
+    monkeypatch.setattr(sm.paths, "_is_system_service", lambda: False)
+    monkeypatch.setattr(sm.paths, "data_dir", lambda: Path("/root/.navig/data"))
+    monkeypatch.setattr(sm.paths, "log_dir", lambda: Path("/root/.local/state/navig/logs"))
+    monkeypatch.setattr(sm.paths, "cache_dir", lambda: Path("/root/.cache/navig"))
+
+    system = sm._systemd_unit_content(user=False)
+    assert f"Environment=NAVIG_DATA_DIR={Path('/root/.navig/data')}" in system
+    assert f"Environment=NAVIG_LOG_DIR={Path('/root/.local/state/navig/logs')}" in system
+    assert f"Environment=NAVIG_CACHE_DIR={Path('/root/.cache/navig')}" in system
+    # A user unit never runs as a system service — nothing to pin there.
+    assert "NAVIG_DATA_DIR" not in sm._systemd_unit_content(user=True)
+
+
+def test_installer_running_as_a_service_pins_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sm.paths, "_is_system_service", lambda: True)
+    assert sm._pinned_state_dirs() == []
+
+
+def test_failed_linger_is_reported_not_swallowed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _set_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(sm, "is_admin", lambda: False)
+    monkeypatch.setattr(sm, "_systemd_unit_path", lambda user=False: tmp_path / "user.service")
+    monkeypatch.setattr(sm, "_systemd_unit_content", lambda user=False: "[Unit]\n")
+    monkeypatch.setattr(sm, "_current_user", lambda: "opsadmin")
+
+    def _run(cmd, **kwargs):
+        if cmd[0] == "loginctl":
+            return SimpleNamespace(returncode=1, stderr=b"Could not enable linger: Access denied")
+        return SimpleNamespace(returncode=0, stderr=b"")
+
+    monkeypatch.setattr(sm.subprocess, "run", _run)
+    ok, msg = sm.systemd_install(start_now=True)
+    assert ok is True  # the service IS installed …
+    assert "WARNING" in msg and "Access denied" in msg  # … but it says why it won't survive logout
+    assert "sudo loginctl enable-linger opsadmin" in msg
+
+
+def test_linger_success_adds_no_warning(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _set_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(sm, "is_admin", lambda: False)
+    monkeypatch.setattr(sm, "_systemd_unit_path", lambda user=False: tmp_path / "user.service")
+    monkeypatch.setattr(sm, "_systemd_unit_content", lambda user=False: "[Unit]\n")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        sm.subprocess, "run",
+        lambda cmd, **kwargs: calls.append(cmd) or SimpleNamespace(returncode=0, stderr=b""),
+    )
+    monkeypatch.setattr(sm, "_current_user", lambda: "opsadmin")
+    ok, msg = sm.systemd_install(start_now=True)
+    assert ok is True and "WARNING" not in msg
+    assert ["loginctl", "enable-linger", "opsadmin"] in calls

@@ -75,13 +75,19 @@ class SSHConnection:
         except Exception:
             return False
 
-    def execute(self, command: str, timeout: int = 30) -> tuple[bool, str, str]:
+    def execute(
+        self, command: str, timeout: int = 30, stdin: str | None = None
+    ) -> tuple[bool, str, str]:
         """
         Execute a command on this connection.
+
+        ``stdin`` is written to the remote command and the write side is then
+        closed — the channel for secrets, which must never be in ``command``.
 
         Returns:
             Tuple of (success, stdout, stderr)
         """
+        stdin_text = stdin
         # Update bookkeeping under the lock, but release it before blocking I/O.
         # Holding the lock during stdout.read() / recv_exit_status() serialises
         # every thread that tries to reuse this connection, causing multi-minute
@@ -92,6 +98,10 @@ class SSHConnection:
 
         try:
             stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
+            if stdin_text is not None:
+                stdin.write(stdin_text.encode("utf-8"))
+                stdin.flush()
+                stdin.channel.shutdown_write()
             # exec_command(timeout=) only sets the banner/auth timeout, NOT the
             # channel read timeout.  Without this, stdout.read() blocks forever
             # if the remote process hangs or the network stalls.

@@ -26,19 +26,40 @@ def _err(msg: str, status: int = 500) -> "web.Response":
     return web.json_response({"ok": False, "error": msg}, status=status)
 
 
-def _load() -> list[Any]:
+def load_skills() -> tuple[list[Any], str | None]:
+    """All skills, plus the loader's error if it failed.
+
+    The error is returned rather than swallowed: this used to turn ANY loader failure
+    into ``[]`` with a debug-level log, so a broken loader rendered as "you have 0
+    skills" — indistinguishable from a fresh install. Shared with the customize
+    overview, so the count and the list can never disagree.
+    """
     try:
         from navig.skills.loader import load_all_skills  # type: ignore[import]
-        return list(load_all_skills() or [])
-    except Exception as exc:
-        logger.debug("skills loader unavailable: %s", exc)
-        return []
+
+        return list(load_all_skills() or []), None
+    except Exception as exc:  # noqa: BLE001 — surfaced to the caller as `error`
+        logger.warning("skills loader failed: %s", exc)
+        return [], f"skills loader failed: {exc}"
 
 
-def _skill_to_dict(s: Any) -> dict[str, Any]:
+def _summary(s: Any) -> str:
+    """The skill's frontmatter ``description``, else the first non-heading body line."""
+    desc = (getattr(s, "description", "") or "").strip()
+    if desc:
+        return desc
+    for line in (getattr(s, "body_markdown", "") or "").splitlines():
+        text = line.strip()
+        if text and not text.startswith("#"):
+            return text
+    return ""
+
+
+def skill_to_dict(s: Any) -> dict[str, Any]:
     return {
         "id": getattr(s, "id", "") or "",
         "name": getattr(s, "name", "") or "",
+        "description": getattr(s, "description", "") or "",
         "version": getattr(s, "version", "") or "",
         "category": getattr(s, "category", "") or "",
         "tags": list(getattr(s, "tags", []) or []),
@@ -46,15 +67,14 @@ def _skill_to_dict(s: Any) -> dict[str, Any]:
         "tools": list(getattr(s, "tools", []) or []),
         "safety": getattr(s, "safety", "") or "",
         "source_path": str(getattr(s, "source_path", "") or ""),
-        "summary": (getattr(s, "body_markdown", "") or "").strip().splitlines()[0:1] or [""],
+        "summary": _summary(s),
     }
 
 
 async def handle_deck_skills(request: "web.Request") -> "web.Response":
-    """List all registered skills with metadata + first-line summary."""
-    skills = _load()
-    out = [{**_skill_to_dict(s), "summary": _skill_to_dict(s)["summary"][0] if _skill_to_dict(s)["summary"] else ""}
-           for s in skills]
+    """List all registered skills with metadata + a one-line summary."""
+    skills, error = load_skills()
+    out = [skill_to_dict(s) for s in skills]
 
     # By-category counts for the overview header
     by_category: dict[str, int] = {}
@@ -66,6 +86,7 @@ async def handle_deck_skills(request: "web.Request") -> "web.Response":
         "count": len(out),
         "by_category": by_category,
         "skills": sorted(out, key=lambda x: (x.get("category", ""), x.get("name", ""))),
+        "error": error,
     })
 
 
@@ -74,17 +95,16 @@ async def handle_deck_skill_detail(request: "web.Request") -> "web.Response":
     skill_id = request.match_info.get("skill_id", "")
     if not skill_id:
         return _err("missing skill id", status=400)
-    skills = _load()
+    skills, error = load_skills()
+    if error:
+        return _err(error, status=503)
     match = next((s for s in skills if getattr(s, "id", "") == skill_id
                   or getattr(s, "name", "") == skill_id), None)
     if match is None:
         return _err(f"skill '{skill_id}' not found", status=404)
 
-    body = getattr(match, "body_markdown", "") or ""
-    examples = list(getattr(match, "examples", []) or [])
     return _ok({
-        **_skill_to_dict(match),
-        "summary": (body.strip().splitlines() or [""])[0],
-        "body_markdown": body,
-        "examples": examples,
+        **skill_to_dict(match),
+        "body_markdown": getattr(match, "body_markdown", "") or "",
+        "examples": list(getattr(match, "examples", []) or []),
     })

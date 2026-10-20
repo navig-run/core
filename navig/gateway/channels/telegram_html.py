@@ -269,16 +269,28 @@ def md_to_html(text: str) -> str:
     text = "\n".join(lines_out)
 
     # ── 4. Inline transforms ────────────────────────────────────────────────
-    # Fenced inline code  `code`
-    text = re.sub(r"`([^`\n]+?)`", lambda m: f"<code>{m.group(1)}</code>", text)
+    # Inline code  `code`  — rendered AND set aside behind a placeholder, so the
+    # emphasis passes below cannot reach inside it. They used to: two code spans
+    # holding `big_tasks` and `x_y` became `<code>big<i>tasks</code> … <code>x</i>y`
+    # — crossed tags, which Telegram rejects outright, so the whole message fell
+    # back to plain text with every bit of formatting gone.
+    inline_codes: list[str] = []
+
+    def _store_inline_code(m: re.Match) -> str:
+        inline_codes.append(f"<code>{m.group(1)}</code>")
+        return f"\x00INL{len(inline_codes) - 1}\x00"
+
+    text = re.sub(r"`([^`\n]+?)`", _store_inline_code, text)
 
     # Bold  **text** or __text__  (must come before italic)
     text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text, flags=re.DOTALL)
-    text = re.sub(r"__(.+?)__", r"<b>\1</b>", text, flags=re.DOTALL)
+    text = re.sub(r"(?<!\w)__(.+?)__(?!\w)", r"<b>\1</b>", text, flags=re.DOTALL)
 
-    # Italic  *text* or _text_  (after bold consumed double markers)
+    # Italic  *text* or _text_  (after bold consumed double markers).
+    # `_` only emphasises at a word boundary (CommonMark's rule): snake_case
+    # identifiers — `big_tasks`, `daily_clean` — are words, not emphasis.
     text = re.sub(r"(?<!\*)\*([^*\n]+?)\*(?!\*)", r"<i>\1</i>", text)
-    text = re.sub(r"(?<!_)_([^_\n]+?)_(?!_)", r"<i>\1</i>", text)
+    text = re.sub(r"(?<![\w_])_([^_\n]+?)_(?![\w_])", r"<i>\1</i>", text)
 
     # Strikethrough  ~~text~~
     text = re.sub(r"~~(.+?)~~", r"<s>\1</s>", text)
@@ -286,7 +298,9 @@ def md_to_html(text: str) -> str:
     # Links  [text](url)
     text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
 
-    # ── 5. Restore fenced code blocks ──────────────────────────────────────
+    # ── 5. Restore inline code, then fenced code blocks ─────────────────────
+    for i, span in enumerate(inline_codes):
+        text = text.replace(f"\x00INL{i}\x00", span)
     for i, block in enumerate(code_blocks):
         text = text.replace(f"\x00CODE{i}\x00", block)
 

@@ -570,3 +570,90 @@ def test_invalidate_credential_cache_scopes_to_provider(monkeypatch):
     assert inf.resolve_provider_credential("anthropic") == (None, "tok-2")  # re-resolved
     assert inf.resolve_provider_credential("openai") == ("sk-openai", None)
     assert key_calls["n"] == 1  # openai entry untouched — still cached
+
+
+# ── cross-provider fallback: a broken default must not strand the request ────
+#
+# Reported 2026-10-09: every Claude login was needs_reauth (one of them the ★
+# default) while OpenAI/Groq/xAI/NVIDIA were all ready — and `navig ask` never
+# used them. Rotation only ever crossed accounts of the SAME provider.
+
+
+def _broken_claude_plus_keys(monkeypatch, *, chain=None, auto=True):
+    from navig.llm import fallback_policy as fp
+    from navig.llm import model_fallback as mf
+
+    conns = [
+        {**_conn("A", "Claude A", "claude-max", default=True, routable=False,
+                 model="claude-opus-4-8"), "ui_state": "needs_reauth"},
+        _conn("configured:openai", "OpenAI", "openai-api", model="gpt-4o",
+              provider="openai"),
+        _conn("configured:groq", "Groq", "groq", model="llama-3.3-70b", provider="groq"),
+    ]
+    _patch_conns(monkeypatch, conns)
+    fp.reset_cooldowns()
+    monkeypatch.setattr(mf, "load_policy", lambda: mf.FallbackPolicy(auto=auto))
+    monkeypatch.setattr(mf, "policy_chain", lambda *a, **k: list(chain or []))
+    notes: list[tuple] = []
+    monkeypatch.setattr(mf, "note_fallback", lambda *a: notes.append(a))
+    return notes
+
+
+def test_needs_reauth_default_falls_over_to_another_provider(monkeypatch):
+    notes = _broken_claude_plus_keys(monkeypatch, chain=["groq:llama-3.3-70b"])
+    calls: list[tuple] = []
+
+    def fake_one(conn, provider_id, model, *a, **k):
+        calls.append((conn["connection_id"], model))
+        return f"ok-{provider_id}"
+
+    monkeypatch.setattr(inf, "_complete_one_account", fake_one)
+    events: list[dict] = []
+    assert inf.has_routable_connection(None) is True   # was False → legacy path
+    out = inf.complete_via_connection(
+        system_prompt="s", user_content="u", on_fallback=events.append)
+    assert out == "ok-groq"
+    assert calls == [("configured:groq", "llama-3.3-70b")]  # broken default never dialed;
+    assert events[0]["reason"] == "auth"                     # configured chain first
+    assert events[0]["reconnect"] == "navig connect login claude-max"
+    assert notes and notes[0][1] == "anthropic:claude-opus-4-8"
+
+
+def test_auth_failure_on_every_account_hops_provider_in_order(monkeypatch):
+    _broken_claude_plus_keys(monkeypatch)
+    calls: list[str] = []
+
+    def fake_one(conn, provider_id, model, *a, **k):
+        calls.append(conn["connection_id"])
+        if provider_id == "openai":
+            raise _RateLimited("openai capped too")
+        return "ok"
+
+    monkeypatch.setattr(inf, "_complete_one_account", fake_one)
+    assert inf.complete_via_connection(system_prompt="s", user_content="u") == "ok"
+    assert calls == ["configured:openai", "configured:groq"]  # a failing hop moves on
+
+
+def test_pinned_provider_never_crosses_providers(monkeypatch):
+    _broken_claude_plus_keys(monkeypatch)
+    monkeypatch.setattr(inf, "_complete_one_account",
+                        lambda *a, **k: pytest.fail("must not dial another provider"))
+    assert inf.has_routable_connection("anthropic:claude-opus-4-8") is False
+
+
+def test_auto_off_uses_only_the_configured_chain(monkeypatch):
+    _broken_claude_plus_keys(monkeypatch, auto=False)
+    monkeypatch.setattr(inf, "_complete_one_account",
+                        lambda *a, **k: pytest.fail("auto off + no chain → no hop"))
+    with pytest.raises(PermissionError, match="navig connect login claude-max"):
+        inf.complete_via_connection(system_prompt="s", user_content="u")
+
+
+def test_reconnect_hint_names_the_right_verb(monkeypatch):
+    _patch_conns(monkeypatch, [
+        {**_conn("A", "Claude", "claude-max", routable=False), "ui_state": "needs_reauth"},
+        _conn("configured:groq", "Groq", "groq", provider="groq"),
+    ])
+    assert inf.reconnect_hint("anthropic") == "navig connect login claude-max"
+    assert inf.reconnect_hint("groq") == "navig connect add groq"
+    assert inf.reconnect_hint("nobody") is None

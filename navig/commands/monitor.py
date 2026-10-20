@@ -14,6 +14,7 @@ import logging
 import os
 import platform
 import subprocess
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
@@ -308,6 +309,39 @@ def get_memory_info() -> dict[str, Any]:
     return {"ram": ram, "swap": swap}
 
 
+# The top-processes list walks EVERY process (measured: ~280 ms over 1,258 processes)
+# and is the costliest part of the CPU section, yet only the System app shows it.
+# Refreshed at most every _TOP_TTL_S; the overall/per-core figures stay live.
+_TOP_TTL_S = 15.0
+_top_cache: tuple[float, int, list[dict[str, Any]]] | None = None
+_top_lock = threading.Lock()
+
+
+def _top_processes(top_n: int) -> list[dict[str, Any]]:
+    global _top_cache
+    with _top_lock:
+        hit = _top_cache
+        if hit is not None and hit[1] >= top_n and time.monotonic() - hit[0] < _TOP_TTL_S:
+            return [dict(p) for p in hit[2][:top_n]]
+        top: list[dict[str, Any]] = []
+        try:
+            procs = sorted(
+                psutil.process_iter(["pid", "name", "cpu_percent"]),
+                key=lambda p: p.info.get("cpu_percent") or 0,
+                reverse=True,
+            )[:top_n]
+            for p in procs:
+                top.append({
+                    "pid": p.info.get("pid"),
+                    "name": (p.info.get("name") or "?")[:32],
+                    "cpu_percent": round(p.info.get("cpu_percent") or 0.0, 1),
+                })
+        except Exception:
+            return top  # a failed walk is not cached — the next call retries
+        _top_cache = (time.monotonic(), top_n, top)
+        return [dict(p) for p in top]
+
+
 def get_cpu_info(top_n: int = 5) -> dict[str, Any]:
     """CPU overall + per-core + frequency + load + top processes."""
     if not _psutil_available():
@@ -350,21 +384,7 @@ def get_cpu_info(top_n: int = 5) -> dict[str, Any]:
         except Exception:
             pass
 
-    top: list[dict[str, Any]] = []
-    try:
-        procs = sorted(
-            psutil.process_iter(["pid", "name", "cpu_percent"]),
-            key=lambda p: p.info.get("cpu_percent") or 0,
-            reverse=True,
-        )[:top_n]
-        for p in procs:
-            top.append({
-                "pid": p.info.get("pid"),
-                "name": (p.info.get("name") or "?")[:32],
-                "cpu_percent": round(p.info.get("cpu_percent") or 0.0, 1),
-            })
-    except Exception:
-        pass
+    top = _top_processes(top_n)
 
     return {
         "overall_percent": overall,
@@ -542,6 +562,22 @@ def get_ports_info(max_ports: int = 50) -> list[dict[str, Any]]:
         except Exception:
             continue
     return out
+
+
+def get_vitals() -> dict[str, Any]:
+    """CPU / RAM / system-disk / uptime only — the dashboards' live strip.
+
+    ``get_all_monitoring`` also enumerates services and listening ports, which on
+    Windows is the expensive half of the snapshot and is never shown on a
+    dashboard that polls every few seconds.
+    """
+    return {
+        "disk": get_system_disk(),
+        "memory": get_memory_info(),
+        "cpu": get_cpu_info(),
+        "uptime": get_uptime_info(),
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def get_all_monitoring(all_services: bool = False) -> dict[str, Any]:

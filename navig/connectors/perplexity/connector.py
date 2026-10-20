@@ -13,12 +13,12 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
 import time
 from typing import Any
 
 from navig.connectors.base import BaseConnector, ConnectorManifest
 from navig.connectors.errors import ConnectorAuthError, ConnectorRateLimitError
+from navig.connectors.secrets import KeyField, resolve
 from navig.connectors.types import (
     Action,
     ActionResult,
@@ -33,6 +33,15 @@ logger = logging.getLogger("navig.connectors.perplexity")
 
 _API_BASE = "https://api.perplexity.ai"
 _SEARCH_MODEL = "sonar"
+
+
+PERPLEXITY_API_KEY = KeyField(
+    name="api_key",
+    label="Perplexity API key",
+    vault_label="perplexity/api_key",
+    env=("PERPLEXITY_API_KEY",),
+    placeholder="pplx-…",
+)
 
 
 class PerplexityConnector(BaseConnector):
@@ -51,6 +60,8 @@ class PerplexityConnector(BaseConnector):
         oauth_scopes=[],
         oauth_provider="",
         requires_oauth=False,
+        auth_mode="api_key",
+        key_fields=(PERPLEXITY_API_KEY,),
         can_search=True,
         can_fetch=False,
         can_act=False,
@@ -63,17 +74,14 @@ class PerplexityConnector(BaseConnector):
     # -- Connection lifecycle ----------------------------------------------
 
     async def connect(self) -> None:
-        """Load API key from env or mark as error.
-
-        Reads ``PERPLEXITY_API_KEY`` from the environment.
-        Store the key in your shell profile or pass it via the env when starting NAVIG.
-        """
-        api_key = os.environ.get("PERPLEXITY_API_KEY", "").strip()
+        """Load the API key: ``PERPLEXITY_API_KEY``, then the vault label ``perplexity/api_key``."""
+        api_key = resolve(PERPLEXITY_API_KEY)
 
         if not api_key:
             self._status = ConnectorStatus.ERROR
             raise ValueError(
-                "Perplexity API key not found. Set PERPLEXITY_API_KEY environment variable."
+                "Perplexity API key not found. Set PERPLEXITY_API_KEY or "
+                "store it in the vault under 'perplexity/api_key'."
             )
 
         self._api_key = api_key

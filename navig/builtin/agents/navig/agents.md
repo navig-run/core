@@ -45,6 +45,18 @@ navig heartbeat trigger            # Trigger manual health check
 navig heartbeat history            # View heartbeat history
 ```
 
+### One-off reminders — a todo, never a cron job
+```bash
+navig todo add "<text, verbatim>" --at "2026-10-12 09:00" --space <space>
+navig todo list                    # every pending reminder, soonest first
+navig todo done <id>               # tick it off — cancels the ping
+```
+A cron job is for work that RECURS. Cron has no year, so `0 11 9 10 *` fires on
+9 October every year; `navig cron add` refuses a date-pinned schedule unless
+`--yearly` is passed. A todo with `--at` pings Telegram once, shows in
+`navig todo list` and the Deck, and stops when it is done. Use `--at` rather than a
+date inside the text: the text may mention other dates, and it is kept word for word.
+
 ## Decision Framework
 
 ### When to Act Autonomously

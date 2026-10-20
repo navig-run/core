@@ -97,6 +97,7 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "list_code_usages",
         "search",
         "web_fetch",
+        "domain_lookup",
         "wiki_search",
         "wiki_read",
         "kb_lookup",

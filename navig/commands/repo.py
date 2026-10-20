@@ -25,7 +25,9 @@ parallel. Two hazards follow:
   written by ``.claude/hooks/agent_lock.py`` (Claude Code PreToolUse hook).
 
 The lock file is ``.dev/agent.lock`` at the repo root — JSON with
-``session_id`` / ``claimed_at`` / ``updated_at`` / ``branch``. A lock older
+``session_id`` / ``claimed_at`` / ``updated_at`` / ``branch`` (where HEAD is) /
+``expected_branch`` (where the holder last switched it; its commits are refused when
+HEAD has moved to another branch since — additive, may be absent). A lock older
 than ``LOCK_TTL_MINUTES`` (no refresh) counts as stale and may be taken
 over. **Keep the schema + TTL in sync with .claude/hooks/agent_lock.py.**
 """
@@ -94,7 +96,7 @@ def _git(
     ``repo`` commands two ways: probing a worktree whose folder is already gone
     (``stale`` reading a dangling worktree, ``prune`` re-checking an orphan dir
     that vanished), and a mangled ``--repo`` (a shell that stripped the
-    backslashes off ``E:\\projects\\...`` → ``E:projects...``, an invalid
+    backslashes off ``C:\\projects\\...`` → ``C:projects...``, an invalid
     drive-relative path). Both used to crash the whole CLI with WinError 267.
 
     We degrade rather than silently retry in the process cwd: for ``repo_root``
@@ -877,12 +879,38 @@ def conflicts_cmd(
     ch.dim("All worktree pairs merge cleanly · re-check anytime with: navig repo conflicts")
 
 
+def _dirty_paths(porcelain: str) -> list[str]:
+    """Tracked paths with uncommitted changes, from ``git status --porcelain``.
+
+    A rename prints ``R  old -> new``; both sides matter, because both move on checkout.
+    """
+    out: list[str] = []
+    for line in porcelain.splitlines():
+        if len(line) < 4:
+            continue
+        path = line[3:].strip()
+        if " -> " in path:
+            before, _, after = path.partition(" -> ")
+            out.extend([before.strip().strip('"'), after.strip().strip('"')])
+        else:
+            out.append(path.strip().strip('"'))
+    return [p for p in out if p]
+
+
 def sync_plan(root: Path) -> dict:
     """What `repo sync` would do, and why it may refuse. Pure inspection — no writes.
 
     Refusals, in order: the lock is held by a LIVE session (its uncommitted work is on
-    that branch), the tree is dirty, or the branch is not the default one and carries
-    commits that are not on the remote (switching away would strand them).
+    that branch), an uncommitted file would be **overwritten** by the switch or the
+    fast-forward, or the branch carries commits that are not on the remote (switching
+    away would strand them).
+
+    The dirty check is deliberately narrow. Refusing on *any* modified file sounds safe
+    and is useless in practice: an editor that writes `.vscode/settings.json` on its own
+    would block the sync forever, which is how the staleness this command exists to fix
+    comes straight back. Git already refuses a checkout that would clobber local work, so
+    the only thing worth blocking on is a real collision — a dirty file that the incoming
+    commits also touch. Everything else git carries across untouched.
     """
     default = default_branch(root)
     lock = read_lock(root)
@@ -907,8 +935,31 @@ def sync_plan(root: Path) -> dict:
         )
         return plan
     if dirty:
-        plan["blocked"] = f"{branch} has uncommitted changes — commit or stash them first"
-        return plan
+        changed = _dirty_paths(dirty_res.stdout)
+        plan["dirty_files"] = changed
+        incoming: set[str] = set()
+        unknown = False
+        for spec in (f"HEAD..{default}", f"{default}..origin/{default}"):
+            res = _git(["diff", "--name-only", spec], root)
+            if res.returncode != 0:
+                unknown = True
+                continue
+            incoming.update(x.strip() for x in res.stdout.splitlines() if x.strip())
+        collisions = sorted(set(changed) & incoming)
+        if collisions:
+            shown = ", ".join(collisions[:3])
+            more = f" (+{len(collisions) - 3} more)" if len(collisions) > 3 else ""
+            plan["blocked"] = (
+                f"{shown}{more} would be overwritten — commit or stash before syncing"
+            )
+            return plan
+        if unknown:
+            plan["blocked"] = (
+                f"{branch} has uncommitted changes and the incoming diff could not be read "
+                f"— commit or stash them first"
+            )
+            return plan
+        plan["carried"] = changed
     if branch != default:
         unpushed = _git(["log", "--oneline", f"origin/{branch}..{branch}"], root)
         if unpushed.returncode != 0 or unpushed.stdout.strip():
@@ -1186,6 +1237,39 @@ def _rmtree_force(
     return last
 
 
+def _unverifiable_or_plain(orphan: Path) -> dict | None:
+    """Interpret a FAILED ``rev-parse``: a dead leftover, or one we could not read.
+
+    ``_git`` reports a timeout (124), a vanished cwd (125) and any transient
+    failure (antivirus holding the checkout) as an ordinary non-zero result, so
+    treating every non-zero as "plain leftover folder" made the one thing prune
+    must never do — delete what it could not identify — the default path. An
+    entry that still HAS a ``.git`` marker whose gitdir exists means there is
+    something there we could not read; that needs ``--force``. A marker whose
+    gitdir is already gone is the common leftover (``git worktree remove`` plus
+    ``git worktree prune`` removes the metadata and leaves the file behind) and
+    stays deletable, as does a folder with no git marker at all.
+    """
+    marker = orphan / ".git"
+    if not marker.exists():
+        return None  # nothing git could read — a plain leftover folder
+    target = marker
+    try:
+        if marker.is_file():
+            line = marker.read_text(encoding="utf-8", errors="replace").strip()
+            if not line.startswith("gitdir:"):
+                return {"dirty": False, "branch": None, "unverified": True}
+            target = Path(line[len("gitdir:"):].strip())
+            if not target.is_absolute():
+                target = orphan / target
+    except OSError:
+        # The marker is unreadable — that is a reason to keep, not to delete.
+        return {"dirty": False, "branch": None, "unverified": True}
+    if not target.exists():
+        return None  # stale marker, its metadata already pruned — dead leftover
+    return {"dirty": False, "branch": None, "unverified": True}
+
+
 def _orphan_live_worktree(orphan: Path) -> dict | None:
     """Whether ``orphan`` is still a LIVE git worktree/repo of its own.
 
@@ -1196,11 +1280,14 @@ def _orphan_live_worktree(orphan: Path) -> dict | None:
     hold uncommitted or unmerged work git would normally protect — prune refuses
     it without ``--force``.
 
-    Returns ``{"dirty": bool, "branch": str|None}`` when live, else None.
+    Returns ``{"dirty": bool, "branch": str|None}`` when live, else None, and
+    ``{"unverified": True, ...}`` when git could not be asked at all — a state
+    prune must refuse without ``--force``, because deleting an unidentifiable
+    directory is exactly the data loss this check exists to prevent.
     """
     top = _git(["rev-parse", "--show-toplevel"], orphan)
     if top.returncode != 0:
-        return None  # not a git dir at all — a plain leftover folder
+        return _unverifiable_or_plain(orphan)
     try:
         if Path(top.stdout.strip()).resolve() != orphan.resolve():
             return None  # resolved to the PARENT repo — a dead leftover
@@ -1261,6 +1348,16 @@ def prune_cmd(
                 continue
             # SAFETY: never delete a live worktree/repo (uncommitted work) without --force.
             if od["live"] is not None and not force:
+                if od["live"].get("unverified"):
+                    # git could not tell us what this is (timeout/lock/transient
+                    # failure) — that is a reason to KEEP it, never to delete it.
+                    skipped.append(
+                        {
+                            "name": od["name"],
+                            "reason": "could not verify (git probe failed) — use --force",
+                        }
+                    )
+                    continue
                 detail = od["live"].get("branch") or "detached"
                 if od["live"].get("dirty"):
                     detail += ", uncommitted changes"
@@ -1303,11 +1400,13 @@ def prune_cmd(
             ],
         )
         for od in orphans:
-            safe = (
-                "[red]LIVE — needs --force[/red]"
-                if od["live"] is not None
-                else "[green]dead leftover[/green]"
-            )
+            live = od["live"]
+            if live is None:
+                safe = "[green]dead leftover[/green]"
+            elif live.get("unverified"):
+                safe = "[red]UNKNOWN — needs --force[/red]"
+            else:
+                safe = "[red]LIVE — needs --force[/red]"
             table.add_row(
                 _display_path(od["path"], root), _orphan_kind(od), safe, od.get("age") or "?"
             )
@@ -1317,16 +1416,23 @@ def prune_cmd(
             "Delete them with: navig repo prune --yes"
         )
         if live_count:
-            detail += f"\n{live_count} live worktree(s) will be SKIPPED unless you add --force."
+            detail += (
+                f"\n{live_count} dir(s) will be SKIPPED unless you add --force "
+                "(live worktrees, or ones git could not be asked about)."
+            )
         ch.warning("Dry run — nothing deleted.", detail)
         return
 
     if removed:
         ch.success(f"Removed {len(removed)} orphaned dir(s).", ", ".join(removed))
     if skipped:
+        has_unverified = any("could not verify" in s["reason"] for s in skipped)
         has_live = any("live worktree" in s["reason"] for s in skipped)
         has_locked = any(
-            "live worktree" not in s["reason"] and "outside" not in s["reason"] for s in skipped
+            "live worktree" not in s["reason"]
+            and "outside" not in s["reason"]
+            and "could not verify" not in s["reason"]
+            for s in skipped
         )
         hints = []
         if has_locked:
@@ -1336,6 +1442,12 @@ def prune_cmd(
                 "of it), a dev server or process still running from it, or an "
                 "antivirus/indexer briefly walking a fresh checkout. Close or cd out, then "
                 "re-run (prune retries transient locks); a reboot clears stubborn ones."
+            )
+        if has_unverified:
+            hints.append(
+                "Unverifiable dirs: git could not read them (a lock, a timeout, or a "
+                "transient failure) — re-run in a minute to let the probe succeed; use "
+                "--force only if you know their contents are disposable."
             )
         if has_live:
             hints.append(
@@ -2581,7 +2693,7 @@ def land_cmd(
             f"{plan['ahead']} commit(s) ahead · PR {plan['pr'] or '—'}"
             + (f" · {note}" if note else "")
             + "\nland finishes a MERGED branch; it never deletes unmerged work. "
-            "Merge it first (gh pr merge / the PR page), then land.",
+            "Land it with `npm run land` (gates once, then merges and cleans up).",
         )
         raise typer.Exit(1)
 
@@ -2618,6 +2730,514 @@ def land_cmd(
         f"Landed {branch}.",
         summary + "\n" + "\n".join(f"{k}: {v}" for k, v in done.items()),
     )
+
+
+# ── gates: who holds the machine's heavy-job lanes ───────────────────────────
+# The lane protocol is scripts/heavy-slot-lib.mjs, shared by navig's and Schema's
+# gates. These mirror its constants, and the liveness rule below must agree with
+# its isFree(): a view that calls a lane busy when the queue reuses it (or the
+# reverse) is worse than no view.
+GATE_MAX_HOLD_S = 3 * 3600  # MAX_HOLD_MS: an older holder file frees its lane
+GATE_SLOW_S = 45 * 60  # a push gate is ~13-25 min; past 45 it is worth a look
+GATE_TICKET_STALE_S = 30  # TICKET_STALE_MS: a waiter rewrites its ticket every ~2 s
+_GATE_LANE_RE = re.compile(r"^(slot|overflow|express|push)-(\d+)\.json$")
+_GATE_TICKET_RE = re.compile(r"^ticket-(\d+)-(\d+)\.json$")
+
+
+def _gate_slot_dir() -> Path:
+    env = os.environ.get("NAVIG_SLOT_DIR")
+    return Path(env) if env else Path.home() / ".navig" / "slots" / "heavy"
+
+
+def _gate_capacity(var: str, default: int, lo: int, hi: int) -> int:
+    try:
+        n = int(os.environ.get(var, ""))
+    except ValueError:
+        return default
+    return n if lo <= n <= hi else default
+
+
+def _gate_pid_info(pid: int) -> dict | None:
+    """Start time, cwd and ancestor pids of a live *pid*, or None when it is gone."""
+    import psutil  # noqa: PLC0415 — core dependency, deferred for `navig help` speed
+
+    try:
+        proc = psutil.Process(pid)
+        info: dict = {"created": proc.create_time(), "cwd": None, "ancestors": []}
+        try:
+            info["cwd"] = proc.cwd()
+        except (psutil.AccessDenied, psutil.ZombieProcess, OSError):
+            pass
+        try:
+            info["ancestors"] = [p.pid for p in proc.parents()]
+        except (psutil.AccessDenied, psutil.ZombieProcess, OSError):
+            pass
+        return info
+    except psutil.AccessDenied:
+        # A process owned by another user (the runner service account `navig-ci`): it EXISTS —
+        # the lane protocol treats EPERM as alive — so report it alive with unknown details,
+        # never as "dead". Showing it dead would call a busy lane free.
+        return {"created": None, "cwd": None, "ancestors": [], "other_user": True}
+    except (psutil.NoSuchProcess, ValueError):
+        return None
+
+
+def _gate_current_step(cwd: str | None, now: float, pid: int | None = None) -> dict | None:
+    """The step a navig gate is on, from the run log it rewrites before every step.
+
+    Read from the process cwd when readable; otherwise from the per-pid mirror every gate
+    writes to the machine-wide CI dir (``<ci dir>/runlogs/<pid>.json``) — the only way to see
+    a job running under another user (cwd is denied across accounts)."""
+    entries = None
+    if cwd:
+        try:
+            entries = json.loads((Path(cwd) / ".dev" / "logs" / "ci-local-last-run.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            entries = None
+    if entries is None and pid is not None:
+        try:
+            from navig.commands.repo_ci import ci_dir  # noqa: PLC0415
+
+            mirror = json.loads((ci_dir() / "runlogs" / f"{pid}.json").read_text(encoding="utf-8"))
+            entries = mirror.get("steps") if isinstance(mirror, dict) else None
+        except (OSError, ValueError, ImportError):
+            entries = None
+    if entries is None:
+        return None
+    if not isinstance(entries, list) or not entries or not isinstance(entries[-1], dict):
+        return None
+    last = entries[-1]
+    if last.get("state") != "running":
+        return None
+    try:
+        began = datetime.fromisoformat(str(last["startedAt"]).replace("Z", "+00:00")).timestamp()
+    except (KeyError, ValueError):
+        began = None
+    return {
+        "name": str(last.get("step") or "?"),
+        "minutes": None if began is None else max(0, int((now - began) // 60)),
+        "budget_min": last.get("budgetMin"),
+    }
+
+
+def collect_gates(
+    slot_dir: Path,
+    marker_dir: Path | None,
+    *,
+    now: float | None = None,
+    pid_info=_gate_pid_info,
+) -> dict:
+    """Every gate on the machine: lane holders and queued jobs, from any project.
+
+    *pid_info* is injectable so the classification can be tested without real
+    processes. States: ``running`` · ``slow`` (past GATE_SLOW_S) · ``reused`` (the
+    holder's pid now belongs to a younger process — the queue still counts the lane
+    busy, so it is blocked) · ``dead`` / ``expired`` (the queue already treats the
+    lane as free; only the file is left) · ``queued`` (waiting for a lane).
+
+    The queue is read from the lane protocol's own TICKETS, which live beside the lane
+    files and so are the same whatever directory this runs from. It used to be read
+    only from navig's per-checkout gate markers, located through git in the current
+    directory: run from a home directory it printed "0 queued" with 18 jobs waiting,
+    and from inside the repo it still could not see another project's waiters. The
+    markers remain a fallback for a navig gate that has no ticket.
+    """
+    now = time.time() if now is None else now
+    rows: list[dict] = []
+    holder_pids: set[int] = set()
+    for f in sorted(slot_dir.glob("*.json")) if slot_dir.is_dir() else []:
+        m = _GATE_LANE_RE.match(f.name)
+        if not m:
+            continue
+        try:
+            h = json.loads(f.read_text(encoding="utf-8"))
+            pid = int(h["pid"])
+            started = datetime.fromisoformat(str(h["started"]).replace("Z", "+00:00")).timestamp()
+        except (OSError, ValueError, KeyError, TypeError):
+            rows.append({"lane": f"{m[1]} {m[2]}", "state": "unreadable", "file": f.name})
+            continue
+        project, _, worktree = str(h.get("repo") or "?").partition("/")
+        row = {
+            "lane": f"{m[1]} {m[2]}",
+            "kind": m[1],
+            "project": project,
+            "worktree": worktree or None,
+            "label": h.get("label") or "",
+            "pid": pid,
+            "since": started,
+            "minutes": max(0, int((now - started) // 60)),
+            "step": None,
+        }
+        info = pid_info(pid)
+        if now - started > GATE_MAX_HOLD_S:
+            row["state"] = "expired"
+        elif info is None:
+            row["state"] = "dead"
+        elif info["created"] is not None and info["created"] > started + 5:
+            # Started after it claimed the lane: a stranger reusing the pid.
+            row["state"] = "reused"
+        else:
+            holder_pids.add(pid)
+            row["state"] = "slow" if now - started > GATE_SLOW_S else "running"
+            row["other_user"] = bool(info.get("other_user"))
+            row["step"] = _gate_current_step(info.get("cwd"), now, pid)
+        rows.append(row)
+
+    # Live tickets, oldest first — the order the queue serves them. Live means what the
+    # protocol's tickets() means: a heartbeat within TICKET_STALE_MS and a living pid.
+    # Read-only: the queue itself removes stale tickets; a view must not.
+    queued: list[tuple[float, int, dict]] = []
+    queued_pids: set[int] = set()
+    for f in sorted(slot_dir.glob("ticket-*.json")) if slot_dir.is_dir() else []:
+        if not _GATE_TICKET_RE.match(f.name):
+            continue
+        try:
+            beat = f.stat().st_mtime
+            t = json.loads(f.read_text(encoding="utf-8"))
+            pid = int(t["pid"])
+            since = float(t["since"]) / 1000
+        except (OSError, ValueError, KeyError, TypeError):
+            continue  # mid-write or just removed by the queue
+        if now - beat > GATE_TICKET_STALE_S or pid in holder_pids or pid_info(pid) is None:
+            continue
+        project, _, worktree = str(t.get("repo") or "?").partition("/")
+        queued_pids.add(pid)
+        queued.append((since, pid, {
+            "lane": "— (express)" if t.get("express") else "—",
+            # Kept as its own field, not parsed back out of the lane cell: an express
+            # waiter has a second door to start (see estimate_gate_starts).
+            "express": bool(t.get("express")),
+            "kind": "queued",
+            "project": project,
+            "worktree": worktree or None,
+            "label": t.get("label") or "",
+            "pid": pid,
+            "since": since,
+            "minutes": max(0, int((now - since) // 60)),
+            "state": "queued",
+            "step": None,
+        }))  # fmt: skip
+    rows += [row for _, _, row in sorted(queued, key=lambda q: (q[0], q[1]))]
+
+    if marker_dir is not None and marker_dir.is_dir():
+        for f in sorted(marker_dir.glob("*.pid")):
+            try:
+                pid = int(f.stem)
+                marker_started = f.stat().st_mtime
+            except ValueError:
+                continue
+            except OSError:
+                continue  # removed while the view was reading it
+            if pid in holder_pids or pid in queued_pids:
+                continue
+            info = pid_info(pid)
+            if (
+                info is None
+                or (info["created"] is not None and info["created"] > marker_started + 5)
+                or holder_pids & set(info.get("ancestors") or [])
+            ):
+                # Gone (reaped on the next count), a stale marker whose PID now belongs
+                # to a newer unrelated process, or nested inside a lane holder. Marker
+                # files are best-effort hints and may survive a hard-killed gate; PID
+                # reuse must not turn one into a permanent phantom queue entry.
+                continue
+            cwd = info.get("cwd")
+            since = info["created"] if info["created"] is not None else marker_started
+            rows.append({
+                "lane": "—",
+                "kind": "queued",
+                "project": "navig",
+                "worktree": Path(cwd).name if cwd else None,
+                "label": "ci-local",
+                "pid": pid,
+                "since": since,
+                "minutes": max(0, int((now - since) // 60)),
+                "state": "queued",
+                "step": None,
+            })  # fmt: skip
+
+    # Defaults mirror heavy-slot-lib.mjs (DEFAULT_SLOTS 4, OVERFLOW 1, EXPRESS 1, PUSH 1); this
+    # used to say 3 lanes and ignore the push lane, so a push-lane holder never showed up.
+    lanes = _gate_capacity("NAVIG_HEAVY_SLOTS", 4, 1, 64)
+    overflow = _gate_capacity("NAVIG_HEAVY_OVERFLOW", 1, 0, 8)
+    express = _gate_capacity("NAVIG_HEAVY_EXPRESS", 1, 0, 4)
+    push = _gate_capacity("NAVIG_HEAVY_PUSH", 1, 0, 4)
+    busy = {"running", "slow", "reused"}
+    return {
+        "gates": rows,
+        "lanes": lanes,
+        "overflow": overflow,
+        "express": express,
+        "push": push,
+        "push_busy": sum(1 for r in rows if r.get("kind") == "push" and r["state"] in busy),
+        "lanes_busy": sum(1 for r in rows if r.get("kind") == "slot" and r["state"] in busy),
+        "overflow_busy": sum(1 for r in rows if r.get("kind") == "overflow" and r["state"] in busy),
+        "express_busy": sum(1 for r in rows if r.get("kind") == "express" and r["state"] in busy),
+        "queued": sum(1 for r in rows if r["state"] == "queued"),
+    }
+
+
+def _gate_marker_dir(root: Path | None) -> Path | None:
+    """`.dev/logs/ci-running` under the MAIN checkout — shared by every worktree."""
+    if root is None:
+        return None
+    res = _git(["rev-parse", "--path-format=absolute", "--git-common-dir"], root)
+    if res.returncode != 0 or not res.stdout.strip():
+        return None
+    return Path(res.stdout.strip()).parent / ".dev" / "logs" / "ci-running"
+
+
+#: When a label has no history yet: a push gate is ~13-25 min, so assume the high end.
+GATE_DEFAULT_HOLD_S = 25 * 60
+
+
+def gate_typical_hold(history: Path, *, window: int = 30) -> tuple[dict[str, float], float]:
+    """Median seconds a lane was held, per label and overall, from the newest *window* runs
+    of each label in the lane protocol's history.jsonl. Never raises."""
+    import statistics
+
+    per: dict[str, list[float]] = {}
+    try:
+        lines = history.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        try:
+            h = json.loads(line)
+            a = datetime.fromisoformat(str(h["started"]).replace("Z", "+00:00")).timestamp()
+            b = datetime.fromisoformat(str(h["ended"]).replace("Z", "+00:00")).timestamp()
+        except (ValueError, KeyError, TypeError):
+            continue
+        if b > a:
+            per.setdefault(str(h.get("label") or ""), []).append(b - a)
+    medians = {k: statistics.median(v[-window:]) for k, v in per.items() if v}
+    every = [d for v in per.values() for d in v[-window:]]
+    return medians, (statistics.median(every) if every else GATE_DEFAULT_HOLD_S)
+
+
+def estimate_gate_starts(rows: list[dict], lanes: int, holds: dict[str, float], fallback: float,
+                         *, now: float, express: int = 0) -> None:
+    """Set ``eta_s`` (seconds until it starts) on every queued row, in place.
+
+    A simple, honest model: each busy lane frees after the typical hold for ITS label minus
+    the time already spent; queued gates take the earliest free lane in queue order and then
+    hold it for their own label's typical time. It is an estimate — the column says so.
+
+    TWO pools, because ``heavy-slot-lib.mjs`` serves two: the main lanes (slot + overflow)
+    take anyone, and the express lanes take ONLY express waiters, counting express tickets
+    ahead. An express waiter also takes a free main lane (the protocol prefers one, to keep
+    the express lanes open), so its ETA is the earlier of the two — modelling only the main
+    pool would quote it a wait it will not have.
+    """
+    hold = lambda r: holds.get(r.get("label") or "", fallback)  # noqa: E731
+    free_at = sorted(
+        max(0.0, hold(r) - (now - r["since"]))
+        for r in rows
+        if r.get("kind") in ("slot", "overflow") and r.get("state") in ("running", "slow", "reused") and r.get("since")
+    )
+    free_at += [0.0] * max(0, lanes - len(free_at))
+    busy_express = sum(
+        1 for r in rows if r.get("kind") == "express" and r.get("state") in ("running", "slow", "reused")
+    )
+    expr_free_at = [0.0] * max(0, express - busy_express)
+    for r in rows:
+        if r.get("state") != "queued":
+            continue
+        free_at.sort()
+        start = free_at[0]
+        expr_start = None
+        if r.get("express") and expr_free_at:
+            expr_free_at.sort()
+            expr_start = expr_free_at[0]
+        if expr_start is not None and expr_start < start:
+            r["eta_s"] = expr_start
+            expr_free_at[0] = expr_start + hold(r)
+        else:
+            r["eta_s"] = start
+            free_at[0] = start + hold(r)
+
+
+_GATE_STATE_CELL = {
+    "running": "[green]● running[/green]",
+    "slow": "[yellow]● slow[/yellow]",
+    "queued": "[cyan]◌ queued[/cyan]",
+    "reused": "[red]✗ reused[/red]",
+    "dead": "[dim]○ dead[/dim]",
+    "expired": "[dim]○ expired[/dim]",
+    "unreadable": "[yellow]? unreadable[/yellow]",
+}
+
+
+@repo_app.command("gates")
+def gates_cmd(
+    project: str = typer.Argument(
+        None, help="Show only this project's gates, by name (navig, schema, …). Default: every project."
+    ),
+    repo: str = typer.Option(None, "--repo", help="Repo whose gate markers to include (default: current directory)"),
+    watch: float = typer.Option(0, "--watch", "-w", help="Redraw every N seconds until Ctrl-C (0 = once)"),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output"),
+    prs: bool = typer.Option(False, "--prs", help="This repository's view: open PRs, their gate-result, the land queue"),
+    no_github: bool = typer.Option(False, "--no-github", help="Local lanes only: skip runners, checks and spend (offline)"),
+    deep: bool = typer.Option(False, "--deep", help="Also sample the disk queue (~1 s) for the bottleneck"),
+) -> None:
+    """Show every CI gate on this machine: lanes, runners, bottleneck, spend — or PR checks with --prs.
+
+    \b
+    Fleet (default): heavy lanes, self-hosted runners (free/busy/offline), Actions jobs,
+    the bottleneck, a history-based ETA (only when dependable) and GitHub spend vs budget.
+    Repository (--prs): each open PR's gate-result, the async land queue, the last landed
+    commit and why a landing is blocked.
+
+    \b
+    Examples:
+      navig repo gates               # the whole machine, from any folder
+      navig repo gates schema        # only Schema's lanes
+      navig repo gates --prs         # this repo: PR checks + land queue
+      navig repo gates --watch 5     # live view, redrawn every 5 s
+    """
+    from navig.commands import repo_ci  # noqa: PLC0415 — deferred (GitHub plumbing)
+
+    root = resolve_repo_root(repo)
+
+    def _snapshot() -> dict:
+        now = time.time()
+        data = collect_gates(_gate_slot_dir(), _gate_marker_dir(root), now=now)
+        holds, fallback = gate_typical_hold(_gate_slot_dir() / "history.jsonl")
+        estimate_gate_starts(data["gates"], data["lanes"] + data["overflow"], holds, fallback, now=now,
+                             express=data.get("express", 0))
+        queued = [r for r in data["gates"] if r["state"] == "queued"]
+        for i, r in enumerate(queued, 1):
+            r["position"] = i
+        if project:
+            want = project.lower()
+            data["gates"] = [r for r in data["gates"] if (r.get("project") or "").lower() == want]
+        data["filter"] = project
+        if prs:
+            data["repo_view"] = repo_ci.build_repo_view(repo_ci.repo_slug(root))
+        else:
+            data["fleet"] = repo_ci.build_fleet(data, repo=repo_ci.repo_slug(root), github=not no_github, deep=deep)
+        return data
+
+    if json_out:
+        if watch:
+            typer.echo("--watch cannot be combined with --json.", err=True)
+            raise typer.Exit(2)
+        typer.echo(json.dumps(_snapshot(), indent=2))
+        return
+    if not watch:
+        _render_gates(_snapshot())
+        return
+    from navig import console_helper as ch
+
+    try:
+        while True:
+            data = _snapshot()
+            ch.console.clear()
+            _render_gates(data)
+            ch.dim(f"refreshing every {watch:g}s · Ctrl-C to stop")
+            time.sleep(max(1.0, watch))
+    except KeyboardInterrupt:
+        return
+
+
+def _fmt_eta(seconds: float | None) -> str:
+    if seconds is None:
+        return "[dim]—[/dim]"
+    if seconds < 60:
+        return "[green]next[/green]"
+    m = int(seconds // 60)
+    return f"~{m}m" if m < 90 else f"~{m // 60}h{m % 60:02d}"
+
+
+def _render_gates(data: dict) -> None:
+    """The lanes table, then the fleet block — or, with --prs, this repo's PR view alone."""
+    from navig.commands import repo_ci  # noqa: PLC0415
+
+    if "repo_view" in data:
+        repo_ci.render_repo_view(data["repo_view"])
+        return
+    _render_lanes(data)
+    if "fleet" in data:
+        repo_ci.render_fleet(data["fleet"])
+
+
+def _render_lanes(data: dict) -> None:
+    from navig import console_helper as ch
+    from navig.console_helper import Table
+
+    express_part = f"express {data['express_busy']}/{data['express']} · " if data.get("express") else ""
+    push_part = f"push {data.get('push_busy', 0)}/{data['push']} · " if data.get("push") else ""
+    lane_line = (
+        f"{data['lanes_busy']}/{data['lanes']} lanes busy · "
+        f"overflow {data['overflow_busy']}/{data['overflow']} · {express_part}{push_part}{data['queued']} queued"
+    )
+    if data.get("filter"):
+        lane_line += f" · showing {data['filter']} ({len(data['gates'])})"
+    if not data["gates"]:
+        # The sentence already names the filter, so drop the trailing "· showing …" —
+        # kept as it was, the project appeared twice and the line wrapped at 120 columns.
+        head = f"No gates{' for ' + data['filter'] if data.get('filter') else ''} running or queued."
+        ch.info(f"{head} {lane_line.split(' · showing')[0]}")
+        return
+
+    # Compact by design: a normal 120-column terminal must show every column. Every
+    # column but Step is sized to its widest cell; Step gets exactly what is left (Rich
+    # otherwise shrinks ALL columns together, so "Project" read "Pr…" at 120 columns).
+    from rich.text import Text
+
+    heads = ["#", "Project", "Worktree", "Gate", "State", "Since", "Min", "ETA", "PID", "Step"]
+    rows_out: list[list[str]] = []
+    for r in data["gates"]:
+        step = r.get("step")
+        step_cell = "[dim]—[/dim]"
+        if step:
+            spent = "?" if step["minutes"] is None else str(step["minutes"])
+            budget = f"/{step['budget_min']}m" if step.get("budget_min") else "m"
+            step_cell = f"[dim]{spent}{budget}[/dim] {step['name']}"
+        if r["state"] == "queued":
+            pos = str(r.get("position", ""))
+        else:
+            lane = r.get("lane") or ""
+            pos = f"[dim]{lane.replace('slot ', 's').replace('overflow ', 'o').replace('express ', 'e').replace('push ', 'p')}[/dim]"
+        since = datetime.fromtimestamp(r["since"]).strftime("%H:%M") if r.get("since") else "—"
+        worktree = r.get("worktree") or "[dim]main[/dim]"
+        label = r.get("label") or ""
+        rows_out.append([
+            pos, r.get("project") or "?",
+            worktree if Text.from_markup(worktree).cell_len <= 20 else worktree[:19] + "…",
+            label if len(label) <= 14 else label[:13] + "…",
+            (_GATE_STATE_CELL.get(r["state"], r["state"]) + (" [dim](other user)[/dim]" if r.get("other_user") else "")),
+            since, str(r.get("minutes", "?")),
+            _fmt_eta(r.get("eta_s")) if r["state"] == "queued" else "", str(r.get("pid") or ""), step_cell,
+        ])
+    widths = [max([len(heads[i])] + [Text.from_markup(row[i]).cell_len for row in rows_out]) for i in range(9)]
+    pad = 2  # padding=(0, 1): Rich counts one space each side INSIDE a column's width
+    keep = list(range(9))
+    # A narrow window drops the least useful columns WHOLE (PID, then Since, then Gate)
+    # rather than letting Rich shave every column into "Pr…".
+    for optional in ("PID", "Since", "Gate"):
+        if ch.console.width - sum(widths[i] + pad for i in keep) - pad >= 12:
+            break
+        keep.remove(heads.index(optional))
+    step_w = max(8, ch.console.width - sum(widths[i] + pad for i in keep) - pad - 1)
+
+    table = Table(box=None, show_header=True, padding=(0, 1))
+    for i in keep:
+        h = heads[i]
+        table.add_column(h, no_wrap=True, width=widths[i] + pad,
+                         justify="right" if h in ("#", "Min", "ETA", "PID") else "left",
+                         style="cyan" if h == "Project" else None)
+    table.add_column("Step", no_wrap=True, overflow="ellipsis", width=step_w + pad)
+    for row in rows_out:
+        table.add_row(*[row[i] for i in keep], row[9])
+    ch.console.print(table)
+
+    nudge = lane_line
+    if any(r["state"] == "reused" for r in data["gates"]):
+        nudge += " · a reused pid blocks a lane for up to 3h — delete its file in " + str(_gate_slot_dir())
+    elif data["queued"]:
+        nudge += " · ETA ≈ typical lane time per gate · push with npm run push"
+    ch.dim(nudge)
 
 
 lock_app = typer.Typer(
@@ -2668,6 +3288,39 @@ def lock_status_cmd(
 ) -> None:
     """Show who holds the main-checkout agent lock."""
     _print_lock_status(_require_root(repo or _ctx_repo(ctx)))
+
+
+@lock_app.command("check")
+def lock_check_cmd(
+    ctx: typer.Context,
+    repo: str = typer.Option(None, "--repo", help="Target repo (default: current directory)"),
+) -> None:
+    """Exit 1 when ANOTHER live session holds the main checkout. Built for the pre-commit hook.
+
+    ``status`` reports for a human, ``check`` reports for a hook. Two agents in one checkout
+    is how staged files get swept into somebody else's commit and how a push fails on files
+    its author never wrote, so the losing session refuses BEFORE committing rather than
+    discovering it after. Free, stale, and this session's own lock all pass — the point is
+    other sessions, not friction.
+    """
+    root = _require_root(repo or _ctx_repo(ctx))
+    from navig import console_helper as ch
+
+    lock = read_lock(root)
+    st = lock_state(lock)
+    if st["state"] != "held" or lock_is_ours(lock):
+        ch.dim("agent lock: clear — this checkout is yours to commit in")
+        return
+    ch.warning(
+        f"another session holds this checkout (session {st.get('session', '?')}, "
+        f"age {st.get('age_minutes', '?')}m, branch {st.get('branch') or '?'})",
+        "One task, one worktree: `navig repo new <slug>`, then commit there.",
+    )
+    ch.dim(
+        "That session gone? navig repo lock release --force  ·  "
+        "NAVIG_SKIP_AGENT_LOCK=1 to commit anyway"
+    )
+    raise typer.Exit(1)
 
 
 @lock_app.command("release")
@@ -3069,3 +3722,4 @@ def guard_uninstall_cmd(
     if lock_file.exists():
         ch.dim(f"note: lock file left in place ({_display_path(lock_file, root)})")
     ch.success("Repo guard uninstalled.", "Applies to new Claude Code sessions.")
+

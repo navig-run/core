@@ -274,7 +274,7 @@ def atomic_write_yaml(
 
 
 def atomic_write_text(
-    path: Path | str, content: str, *, encoding: str = "utf-8"
+    path: Path | str, content: str, *, encoding: str = "utf-8", newline: str | None = None
 ) -> None:
     """Write *content* to *path* atomically.
 
@@ -287,6 +287,10 @@ def atomic_write_text(
         path:     Destination path.  Parent directories are created as needed.
         content:  Text to write.
         encoding: Character encoding (default ``utf-8``).
+        newline:  Passed to ``open()``. The default (``None``) translates ``\\n`` to
+                  the platform separator — on Windows that rewrites an LF file as
+                  CRLF. Pass ``""`` to write *content*'s line endings byte-for-byte,
+                  which is what an in-place edit of a user's file must do.
 
     Raises:
         OSError: If all retry attempts fail.
@@ -308,7 +312,7 @@ def atomic_write_text(
         # that branch is long gone, so the flag was dead state documenting a guard that no
         # longer exists.)
         try:
-            with os.fdopen(fd, "w", encoding=encoding) as fh:
+            with os.fdopen(fd, "w", encoding=encoding, newline=newline) as fh:
                 fh.write(content)
                 fh.flush()
                 os.fsync(fh.fileno())

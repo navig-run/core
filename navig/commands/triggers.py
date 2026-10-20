@@ -659,7 +659,7 @@ class TriggerManager:
 
         for action in trigger.actions:
             actions_run += 1
-            success, msg = self._execute_action(action, trigger, event)
+            success, msg, suppressed = self._execute_action(action, trigger, event)
 
             if success:
                 actions_succeeded += 1
@@ -667,7 +667,10 @@ class TriggerManager:
                 actions_failed += 1
                 messages.append(msg)
 
-                if action.on_failure == "stop":
+                # A policy suppression is not a failure of THIS chain: the
+                # pipeline accepted the alert; its rules chose not to ring.
+                # Only a genuine failure stops an on_failure:stop chain.
+                if action.on_failure == "stop" and not suppressed:
                     break
 
         # Update trigger state
@@ -705,23 +708,32 @@ class TriggerManager:
 
     def _execute_action(
         self, action: TriggerAction, trigger: Trigger, event: TriggerEvent
-    ) -> tuple[bool, str]:
-        """Execute a single action."""
+    ) -> tuple[bool, str, bool]:
+        """Execute a single action -> ``(success, message, suppressed)``.
+
+        ``suppressed`` is True only when the notify PIPELINE DELIBERATELY
+        withheld delivery (master toggle off, quiet hours, type muted) — an
+        operator policy, not a breakage. A suppressed notify still counts as
+        a failed action in history (the alert reached nobody), but it must
+        NOT halt an ``on_failure: stop`` chain: quiet hours stopping the
+        backup that follows the alert would turn a fair mechanism into an
+        outage. Genuine failures keep stopping the chain.
+        """
         try:
             if action.type == ActionType.COMMAND:
-                return self._run_command(action.target, action.params)
+                return (*self._run_command(action.target, action.params), False)
             elif action.type == ActionType.WORKFLOW:
-                return self._run_workflow(action.target, action.params)
+                return (*self._run_workflow(action.target, action.params), False)
             elif action.type == ActionType.NOTIFY:
                 return self._send_notification(action.target, trigger, event, action.params)
             elif action.type == ActionType.WEBHOOK:
-                return self._call_webhook(action.target, trigger, event, action.params)
+                return (*self._call_webhook(action.target, trigger, event, action.params), False)
             elif action.type == ActionType.SCRIPT:
-                return self._run_script(action.target, action.params)
+                return (*self._run_script(action.target, action.params), False)
             else:
-                return False, f"Unknown action type: {action.type}"
+                return False, f"Unknown action type: {action.type}", False
         except Exception as e:
-            return False, str(e)
+            return False, str(e), False
 
     def _run_command(self, command: str, params: dict[str, Any]) -> tuple[bool, str]:
         """Run a navig command."""
@@ -804,8 +816,19 @@ class TriggerManager:
         trigger: Trigger,
         event: TriggerEvent,
         params: dict[str, Any],
-    ) -> tuple[bool, str]:
-        """Send notification via specified channel."""
+    ) -> tuple[bool, str, bool]:
+        """Send notification via the action's channel -> ``(success, msg, suppressed)``.
+
+        ``telegram`` goes through :func:`navig.notify.dispatch` — the real
+        pipeline (routing matrix, quiet hours, master toggle, fan-out, delivery
+        verification). ``console``/``log`` are local debug sinks and stay local.
+
+        ``suppressed`` distinguishes "the pipeline's rules withheld delivery"
+        (master toggle / quiet hours / type muted — policy, not breakage) from
+        "delivery genuinely failed" (channels errored, dispatch raised). Both
+        come back ``success=False`` so history never claims a reach that did
+        not happen; only the former is marked suppressed.
+        """
         message = params.get("message", f"Trigger '{trigger.name}' fired")
 
         # Substitute variables
@@ -815,56 +838,106 @@ class TriggerManager:
         message = message.replace("${timestamp}", event.timestamp)
 
         if channel == "telegram":
-            # Send via the configured bot. telegram_send needs a target chat:
-            # prefer an explicit one from the trigger action params, else fall
-            # back to the first allowed Telegram user (the default chat).
+            # Through the real notification pipeline (navig.notify.dispatch), not a
+            # direct Bot-API post: the per-type routing matrix, quiet hours, the
+            # master toggle, channel fan-out (deck/email/matrix/…) and per-channel
+            # delivery verification all apply to a trigger alert like any other.
+            # The chat is resolved INSIDE the pipeline (the type's Telegram route →
+            # the notify target → telegram.allowed_users[0]), so an action param can
+            # no longer point the bot at an arbitrary chat — the old direct send
+            # honoured `params.target` unchecked; the posture is now at least as
+            # strict as every other notification.
+            #
+            # dispatch is async and a trigger fires synchronously (the proactive
+            # engine and the deck routes call process_event from inside a running
+            # loop), so run it through the existing CLI sync bridge — it offloads to
+            # a worker thread's fresh loop when one is already running.
+            # Hand-written triggers that still set the old direct-send destination
+            # would otherwise change target SILENTLY (they used to aim the bot at any
+            # chat; the pipeline resolves the chat itself now). Say so on every fire
+            # and point at the supported way to pick the destination.
+            ignored = [k for k in ("target", "chat_id") if params.get(k)]
+            if ignored:
+                logger.warning(
+                    "Trigger '%s': param(s) %s no longer choose the Telegram chat — "
+                    "the notification pipeline resolves it; use `navig notify route "
+                    "set system_alert <chat>` to pick the destination. Delivering to "
+                    "the operator route.",
+                    trigger.id,
+                    ", ".join(ignored),
+                )
+
+            from navig.commands._async_utils import run_sync
+            from navig.notify import dispatch
+            from navig.notify.types import PRIORITIES
+
+            priority = str(params.get("priority", "normal"))
+            if priority not in PRIORITIES:
+                priority = "normal"  # a typo must not reach the router unparsed
             try:
-                from navig.commands.telegram import telegram_send
-
-                target = params.get("target") or params.get("chat_id")
-                if not target:
-                    from navig.commands.habit import _resolve_default_chat_id
-
-                    target = _resolve_default_chat_id()
-                if not target:
-                    return False, (
-                        "no Telegram target — set 'target' in the trigger action "
-                        "or configure telegram.allowed_users"
+                outcome = run_sync(
+                    dispatch(
+                        "system_alert",
+                        trigger.name,
+                        message,
+                        priority=priority,
+                        data={
+                            "trigger_id": trigger.id,
+                            "trigger_type": trigger.type.value,
+                            "trigger_source": event.source,
+                            "event_type": event.type.value,
+                        },
                     )
-                if params.get("message"):
-                    # Custom template — keep the user's exact content + parse mode.
-                    tg_message, tg_parse = message, "Markdown"
-                else:
-                    # Default notification — richly, safely formatted (escaped HTML:
-                    # bold trigger name, code-styled event fields, italic timestamp).
-                    from navig.gateway.channels.telegram_html import (
-                        bold,
-                        code,
-                        html_escape,
-                    )
-
-                    tg_message = (
-                        f"🔔 {bold(html_escape(trigger.name))} fired\n"
-                        f"{code(event.type.value)} from {code(event.source)}"
-                    )
-                    if event.timestamp:
-                        tg_message += f"\n<i>{html_escape(event.timestamp)}</i>"
-                    tg_parse = "HTML"
-                telegram_send(target=str(target), message=tg_message, parse_mode=tg_parse)
-                return True, ""
+                )
             except Exception as e:
-                return False, f"Telegram notification failed: {e}"
+                reason = f"notify dispatch failed: {e}"
+                logger.warning("Trigger '%s': %s", trigger.id, reason)
+                return False, reason, False
+
+            channels = (outcome or {}).get("channels") or []
+            delivered = [c for c in channels if c.get("ok")]
+            failed = [c for c in channels if not c.get("ok")]
+            failed_desc = "; ".join(
+                f"{c.get('channel', '?')} failed ({c.get('detail', '')})" for c in failed
+            )
+            if delivered:
+                # A partial send is still a send (same rule as `navig notify send`):
+                # succeed, but never drop the failed half silently.
+                if failed:
+                    logger.warning(
+                        "Trigger '%s': notify partial — %s", trigger.id, failed_desc
+                    )
+                return True, "", False
+            # Nothing landed. Report it as an action failure with the pipeline's own
+            # reason, so the history row says the alert did NOT reach the operator
+            # instead of recording a send that never happened. The first two
+            # reasons are POLICY suppression — the pipeline refused by rule — so
+            # they carry suppressed=True; a channel that errored did not.
+            if (outcome or {}).get("skipped") == "master_off":
+                reason = "notify: notifications are off (master toggle)"
+                logger.warning("Trigger '%s': %s", trigger.id, reason)
+                return False, reason, True
+            elif not channels:
+                reason = "notify: no channel delivered (quiet hours, or this type is muted)"
+                logger.warning("Trigger '%s': %s", trigger.id, reason)
+                return False, reason, True
+            reason = f"notify: {failed_desc}"
+            logger.warning("Trigger '%s': %s", trigger.id, reason)
+            return False, reason, False
         elif channel == "console":
             ch.info(f"[TRIGGER] {message}")
-            return True, ""
+            return True, "", False
         elif channel == "log":
             from navig.debug_logger import get_debug_logger
 
-            logger = get_debug_logger()
-            logger.info("[TRIGGER] %s", message)
-            return True, ""
+            # Named `debug_logger`, not `logger`: an assignment to `logger` ANYWHERE
+            # in this function would make it local throughout, and UnboundLocalError
+            # every module-logger call in the telegram branch above.
+            debug_logger = get_debug_logger()
+            debug_logger.info("[TRIGGER] %s", message)
+            return True, "", False
         else:
-            return False, f"Unknown notification channel: {channel}"
+            return False, f"Unknown notification channel: {channel}", False
 
     def _call_webhook(
         self, url: str, trigger: Trigger, event: TriggerEvent, params: dict[str, Any]

@@ -29,6 +29,7 @@ import logging
 import os
 import tempfile
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -300,6 +301,30 @@ def set_jobs_enabled(key: str | None, *, enabled: bool) -> list[str]:
             continue
         if svc.enable_job(job_id) if enabled else svc.disable_job(job_id):
             changed.append(job.name.removeprefix(HABIT_NAME_PREFIX))
+    return changed
+
+
+def set_named_jobs_enabled(matches: Callable[[str], bool], *, enabled: bool) -> list[str]:
+    """Enable/disable every job whose NAME satisfies *matches*. Returns the names changed.
+
+    The generic sibling of :func:`set_jobs_enabled` (which is scoped to ``habit:``
+    on purpose) — for a caller that owns its own name prefix, e.g. ``checkin:``.
+    """
+    changed: list[str] = []
+    svc = _live_service()
+    if svc is None:
+        resp = _gateway_json("GET", _CRONS_ROUTE)
+        if resp is not None:
+            verb = "enable" if enabled else "disable"
+            for job in resp.get("jobs") or []:
+                name = str(job.get("name") or "")
+                if matches(name) and _gateway_json("POST", f"{_CRONS_ROUTE}/{job['id']}/{verb}") is not None:
+                    changed.append(name)
+            return changed
+        svc = _detached_service()
+    for job_id, job in list(svc.jobs.items()):
+        if matches(job.name) and (svc.enable_job(job_id) if enabled else svc.disable_job(job_id)):
+            changed.append(job.name)
     return changed
 
 

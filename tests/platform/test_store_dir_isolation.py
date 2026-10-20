@@ -59,6 +59,7 @@ def test_every_store_honours_the_documented_variable(tmp_path: Path, monkeypatch
     monkeypatch.delenv("NAVIG_STORE_DIR", raising=False)
     monkeypatch.setenv("NAVIG_DATA_DIR", str(tmp_path))
 
+    from navig.projects.store import _default_db_path as projects_path
     from navig.store.board import _default_db_path as board_path
     from navig.store.contacts import _default_db_path as contacts_path
     from navig.store.generated_media import _default_db_path as media_path
@@ -73,8 +74,9 @@ def test_every_store_honours_the_documented_variable(tmp_path: Path, monkeypatch
         "scheduled_posts": posts_path,
         "telegram_catalog": catalog_path,
         "threads": threads_path,
+        "projects": projects_path,
     }
-    assert len(resolvers) >= 6, "the store inventory shrank — check this list is still complete"
+    assert len(resolvers) >= 7, "the store inventory shrank — check this list is still complete"
 
     escaped = {
         name: str(resolve())

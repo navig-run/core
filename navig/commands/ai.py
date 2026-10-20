@@ -261,8 +261,10 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
         if _fb:
             _to = _fb.get("to") or _fb.get("model") or "another account"
             _reason = _humanize_fallback_reason(_fb.get("reason"))
+            _fix = _fb.get("reconnect")
             ch.warning(
                 f"Primary connection was {_reason} — answered with {_to} instead.",
+                f"Reconnect it with '{_fix}'." if _fix else
                 "Rotated automatically; run 'navig connect list' to see your accounts.",
             )
 
@@ -318,7 +320,7 @@ def ai_callback(ctx: typer.Context):
             ch.warning("Ambiguous input — top interpretations:")
             for i, r in enumerate(top2, 1):
                 ch.dim(f"  {i}. navig ai {r.subcommand}  (confidence {r.confidence:.0%})")
-            ch.dim("Run one of the above directly, or navig ai ask \"<question>\" to ask freely.")
+            ch.dim("Run one of the above directly, or navig ask \"<question>\" to ask freely.")
         raise typer.Exit()
 
     show_subcommand_help("ai", ctx)
@@ -1219,7 +1221,7 @@ def ai_login(
 
             console.print()
             console.print("[dim]You can now use this provider with:[/dim]")
-            console.print(f"  navig ai ask 'your question' --model {provider_lower}:gpt-4o")
+            console.print(f"  navig ask 'your question' --model {provider_lower}:gpt-4o")
         else:
             console.print(f"[red]✗ OAuth failed: {result.error}[/red]")
             raise typer.Exit(1)
@@ -1276,6 +1278,11 @@ ai_memory_app = typer.Typer(
     no_args_is_help=False,
 )
 ai_app.add_typer(ai_memory_app, name="memory")
+
+# navig ai fallback — which model answers when a mode's model fails (own module).
+from navig.commands.ai_fallback import fallback_app as _ai_fallback_app  # noqa: E402
+
+ai_app.add_typer(_ai_fallback_app, name="fallback")
 
 
 @ai_memory_app.callback()

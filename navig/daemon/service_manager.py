@@ -221,7 +221,7 @@ def nssm_install(start_now: bool = True) -> tuple[bool, str]:
                 "set",
                 SERVICE_NAME,
                 "Description",
-                "NAVIG persistent daemon (bot + gateway + scheduler)",
+                "NAVIG persistent daemon (bot + gateway)",
             ],
             capture_output=True,
         )
@@ -401,6 +401,7 @@ def _schtasks_restart_xml() -> str:
     <Enabled>true</Enabled>
     <Hidden>true</Hidden>
     <ExecutionTimeLimit>PT5M</ExecutionTimeLimit>
+    <Priority>5</Priority>
   </Settings>
   <Actions>
     <Exec>
@@ -426,7 +427,7 @@ def _schtasks_xml() -> str:
     return f"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>NAVIG persistent daemon — Telegram bot, gateway, scheduler</Description>
+    <Description>NAVIG persistent daemon — Telegram bot, gateway</Description>
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>
@@ -490,6 +491,10 @@ def _schtasks_xml() -> str:
       <Count>999</Count>
     </RestartOnFailure>
     <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <!-- Normal priority. Omitted, Task Scheduler uses 7 = BELOW_NORMAL CPU + LOW
+         I/O, inherited by every daemon child: on a busy machine a 0.3 s deck read
+         took 18-42 s. 4-6 is the "normal" band. -->
+    <Priority>5</Priority>
   </Settings>
   <Actions>
     <Exec>
@@ -1036,6 +1041,73 @@ def has_systemd() -> bool:
     return shutil.which("systemctl") is not None
 
 
+# Where a distro package installs units (`navig-agent@.service` comes from the `navig`
+# Debian package, apps/os/linux/debian/navig/).
+_SYSTEMD_UNIT_DIRS = ("/etc/systemd/system", "/usr/lib/systemd/system", "/lib/systemd/system")
+
+
+def managed_systemd_unit() -> str | None:
+    """The system unit that supervises THIS user's daemon, when a package installed one.
+
+    The Debian packages ship a template, ``navig-agent@.service`` (``User=%i``), enabled
+    per owner as ``navig-agent@<user>.service``. When that instance exists, systemd owns
+    the daemon's lifecycle and every start/stop/restart must go THROUGH it: a daemon
+    killed behind systemd's back and respawned by hand is one systemd no longer
+    supervises, and a stop that escalates to SIGKILL reads as a failure that
+    ``Restart=on-failure`` immediately undoes.
+
+    ``NAVIG_SERVICE_UNIT`` (set by the unit itself) names it outright.
+    """
+    if not sys.platform.startswith("linux") or not has_systemd():
+        return None
+    named = os.environ.get("NAVIG_SERVICE_UNIT", "").strip()
+    if named:
+        return named if named.endswith(".service") else f"{named}.service"
+    if not any((Path(d) / f"{SYSTEMD_UNIT}@.service").is_file() for d in _SYSTEMD_UNIT_DIRS):
+        return None
+    try:
+        import getpass
+
+        user = getpass.getuser()
+    except Exception:  # noqa: BLE001 — no resolvable user, no instance to name
+        return None
+    unit = f"{SYSTEMD_UNIT}@{user}.service"
+    for probe in ("is-enabled", "is-active"):
+        try:
+            r = subprocess.run(
+                ["systemctl", probe, unit], capture_output=True, text=True, timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if r.returncode == 0:
+            return unit
+    return None
+
+
+def systemd_unit_action(unit: str, action: str, timeout: float = 90.0) -> tuple[bool, str]:
+    """``systemctl <action> <unit>`` without an interactive password prompt.
+
+    The ``navig`` package ships a polkit rule letting a user manage their OWN instance;
+    without it this fails fast instead of hanging on a prompt, and says what to run.
+    """
+    try:
+        r = subprocess.run(
+            ["systemctl", "--no-ask-password", action, unit],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"systemctl {action} {unit} did not finish within {timeout:g}s"
+    except OSError as e:
+        return False, str(e)
+    if r.returncode == 0:
+        return True, f"systemctl {action} {unit}"
+    lines = (r.stderr or r.stdout or "").strip().splitlines()
+    reason = lines[-1] if lines else f"exit {r.returncode}"
+    return False, f"{reason} — run: sudo systemctl {action} {unit}"
+
+
 def _systemd_unit_path(user: bool = False) -> Path:
     """Path to the systemd unit file."""
     if user:
@@ -1075,6 +1147,7 @@ Environment=NAVIG_HOME={home}
         username = getpass.getuser()
         unit += f"User={username}\n"
         unit += f"Group={username}\n"
+        unit += "".join(f"Environment={key}={value}\n" for key, value in _pinned_state_dirs())
 
     unit += """
 [Install]
@@ -1083,8 +1156,54 @@ WantedBy="""
     return unit
 
 
+def _pinned_state_dirs() -> list[tuple[str, str]]:
+    """Data/log/cache dirs a SYSTEM unit must pin to what the installing shell resolves.
+
+    Under systemd as root, ``paths._is_system_service()`` is true (INVOCATION_ID + uid 0),
+    so an unpinned daemon writes /var/lib/navig, /var/log/navig and /var/cache/navig while
+    root's own ``navig`` reads ~/.navig/data and ~/.local/state/navig/logs: on a root VPS
+    the CLI and the watcher it installed never saw the same store or logs (reproduced on
+    Ubuntu 24.04). The unit already pins NAVIG_CONFIG_DIR; these complete the set. Skipped
+    when the installer itself runs as a system service: its resolution IS the service's.
+    """
+    if paths._is_system_service():
+        return []
+    return [
+        ("NAVIG_DATA_DIR", str(paths.data_dir())),
+        ("NAVIG_LOG_DIR", str(paths.log_dir())),
+        ("NAVIG_CACHE_DIR", str(paths.cache_dir())),
+    ]
+
+
+def _current_user() -> str:
+    import getpass
+
+    return getpass.getuser()
+
+
+def _enable_linger() -> str | None:
+    """Enable lingering for this user; ``None`` on success, else the reason it failed.
+
+    Without linger a USER unit stops at logout and does not start at boot: on a VPS that
+    is "the watcher dies when you close SSH". The return code used to be ignored.
+    """
+    try:
+        proc = subprocess.run(["loginctl", "enable-linger", _current_user()], capture_output=True)
+    except OSError as exc:
+        return f"lingering could not be enabled ({exc})"
+    if proc.returncode != 0:
+        err = (proc.stderr or b"").decode("utf-8", errors="replace").strip()
+        return f"lingering could not be enabled ({err or f'exit {proc.returncode}'})"
+    return None
+
+
 def systemd_install(start_now: bool = True) -> tuple[bool, str]:
     """Install the daemon as a systemd service."""
+    managed = managed_systemd_unit()
+    if managed:
+        # A second, per-user unit would run a second daemon against the same config dir
+        # and the two would fight over the port and the pid file.
+        return True, f"Already managed by the system unit {managed} (installed by the navig package)"
     _ensure_dirs()
 
     # Decide: system-wide (needs root) or user service
@@ -1108,10 +1227,13 @@ def systemd_install(start_now: bool = True) -> tuple[bool, str]:
                 check=True,
                 capture_output=True,
             )
-            # Enable lingering so user services run without login
-            subprocess.run(
-                ["loginctl", "enable-linger"],
-                capture_output=True,
+            # Lingering keeps a user service running after logout and starts it at boot.
+            linger_warning = _enable_linger()
+            note = (
+                f" -- WARNING: {linger_warning}; it stops when you log out and will not start "
+                f"at boot. Fix: sudo loginctl enable-linger {_current_user()}"
+                if linger_warning
+                else ""
             )
             if start_now:
                 subprocess.run(
@@ -1119,8 +1241,8 @@ def systemd_install(start_now: bool = True) -> tuple[bool, str]:
                     check=True,
                     capture_output=True,
                 )
-                return True, f"User service '{SYSTEMD_UNIT}' installed and started"
-            return True, f"User service '{SYSTEMD_UNIT}' installed (not started)"
+                return True, f"User service '{SYSTEMD_UNIT}' installed and started{note}"
+            return True, f"User service '{SYSTEMD_UNIT}' installed (not started){note}"
         else:
             # System-wide service — running as root
             atomic_write_text(unit_path, unit_content)
@@ -1181,6 +1303,19 @@ def systemd_uninstall() -> tuple[bool, str]:
 def systemd_status() -> tuple[bool, str]:
     """Check systemd service status."""
     try:
+        managed = managed_systemd_unit()
+        if managed:
+            active = subprocess.run(
+                ["systemctl", "is-active", managed], capture_output=True, text=True,
+            )
+            detail = subprocess.run(
+                ["systemctl", "status", managed, "--no-pager", "-l"],
+                capture_output=True,
+                text=True,
+            )
+            if active.returncode == 0:
+                return True, detail.stdout.strip()
+            return False, f"{managed} is {active.stdout.strip() or 'not active'}"
         # Try system-wide first
         result = subprocess.run(
             ["systemctl", "is-active", SYSTEMD_UNIT],

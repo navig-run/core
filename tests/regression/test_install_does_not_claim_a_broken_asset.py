@@ -160,7 +160,7 @@ def _install_skill(
 
     rec = _Recorder(monkeypatch)
     install_mod.install_asset(
-        "github:navig-run/community/cli-skills/demo",
+        "github:navig-run/registry/cli-skills/demo",
         force=True,
         install_root=tmp_path,
     )

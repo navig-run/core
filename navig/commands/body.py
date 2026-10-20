@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from pathlib import Path
+from typing import NoReturn
 
 import typer
 
@@ -45,9 +46,14 @@ def _resolve(space: str | None) -> Path:
     return bm.metrics_path(space)
 
 
+def _now() -> datetime:
+    """The local wall clock — one seam, so tests can pin the cadence rules' "now"."""
+    return datetime.now()
+
+
 def _today(day: str | None) -> str:
     if not day:
-        return date.today().isoformat()
+        return _now().date().isoformat()
     try:
         return datetime.strptime(day, "%Y-%m-%d").date().isoformat()
     except ValueError as exc:
@@ -139,6 +145,10 @@ def body_log(
             ch.error(str(exc))
         raise typer.Exit(1) from exc
 
+    # A weight logged here answers the morning's Telegram question too. Leaving
+    # that prompt pending keeps its force_reply box re-arming in the client.
+    cleared = _dismiss_pending_weigh(path, when) if "weight_kg" in values else 0
+
     if as_json:
         ch.emit_json(
             {
@@ -147,6 +157,7 @@ def body_log(
                 "path": str(path),
                 "recorded": values,
                 "previous": previous,
+                "prompts_cleared": cleared,
             }
         )
         return
@@ -155,7 +166,39 @@ def body_log(
     replaced = {k: v for k, v in previous.items() if v}
     if replaced:
         ch.dim("  replaced: " + ", ".join(f"{k}={v}" for k, v in replaced.items()))
+    if cleared:
+        ch.dim("  cleared the pending weigh-in question in Telegram")
     ch.dim(f"  {path}")
+
+
+def _dismiss_pending_weigh(path: Path, day: str) -> int:
+    """Clear (and delete in Telegram) any weigh prompt for *day* that writes into *path*.
+
+    Best-effort and never raises: the weight is already recorded, and a failure
+    here must not turn that into an error. Returns how many prompts were cleared.
+    """
+    try:
+        taken = [
+            (chat, prompt)
+            for chat in bm.chats_for_path(path)
+            if (prompt := bm.take_weigh_prompt(chat, day)) is not None
+        ]
+    except Exception:  # noqa: BLE001
+        return 0
+    if not taken:
+        return 0
+    try:
+        from navig.telegram.api import _api_call, _load_telegram_token
+
+        token = _load_telegram_token()
+    except Exception:  # noqa: BLE001 — no token: state is cleared, the message stays
+        return len(taken)
+    for chat, (_day, message_id) in taken:
+        try:
+            _api_call(token, "deleteMessage", {"chat_id": chat, "message_id": message_id})
+        except Exception:  # noqa: BLE001 — older than 48 h, or already gone
+            pass
+    return len(taken)
 
 
 @body_app.command("today")
@@ -363,6 +406,10 @@ def body_checkin(
     chat_id: int | None = typer.Option(None, "--chat-id", help="Telegram chat to send to"),
     day: str | None = typer.Option(None, "--date", help="Card for another day"),
     space: str | None = typer.Option(None, "--space", help="Space or metrics.csv path"),
+    force: bool = typer.Option(
+        False, "--force", help="Send the weigh-in even if the cadence says skip"
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output"),
 ) -> None:
     """Preview — or send to Telegram — the weigh-in prompt or the weekly card.
 
@@ -375,7 +422,14 @@ def body_checkin(
     Deliver on a schedule by pointing cron jobs at this command:
       navig body checkin --send --space <space>            # 08:10 daily
       navig body checkin --weekly --send --space <space>   # 18:45 Sunday
+
+    The scheduled weigh-in follows `navig body cadence`: never twice a day, not
+    when you already weighed within the cadence, only on the chosen weekdays, and
+    not after the latest hour (so a daemon restarted at dinner does not ask).
     """
+    from navig.telegram import chat_tidy
+
+    chat_tidy.mark_routine("body")  # what this sends is today's; tidied away tomorrow
     from navig.telegram import body_actions
 
     path = _resolve(space)
@@ -390,11 +444,45 @@ def body_checkin(
         from navig.gateway.channels.telegram_extensions import is_enabled
 
         if not is_enabled("health"):
+            if as_json:
+                ch.emit_json({"ok": True, "sent": False, "skipped": "extension_off"})
+                return
             ch.warning(
                 "Nothing sent — the Health extension is off.",
                 "Turn it on with /extensions in Telegram, or: "
                 "navig telegram extensions enable health",
             )
+            return
+
+    target: int | None = None
+    if send:
+        target = chat_id or _default_chat_id()
+        if not target:
+            if as_json:
+                ch.emit_json({"ok": False, "error": "no Telegram chat id"})
+            else:
+                ch.error("No Telegram chat id.", "Set telegram.allowed_users or pass --chat-id.")
+            raise typer.Exit(1)
+
+    # The cadence gate — the SCHEDULED weigh-in only. The weekly card has its own
+    # cron line, and the interactive `/weigh` never comes through here.
+    if send and not weekly and not force:
+        reason = _weigh_skip_reason(int(target or 0), path, when)
+        if reason is not None:
+            code, text_reason = reason
+            if as_json:
+                ch.emit_json(
+                    {
+                        "ok": True,
+                        "sent": False,
+                        "skipped": code,
+                        "reason": text_reason,
+                        "date": when,
+                    }
+                )
+            else:
+                ch.info(f"Weigh-in skipped: {text_reason}.")
+                ch.dim("  Cadence: navig body cadence · send anyway: --force")
             return
 
     if weekly:
@@ -403,6 +491,9 @@ def body_checkin(
         text, markup = body_actions.build_weigh_prompt(path, when)
 
     if not send:
+        if as_json:
+            ch.emit_json({"ok": True, "sent": False, "text": text, "reply_markup": markup})
+            return
         plain = text
         for tag in ("<b>", "</b>", "<i>", "</i>", "<code>", "</code>"):
             plain = plain.replace(tag, "")
@@ -413,26 +504,37 @@ def body_checkin(
         ch.dim("Send it with: navig body checkin --send")
         return
 
-    target = chat_id or _default_chat_id()
-    if not target:
-        ch.error("No Telegram chat id.", "Set telegram.allowed_users or pass --chat-id.")
-        raise typer.Exit(1)
+    send_to = int(target or 0)  # resolved (and non-zero) above for every --send
+    from navig.telegram.api import _api_call, _load_telegram_token
 
-    from navig.commands.telegram import _api_call, _load_telegram_token
+    # Claimed BEFORE the send, after every slow import: a run the scheduler kills
+    # at its timeout once Telegram has accepted the message must still block the
+    # retry five minutes later. Measured: a cold start took 64 s against a 60 s
+    # timeout, and the retry asked a second time.
+    if not weekly:
+        bm.mark_weigh_asked(send_to, when)
 
     try:
         result = _api_call(
             _load_telegram_token(),
             "sendMessage",
             {
-                "chat_id": target,
+                "chat_id": send_to,
                 "text": text,
                 "parse_mode": "HTML",
                 "reply_markup": markup,
             },
         )
     except Exception as exc:  # noqa: BLE001
-        ch.error("Could not send the check-in.", str(exc))
+        if not weekly:
+            try:
+                bm.unmark_weigh_asked(send_to, when)
+            except Exception:  # noqa: BLE001
+                pass
+        if as_json:
+            ch.emit_json({"ok": False, "error": f"could not send: {exc}"})
+        else:
+            ch.error("Could not send the check-in.", str(exc))
         raise typer.Exit(1) from exc
 
     message_id = (result.get("result") or {}).get("message_id")
@@ -440,12 +542,173 @@ def body_checkin(
     # Sent from HERE, answered by the GATEWAY — a different process whose active
     # space is very likely something else. Record which metrics.csv this chat's
     # answers write into, and which message a typed reply must be a reply to.
-    bm.remember_target(int(target), path, message_id=message_id, day=when)
+    bm.remember_target(send_to, path, message_id=message_id, day=when)
     if not weekly:
-        bm.set_prompt(int(target), "weigh", when, message_id)
+        bm.set_prompt(send_to, "weigh", when, message_id)
 
+    if as_json:
+        ch.emit_json(
+            {
+                "ok": True,
+                "sent": True,
+                "kind": "weekly" if weekly else "weigh",
+                "chat_id": send_to,
+                "message_id": message_id,
+                "date": when,
+            }
+        )
+        return
     ch.success(f"{'Weekly card' if weekly else 'Weigh-in'} sent to {target}.")
     ch.dim(f"{path}")
+
+
+def _weigh_skip_reason(chat: int, path: Path, when: str) -> tuple[str, str] | None:
+    """Apply the cadence rules (``navig.spaces.weigh_cadence``) for one scheduled run."""
+    from navig.spaces import weigh_cadence as wc
+
+    day = date.fromisoformat(when)
+    try:
+        last = bm.last_weighed(path, on_or_before=day)
+    except bm.MetricsReadError:
+        last = None  # unreadable record: ask rather than go silent
+    return wc.skip_reason(
+        wc.load_settings(),
+        day=day,
+        now=_now(),
+        last_weighed=last,
+        asked_on=bm.weigh_asked_on(chat),
+    )
+
+
+def _fail(message: str, as_json: bool) -> NoReturn:
+    if as_json:
+        ch.emit_json({"ok": False, "error": message})
+    else:
+        ch.error(message)
+    raise typer.Exit(1)
+
+
+@body_app.command("cadence")
+def body_cadence(
+    every: int | None = typer.Option(
+        None, "--every", help="Ask at most every N days (1-30; 1 = daily)"
+    ),
+    weekdays: str | None = typer.Option(
+        None,
+        "--weekdays",
+        "--days",
+        help="Only on these days, e.g. mon,thu ('any' clears it)",
+    ),
+    latest_hour: int | None = typer.Option(
+        None,
+        "--latest-hour",
+        help="Do not ask from this local hour on (1-24; 24 = any time)",
+    ),
+    enabled: bool | None = typer.Option(
+        None, "--on/--off", help="Turn the scheduled weigh-in on or off"
+    ),
+    space: str | None = typer.Option(None, "--space", help="Space or metrics.csv path"),
+    chat_id: int | None = typer.Option(None, "--chat-id", help="Telegram chat to report on"),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Show — or set — how often the scheduled weigh-in asks.
+
+    navig body cadence                                   # what is set, and when next
+    navig body cadence --every 3 --latest-hour 12        # every 3 days, before noon
+    navig body cadence --days mon,thu                    # only Mondays and Thursdays
+    navig body cadence --off                             # stop asking (/weigh still works)
+    """
+    from navig.spaces import weigh_cadence as wc
+
+    updates: dict[str, object] = {}
+    if every is not None:
+        if not wc.MIN_EVERY_DAYS <= every <= wc.MAX_EVERY_DAYS:
+            _fail(
+                f"--every must be between {wc.MIN_EVERY_DAYS} and {wc.MAX_EVERY_DAYS} "
+                f"days, got {every}",
+                as_json,
+            )
+        updates["every_days"] = every
+    if weekdays is not None:
+        try:
+            parsed = wc.parse_weekdays(weekdays)
+        except ValueError as exc:
+            _fail(f"--weekdays: {exc}", as_json)
+        updates["weekdays"] = [wc.WEEKDAY_NAMES[i] for i in parsed]
+    if latest_hour is not None:
+        if not wc.MIN_LATEST_HOUR <= latest_hour <= wc.MAX_LATEST_HOUR:
+            _fail(
+                f"--latest-hour must be between {wc.MIN_LATEST_HOUR} and "
+                f"{wc.MAX_LATEST_HOUR}, got {latest_hour}",
+                as_json,
+            )
+        updates["latest_hour"] = latest_hour
+    if enabled is not None:
+        updates["enabled"] = enabled
+
+    if updates:
+        try:
+            wc.save_settings(updates)
+        except Exception as exc:  # noqa: BLE001
+            _fail(f"could not save the cadence: {exc}", as_json)
+
+    settings = wc.load_settings()
+    path = _resolve(space)
+    now = _now()
+    try:
+        last = bm.last_weighed(path, on_or_before=now.date())
+    except bm.MetricsReadError:
+        last = None
+    chat = chat_id or _default_chat_id()
+    asked = bm.weigh_asked_on(int(chat)) if chat else None
+    nxt = wc.next_eligible(settings, now=now, last_weighed=last, asked_on=asked)
+
+    if as_json:
+        ch.emit_json(
+            {
+                "ok": True,
+                "changed": sorted(updates),
+                **settings.as_dict(),
+                "last_weighed": last.isoformat() if last else None,
+                "asked_on": asked,
+                "next_eligible": nxt.isoformat() if nxt else None,
+            }
+        )
+        return
+
+    if updates:
+        ch.success("Weigh-in cadence saved.")
+    table = ch.create_table(
+        title="Weigh-in cadence",
+        columns=[
+            {"name": "Setting", "style": "cyan"},
+            {"name": "Value"},
+        ],
+    )
+    table.add_row(
+        "Scheduled weigh-in",
+        "[green]● on[/green]" if settings.enabled else "[dim]○ off[/dim]",
+    )
+    table.add_row(
+        "Every",
+        "day" if settings.every_days == 1 else f"{settings.every_days} days",
+    )
+    table.add_row("Weekdays", ", ".join(settings.weekday_names()) or "any")
+    table.add_row(
+        "Ask before",
+        "any time" if settings.latest_hour >= 24 else f"{settings.latest_hour:02d}:00",
+    )
+    table.add_row("Last weighed", last.isoformat() if last else "[dim]—[/dim]")
+    table.add_row("Last asked", asked or "[dim]—[/dim]")
+    table.add_row(
+        "Next eligible",
+        nxt.isoformat() if nxt else "[dim]— (off)[/dim]",
+    )
+    ch.print_table(table)
+    ch.dim(
+        "Change it: navig body cadence --every 3 --days mon,thu --latest-hour 12 "
+        "· /weigh in Telegram always works"
+    )
 
 
 def _default_chat_id() -> int | None:

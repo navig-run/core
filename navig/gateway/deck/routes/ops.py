@@ -69,10 +69,10 @@ async def handle_deck_ops(request: "web.Request") -> "web.Response":
 
     toggles = {
         "power": True,  # daemon is running (we are answering the request)
-        "smart_ai": bool(ai_cfg.get("smart_ai", _TOGGLE_DEFAULTS["smart_ai"])),
-        "auto_continue": bool(ai_cfg.get("auto_continue", _TOGGLE_DEFAULTS["auto_continue"])),
+        "smart_ai": coerce_bool(ai_cfg.get("smart_ai", _TOGGLE_DEFAULTS["smart_ai"]), _TOGGLE_DEFAULTS["smart_ai"]),
+        "auto_continue": coerce_bool(ai_cfg.get("auto_continue", _TOGGLE_DEFAULTS["auto_continue"]), _TOGGLE_DEFAULTS["auto_continue"]),
         # Auto-dispatch critical+safe actions without a human in the loop.
-        "auto_dispatch": bool(ai_cfg.get("auto_dispatch", _TOGGLE_DEFAULTS["auto_dispatch"])),
+        "auto_dispatch": coerce_bool(ai_cfg.get("auto_dispatch", _TOGGLE_DEFAULTS["auto_dispatch"]), _TOGGLE_DEFAULTS["auto_dispatch"]),
     }
 
     # ── Session ───────────────────────────────────────────────────────────────
@@ -195,38 +195,52 @@ async def handle_deck_ops_toggle(request: "web.Request") -> "web.Response":
 
 
 async def handle_deck_ops_session(request: "web.Request") -> "web.Response":
-    """Session control (pause / resume)."""
+    """Session control — not implemented, and it says so.
+
+    This answered ``{"ok": true}`` for pause/resume while pausing nothing, so the
+    deck showed "paused" over a running engine. A control that does nothing must
+    not report success; 501 names what does work instead.
+    """
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"ok": False, "error": "invalid JSON"}, status=400)
 
     action = str(body.get("action", "")).strip()
-    _ALLOWED = {"pause", "resume"}
-    if action not in _ALLOWED:
-        return web.json_response(
-            {"ok": False, "error": f"unknown action '{action}'"}, status=400
-        )
-
-    return web.json_response({"ok": True, "action": action})
+    return web.json_response(
+        {
+            "ok": False,
+            "error": f"session '{action}' is not supported",
+            "code": "session_control_unsupported",
+            "hint": "use POST /api/deck/engine/restart to restart the engine",
+        },
+        status=501,
+    )
 
 
 async def handle_deck_ops_quick(request: "web.Request") -> "web.Response":
-    """Quick-action endpoint (e.g. clear_memory, reload_config)."""
+    """Quick actions — not implemented, and it says so.
+
+    This called ``gateway.enqueue_quick_action``, a method that exists nowhere, and
+    answered "action queued" either way: every "Health check" and "Security audit"
+    tap was a phantom success. The real controls are the engine routes.
+    """
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"ok": False, "error": "invalid JSON"}, status=400)
 
     action = str(body.get("action", "")).strip()
-    result = f"action '{action}' queued"
-
-    gateway = request.app.get("gateway") if hasattr(request, "app") else None
-    if gateway and hasattr(gateway, "enqueue_quick_action"):
-        try:
-            await gateway.enqueue_quick_action(action)
-            result = f"action '{action}' dispatched"
-        except Exception as exc:
-            logger.debug("quick action error: %s", exc)
-
-    return web.json_response({"ok": True, "result": result})
+    hint = {
+        "health_check": "GET /api/deck/engine/doctor",
+        "inbox_write": "POST /api/deck/inbox/capture",
+    }.get(action, "see /api/deck/engine")
+    return web.json_response(
+        {
+            "ok": False,
+            "error": f"quick action '{action}' is not supported",
+            "code": "quick_action_unsupported",
+            "hint": hint,
+        },
+        status=501,
+    )

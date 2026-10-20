@@ -56,6 +56,20 @@ DEFAULT_REDACT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         ),
         r"\1 ***REDACTED***",
     ),
+    # MySQL short password flag ATTACHED: mysql -u root -p'<pw>' / -p<pw>. The
+    # client's documented form (`-p` takes no space), and what navig itself built
+    # until 2026-10 — the space-only rule below never saw it. Scoped to a MySQL
+    # client invocation so `-pthread`, `-print` etc. elsewhere are left alone.
+    (
+        re.compile(
+            r"(\b(?:mysql|mysqldump|mariadb|mariadb-dump|mysqladmin|mysqlimport)\b"
+            # One shell word: shlex.quote of a value holding `'` emits
+            # 'ab'"'"'c' — adjacent quoted runs, all consumed here.
+            r"[^\n|;&]*?\s)-p(?!\s)(?:'[^']*'|\"[^\"]*\"|[^\s'\"])+",
+            re.IGNORECASE,
+        ),
+        r"\1-p***REDACTED***",
+    ),
     # MySQL short password flag: -p <value>
     (re.compile(r"-p\s+([^\s]+)", re.IGNORECASE), r"-p ***REDACTED***"),
     # Authorization headers

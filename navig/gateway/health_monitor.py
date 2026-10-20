@@ -177,6 +177,49 @@ class ChannelHealthMonitor:
         # additive feature, out of scope for staleness detection.)
         if getattr(channel, "_use_webhook", False):
             return
+        # Same situation reached from the POLLING side: a webhook is registered
+        # elsewhere (the Lighthouse edge), so getUpdates is a guaranteed 409 and the
+        # poller parks — delivery flows through the webhook and this channel stays
+        # quiet by design. Treating that as stale restarted it every 10 minutes
+        # (10/hr budget), only for it to re-poll, 409, and park again.
+        if getattr(channel, "_parked_on_webhook", False):
+            return
+
+        # Provider-side truth, the third escape hatch: ask TELEGRAM whether
+        # delivery is live (getWebhookInfo). Measured 2026-10: the supervisor
+        # runs a gateway AND a telegram_worker, each with its own channel, and
+        # the webhook is registered through the Lighthouse edge while the local
+        # channel's `_use_webhook` flag is unset — so event-silence staleness
+        # fired anyway and the bot was restarted every ~5-10 minutes (536
+        # "Telegram bot started" lines in one log), each restart a window where
+        # an arriving message waits out the webhook delete/re-set. If Telegram
+        # itself reports a registered webhook, the channel is NOT wedged —
+        # a quiet bot is normal. A restart is only justified when Telegram
+        # reports NO webhook (delivery genuinely has no route).
+        _registered_webhook = getattr(channel, "_registered_webhook_url", None)
+        if callable(_registered_webhook):
+            try:
+                url = await _registered_webhook()
+            except Exception as exc:  # noqa: BLE001 — an unreadable verdict must
+                # not ALARM us into restarting: falling through to the stale
+                # path on a probe error would recreate the flap loop.
+                _log.debug(
+                    "ChannelHealthMonitor: webhook-info probe for %r failed (%r) — "
+                    "treating as not-stale, silence with an unreadable verdict "
+                    "is not breakage",
+                    name,
+                    exc,
+                )
+                return
+            if url:
+                _log.debug(
+                    "ChannelHealthMonitor: %r silent but Telegram reports a "
+                    "registered webhook — not stale",
+                    name,
+                )
+                return
+            # No webhook registered and events silent — delivery genuinely has
+            # no route, so the staleness path below is justified. Fall through.
 
         # Startup grace: skip for a short window after the channel first saw events
         idle_s = now - last_event_at

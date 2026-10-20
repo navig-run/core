@@ -33,8 +33,10 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+from navig.connectors import secrets as _secrets
 from navig.connectors.base import BaseConnector, ConnectorManifest
 from navig.connectors.errors import ConnectorAuthError
+from navig.connectors.secrets import KeyField
 from navig.connectors.types import (
     Action,
     ActionResult,
@@ -135,6 +137,16 @@ def _payload_result(label: str, payload: dict, *, success: bool = True) -> Actio
     )
 
 
+GCP_SERVICE_ACCOUNT = KeyField(
+    name="service_account_json",
+    label="Service account key (JSON)",
+    vault_label="gcp/service_account_json",
+    env=("GCP_SERVICE_ACCOUNT_JSON", "GCP_SERVICE_ACCOUNT_FILE"),
+    multiline=True,
+    placeholder='{"type": "service_account", …}',
+)
+
+
 class GcpTranslateConnector(BaseConnector):
     """Connector for Google Cloud Translation API v2 (service account auth).
 
@@ -163,6 +175,8 @@ class GcpTranslateConnector(BaseConnector):
         oauth_scopes=[_TRANSLATE_SCOPE],
         oauth_provider="google",
         requires_oauth=False,  # uses service account, not user OAuth
+        auth_mode="api_key",
+        key_fields=(GCP_SERVICE_ACCOUNT,),
         can_search=False,
         can_fetch=False,
         can_act=True,
@@ -253,6 +267,14 @@ class GcpTranslateConnector(BaseConnector):
                     return json.loads(p.read_text(encoding="utf-8"))
                 except Exception as exc:  # noqa: BLE001 — log and fall through
                     logger.debug("Could not read service account file %s: %s", path, exc)
+
+        # 3. The vault (what the app saves) — the docstring always promised this step.
+        raw = _secrets.vault_secret(GCP_SERVICE_ACCOUNT.vault_label)
+        if raw:
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                logger.debug("vault gcp/service_account_json is not valid JSON; ignoring.")
 
         return None
 

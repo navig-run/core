@@ -328,7 +328,13 @@ class ConfigSingleton:
             # readers fell through to their conservative branch by luck rather than
             # design (`mode != "auto"`, and CONFIRMATION_THRESHOLDS.get(level, 2)).
             "execution": {"mode": "interactive", "confirmation_level": "standard"},
-            "plugins": {"enabled": True, "auto_discover": True, "disabled_plugins": []},
+            # `disabled_plugins` is the live one — PluginHost.enable/disable writes it and
+            # `navig store enable|disable` reads it back. `enabled` and `auto_discover`
+            # had no reader anywhere in the tree, so the default advertised a master
+            # switch and an auto-discovery toggle that did nothing: an operator could
+            # set either, see it echoed by `navig config`, and change no behaviour.
+            # Declared once and read nowhere is worse than absent.
+            "plugins": {"disabled_plugins": []},
             "debug_log": False,
             # Must match where the logger actually writes (paths.debug_log_path());
             # this default advertised config_dir()/debug.log, a file nothing produces.

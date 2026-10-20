@@ -69,6 +69,7 @@ from __future__ import annotations
 
 import getpass
 import json
+import logging
 import os
 import platform
 import socket
@@ -78,6 +79,8 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Keep in sync with navig.commands.repo.LOCK_TTL_MINUTES — one mental model for both locks.
 LOCK_TTL_MINUTES = 60
@@ -508,3 +511,41 @@ def guard_remote(config_manager, host: str | None, command: str | None = None) -
         # a minor annoyance, failing to lock a real server is the bug we are fixing.
         pass
     return guard(host, command)
+
+
+def try_guard_remote(config_manager, host: str | None, command: str | None = None) -> LockState | None:
+    """:func:`guard_remote` without the console/typer exit — for non-CLI callers (deck HTTP).
+
+    Same claim semantics, but the conflict is RETURNED instead of raised:
+
+    * ``None`` — proceed (skipped: no host, local host, ``NAVIG_HOST_LOCK=off``, or a
+      warn-mode conflict that continues by design; or the host was claimed for this session);
+    * a blocking :class:`LockState` — another session holds the host in ``block`` mode;
+      the caller maps that to HTTP 409 and must NOT execute.
+
+    Never raises, never prints to the console: an HTTP request has no terminal to explain
+    itself on, so the caller renders :func:`describe` in its error payload instead.
+    """
+    if not host:
+        return None
+    try:
+        if config_manager.is_local_host(host):
+            return None
+    except Exception:
+        # Same trade-off as guard_remote: an unknown host is treated as remote.
+        pass
+    current = mode()
+    if current == "off":
+        return None
+    st = lock_state(read_lock(host))
+    if st.blocking:
+        if current == "warn":
+            logger.warning(
+                "host lock: another session operates %r — continuing anyway (NAVIG_HOST_LOCK=warn): %s",
+                host,
+                describe(st, host),
+            )
+            return None
+        return st
+    claim(host, command, kind="implicit")
+    return None

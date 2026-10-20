@@ -159,6 +159,9 @@ class TestImageProvider:
             ImageProvider.GEMINI_PRO,
             ImageProvider.STABILITY,
             ImageProvider.LOCAL,
+            # Added by #1919 (ElevenLabs flows image) without updating this pin —
+            # explicit-provider-only by design, never the smart default.
+            ImageProvider.ELEVENLABS,
         }
 
 

@@ -1,0 +1,28 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: image/style/schema-red-cyberpunk
+name: SCHEMA Red Cyberpunk
+tool: image
+layer: style
+category: Brand style
+tags:
+- schema
+- brand
+- cyberpunk
+description: 'Schema house look: ink-black cyberpunk with one crimson accent (from navig-generate styles.json
+  rules).'
+instructions: 'Red (#D63A32) is the only saturated colour; everything else desaturated ink and steel.
+
+  No text, letters, numbers or logos in the generated pixels (type and marks are composited afterwards).'
+params:
+  art_direction: dark cyberpunk, ink-black world, volumetric haze, wet reflections, cinematic
+  palette:
+  - '#D63A32'
+  - '#0A0D12'
+  - '#343C4D'
+  mood: covert, ritual, tense
+  lighting: one crimson practical light as the key, cold teal rim light
+  aspect: '16:9'
+  quality: high
+  negative: text, letters, numbers, logos, watermarks, extra saturated colours

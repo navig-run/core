@@ -34,6 +34,10 @@ def _resolve_ssh_timeout_seconds(default: int = 30) -> int:
 # Default SSH/SCP timeout in seconds.  Override via NAVIG_SSH_TIMEOUT env var.
 _SSH_TIMEOUT = _resolve_ssh_timeout_seconds()
 
+# Per-host Windows-target memo for the exec transfer path (`ver` probe).
+# Keyed by (host, port, user); a bool value is a completed probe result.
+_WIN_PROBE_CACHE: dict[tuple[Any, ...], bool] = {}
+
 
 def _require_server_identity(server_config: dict[str, Any]) -> tuple[str, str]:
     """Return validated ``(user, host)`` identity for SSH/SCP operations."""
@@ -275,24 +279,78 @@ class RemoteOperations:
             ) from _exc
         return result.returncode == 0
 
+    def is_windows_target(self, server_config: dict[str, Any]) -> bool:
+        """Probe the remote shell once per host: ``ver`` succeeds only on Windows.
+
+        Cached per (host, port, user) — file transfers run several round trips
+        and the probe itself costs an SSH connection (~1s). Also used by the
+        ``navig file`` guards to tell a real ``C:\\`` path from MSYS mangling.
+        """
+        key = (
+            server_config.get("host"),
+            server_config.get("port", 22),
+            server_config.get("user"),
+        )
+        cached = _WIN_PROBE_CACHE.get(key)
+        if cached is not None:
+            return cached
+        windows: bool
+        try:
+            probe = self.execute_command("ver", server_config)
+            windows = probe.returncode == 0 and "windows" in (probe.stdout or "").lower()
+        except Exception:  # noqa: BLE001 — unreachable host: assume POSIX (old behavior)
+            windows = False
+        _WIN_PROBE_CACHE[key] = windows
+        return windows
+
+    @staticmethod
+    def _ps_quote(path: str) -> str:
+        """Quote a path for a PowerShell single-quoted literal ('' escapes ')."""
+        return path.replace("'", "''")
+
     def _exec_upload(
         self, local_path: Path, remote_path: str, server_config: dict[str, Any]
     ) -> bool:
         """Upload over the SSH exec channel: base64 the bytes locally, pipe them
-        to ``base64 -d > <path>`` on the remote via stdin (unbounded, so no argv
-        length limit), then verify the SHA-256 round-trips."""
+        to a remote decoder via stdin (unbounded, so no argv length limit), then
+        verify the SHA-256 round-trips.
+
+        POSIX targets decode with coreutils ``base64 -d``; Windows targets with
+        .NET ``[Convert]::FromBase64String`` — Windows OpenSSH's default shell
+        has no base64, and the one-liner deliberately contains NO ``$`` so it
+        parses identically under cmd.exe and PowerShell as the DefaultShell.
+        """
         try:
             data = Path(local_path).read_bytes()
         except OSError:
             return False
         payload = base64.b64encode(data)
-        rq = shlex.quote(remote_path)
-        # base64 -d (coreutils) is universal; fall back to `base64 -D` (BSD) form
-        # is unnecessary because GNU also accepts -d. Decode straight to the file.
-        args = self._ssh_base_args(server_config) + [f"base64 -d > {rq}"]
+        want = hashlib.sha256(data).hexdigest()
+
+        if self.is_windows_target(server_config):
+            ps_path = self._ps_quote(remote_path)
+            decode_cmd = (
+                "powershell -NoProfile -Command "
+                f"\"[IO.File]::WriteAllBytes('{ps_path}',"
+                "[Convert]::FromBase64String([Console]::In.ReadToEnd()))\""
+            )
+            verify_cmd = (
+                "powershell -NoProfile -Command "
+                f"\"(Get-FileHash -Algorithm SHA256 '{ps_path}').Hash\""
+            )
+        else:
+            rq = shlex.quote(remote_path)
+            # base64 -d (coreutils) is universal; GNU also accepts -d. BSD's
+            # `base64 -D` fallback is unnecessary because of the GNU form.
+            decode_cmd = f"base64 -d > {rq}"
+            verify_cmd = f"sha256sum {rq} 2>/dev/null || shasum -a 256 {rq} 2>/dev/null"
+
         try:
             result = subprocess.run(
-                args, input=payload, capture_output=True, timeout=_SSH_TIMEOUT
+                self._ssh_base_args(server_config) + [decode_cmd],
+                input=payload,
+                capture_output=True,
+                timeout=_SSH_TIMEOUT,
             )
         except subprocess.TimeoutExpired as _exc:
             raise RuntimeError(
@@ -301,12 +359,9 @@ class RemoteOperations:
         if result.returncode != 0:
             return False
         # Integrity check — confirm the remote bytes match (best-effort).
-        want = hashlib.sha256(data).hexdigest()
-        verify = self.execute_command(
-            f"sha256sum {rq} 2>/dev/null || shasum -a 256 {rq} 2>/dev/null", server_config
-        )
+        verify = self.execute_command(verify_cmd, server_config)
         got = (verify.stdout or "").split()
-        if got and got[0] != want:
+        if got and got[0].lower() != want:
             return False
         return True
 
@@ -410,9 +465,18 @@ class RemoteOperations:
         self, remote_path: str, local_path: Path, server_config: dict[str, Any]
     ) -> bool:
         """Download over the SSH exec channel: ``base64 <path>`` on the remote,
-        capture stdout, decode locally."""
-        rq = shlex.quote(remote_path)
-        result = self.execute_command(f"base64 {rq}", server_config)
+        capture stdout, decode locally. Windows targets use
+        ``[Convert]::ToBase64String`` (no coreutils there); PowerShell emits the
+        result as one unwrapped line, exactly like coreutils base64."""
+        if self.is_windows_target(server_config):
+            ps_path = self._ps_quote(remote_path)
+            cmd = (
+                "powershell -NoProfile -Command "
+                f"\"[Convert]::ToBase64String([IO.File]::ReadAllBytes('{ps_path}'))\""
+            )
+        else:
+            cmd = f"base64 {shlex.quote(remote_path)}"
+        result = self.execute_command(cmd, server_config)
         if result.returncode != 0:
             return False
         try:

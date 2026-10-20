@@ -80,12 +80,22 @@ def reminder_text(todo: dict[str, Any], lead: str, fire_at: datetime, now: datet
     It names the task AND when it is due, because a ping that says only "Dentist" makes
     you open the app to find out whether that means now or on Friday.
     """
+    from navig.pim.dates import _t  # noqa: PLC0415 — the module's own locale reader
+
     title = str(todo.get("title") or "task")
     due = to_local(from_utc_iso(todo.get("due_at")))
     when = format_local(due, now) if due else "soon"
+    # Localized: this is the text that ARRIVES, and it was the last English line in
+    # an otherwise-Russian reminder ("за 3 дн (due Пн 26 окт · 10:30)"). No leading
+    # ⏰: every surface that shows it adds its own (the Telegram card's "⏰ Reminder"
+    # header, the deck's type glyph). `telegram.reminder_card` parses the
+    # "title — lead (when)" shape in every locale — keep it.
     if lead:
-        return f"⏰ {title} — {describe_lead(lead)} (due {when})"
-    return f"⏰ {title} — due now ({when})"
+        lead_text = describe_lead(lead)
+        return _t("pim.ping.lead", title=title, lead=lead_text, when=when) or (
+            f"{title} — {lead_text} (due {when})"
+        )
+    return _t("pim.ping.now", title=title, when=when) or f"{title} — due now ({when})"
 
 
 def cancel_for(store: Any, card_id: str, *, user_id: int) -> int:
@@ -160,8 +170,12 @@ def reschedule(
     user_id: int,
     chat_id: int,
     now: datetime,
+    bcid: str | None = None,
 ) -> int:
     """Cancel whatever was scheduled, then schedule what the todo says now.
+
+    ``bcid`` (a Telegram business_connection_id) delivers the pings into that Business
+    chat — a shared list's items ping the chat they were added in.
 
     ORDER MATTERS. Cancelling first means a crash in the middle leaves nothing
     scheduled — a missed ping. Scheduling first would leave BOTH sets alive, which is
@@ -202,9 +216,11 @@ def reschedule(
     scheduled = 0
     for lead, moment in fires:
         try:
-            rid = runtime.create_reminder(
-                int(user_id), int(chat_id), reminder_text(todo, lead, moment, now), moment
-            )
+            text = reminder_text(todo, lead, moment, now)
+            if bcid:
+                rid = runtime.create_reminder(int(user_id), int(chat_id), text, moment, bcid=bcid)
+            else:
+                rid = runtime.create_reminder(int(user_id), int(chat_id), text, moment)
             store.link_reminder(card_id, int(rid), lead=lead, fire_at=to_utc_iso(moment))
             scheduled += 1
         except Exception:  # noqa: BLE001 — one bad lead must not lose the rest
@@ -310,6 +326,25 @@ def delivery_suppressed(reminder_id: int) -> bool:
         return bool(get_board_store().reminder_is_todo(int(reminder_id)))
     except Exception:  # noqa: BLE001
         logger.debug("todo reminders: could not classify reminder %s", reminder_id, exc_info=True)
+        return False
+
+
+def is_advance_warning(reminder_id: int) -> bool:
+    """True for a todo's "3 days / 1 day before" ping — the deadline is still ahead.
+
+    The overnight chat tidy sweeps yesterday's reminders; deleting one of these
+    would remove the only note of an appointment the operator has not reached yet.
+    A due-time ping (no lead) and a plain `/remindme` are ordinary reminders.
+    Never raises: unknown provenance counts as ordinary."""
+    if not reminder_id:
+        return False
+    try:
+        from navig.store.board import get_board_store  # noqa: PLC0415
+
+        link = get_board_store().reminder_links([int(reminder_id)]).get(int(reminder_id)) or {}
+        return bool(str(link.get("lead") or "").strip())
+    except Exception:  # noqa: BLE001
+        logger.debug("todo reminders: could not read the lead of %s", reminder_id, exc_info=True)
         return False
 
 

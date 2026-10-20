@@ -42,6 +42,7 @@ signature — so every finding is a real defect rather than a style preference.
 from __future__ import annotations
 
 import ast
+import functools
 import importlib
 import inspect
 from pathlib import Path
@@ -176,65 +177,63 @@ def _binds(func: object, call: ast.Call) -> str | None:
 
 
 def _scan_assertions() -> list[str]:
+    return list(_scan_tests()[0])
+
+
+def _assertion_findings_in(tree: ast.AST, rel: str) -> list[str]:
     findings: list[str] = []
-    for path in sorted(TESTS.rglob("test_*.py")):
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        except (SyntaxError, UnicodeDecodeError):
+    for fn in [
+        n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]:
+        bound = _patched_classes(fn)
+        if not bound:
             continue
-        rel = path.relative_to(TESTS.parent).as_posix()
-        for fn in [
-            n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-        ]:
-            bound = _patched_classes(fn)
-            if not bound:
+        for node in ast.walk(fn):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
                 continue
-            for node in ast.walk(fn):
-                if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
-                    continue
-                if node.func.attr not in _ASSERT_CALLS:
-                    continue
+            if node.func.attr not in _ASSERT_CALLS:
+                continue
 
-                # (a) assertion directly on the bound mock — the patched target is the
-                # callable itself (`patch("navig.x.send")` → `m.assert_called_with(...)`).
-                owner = node.func.value
-                if isinstance(owner, ast.Name) and owner.id in bound:
-                    target = _resolve(bound[owner.id])
-                    if inspect.isfunction(target) or inspect.ismethod(target):
-                        if node.func.attr != "assert_has_calls":
-                            problem = _binds(target, node)
-                            if problem:
-                                findings.append(
-                                    f"{rel}:{node.lineno}: asserted call to "
-                                    f"{bound[owner.id]}() cannot bind: {problem}"
-                                )
-                    continue
+            # (a) assertion directly on the bound mock — the patched target is the
+            # callable itself (`patch("navig.x.send")` → `m.assert_called_with(...)`).
+            owner = node.func.value
+            if isinstance(owner, ast.Name) and owner.id in bound:
+                target = _resolve(bound[owner.id])
+                if inspect.isfunction(target) or inspect.ismethod(target):
+                    if node.func.attr != "assert_has_calls":
+                        problem = _binds(target, node)
+                        if problem:
+                            findings.append(
+                                f"{rel}:{node.lineno}: asserted call to "
+                                f"{bound[owner.id]}() cannot bind: {problem}"
+                            )
+                continue
 
-                # (b) assertion on a method of a patched class's instance
-                found = _asserted_method(node.func)
-                if not found:
-                    continue
-                mock_name, method = found
-                if mock_name not in bound:
-                    continue
-                cls = _resolve(bound[mock_name])
-                if not inspect.isclass(cls):
-                    continue
-                real = getattr(cls, method, None)
-                if real is None or not callable(real):
-                    findings.append(
-                        f"{rel}:{node.lineno}: asserts a call to {cls.__name__}.{method}(), "
-                        f"which does not exist"
-                    )
-                    continue
-                if node.func.attr == "assert_has_calls":
-                    continue  # argument shape is a list of call() objects
-                problem = _binds(real, node)
-                if problem:
-                    findings.append(
-                        f"{rel}:{node.lineno}: asserted call to {cls.__name__}.{method}() "
-                        f"cannot bind: {problem}"
-                    )
+            # (b) assertion on a method of a patched class's instance
+            found = _asserted_method(node.func)
+            if not found:
+                continue
+            mock_name, method = found
+            if mock_name not in bound:
+                continue
+            cls = _resolve(bound[mock_name])
+            if not inspect.isclass(cls):
+                continue
+            real = getattr(cls, method, None)
+            if real is None or not callable(real):
+                findings.append(
+                    f"{rel}:{node.lineno}: asserts a call to {cls.__name__}.{method}(), "
+                    f"which does not exist"
+                )
+                continue
+            if node.func.attr == "assert_has_calls":
+                continue  # argument shape is a list of call() objects
+            problem = _binds(real, node)
+            if problem:
+                findings.append(
+                    f"{rel}:{node.lineno}: asserted call to {cls.__name__}.{method}() "
+                    f"cannot bind: {problem}"
+                )
     return findings
 
 
@@ -315,40 +314,56 @@ def _requires(func: object) -> int | None:
 
 
 def _scan_fakes() -> list[str]:
+    return list(_scan_tests()[1])
+
+
+def _fake_findings_in(tree: ast.AST, rel: str) -> list[str]:
     findings: list[str] = []
+    classes = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
+    if not classes:
+        return findings
+    for fake_name, target in _installed_fakes(tree).items():
+        real = _resolve(target)
+        if not inspect.isclass(real):
+            continue
+        for method in [
+            m
+            for m in classes[fake_name].body
+            if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and not m.name.startswith("__")
+        ]:
+            real_method = getattr(real, method.name, None)
+            if real_method is None or not callable(real_method):
+                continue
+            required = _requires(real_method)
+            if required is None:
+                continue
+            accepts, flexible = _accepts(method)
+            if not flexible and accepts < required:
+                findings.append(
+                    f"{rel}:{method.lineno}: fake {fake_name}.{method.name}() accepts "
+                    f"{accepts} argument(s), but {real.__name__}.{method.name}() requires "
+                    f"{required} — a CORRECT call would raise TypeError against this fake"
+                )
+    return findings
+
+
+# ONE parse of the test tree for both rules: each used to walk and parse every file under
+# tests/ on its own. Cached as plain strings — no ASTs outlive the loop.
+@functools.lru_cache(maxsize=1)
+def _scan_tests() -> tuple[tuple[str, ...], tuple[str, ...]]:
+    assertions: list[str] = []
+    fakes: list[str] = []
     for path in sorted(TESTS.rglob("*.py")):
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         except (SyntaxError, UnicodeDecodeError):
             continue
-        classes = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
-        if not classes:
-            continue
         rel = path.relative_to(TESTS.parent).as_posix()
-        for fake_name, target in _installed_fakes(tree).items():
-            real = _resolve(target)
-            if not inspect.isclass(real):
-                continue
-            for method in [
-                m
-                for m in classes[fake_name].body
-                if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))
-                and not m.name.startswith("__")
-            ]:
-                real_method = getattr(real, method.name, None)
-                if real_method is None or not callable(real_method):
-                    continue
-                required = _requires(real_method)
-                if required is None:
-                    continue
-                accepts, flexible = _accepts(method)
-                if not flexible and accepts < required:
-                    findings.append(
-                        f"{rel}:{method.lineno}: fake {fake_name}.{method.name}() accepts "
-                        f"{accepts} argument(s), but {real.__name__}.{method.name}() requires "
-                        f"{required} — a CORRECT call would raise TypeError against this fake"
-                    )
-    return findings
+        if path.name.startswith("test_"):  # the assertion rule's scope, as before
+            assertions += _assertion_findings_in(tree, rel)
+        fakes += _fake_findings_in(tree, rel)
+    return tuple(assertions), tuple(fakes)
 
 
 def test_no_assertion_pins_a_call_the_real_signature_rejects() -> None:

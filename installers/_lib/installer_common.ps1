@@ -54,7 +54,7 @@ telegram:
 function Start-NavigDaemon {
     <#
     .SYNOPSIS
-      Install and start NAVIG daemon services (bot, gateway, scheduler).
+      Install and start NAVIG daemon services (bot, gateway).
     .PARAMETER CmdShim
       Full path to the navig.cmd shim.
     #>
@@ -63,7 +63,7 @@ function Start-NavigDaemon {
     if (-not $CmdShim -or -not (Test-Path $CmdShim)) { return }
 
     try {
-        & $CmdShim service install --bot --gateway --scheduler --no-start 2>&1 | Out-Null
+        & $CmdShim service install --bot --gateway --no-start 2>&1 | Out-Null
         & $CmdShim service start 2>&1 | Out-Null
     } catch {
         Write-Warning "Daemon setup had issues (non-critical): $_"

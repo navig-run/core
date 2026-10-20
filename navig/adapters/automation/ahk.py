@@ -111,11 +111,16 @@ class AHKAdapter:
             # Running a tiny script to print version
             # A_AhkVersion
             cmd = [str(exe_path), "/ErrorStdOut", "*"]
+            # Bytes, not str: the call runs in BINARY mode (that is the point —
+            # decode_console_result decodes the child's bytes itself). A str here kills
+            # subprocess's *writer thread* with TypeError, which the try/except below
+            # cannot see, so every `navig ahk …` printed a traceback and reported an
+            # Unknown version.
             process = decode_console_result(subprocess.run(  # noqa: S603
                 cmd,
-                input='FileAppend A_AhkVersion, "*"',
+                input=b'FileAppend A_AhkVersion, "*"',
                 capture_output=True,
-                                timeout=2,
+                timeout=2,
             ))
             if process.returncode == 0:
                 return process.stdout.strip()
@@ -224,13 +229,20 @@ NAVIG will automatically detect it in standard locations.
         full_code = (
             "#Requires AutoHotkey v2.0\n"
             "#SingleInstance Force\n"
+            # The backslash and quote replacements are spelled with Chr() so this line
+            # needs no escaping puzzle: the old form emitted StrReplace(str, \"\\", …),
+            # which AHK rejects at compile time. This preamble is prepended to EVERY
+            # inline script, so one bad line killed them all (ahk windows returned none,
+            # and every command printed an exit-2 diagnostic).
             "NavigJsonEscape(str) {\n"
-            "    str := StrReplace(str, \\\"\\\\\\\", \\\"\\\\\\\\\\\\\\\")\n"
-            "    str := StrReplace(str, \"\\\"\", \"\\\\\\\"\")\n"
-            "    str := StrReplace(str, \"`r\", \"\\\\r\")\n"
-            "    str := StrReplace(str, \"`n\", \"\\\\n\")\n"
-            "    str := StrReplace(str, \"`t\", \"\\\\t\")\n"
-            "    return \"\"\"\" str \"\"\"\"\n"
+            "    bs := Chr(92)\n"
+            "    dq := Chr(34)\n"
+            "    str := StrReplace(str, bs, bs bs)\n"
+            "    str := StrReplace(str, dq, bs dq)\n"
+            "    str := StrReplace(str, \"`r\", bs \"r\")\n"
+            "    str := StrReplace(str, \"`n\", bs \"n\")\n"
+            "    str := StrReplace(str, \"`t\", bs \"t\")\n"
+            "    return dq str dq\n"
             "}\n"
             "\n"
             "NavigJsonStringify(value) {\n"

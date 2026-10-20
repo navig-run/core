@@ -1,0 +1,16 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: audio-generate/podcast-intro
+name: Podcast Intro
+tool: audio.generate
+layer: style
+category: Music
+tags:
+- music
+description: Short confident podcast intro sting.
+instructions: 'Short confident podcast intro sting: warm bass, crisp drums, bright synth lead, clean ending.'
+params:
+  kind: music
+  duration_s: 8
+  negative: vocals, long fade

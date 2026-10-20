@@ -718,7 +718,49 @@ class MCPClientPool:
             except Exception as exc:
                 logger.debug("Bad NAVIG_MCP_SERVERS env: %s", exc)
 
+        # Servers added through the Deck / NAVIG OS live under top-level ``mcp.servers``
+        # in Claude Code's .mcp.json shape (``type`` + ``command``/``args``). The gateway
+        # connects them at boot, but this pool read only ``agent.mcp.servers`` — so a
+        # server the user added in the UI never reached the brain's own agent. Merge them,
+        # translated; a name already configured above wins.
+        configs.extend(self._deck_server_configs({c.name for c in configs}))
         return configs
+
+    @staticmethod
+    def _deck_server_configs(taken: set[str]) -> list[MCPServerConfig]:
+        """``mcp.servers`` (Deck format) → :class:`MCPServerConfig`, skipping names in *taken*."""
+        out: list[MCPServerConfig] = []
+        try:
+            from navig.config import get as _cfg_get
+
+            servers = (_cfg_get("mcp", {}) or {}).get("servers", [])
+        except Exception as exc:
+            logger.debug("Could not load deck MCP servers: %s", exc)
+            return out
+        if not isinstance(servers, list):
+            return out
+        for srv in servers:
+            if not isinstance(srv, dict):
+                continue
+            name = str(srv.get("name") or "").strip()
+            kind = srv.get("type") or srv.get("transport")
+            if not name or name in taken:
+                continue
+            if kind == "http" and srv.get("url"):
+                out.append(MCPServerConfig(name=name, transport="http", url=str(srv["url"]),
+                                           enabled=srv.get("enabled", True)))
+            elif kind == "stdio" and srv.get("command"):
+                command = srv["command"]
+                argv = list(command) if isinstance(command, list) else [str(command)]
+                argv += [str(a) for a in srv.get("args") or []]
+                out.append(MCPServerConfig(name=name, transport="stdio", command=argv,
+                                           env=dict(srv.get("env") or {}),
+                                           enabled=srv.get("enabled", True)))
+            else:
+                logger.debug("Deck MCP server %r has no usable transport (%r), skipping", name, kind)
+                continue
+            taken.add(name)
+        return out
 
     # ── Lifecycle ──
 

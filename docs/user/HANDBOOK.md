@@ -1,3 +1,5 @@
+> **Exhaustive reference (2026-10-09):** this is the full command reference (it ships with the package). For the friendly human entry point, start at [docs/guides/HANDBOOK.md](../../../docs/guides/HANDBOOK.md).
+
 # NAVIG - AI-Optimized Command Reference Guide
 
 > **Primary Knowledge Base for AI Assistants**
@@ -96,12 +98,37 @@ pip install -e .
 
 ### Installer profiles
 
+The installers apply a named installation profile for you with `-p/--profile`
+(validated by `navig init`, which exits non-zero and lists the valid names for
+anything unknown):
+
+```bash
+curl -fsSL https://navig.run/install.sh | bash -s -- -p server   # Linux/macOS
+```
+
+```powershell
+# Windows (the `iwr | iex` one-liner takes no args — set the env var first)
+$env:NAVIG_PROFILE = "server"; iwr -useb https://navig.run/install.ps1 | iex
+```
+
+Profiles are assembled from existing levers only (init modules, pip extras,
+`navig service install` flags, a one-time mode suggestion) — they are
+**installation presets, not security boundaries**. Applying one records
+`install.profile` in the config (visible in `navig config settings` and
+`navig doctor`), and `navig init --profile <name> --dry-run` prints an
+effective-profile report (modules, extras, daemon flags, mode) without changing
+anything.
+
 After running `install.sh` / `install.ps1`, finalize setup with:
 
 ```bash
 navig init                        # interactive CLI onboarding (default)
 navig init --status               # show compact init/setup status summary
 navig init --tui                  # opt-in full-screen TUI onboarding
+navig init --profile cli          # public: CLI only — config dirs + CLI check, no service
+navig init --profile minimal      # public: CLI + shell PATH, no service
+navig init --profile server       # public: headless stack + MCP; daemon (gateway + scheduler)
+navig init --profile full         # public: everything the default install runs today
 navig init --profile quickstart   # chat-first bootstrap (Telegram handoff + auto-start)
 navig init --profile operator     # silent, non-interactive (recommended for automation)
 navig init --profile node         # bare minimum: dirs + CLI check only
@@ -143,12 +170,21 @@ You can always configure deferred integrations later from CLI (`navig init`, `na
 
 | Profile | Modules applied |
 |---------|----------------|
+| `cli` | **public** — config dirs, CLI verify; registers **no** service |
+| `minimal` | **public** — `cli` + shell PATH; registers **no** service |
+| `server` | **public** — headless: dirs, CLI, migration, shell, vault, Telegram token, MCP; registers the daemon with `--bot --gateway --scheduler` |
+| `full` | **public** — everything the default install runs today (`operator` modules + daemon with platform defaults) |
 | `quickstart` | alias of `operator` + terminal-to-Telegram onboarding handoff |
 | `node` | config dirs, CLI verify, legacy migration |
 | `operator` | + shell PATH, vault init, Telegram token |
 | `architect` | + MCP config file |
 | `system_standard` | + system service registration |
 | `system_deep` | + Windows tray install |
+
+**`NAVIG_NO_DAEMON=1` only skips daemon registration** — it does not make the
+machine a monitoring server. Resident monitoring (heartbeats, scheduled checks,
+alert delivery) runs in the daemon: use the **`server`** profile when a box
+should be monitored continuously.
 
 **Telegram token** — set `NAVIG_TELEGRAM_BOT_TOKEN` before running to have it
 stored automatically (vault + `.env` + `config.yaml`). If absent, the step is
@@ -339,6 +375,8 @@ navig web hestia list --domains    # List HestiaCP domains
 navig todo                         # what's open, soonest first
 navig todo add "Dentist tomorrow 10:30"   # the date can be part of the sentence
 navig todo add "Rent every month" -c life # ...and so can the repeat
+navig todo add "Visio Sarah oct 26 10:30" -r 3d -r 1d -r 1h   # ping 3 days, 1 day, 1 hour before
+navig todo add "Call the clinic back" --at "2026-10-12 09:00" -s health   # exact time, text kept as typed
 navig todo when <id> next friday   # give an inbox item a date
 navig todo done <id>               # tick it off (a repeating one rolls forward)
 navig todo rm <id>                 # delete it for good
@@ -349,6 +387,25 @@ navig todo list --json             # machine-readable, for scripts and agents
 
 # Same list as `/todo` in Telegram. Reminders are delivered through the bot, so they
 # need the `todo` extension switched on (`/extensions`); the tasks are kept either way.
+# An appointment sent to the bot as a plain message — a day plus a time, in English,
+# French or Russian ("lundi 26 octobre 2026 à 10h30", "demain à 10h", "lundi prochain
+# 9h15", "завтра в 15:00", "через 2 дня в 9:00") — is saved to this list with reminders
+# 3 days, 1 day and 1 hour before. The reply has 🔔 toggles and Undo.
+#
+# /agenda lists APPOINTMENTS by day — they are their own thing, never mixed into the
+# to-do list. Proposals (a relative-day message with no appointment word) wait there
+# for ✓/✕ and ping nothing until accepted. Tasks take a category inline: `#work`.
+# NAVIG Desktop and the Mini App read the same data over /api/deck/planner/*.
+#
+# /reminders (or 🔔 on the /todo card) lists every upcoming ping by day with its exact
+# time: a task's pings (📋, tap to open the task and switch them) and one-off
+# /remindme pings (✕ cancels). Todo = the things; reminders = when you get pinged.
+#
+# /remindme reads the same dates, anywhere in the line: "/remindme in 30 min check logs",
+# "/remindme demain 10h appeler le notaire", "/remindme 26 октября 10:30 врач". So does
+# "rappelle-moi / напомни / remind me …" typed as a plain message — one ping at that time.
+# A relative day with no appointment word ("on se voit demain à 10h") is OFFERED with a
+# Save button instead of being saved silently.
 
 # ═══ PILLAR 3: DATA ═══
 navig file list /path              # List directory
@@ -370,13 +427,12 @@ navig flow run <name>              # Execute flow
 navig flow show <name>             # Show flow details
 navig flow template list           # List templates
 navig flow template add <name>     # Enable template
-navig skills list                  # List AI skills
-navig skills tree                  # Show skills by category
-navig skills show <name>           # Show skill details and commands
-navig skills run <skill>:<cmd>     # Run a skill command
-navig skills run <skill> [args]    # Run skill entrypoint (py/js)
+navig skill list                  # List AI skills
+navig skill tree                  # Show skills by category
+navig skill show <name>           # Show skill details and commands
+navig skill run <skill>:<cmd>     # Run a skill command
+navig skill run <skill> [args]    # Run skill entrypoint (py/js)
 navig ask "question"               # Ask AI (canonical)
-navig ai ask "question"            # Deprecated alias to navig ask
 navig wiki show <topic>            # Show wiki page
 navig wiki list                    # List wiki pages
 ```
@@ -389,7 +445,7 @@ CLI:
 | Removed name | Use instead |
 |--------------|-------------|
 | `monitor` | `navig host monitor` |
-| `security` | `navig host security` |
+| `security` | `navig host security` for the remote audits. The name exists again as a NEW group — `navig security`, whose command today is `migrate-host-secrets` (host YAML passwords → vault). |
 | `template` | `navig flow template` |
 | `addon` | `navig flow template` |
 | `hestia` | `navig web hestia` |
@@ -2389,6 +2445,29 @@ navig body checkin --send --space <space>            # e.g. 08:10 daily
 navig body checkin --weekly --send --space <space>   # e.g. 18:45 Sunday
 ```
 
+**How often it asks — `navig body cadence`.** The scheduled weigh-in never asks
+twice in one day (a daemon restart or a timed-out retry used to re-ask), skips a
+day you already weighed, and skips a catch-up run after the latest hour (default
+noon) — a machine that was off at 08:10 does not ask at dinner. Each skip exits 0
+and says why; `--force` sends anyway. `/weigh` in Telegram is never affected.
+
+```bash
+navig body cadence                                    # settings, last weighed, next day it asks
+navig body cadence --every 3 --latest-hour 12         # every 3 days, before noon
+navig body cadence --days mon,thu                     # only on these days ("any" clears)
+navig body cadence --off                              # stop the scheduled question (--on)
+```
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `health.weigh_in.enabled` | `true` | Scheduled weigh-in on/off |
+| `health.weigh_in.every_days` | `1` | Ask only when the last recorded weight is at least N days old (1-30) |
+| `health.weigh_in.weekdays` | `[]` (any) | Only on these days, e.g. `[mon, thu]` |
+| `health.weigh_in.latest_hour` | `24` (no cutoff) | Do not ask from this local hour on (1-24; 24 = any time) |
+
+Logging a weight with `/weigh 87.4` or `navig body log --weight` also clears the
+morning question, so Telegram's reply box stops re-appearing.
+
 In Telegram: **`/health`** (where the body stands), **`/weigh`** (log now, or
 `/weigh 87.4`), **`/body`** (the weekly card). All three belong to the **Health**
 extension, switched independently of Habits. Messages follow your global output
@@ -2399,7 +2478,57 @@ you mention it at your next appointment, and nothing else. Anything you write
 about a treatment is recorded verbatim and never interpreted.
 
 **Related Commands:** `navig habit`, `navig life`, `navig health` (that one checks
-*machines*, not you)
+*machines*, not you), `navig checkin`
+
+---
+
+### `navig checkin`
+
+Scheduled check-ins: the bot asks, you answer with one tap. Three kinds share one
+engine — the **weigh-in** (a number, recorded in `metrics.csv`), **pills** (a dose:
+Taken · Skip · Snooze 15 min · Taken earlier…) and **water** (a count against a
+daily target, `+1` / `+2`). Not habits on purpose: a habit is done-or-not, a
+check-in is a measurement or a dose.
+
+**Examples:**
+```bash
+navig checkin                                             # = list: every check-in + today
+navig checkin add pills --name "Metformin" --dose "500 mg" --at 08:00,20:00
+navig checkin add water --target 8 --every 2h --from 9 --to 21
+navig checkin pause metformin                             # resume metformin brings it back
+navig checkin log metformin --slot 08:00 --at 07:40       # record a dose by hand
+navig checkin stats --days 30                             # adherence %, water on-target days
+navig checkin remove metformin                            # records are kept
+navig checkin migrate --dry-run                           # old weigh-in jobs → checkin:weigh
+```
+
+Every subcommand takes `--json`. Pills and water are recorded append-only in
+**`checkins.jsonl` beside `metrics.csv`** (UTC timestamp + the local day it
+belongs to); the project indexer never ingests it, so it stays out of AI context.
+
+**Pills — the safety rules.** Nothing is ever marked *taken* without your tap or a
+typed time: a prompt left unanswered for 24 h is closed as *missed*, and chat tidy
+never deletes an open pill prompt. A second *Taken* for the same dose asks you to
+confirm first (`navig checkin log` needs `--force` for the same reason). One
+"still open" nudge goes out `--missed-after` minutes after the dose (default 120),
+never twice. The dose is shown exactly as you typed it — the bot never gives dose
+advice. A daemon that comes back hours late does not ask an old dose as if it were
+due now.
+
+**Schedule.** Each check-in owns cron jobs named `checkin:<id>[:<HHMM>]` running
+`NAVIG_CHECKIN:<id>:<chat>[:<HHMM>]` inside the scheduler (no CLI cold start; 180 s
+timeout; "asked" is recorded before the send, so a retry never asks twice). Times
+are your local wall clock, DST included. `navig checkin migrate` converts the
+legacy `habit:weigh` / `habit:bodyreview` jobs to `checkin:weigh[:weekly]` —
+same schedule, same chat — after writing a timestamped backup of the job store;
+running it twice changes nothing. The weigh-in's cadence stays in
+`health.weigh_in.*` (`checkins.weigh.*` is accepted as an alias).
+
+In Telegram: **`/checkins`** (today, with a `+1` water button). Pills and water
+belong to the **Check-ins** extension; the weigh-in keeps following **Health**.
+In the Mini App: Settings → Telegram → Check-ins.
+
+**Related Commands:** `navig body`, `navig habit`
 
 ---
 
@@ -2543,6 +2672,38 @@ navig tunnel auto
 ## 10. Security Commands
 
 Firewall, Fail2Ban, and security auditing.
+
+### `navig security migrate-host-secrets`
+
+Move plaintext host secrets (`ssh_password`, `database.root_password`,
+`database.password`) out of `~/.navig/hosts/*.yaml` and into the vault. **Dry run
+by default** — the report shows Host · Key · Source file · Target ref · Value
+length and never the value.
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `--apply` | flag | No | Vault each secret, write `<host>.yaml.bak.<timestamp>`, rewrite the YAML with `*_ref` only |
+| `--rollback` | flag | No | Restore the newest `*.yaml.bak.*` per host (refuses when none) |
+| `--purge-backups` | flag | No | Delete the `*.yaml.bak.*` backups (the last plaintext copies) of hosts whose refs decrypt from the vault; keeps any other backup and exits 1 |
+
+**Examples:**
+```bash
+navig security migrate-host-secrets              # dry run — nothing written
+navig security migrate-host-secrets --apply      # migrate (keeps a .bak. per host)
+navig security migrate-host-secrets --rollback   # restore the newest backups
+navig security migrate-host-secrets --purge-backups  # after `navig host test`: delete the plaintext backups
+```
+
+**Notes:** legacy plaintext files keep working without migration (loading
+resolves refs back to the original keys). If the vault is unavailable the
+command fails with a clear error and writes nothing — never plaintext.
+`--apply`, `--rollback` and `--purge-backups` are mutually exclusive (exit 2). The backups are never
+included in `navig backup export` archives.
+
+**Related Commands:** `navig host security`, `navig vault`
+
+---
 
 ### `navig firewall-status`
 
@@ -3269,11 +3430,11 @@ Export NAVIG configuration to a backup file.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `--output`, `-o` | path | No | Output file path (default: auto-timestamped) |
-| `--format`, `-f` | string | No | Format: `json` (default) or `archive` (.tar.gz) |
-| `--encrypt`, `-e` | flag | No | Encrypt with password (AES-256) |
+| `--format`, `-f` | string | No | Format: `archive` (.tar.gz, default) or `json` |
+| `--encrypt`, `-e` | flag | No | Encrypt with a password |
+| `--password`, `-p` | string | No | Encryption password (prompted when omitted) |
 | `--include-secrets` | flag | No | Include actual secrets (default: redacted) |
-| `--hosts-only` | flag | No | Export only host configurations |
-| `--apps-only` | flag | No | Export only application configurations |
+| `--brain` | flag | No | Also carry this install's state — databases, memory, sessions, cron jobs, agent workspace, approvals, license, `.env`. Implies `--include-secrets`, **requires** `--encrypt`, archive only |
 
 **Examples:**
 ```bash
@@ -3288,9 +3449,14 @@ navig backup export --output ~/backups/navig-prod.json
 
 # Export with secrets (use with caution!)
 navig backup export --include-secrets --encrypt
+
+# Move this whole brain to another machine
+navig backup export --brain --encrypt --output ~/backups/brain.tar.gz
 ```
 
-**💡 Tip:** Secrets are automatically redacted by default for safe sharing.
+**💡 Tip:** Secrets are automatically redacted by default for safe sharing. A `--brain`
+bundle deliberately does **not** include the vault (its key is bound to this machine) —
+move that separately with `navig vault backup` / `navig vault restore`.
 
 ---
 
@@ -3302,26 +3468,30 @@ Import NAVIG configuration from a backup file.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `file` | path | Yes | Path to backup file |
-| `--overwrite` | flag | No | Overwrite existing configs (default: merge) |
-| `--password`, `-p` | string | No | Password for encrypted backups |
-| `--dry-run` | flag | No | Preview import without changes |
-| `--hosts-only` | flag | No | Import only host configurations |
-| `--apps-only` | flag | No | Import only application configurations |
+| `--merge` / `--replace` | flag | No | `merge` (default): keep existing entries, add only new ones. `--replace`: overwrite entries the backup contains. Neither mode deletes anything. |
+| `--password`, `-p` | string | No | Password for encrypted backups (prompted when omitted) |
+| `--brain` | flag | No | Also restore state from a `--brain` export. **Refuses while the daemon is running.** |
 
 **Examples:**
 ```bash
 # Import with merge (keeps existing, adds new)
 navig backup import navig-export-2025-01-06.json
 
-# Import with overwrite (replaces existing)
-navig backup import backup.json --overwrite
+# Import, overwriting the entries the backup contains
+navig backup import backup.json --replace
 
 # Import encrypted backup
 navig backup import backup.tar.gz.enc --password mypassword
 
-# Preview before importing
-navig backup import backup.json --dry-run
+# Restore a brain on a new machine (daemon stopped)
+navig backup import brain.tar.gz --brain --password mypassword
 ```
+
+**💡 Tip:** every archive carries `config.yaml`, and it is applied at last: always
+for `--brain` or `--replace`, and under the default `merge` only when the target has
+no settings (merge fills a gap — it never takes settings over). The previous file is
+kept as `config.yaml.pre-import`. A settings file that will not parse refuses the
+whole import *before* anything is written.
 
 ---
 
@@ -3398,6 +3568,61 @@ When using `--encrypt`:
 - AES-256 encryption via Fernet
 - Password-derived key using PBKDF2
 - Encrypted files have `.enc` extension
+
+---
+
+### `navig move` — move this NAVIG to another machine
+
+`backup` copies settings. `move` moves the whole NAVIG: config, spaces, personas, plans,
+memory and stores, every vault secret, and NAVIG Desktop's settings and workspaces. It also
+moves the **identity** (the deck key your Telegram bot and relay answer to), so the old
+machine stands down and only one machine ever answers as this NAVIG.
+
+```bash
+# On the old machine
+navig move out                  # shows what moves, stops NAVIG, writes navig-<host>-<date>.navigmove
+navig move out -o ~/Desktop     # write it somewhere else
+
+# Copy the file across (USB stick, scp, a shared folder), then on the new machine
+navig move in navig-pc-20261010-0530.navigmove      # asks for the passphrase
+navig service start
+```
+
+- **One file, one passphrase.** The bundle is AES-256-GCM, with the key derived from a
+  one-time passphrase shown **once** by `move out` (write it down). Nothing decrypted is
+  written to disk on either machine. A wrong passphrase, a damaged file, or a file cut
+  off while copying is refused before anything changes.
+- **Secrets are re-sealed, not copied.** The vault's key is bound to the machine, so its
+  files would not open anywhere else. `move out` decrypts each secret into the bundle,
+  and `move in` seals it again for the new machine. If your vault is protected by a
+  passphrase, `move out` asks for it (run it in a terminal).
+- **The old machine stands down.** `move out` stops the daemon *before* packing (so the
+  databases are consistent), checks that the file opens, and only then marks this NAVIG
+  as moved. While that mark is there, the daemon, `navig gateway start` and
+  `navig service start` refuse to run. Telegram messages wait at your relay until the new
+  machine connects. If packing fails, nothing is marked.
+- **The new machine never loses anything.** Whatever NAVIG it already had is renamed to
+  `~/.navig.before-move-<time>` (and `~/.navig-os.before-move-<time>`). A machine that
+  already has its own identity is refused unless you pass `--replace`.
+- **Paths follow the new home.** Spaces, the space registry and NAVIG Desktop workspaces that
+  pointed under the old home point under the new one, even across Windows and Linux.
+- **NAVIG Desktop sign-ins travel too.** Like the vault, NAVIG Desktop seals them to the machine,
+  so NAVIG Desktop itself decrypts them on the old machine and seals them again on the new
+  one. When NAVIG Desktop is not installed on one side, they stay behind: `move out` and
+  `move in` say so and name the connections to sign in to again.
+- **Not carried:** this machine's runtime state (logs, cache, pid files, the bundled
+  Python), regenerable folders (`node_modules`, `.venv`), and the brain link of a NAVIG Desktop
+  that was linked to another machine.
+- `navig move status` says whether this NAVIG has moved away; `navig move undo` brings it
+  back on the old machine (stop the new one first: two machines must never answer as
+  the same NAVIG).
+
+| Command | Description |
+|---------|-------------|
+| `navig move out [-o PATH] [--yes] [--json]` | Pack this NAVIG into one encrypted file and stand it down |
+| `navig move in FILE [--replace] [--yes] [--json]` | Unpack it here (the passphrase is asked, or read from `NAVIG_MOVE_PASSPHRASE`) |
+| `navig move status [--json]` | Has this NAVIG moved to another machine? |
+| `navig move undo [--yes]` | Bring it back on the old machine |
 
 ---
 
@@ -4222,14 +4447,14 @@ navig -c sql "DROP TABLE old_logs"
 
 ## 20. Plugin System
 
-> **⚠️ DEPRECATED** — The Typer-based plugin model (`navig plugin install/list/enable/disable`,
+> **⚠️ DEPRECATED** — The Typer-based plugin model (`navig.plugins.base` + its old `plugin install` verbs,
 > `navig.plugins.base.PluginAPI`) has been **retired**.
 >
 > The new decoupled pack model uses `plugin.json` + `handler.py` + plain `handle()` functions
-> and lives in the **[navig-community](https://github.com/navig-run/community)** repository.
+> and lives in the **[navig-registry](https://github.com/navig-run/registry)** repository.
 >
 > SDK: `pip install navig-sdk` (Python) or `npm install navig-sdk` (TypeScript).
-> See [navig-community/examples/](https://github.com/navig-run/community/tree/main/examples) for current examples.
+> See [navig-registry/examples/](https://github.com/navig-run/registry/tree/main/examples) for current examples.
 >
 > The content below is preserved for reference only and describes the **retired system**.
 
@@ -4241,10 +4466,10 @@ NAVIG supported a modular plugin architecture that allowed extending functionali
 |---------|-------------|
 | `navig plugin list` | List all discovered plugins and their status |
 | `navig plugin info <name>` | Show detailed information about a plugin |
-| `navig plugin enable <name>` | Enable a disabled plugin |
-| `navig plugin disable <name>` | Disable a plugin |
-| `navig plugin install <path>` | Install a plugin from a directory |
-| `navig plugin uninstall <name>` | Remove an installed plugin |
+| `navig store enable plugin:<name>` | Enable a disabled plugin |
+| `navig store disable plugin:<name>` | Disable a plugin |
+| `navig store install <path>` | Install a plugin from a directory |
+| `navig store remove <name>` | Remove an installed plugin |
 
 **Examples:**
 ```bash
@@ -4255,10 +4480,10 @@ navig plugin list
 navig plugin info hello
 
 # Disable a plugin temporarily
-navig plugin disable hello
+navig store disable plugin:hello
 
 # Re-enable a plugin
-navig plugin enable hello
+navig store enable plugin:hello
 ```
 
 ### 19.2 Plugin Locations
@@ -4498,6 +4723,8 @@ navig mcp serve              # Start in stdio mode (for VS Code)
 navig mcp serve --port 3000  # Start in SSE mode
 ```
 
+`--only <bundle[,bundle]>` serves just those tool bundles. For example, `navig mcp serve --transport stdio --only recall` is the Recall server Claude Code uses (§56.1).
+
 **Generate Configuration:**
 ```bash
 navig mcp config vscode      # Show VS Code config
@@ -4616,6 +4843,35 @@ navig ai models --check
 navig ai models --check --provider groq --json
 ```
 
+**Model fallback — keep answering when a model fails, and say so:**
+
+When a mode's model fails (a rejected key, a billing cap, a retired model) NAVIG
+switches the reply to another model instead of ending it: sibling accounts of the
+same model first, then the mode's configured fallback, `agent.fallback_chain`,
+your `prefer` list, and — with `auto` on — models the health checks recently saw
+answering (`navig ai models --check`, `navig mode doctor` and the daily heartbeat
+fill that cache). Each switch is written to `<config_dir>/perf/model_fallbacks.jsonl`,
+and the first one for a model sends a **Model fallbacks** notification (Telegram +
+deck; repeated at most every 6 h while it stays down). When the model answers
+again — a live call, the heartbeat re-check (every beat, 30 min by default) or a
+credential change such as re-connecting Claude — you get one "it's back" message.
+
+```bash
+navig ai fallback                          # per mode: primary · health · falls back to · last switch
+navig ai fallback --json
+navig ai fallback set big_tasks --to nvidia:nvidia/nemotron-3-super-120b-a12b
+navig ai fallback set big_tasks --clear
+navig ai fallback --never-from coding      # coding never switches model — it fails loudly
+navig ai fallback --allow coding           # undo
+navig ai fallback --auto off               # only use fallbacks you configured
+navig ai fallback history -n 50            # recent switches and recoveries
+```
+
+Policy lives under `llm.fallback` (`auto`, `prefer`, `never_from`, `never_to`);
+`never_to` takes a provider (`groq`) or an exact `provider:model`. The same page is in
+the Mini App: Settings → AI & Models → Fallbacks. `navig doctor` shows a ⚠ "Model
+fallback" row while any primary is being stood in for.
+
 ### 22.6 AirLLM Local Inference
 
 AirLLM enables running 70B+ parameter models on hardware with limited VRAM (4-8GB) through layer-wise inference.
@@ -4647,7 +4903,7 @@ navig ai airllm --test                      # Test inference
 **Usage:**
 ```bash
 # Ask with local model
-navig ai ask "Explain this code" --model airllm:deepseek-ai/deepseek-coder-33b-instruct
+navig ask "Explain this code" --model airllm:deepseek-ai/deepseek-coder-33b-instruct
 
 # Add to fallback chain
 # ~/.navig/config.yaml
@@ -4656,7 +4912,7 @@ ai_model_preference:
   - airllm:meta-llama/Llama-3.3-70B-Instruct  # Local fallback
 ```
 
-See [AirLLM Documentation](providers/airllm.md) for full details.
+See AirLLM Documentation (`providers/airllm.md` — not in this tree) for full details.
 
 ### 22.7 OAuth Authentication (OpenAI Codex)
 
@@ -4823,7 +5079,7 @@ telegram:
   nlp_confirmation_threshold: 0.4  # Ask confirmation above this
 ```
 
-See full NLP guide: [TELEGRAM_NLP_GUIDE.md](TELEGRAM_NLP_GUIDE.md)
+See full NLP guide: `TELEGRAM_NLP_GUIDE.md` (not in this tree)
 
 **Conversational AI Mode (v3.24):**
 
@@ -4854,7 +5110,7 @@ See `.navig/plans/CHANNEL_ARCHITECTURE.md` for the full design:
 | Channel  | Status    | Description |
 |----------|-----------|-------------|
 | Telegram | Active    | Primary channel (raw Bot API via httpx) |
-| CLI      | Active    | `navig ask` for one-shot queries (`navig ai ask` is deprecated) |
+| CLI      | Active    | `navig ask` for one-shot queries (the `ai ask` form is deprecated) |
 | Web UI   | Planned   | FastAPI + WebSocket streaming |
 | Discord  | Planned   | discord.py adapter |
 | Email    | Planned   | IMAP polling + SMTP |
@@ -4894,6 +5150,9 @@ When VS Code is idle or closed, the bot stays completely silent — no spam, no 
 | `/ping` | Bot health check with latency |
 | `/stats` | Usage statistics |
 | `/status` | Bot and AI status (includes NLP status) |
+| `/doctor` | Engine health check, with Heal / Re-check / Restart buttons |
+| `/os` | Is NAVIG Desktop running, and its paired devices |
+| `/restart` | Restart the NAVIG engine (asks first via the /doctor button; on Windows uses the restart task — run `navig service install` once) |
 | `/reset` | Clear conversation history |
 
 **Server Management:**
@@ -4955,6 +5214,101 @@ You: remind me in 30 minutes to check backup
 Bot: 🐙 Understood: /remind 30m check backup
      ⏰ Reminder set for 30 minutes
 ```
+
+### 22.7b Discord — the NAVIG bot and server manager (`navig discord`)
+
+Manage Discord servers from the terminal, and run the **NAVIG Discord bot** that
+server admins add to their own servers to moderate from inside Discord — the
+Discord sibling of the Telegram bot. Engine: `navig/discord/` (tokens in the vault,
+one moderation policy shared by the CLI, the deck and the bot).
+
+**Set up the bot (once):**
+
+```bash
+navig discord setup --owner <your-discord-user-id>   # token → vault, installs discord.py,
+                                                     # Server Members intent, owners, invite link
+navig service restart                                # the daemon starts the bot
+```
+
+Two identities, picked per command with `--as auto|bot|account`:
+
+| Identity | Set up | Can do |
+|----------|--------|--------|
+| **bot** (official Bot API, ToS-safe) | `navig discord setup` | everything below, in servers the bot was added to |
+| **account** (your user token, opt-in) | `navig discord login` | list, read and **leave** your own servers |
+
+⚠ Automating a user account is against Discord's Terms of Service, so account mode
+is opt-in, behind a warning, and deliberately narrow: it never lists other people
+and never joins by API. `navig discord join` previews an invite and opens it in
+your browser, where you accept it yourself.
+
+```bash
+navig discord status                      # both identities, live-checked (exit 1 if a token is rejected)
+navig discord servers                     # every server: members, online, owner/admin, where the bot is
+navig discord server "My Lab"             # details (name, id or unique prefix)
+navig discord channels "My Lab"           # grouped by category
+navig discord roles "My Lab"
+navig discord members "My Lab" -s alex    # bot only — needs the Server Members intent (setup turns it on)
+navig discord leave "Some Server"         # you leave (asks; --yes to skip) · --as bot removes the bot
+navig discord join discord.gg/python      # preview + open in browser
+navig discord channel create "My Lab" deploys --category Ops --topic "ship it"
+navig discord channel edit <channel-id> --name alerts --slowmode 10
+navig discord channel delete <channel-id> --yes
+navig discord mod kick "My Lab" <user-id> -r "spam" --yes
+navig discord mod ban "My Lab" <user-id> --delete 1d -r "raid"
+navig discord mod timeout "My Lab" <user-id> 2h -r "cool down"   # max 28d
+navig discord mod unban "My Lab" <user-id>
+navig discord mod bans "My Lab"
+navig discord mod log                     # NAVIG's own record of every action
+navig discord role create "My Lab" Helpers -p kick_members,manage_messages --color "#33aa55"
+navig discord role edit "My Lab" Helpers --name Helper --hoist
+navig discord role add "My Lab" <user-id> Helpers
+navig discord role delete "My Lab" Helpers --yes
+navig discord bot profile --name NAVIG --avatar ./logo.png --about "Server ops by NAVIG"
+navig discord settings                    # every discord.* key and what it does
+```
+
+Every list command takes `--json`. Every write lands in the server's audit log as
+`<who> via NAVIG: <reason>` and in NAVIG's own log (`navig discord mod log`).
+
+**Inside Discord** (slash commands, replies only visible to you):
+`/kick` `/ban` `/unban` `/timeout` `/untimeout` `/role add|remove|create|delete`
+for members holding the matching Discord permission, plus `/navig`, `/status`, `/help`.
+
+**Security model — fail-closed:**
+
+- **The agent** (`/navig`, DMs, @mentions) answers only `discord.owners`. Empty = nobody:
+  a bot in a public server is never a remote shell into your machine.
+- **Moderation** needs the Discord permission **and** a higher role than the target, for
+  the member **and** for the bot. Nobody acts on the server owner, themselves or the bot.
+  Administrators can't be timed out.
+- **No escalation:** a role can only get permissions its creator already holds; giving a
+  role Administrator, Manage Server, Manage Roles, Manage Webhooks, Ban Members or
+  Mention Everyone needs the server owner or an Administrator.
+- Kick / ban / role delete ask for a **Confirm button only the asker can press** (30 s),
+  and the rules are re-checked when it is pressed. Each member gets
+  `discord.moderation.cooldown` actions per minute. Replies never ping anyone.
+- The bot asks for **no privileged intents** and the invite requests only the permissions
+  it uses (never Administrator). `navig discord bot profile` warns when the bot is
+  **Public** (anyone could add it) — turn that off in the Developer Portal.
+- `discord.allowed_guilds` pins the bot to your servers: it leaves any other it is added to.
+
+**Settings** (`navig config set discord.<key> <value>`):
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `discord.enabled` | false | the daemon starts the bot (`setup` turns it on) |
+| `discord.owners` | [] | user ids allowed to use `/navig` — empty = nobody |
+| `discord.allowed_guilds` | [] | if set, the bot works only there and leaves others |
+| `discord.agent.enabled` | true | owners may use `/navig` |
+| `discord.moderation.enabled` | true | register the moderation commands |
+| `discord.moderation.confirm` | true | confirm button for kick / ban / role delete |
+| `discord.moderation.cooldown` | 5 | moderation commands per member per minute |
+| `discord.sync` | guild | `guild` = commands appear instantly per server · `global` = everywhere, up to an hour |
+
+Secrets: `discord_bot_token` (shared with `navig init --messaging` and the messaging
+adapter) and `discord_user_token` (account mode) live in the vault only. The bot needs
+the optional `discord.py` library (`pip install 'navig[discord]'`, or let `setup` install it).
 
 ### 22.8 navig-bridge Extension — Builder Bridge & MCP File Tools
 
@@ -5030,6 +5384,38 @@ Opens your workspace dev server in VS Code's Simple Browser. Port detection orde
 3. Default: `http://localhost:3000`
 
 ---
+
+### 22.9 Connector catalog — every service, ranked into batches
+
+`navig connector list` shows the connectors that run today. `navig connector catalog` shows the
+wider map: ~4,800 services worth connecting, each with a category, home country, tier
+(`navig` · `official` · `desktop` · `community`) and status (`planned` → `verified` → `live`),
+ranked into batches of 25, most important first.
+
+```bash
+navig connector catalog --summary              # totals + the next batch to resolve
+navig connector catalog --batch 1              # the 25 most important services
+navig connector catalog --category developer   # one category (see --summary for ids)
+navig connector catalog --country FR           # or --region europe
+navig connector catalog --status live --json   # what is usable right now, for scripts
+```
+
+The deck serves the same data at `GET /api/deck/connectors/catalog` (same filters as query
+parameters, plus `limit`/`offset`). The data and the batch workflow: `docs/connectors-catalog.md`.
+
+### NAVIG in Chrome — the Dock side panel
+
+The NAVIG Dock extension (`apps/dock/extension`, load `dist/` unpacked) puts NAVIG next to any
+page: **Ask NAVIG** on the bar, `Ctrl+Shift+E`, the palette (type anything) or right-click →
+*Ask NAVIG about this page*. **Ask** answers about the page; **Act** lets NAVIG click, type,
+choose and navigate with real input while a glowing edge, cursor and Stop pill show it is in
+control (`Esc` stops). It uses the same AI connections as NAVIG Desktop (`navig connect …`, the
+panel's *Connect a provider* sheet), so keys stay in the vault. Browser pages (settings, the
+Web Store) are off limits, and password and card values are never sent to the model.
+
+The panel calls `POST /api/deck/agent/browser/turn` (server-sent events: `route`, `delta`,
+`actions`, `done`, `error`), local requests only. Each turn takes the chat so far plus the page
+outline; the extension runs the actions it returns and sends the results back on the next turn.
 
 ## 23. Autonomous Agent System (Gateway, Heartbeat, Cron)
 
@@ -5245,7 +5631,20 @@ navig cron add "Weekly report" "every 7 days" "Generate weekly server report"
 # Cron expression scheduling
 navig cron add "Nightly cleanup" "0 2 * * *" "navig run 'cleanup.sh'"
 navig cron add "Every 5 min" "*/5 * * * *" "navig host test"
+
+# A local program, run directly (no shell, no AI), with room to finish
+navig cron add "Nightly report" "30 3 * * *" "node C:/jobs/nightly-report.js" --exec --timeout 3600
 ```
+
+A job is a `navig …` command, a local program (`--exec`), or otherwise an instruction for the AI.
+Every job stops at its timeout (default 300 s; `--timeout SECONDS`, up to a day), taking any
+processes it started with it.
+
+**Not for one-off reminders.** Cron has no year, so a schedule pinned to one date
+(`0 11 9 10 *` — 9 October, 11:00) fires on that date *every* year. `navig cron add` refuses
+such a schedule unless you pass `--yearly`. For a one-off reminder use a task:
+`navig todo add "<text>" --at "2026-10-12 09:00"` — it pings once, shows in `navig todo`,
+and ticking it off cancels the ping.
 
 **Managing Jobs:**
 ```bash
@@ -5276,6 +5675,66 @@ navig cron remove job_1
 | Cron | `*/5 * * * *` | Every 5 minutes |
 | Cron | `0 9 * * *` | Daily at 9:00 AM |
 | Cron | `0 2 * * 0` | Weekly on Sunday at 2:00 AM |
+
+#### Standing goals (`navig goal`)
+
+A standing goal is an objective NAVIG keeps working on, on a schedule, until it is met.
+You state it once; each scheduled **cycle** is one unattended mission that checks where
+things stand, reports, and ends with a device-signed receipt. Progress arrives as a
+"Goal progress" notification (deck + Telegram by default).
+
+```bash
+navig goal add "Keep the backup drive under 80% full" --every 6h
+navig goal list                 # what's in progress (--all includes finished ones)
+navig goal show <id>            # objective, state, latest report, receipt
+navig goal run <id>             # run one cycle now and print the report
+navig goal pause <id>           # stop scheduling; history kept
+navig goal resume <id>
+navig goal remove <id> --yes
+navig block verify-receipt <receipt-id>   # prove a cycle's receipt is untampered
+```
+
+- **`--every`** takes `30m`, `6h`, `1d`, or any cron schedule format above.
+- **What a cycle may do:** only read-only work (`--grant readonly`, the only grant today).
+  A cycle that needs a change tells you what to do instead of doing it; cycles never ask
+  for approval, so a goal can't flood you with prompts.
+- **How it ends:** the agent closes each cycle with `STATUS: DONE` or `STATUS: CONTINUE`.
+  The goal finishes on DONE, stops at `--max-cycles` (default 24), or stops after three
+  failed cycles in a row. Its schedule is removed automatically when it ends.
+- Different from `navig agent goal`, which plans one request into subtasks once.
+
+#### Session goals (`navig goal session`)
+
+A session goal is an objective **one NAVIG Desktop session** works until done — no schedule,
+no missions, no receipts: the session itself keeps going. When the session goes idle and
+a goal is armed, NAVIG Desktop appends a `<goal_round>` message (the objective quoted, `Round:
+N/max`) telling the agent to keep working in this same session; the loop stops when the
+agent marks the goal complete, reports a blocker, or the round budget runs out (then the
+goal is reported `blocked: round-limit` and the session keeps running — it never dies
+with the goal).
+
+```bash
+navig goal session set <session> "Ship the release notes"   # arm it (unique id prefix or exact name works)
+navig goal session show <session> --json   # objective, phase, rounds, loop arming
+navig goal session list                    # sessions that have a goal
+navig goal session pause <session>         # stop injecting rounds; history kept
+navig goal session resume <session>        # re-arm (a restarted OS loads disarmed — resume is explicit)
+navig goal session clear <session> --yes   # drop the goal; injected rounds stay in chat
+```
+
+- **Requires NAVIG Desktop to be running** (the CLI talks to the announced OS server); it
+  fails with an honest message otherwise.
+- **Config** (`navig config set …`): `goal.enabled` (default `true`), `goal.max_rounds`
+  (default 12 — the per-goal round budget), `goal.blocked_after_rounds` (default 3 —
+  consecutive identical blocker reports before `blocked` is accepted), `goal.tool_policy`
+  (`model` = the agent may complete/block the goal via its `get_goal` /
+  `set_session_goal` tools; `human` = read-only for the agent).
+- In the NAVIG Desktop UI the same goal lives on a composer strip (set / edit / pause /
+  resume / clear) and each injected round shows as a collapsed **Context · Goal · Round
+  N** chip; `/goal <objective>` in the chat input is a shortcut for `set`.
+- Different from standing goals (`navig goal add`) above: those are daemon-scheduled
+  missions; a session goal is the live session working round after round until the
+  objective is met.
 
 ### 23.4 Workspace Files
 
@@ -5317,6 +5776,24 @@ python -m navig.daemon.telegram_worker --no-gateway
 - Cron jobs execute in background
 - Multiple bots can share the same gateway
 
+#### Text NAVIG by SMS (two-way)
+
+With a Twilio number configured (`adapters.sms`), texts to that number land in the
+deck's inbox. To have NAVIG **answer** texts from your own phone:
+
+```bash
+navig vault set twilio_auth_token <auth-token>   # proves a text came from Twilio
+navig config set sms.allowed_numbers "+15550100100"   # comma-separate several
+```
+
+- Only numbers on `sms.allowed_numbers` get answers, and only when the request carries a
+  valid Twilio signature. Everyone else's texts still just land in the inbox.
+- The answer is texted back (up to three messages; longer answers point you to the deck).
+- A text that starts with `navig …` is treated as a question for the assistant, never run
+  directly as a command; anything risky still asks for approval on the deck or Telegram.
+- With Lighthouse, point Twilio at the edge URL `navig lighthouse status` prints
+  (`<edge>/sms/<id>`); signatures are checked against that URL.
+
 ### 23.6 Full Autonomous Setup
 
 Complete setup for 24/7 autonomous operation:
@@ -5345,6 +5822,52 @@ navig start --foreground     # See live logs
 ```
 
 ### 23.7 Proactive Engagement System
+
+**Calendar and email alerts.** Once a calendar (`calendar.provider: google`) or a mailbox
+(`email.provider`, or an agent email account) is configured, the gateway watches them on
+its own, every 60 seconds:
+
+- an event starting within the next two hours → a **Reminders** notification (deck +
+  Telegram by default);
+- a new unread email → a **New email** notification (deck only by default — turn Telegram
+  on for it in Settings → Notifications).
+
+Each event or email is announced once, even across restarts. To keep the watcher off:
+`navig config set proactive.enabled false`.
+
+**Give a notification type its own Telegram chat (and sound).** Telegram sets the sound per
+chat on your phone, so a type routed to its own channel can ring differently — sales with a
+cash register, reminders with a chime. Add the bot to the channel as an admin with "Post
+messages", then:
+
+```bash
+navig notify route set sale 4466964318        # the id the Telegram app shows, -100… or @name
+navig notify route set reminder 4425457788
+navig notify route test sale                  # posts a test there — set the chat's sound now
+navig notify route sound sales_digest off     # off = silent (the default for the daily summary)
+navig notify route list                       # where each type lands, and whether it rings
+navig notify route clear sale                 # back to your DM
+```
+
+Or in the Mini App: Notifications → **Telegram chats**. If a routed chat stops accepting
+posts, the message comes to your DM with a note saying why, and the deck feed records it. A
+post in the reminder channel (`dentist friday 9am #health`) becomes a task with a reminder;
+the bot replies silently with what it scheduled.
+
+**Alerts that must wake you: Pushover.** Telegram can't ring on silent or repeat. Pushover's
+emergency priority does both — it re-alerts every minute until you tap Acknowledge. Create an
+app at pushover.net/apps/build (name it NAVIG), copy your User Key from the dashboard, then:
+
+```bash
+navig notify pushover setup              # prompts for both keys, validates, stores in the vault
+navig notify pushover test --emergency   # rings on silent; tap Acknowledge to stop it
+navig notify pushover emergency critical # only critical alerts repeat (default: high + critical)
+navig notify pushover status
+```
+
+Setup turns Pushover on for security alerts and a failing sales check only; add others in
+Mini App → Notifications → "What goes where". Keep it to a few types — an alarm that rings
+often stops being one. On iPhone, allow **Critical Alerts** in the Pushover app's settings.
 
 NAVIG includes a proactive engagement subsystem that initiates context-aware interactions with the operator. Unlike health alerts, these are relationship-building interactions — greetings, feature discovery, check-ins, and self-improvement feedback loops.
 
@@ -5511,7 +6034,7 @@ nssm start navig-gateway
 
 ### 23.8 NAVIG Daemon (Recommended for Persistent Operation)
 
-The NAVIG Daemon is a process supervisor that keeps subsystems (Telegram bot, gateway, scheduler) running permanently with auto-restart, health monitoring, and structured logging.
+The NAVIG Daemon is a process supervisor that keeps subsystems (Telegram bot, gateway) running permanently with auto-restart, health monitoring, and structured logging. Cron scheduling is not a subsystem of the supervisor — it runs inside the gateway.
 
 **Architecture:**
 - Supervisor process manages child processes
@@ -5589,7 +6112,7 @@ navig service install --method task
 navig service install --method nssm
 
 # Include optional subsystems
-navig service install --gateway --scheduler
+navig service install --gateway
 
 # Install without starting
 navig service install --no-start
@@ -5612,7 +6135,6 @@ Config file `~/.navig/daemon/config.json`:
   "telegram_bot": true,
   "gateway": false,
   "gateway_port": 8765,
-  "scheduler": false,
   "health_port": 0
 }
 ```
@@ -5622,9 +6144,14 @@ Config file `~/.navig/daemon/config.json`:
 | `telegram_bot` | `true` | Run the Telegram bot |
 | `gateway` | `false` | Run the gateway WebSocket server |
 | `gateway_port` | `8765` | Gateway listen port |
-| `scheduler` | `false` | Run the cron scheduler |
 | `health_port` | `0` | TCP health-check port (0 = disabled) |
 | `bot_script` | unset | Optional explicit bot script override (legacy); default uses `navig.daemon.telegram_worker` |
+
+Cron scheduling is not a daemon child: it runs **inside the gateway**
+(`NavigGateway._start_cron`). The legacy `scheduler` key (and the
+`--scheduler` install flag) is deprecated — still accepted for compatibility,
+read by nothing. A stale `"scheduler": true` in an existing `config.json` is
+ignored.
 
 #### Removal
 
@@ -5900,6 +6427,227 @@ navig config show | grep -A5 ai
 
 ---
 
+## 23.4 Prompt Library (`navig prompts`)
+
+Your own reusable prompts in one library: import a folder, find the right one, fill in its
+placeholders, copy it, or get it on Telegram. The same library backs the CLI, NAVIG Desktop
+(**Knowledge → Prompts**) and the bot's `/prompt` command. Stored in
+`<data_dir>/prompts.db` (`NAVIG_DATA_DIR`); after import it is the source of truth.
+
+```bash
+navig prompts import C:\prompts --dry-run   # preview: folders become domain/category
+navig prompts import C:\prompts             # safe to re-run — your edits are never overwritten
+navig prompts categories                    # domains, categories, workflows, counts
+navig prompts list --domain dev --category coding
+navig prompts list --collection app-quality # a workflow's steps, in order
+navig prompts search poster brand           # full-text: title, when-to-use, body, tags
+navig prompts show debug-root-cause         # --raw prints only the body
+navig prompts use marketing-poster --var HEADLINE="Ship faster" --ask   # fill + copy
+navig prompts new "Weekly Review" -d human -c productivity --use-when "Sunday reset"
+navig prompts edit <id>                     # body in $EDITOR
+navig prompts fav <id>                      # favourites lead NAVIG Desktop and /prompt
+navig prompts remove <id>                   # archives; --purge deletes; restore <id> undoes
+navig prompts backup C:\prompt-backup       # every prompt back out as <id>.md
+```
+
+**Folder convention:** `domain/category/name.md` with a `# Title`. A `**Use when:**` line
+becomes the "when to launch" text (else the folder README's `[name](file.md) — text` row,
+else the first paragraph). `workflows/<name>/NN-step.md` (also `bootstrap|polish|runbooks`)
+become an ordered workflow. Placeholders `[UPPER CASE]`, `{{NAME}}` and `‹name›` become
+fill-in fields. A file whose prompt sits in one fenced block uses that block as the body.
+
+**Telegram:** `/prompt debug root cause` sends the prompt as a rich message (one-tap copy
+block, native "Show More" for long text, `.md` file when it will not fit), with ☆ Favorite ·
+📄 .md file · ▶ Next step buttons. `/prompt` alone shows favourites. Free text works too —
+"send me the marketing poster prompt" — but only when the library has a match; anything
+else ("write me a prompt for…") still goes to the AI. Switch it off with `/extensions`
+(Prompt library). The agent can also search the library to recommend which prompt to use.
+
+## 23.4.1 Universal Presets (`navig presets`)
+
+One reusable preset system for every AI tool: **Text**, **Image**, **Video**, **Audio
+generation** and **Audio enhancement**. A preset is a named, versioned configuration:
+reusable instructions, typed settings for its tool (an image preset's aspect, lighting
+and negative constraints; an enhancement preset's mode and loudness target), optional
+variables and, for text, references to approved context files. NAVIG Desktop (Studio's
+preset picker), `/api/deck/presets` and this command read the same catalog.
+
+```bash
+navig presets list --tool image              # ★ favorite · ● the tool's default
+navig presets show image/style/cinematic-realism
+navig presets resolve text/context/my-book text/style/dark-literary text/format/book-chapter \
+  --tool text --task "Write the scene where she enters the underground archive."   # what would be sent
+navig presets resolve image/style/schema-red-cyberpunk --tool image --task "A courier on a bridge" \
+  --provider openai_gpt_image                # shows what that provider actually receives
+navig presets duplicate text/context/book-template --name "Book — SCHEMA Lore"
+navig presets edit user/book-schema-lore -i "World rules: …" --set language=English
+navig presets new --name "My Look" --tool image --set aspect=4:3 --set mood="quiet dusk"
+navig presets default image user/my-look     # the tool starts with it
+navig presets fav <id> · rename <id> "New name" · rm <id> · reset <builtin-id>
+navig presets export <id> -o look.json       # secrets + local paths removed; files not included
+navig presets import look.json               # stays "unreviewed" until: navig presets trust <id>
+navig text gen "Write the next scene." --preset user/book-schema-lore --preset text/format/book-chapter
+```
+
+**How presets combine.** Each preset has a *layer*. Several presets apply in a fixed
+order no matter how you list them: **context** (what the work is about) → **style** →
+**format** → **config** → your one-off `--set` overrides → **your request**, which always
+wins. Later layers win for settings; instructions accumulate in that order. Text presets
+add instructions *around* your request; image, video and audio presets add a separate
+**style clause after** your prompt, so a style never rewrites the subject. Settings a
+provider can't take are folded into the prompt or dropped, and every such change is listed.
+
+**Where presets live.** Builtin presets ship with NAVIG; plugins ship their own (navig-audio
+ships the enhancement modes). Your own presets, edits and imports are stored in the
+prompt library database (`<data_dir>/prompts.db`, schema v2; the first upgrade writes
+`prompts.v1-backup.db` next to it). You can also drop `*.preset.yaml` files in
+`<store>/presets/`, a project's `.navig/presets/` or the active space's `.navig/presets/`.
+Editing a builtin saves your own override; `navig presets reset <id>` brings the original back.
+
+**Context references** are paths relative to the active space (or project) root, such
+as `lore/` or `characters/ana.md`. They are read when a text preset is used, within a size
+budget. Each one is reported as included, truncated or missing, and the model is told
+it only has the documents that were actually read.
+
+**Imported presets are untrusted.** Lines that try to steer tools, permissions, the
+system prompt or secrets are removed, and the rest is quoted as reference guidance until
+you review it and run `navig presets trust <id>`.
+
+## 23.4.2 Chat Library (`navig chats`)
+
+Your AI conversations on this computer, searchable down to the message. Plugin
+`navig-chats`. Stored in `<data_dir>/chats.db` (`NAVIG_CHATS_DB` overrides it), separate
+from the agent's memory.
+
+```bash
+navig chats import ~/Downloads/chatgpt-export.zip   # ChatGPT → Settings → Data controls → Export data
+navig chats list --collection recent --sort visited
+navig chats search '"borrow checker" -python'        # phrases, -exclude, prefix*, a OR b
+navig chats search deploy --role assistant --code    # only answers that contain code
+navig chats show 67f1c2d3                            # --all-branches shows regenerated answers
+navig chats folders add Work                         # NAVIG folders: local, never ChatGPT Projects
+navig chats move 67f1c2d3 --to <folder-id>           # --keep adds without leaving other folders
+navig chats export --all -o chats.zip                # .md/.txt/.html/.json, or .zip with a manifest
+navig chats restore chats.zip                        # back into the library (not into ChatGPT)
+navig chats stats                                    # counts + search-index health; reindex rebuilds it
+```
+
+**In the browser (NAVIG Dock 1.8):** on chatgpt.com, the 💬 chat button in the bar shows
+whether this chat is in your library and which folder it is in. It also saves, refreshes,
+renames and moves the chat. The palette (**Ctrl+Shift+P**; Ctrl+K stays ChatGPT's own
+search) gets a **Chats** section:
+
+- **Enter** opens the match in ChatGPT, at the exact message.
+- **Shift+Enter** opens it in a new tab.
+- **Alt+Enter** opens the library copy.
+
+The full **Chat Library** page holds the folder tree, search, a reader and import/export.
+Open it with `/chats` or with the Lens's *Open Library* button.
+
+**Completeness** is labelled:
+
+| Label | Meaning |
+|---|---|
+| `complete` | Imported from your export |
+| `rendered` | Saved from the page: the branch you saw |
+| `partial` | Some messages are missing |
+| `url_only` | Only the link is saved |
+
+**Privacy:** nothing is captured until you save a chat, unless you turn on *Save every
+chat I open*. NAVIG reads no session tokens and calls no ChatGPT endpoints. The
+`/api/deck/chats/*` routes answer only this computer.
+
+**Sharing with NAVIG Brain** is off for every chat until you choose a level, on a folder
+(subfolders inherit) or on one chat (its own choice wins):
+
+| Level | Who can read the chats |
+|---|---|
+| `off` | Nobody. This is the default. |
+| `local` | `navig recall` on this computer. Never sent anywhere. |
+| `agent` | Also the project context pack that agents get. That pack is sent to your configured AI provider. |
+
+A chat filed in several folders follows the most private one. Map a folder to a NAVIG
+project so its chats only appear in that project.
+
+```bash
+navig chats share --folder <id> --level local --project navig   # recall reads it (this computer only)
+navig chats share 67f1c2d3 --level agent                        # may reach your AI provider in agent context
+navig chats shared                                             # what is shared, at which level
+navig recall ingest --source chats                             # index the shared chats
+navig chats handoff --folder <id> --goal "finish the cache" -o next.md   # Continue this work
+navig chats handoff 67f1c2d3 --into C:\projects\shop          # → <space>/.navig/plans/briefs/
+```
+
+Withdrawing a share (level `off`) makes the next `recall ingest` forget everything Recall derived from
+those chats: their archived turns, their index rows and any record that only they supported.
+
+**Continue this work** (`handoff`, or the Library's *Continue…* button) builds a Markdown
+context pack. It contains:
+
+- the sources, with links and how complete each copy is;
+- decisions you confirmed, and the superseded ones, so an abandoned choice isn't revived;
+- open questions and tasks, and proposals nobody confirmed;
+- code and references, and where each chat left off;
+- a **Missing or incomplete context** list.
+
+Every item links to its exact message. Decisions are read only from explicit markers
+(`Decision: …`, `Decision (subject): …`, `TODO: …`, `- [ ]`, `Open question: …`, in English,
+French or Russian) and from your bookmarks. The assistant's suggestions stay *proposed*.
+
+## 23.4.3 Web Notes (`navig notes`)
+
+The sticky notes you keep on web pages with the NAVIG Dock (on one page, a whole site, or
+everywhere), on this computer. Plugin `navig-notes`. Stored in `<data_dir>/notes.db`
+(`NAVIG_NOTES_DB` overrides it). Nothing is uploaded.
+
+```bash
+navig notes list                                     # --site github.com · --scope page|site|global · --tag work
+navig notes search retry path                        # every word must match; "quote a phrase"
+navig notes show 3f2a                                # an id prefix is enough
+navig notes add "call the bank"                      # an Everywhere note
+navig notes add "check CI" --url https://github.com/org/repo/issues/12   # a note on that page
+navig notes rm 3f2a                                  # deleted everywhere; the Dock moves it to Trash
+navig notes export notes.json                        # re-importable in the Dock's Notes Library (or .md)
+navig notes status                                   # counts, the store, the last Dock sync
+navig notes share push --space <name-or-path>        # every note → <space>/.navig/notes/*.md
+navig notes share pull --space <name-or-path>        # back again — ids kept, newer revision wins
+navig notes share status --space <name-or-path>      # which side is ahead; orphans are never deleted
+```
+
+**Sync.** The browser is where notes are written, and it works without NAVIG. With NAVIG
+running, the Dock syncs a few seconds after any change, every 5 minutes and when Chrome
+starts: it pushes its edits and deletions, and pulls what changed here (a note added with
+`navig notes add`, by the agent, from a Space). Every note carries a revision; the higher one
+wins, and an older copy never overwrites a newer one. The `/api/deck/notes/*` routes answer
+only this computer.
+
+**Sharing with a Space** (`share push|pull|status`): a Space folder is how a team shares
+things, so shared notes are plain `.navig/notes/<id>.md` files — frontmatter carries id,
+revision, scope, geometry, tags and the sharing level; the body travels byte for-byte; only
+live notes are written and an orphan file is reported, never deleted. Default space: `--space`
+(name or path), else the active Space, else the nearest `.navig` above you (never the global
+config dir). Reminders are personal and do not travel; a pulled note shows up in the Dock as
+*from NAVIG*.
+
+**What NAVIG may do with them** is the Notes Library's Settings → *NAVIG on this computer*:
+
+| Setting | What happens |
+|---|---|
+| Keep a copy in NAVIG (default) | Synced here; `navig notes` and `navig recall` find them. Never sent to an AI. |
+| Copy + the agent may use them | The same, and agent context may include them (sent to your AI provider). |
+| Off | Nothing leaves the browser. |
+
+`navig recall ingest --source notes` reads synced notes: your words as yours, lines you
+quoted from a page (`> …`) as page captures, and checkboxes (`- [ ]` / `- [x]`) as your open /
+done tasks. A note deleted in the browser is forgotten at the next ingest.
+
+**VS Code (NAVIG Prompts extension 0.3.0+):** run **NAVIG Prompts: Use a Prompt from the NAVIG
+Library…** from the Command Palette — a searchable list of the same library (favourites, then
+most used), one input box per blank, then insert into the NAVIG Prompts chat, copy, or open in
+an editor. In chat, `@navig-prompts /prompts debug root cause` lists the best matches with a
+**Use** button each. It reads the running daemon (`/api/deck/prompts`), so the daemon must be up;
+the extension's own editor packs (Open Prompt Library) are unchanged.
+
 ## 23.5 Credentials Vault
 
 NAVIG provides a secure, encrypted credentials vault for managing API keys, tokens, and passwords across all integrations.
@@ -5956,6 +6704,122 @@ navig cred audit <id> --limit 20    # For specific credential
 # List supported providers with validation
 navig cred providers
 ```
+
+### Organise the vault — names, categories, issuers, tags
+
+```bash
+navig vault classify                    # dry-run: what every item is and where it comes from
+navig vault classify --apply            # write it (metadata only — no secret is rewritten)
+navig vault classify --category social  # one category
+navig vault list --category ai          # filter by category …
+navig vault list --tag duplicate-of:groq/api_key   # … or by tag
+navig vault list --search "digital ghost"           # … or text in name/issuer/website/tags/notes
+navig vault edit <id> --category infra --issuer "Hetzner" --website console.hetzner.cloud
+navig vault edit <id> --tag ci --untag old --note "used by the nightly deploy"
+```
+
+`classify` names the issuer and website from the value's **shape** (`EAA…` → Meta Graph,
+`ya29.` → Google OAuth, `gho_` → GitHub, `123456:AA…` → Telegram bot, …) and the storage path,
+puts each item in one category (ai · search · social · messaging · infra · payments · devtools
+· internal · hosts · logins · sessions · personal), gives an unnamed item a unique
+`"<Product> — <field>"` name, and tags byte-identical values `duplicate-of:<other>`. It never
+overwrites a name, category, issuer or website you set. Logins, sessions, host passwords and
+personal items are classified by path alone — their values are never read. The Hint column
+shows at most the first 4 characters of a value. Renames and organisation edits never touch
+the secret itself.
+
+### Key custody — status, recovery key, backups, rotation
+
+```bash
+navig vault status [--json]          # keyslots, recovery key, items, federation role
+navig vault recovery init            # create the OFFLINE recovery key (shown once); migrates a legacy vault
+navig vault recovery verify          # prove a key still opens the vault (hidden prompt / stdin)
+navig vault backup [--to FILE]       # encrypted backup — opens ONLY with the recovery key
+navig vault restore FILE --into DIR  # rebuild into an EMPTY dir on any machine (asks for the key)
+navig vault rotate [--yes]           # new master key; every item + keyslot re-wrapped atomically
+```
+
+The vault's master key is random and stored only wrapped, once per **keyslot**: `dpapi`
+(Windows, this user), `keyfile` (Linux/macOS), `fingerprint` (the legacy key, kept for
+compatibility), `passphrase`, and `recovery` (wrapped to a public key whose private half is
+printed once and lives off the machine). A vault created before keyslots keeps working
+unchanged until `recovery init` migrates it — no item is re-encrypted by that migration.
+`navig doctor` shows ⚠ until a recovery key exists.
+
+### `vault://` references, safe input and `vault run`
+
+```bash
+navig vault set vault://hosts/cybesis-vps/ssh          # hidden prompt (or --stdin / --from-env / --from-file)
+navig vault set vault://ci/token --stdin --expect-version 3   # fails if someone changed it meanwhile
+navig vault get vault://hosts/cybesis-vps/ssh          # masked; --reveal / --raw to print
+navig vault run -e PGPASSWORD=vault://hosts/db1/db -- psql -h db1 -U app
+navig vault run -f KEY=vault://deploy/key -- ssh -i "$KEY" host     # 0600 temp file, deleted on exit
+navig vault run --host cybesis-vps -e TOKEN=vault://ci/token -- ./deploy.sh   # over SSH stdin
+```
+
+`vault://hosts/<h>/ssh` · `/db` · `/db-root` name a host's `ssh_password`, `database.password`
+and `database.root_password`; any other path is a vault label; `#field` picks a JSON key and
+`?v=N` an earlier version. A value given positionally to `vault set` still works but warns:
+it lands in shell history. `vault run` never puts a secret on a command line.
+
+### Federation — one vault, scoped per machine
+
+On the machine that holds the vault (the **authority**, `vault.authority.enabled: true`):
+
+```bash
+navig vault devices enroll neuron-pc [--kind client|server|mini] [--expires 90d]
+navig vault grant neuron-pc 'vault://hosts/cybesis-vps/ssh' [--cache-ttl 12h] [--expires 30d]
+navig vault devices list [--json]
+navig vault revoke neuron-pc ['host/cybesis-vps/*']    # remove grants
+navig vault devices revoke neuron-pc                   # refuse the machine from its next request
+```
+
+On the other machine (a **device**):
+
+```bash
+navig vault join http://127.0.0.1:8790     # paste the one-time code; needs a DIRECT path (e.g. ssh -L)
+navig vault sync [--status]                # what is cached, until when; drop what is no longer granted
+navig vault leave
+```
+
+A device reads with the same `navig vault get/run vault://…` and host `*_ref` fields; a label it
+does not hold locally is asked of the authority — default deny, every read and denial audited
+there, values sealed to that device's own key. Nothing is cached unless the grant sets
+`--cache-ttl`; a cached value is used only while the authority is unreachable and never past
+its TTL. **Revocation cannot reach a machine that stays offline** — its cached copies last until
+their TTL. Design: `docs/architecture/vault-federation.md`.
+
+### Export to SVG — back up the vault, or hand someone a password
+
+The vault is sealed to *this* machine, so it cannot simply be copied. `export --svg` seals the
+chosen secrets into an ordinary SVG picture (it renders as a small pixel grid). The file is
+encrypted with AES-256-GCM, using a key derived from a passphrase (PBKDF2-SHA256, 600,000
+rounds). Without the passphrase it reveals no labels, names or counts.
+
+```bash
+navig vault export --svg github             # one secret → vault-<random>.svg + a generated passphrase
+navig vault export --svg github openai      # several in one file (labels, ids or provider names)
+navig vault export --svg --all              # the whole vault — asks first (--yes to skip)
+navig vault export --svg --all --each       # one file per secret, each with its OWN passphrase
+navig vault export --svg github --opener    # also write open-vault-svg.html for the recipient
+navig vault export --svg github --choose-passphrase   # your own (≥14 chars), or NAVIG_VAULT_SVG_PASSPHRASE
+
+navig vault open file.svg                   # what it holds — secrets masked; --reveal to show
+navig vault import file.svg [--dry-run]     # add to this vault — never overwrites a secret you have
+navig vault opener                          # write the offline opener page on its own
+```
+
+- **The passphrase is the lock.** A generated one (~125 bits, e.g. `k7mq4-x3vtb-…`) is shown
+  **once**. Whoever holds the file can guess offline with no lockout, so a chosen passphrase
+  needs at least 14 characters. Send it by a **different channel** than the file.
+- **Opening it elsewhere:** `navig vault open|import`, `nv open|import` (just
+  `pip install navig-vault`), or **https://navig.run/open** (the same page as
+  `open-vault-svg.html`) in any browser. That page decrypts
+  locally with WebCrypto and makes no network requests. The decoder is never put *inside* the
+  SVG: script-in-SVG is how "SVG smuggling" malware works, so mail filters strip it.
+- **Sending it:** attach it as a *file/document*, not a photo. Chat apps re-encode images,
+  which destroys the payload. Zip it if a service blocks `.svg`.
+- Old unencrypted *SVG Vault* files still open: `navig vault open old.svg --save <folder>`.
 
 ### Credential IDs
 
@@ -6056,6 +6920,7 @@ navig cabinet expiring                                # due within 90 days
 navig cabinet open <id>                               # temporary decrypted copy → its app
 navig cabinet export --all --by-category -o <dir>     # original names, checksum-verified
 navig cabinet backup -o <file>                        # portable .ncab, own passphrase
+navig cabinet backup -o <file> --with-vault           # …plus every vault secret (the vault has no export of its own)
 navig cabinet restore <file.ncab>
 navig cabinet import-paperwork --space <space>        # ID/medical docs a paperwork scan set aside
 navig cabinet passphrase set | clear                  # machine key (default) ↔ passphrase
@@ -6071,12 +6936,190 @@ navig paperwork echeances --space <space>             # deadlines from the lette
 
 - **Location:** `~/.navig/cabinet/` (override with `NAVIG_CABINET_DIR`).
 - **Passphrase in scripts:** `NAVIG_CABINET_PASSPHRASE`.
-- **Desktop app:** NAVIG OS → Apps → **Cabinet** (search, expiring, add, open). Its `/api/deck/cabinet/*` routes answer only this computer, never the tunnel or the Mini App.
+- **Desktop app:** NAVIG Desktop → Apps → **Cabinet** (search, expiring, add, open). Its `/api/deck/cabinet/*` routes answer only this computer, never the tunnel or the Mini App.
 - **Expiry reminders:** the daemon sends them by itself, 90/30/7 days before a document expires and once it has, naming the category, never the title. Turn them off with `navig config set cabinet.reminders.enabled false`; `cabinet.reminders.hour` sets the daily hour.
 - **Machine-key caveat:** a machine-key cabinet does not survive an OS reinstall, so back it up.
 - **Recovering without navig:** `navig_cabinet/recover_backup.py` restores a backup with only Python and `cryptography`.
 
 ---
+
+## 23.5.2 Audio Enhance (`navig audio enhance`)
+
+Restore and master an existing recording (speech, sound effects, music, ambience) without
+changing what it is. Provided by the navig-audio plugin; NAVIG Desktop has the same flow in
+**Media Studio → Enhance** (drop a file, read the findings, pick a preset, compare A/B
+at matched loudness, keep or export).
+
+```bash
+navig audio enhance take.wav --analyze          # findings + measurements; writes nothing
+navig audio enhance take.wav                    # Preserve Original — fixes only measured defects
+navig audio enhance take.wav --dry-run          # the plan and why each step is there
+navig audio enhance take.wav --mode studio --format wav,flac --out C:\clean
+navig audio enhance take.wav --preset audio-enhance/clean-sfx
+navig audio enhance take.wav --mode custom --set denoise=strong --set eq=gentle
+navig audio enhance-presets                     # Preserve Original · Clean SFX · Studio Polish · …
+```
+
+- **Modes:** `preserve` (default; strict restoration), `studio` (plus gentle tone, light
+  compression where it suits, category loudness), `cinematic` (creative, labelled so),
+  `custom`. Enhancement presets are universal presets (tool `audio.enhance`, §23.4.1), so
+  `navig presets duplicate audio-enhance/studio-polish` makes your own.
+- **Verified:** every output is checked against the original (length, alignment, events
+  kept and none invented, pitch, tone, new content, clipping, true peak). A failure is
+  retried without its riskiest step, then rejected. The original is never modified.
+- **Output:** `<name>.enhanced.wav` (+ `.enhance.json` report) next to the source, or in
+  `--out`; never overwrites (`-take2` …). `--json` for scripts; exit 1 when rejected.
+- **DeepFilterNet (optional):** with `deep-filter.exe` in `~/.navig/bin/` (or `NAVIG_DEEPFILTER`),
+  speech noise is cleaned by it locally; `--set engine=local` forces ffmpeg.
+- **Cloud:** only the ElevenLabs voice isolator, only for speech, only with `--allow-cloud`.
+
+## 23.5.3 AI regeneration (`navig audio regenerate`)
+
+New audio made FROM a recording — the opposite of `navig audio enhance`, and labelled as
+generated everywhere. NAVIG Desktop: Media Studio → Enhance → **New versions with AI**.
+
+```bash
+navig audio regenerate take.wav --op voice --voice <voice-id> --allow-cloud     # same words, new voice
+navig audio regenerate fx.wav --op variations -d "heavier" -n 3 --allow-cloud   # new takes, text only sent
+navig audio regenerate song.mp3 --op replace --stem drums --with "brushed kit" --allow-cloud
+navig audio regenerate fx.wav --op variations --dry-run                         # what is sent and billed
+```
+
+- Runs on ElevenLabs with the account's key; `--allow-cloud` is required for every real run
+  (`voice` and `replace` upload the recording; `variations` sends only text).
+- `--describe-with-ai` lets an audio-capable model (Gemini via OpenRouter) name what it hears —
+  it uploads the clip; without it the description comes from local measurements.
+- Outputs: `<name>.regen-<op>.wav` + `.regen.json` (prompt, provider, closeness reading). The
+  original is never modified.
+
+## 23.5.4 Audio Lab — delivery, restoration, podcast edit, stems, dubbing, score
+
+Ten jobs on top of Enhance and Regenerate. Every command leaves the original untouched;
+local commands need only ffmpeg; anything billed or uploaded needs `--allow-cloud` for that run.
+
+```bash
+# Local
+navig audio delivery mix.wav --target all                    # pass/fail for every platform spec
+navig audio delivery mix.wav --target spotify --fix -f wav   # a levelled copy that fits
+navig audio clean-video interview.mp4                        # clean dialogue, picture copied untouched
+navig audio match mix.wav --ref reference.mp3                # tonal balance + loudness like a reference
+navig audio loop rain --seconds 600                          # a seamless loopable bed
+navig audio enhance tape.wav --preset audio-enhance/cassette # also: vinyl · phone-call · voice-memo
+navig audio podcast-edit episode.mp3                         # propose cuts → episode.cuts.json
+navig audio podcast-edit episode.cuts.json --apply           # apply the reviewed cut list
+navig audio stems song.stems --preset karaoke                # remix stems already split
+navig audio similar door.wav --in D:/sfx                     # sounds that sound like this one
+
+# ElevenLabs (billed)
+navig audio loop "night café, distant chatter" --seconds 300 --generate --allow-cloud
+navig audio stems song.mp3 --allow-cloud                     # split once: six parts (--two: vocals + rest)
+navig audio dub talk.mp4 --to fr --to es --allow-cloud       # same voices, other languages
+navig audio score trailer.mp4 --style "dark synth" --dry-run # the cuts and the music plan, free
+navig audio score trailer.mp4 --style "dark synth" --allow-cloud
+```
+
+- **delivery** — targets: youtube · spotify · tidal (−14 LUFS / −1 dBTP), apple-music · podcast
+  (−16), podcast-mono (−19), ebu-r128 (−23, strict) and atsc-a85 (−24 / −2, strict). `--fix`
+  re-measures the exported file and tightens until the true peak is under the ceiling.
+- **clean-video** — the sound is enhanced (Voice Restoration preset by default) and muxed back
+  with the video stream copied bit for bit; sync drift is measured, and a rejected cleanup
+  writes nothing.
+- **podcast-edit** — local Whisper word timestamps (`--model tiny…large-v3`). It proposes
+  filler words (en/fr/ru/de/es), long pauses (shortened to `--keep-pause`, never removed) and
+  repeated words. Set `"keep": true` on any cut in the JSON before applying; joins use 15 ms
+  crossfades. A filler the transcript did not write down cannot be cut — listen to the result.
+- **stems** — the split is billed once and kept in `<name>.stems/` (`stems.json` lists the
+  parts); every remix after that (`--mute`, `--solo`, `--gain vocals=-3`, presets karaoke ·
+  instrumental · acapella · drumless · bassless) is local, into `<name>.stems/mixes/`.
+- **similar** — a timbre and rhythm fingerprint per file, cached per folder under the data dir;
+  only new or changed files are fingerprinted again. For exact duplicates use dedupe instead.
+- **dub** — only the sound is uploaded; a dubbed video keeps its picture and gets the dub as
+  the default track with the original as a second one (`--replace-track` drops it). A dub whose
+  length drifts more than 2 % is flagged. Labelled AI-generated in `<name>.dub.json`.
+- **score** — scene cuts become `composition_plan` sections of exactly the scene's length
+  (shots under 3 s merge); the music ducks under existing dialogue (`--no-duck` replaces it).
+  10 s – 5 min videos. Outputs `<name>.scored.<ext>`, `<name>.score.wav` and `<name>.score.json`.
+## 23.5.5 NAVIG Voice — profiles, policy, budget (`navig voice`)
+
+One voice setup for every surface: the Dock's **Read aloud** (Chrome), `navig voice speak`
+and NAVIG Desktop. Provided by the navig-audio plugin.
+
+```bash
+navig voice speak "Bonjour" --profile speech/french-narrator   # a saved voice profile
+navig voice speak "Привет" --profile speech/russian-deep-narrator -o hi.mp3 --no-play
+navig presets list --tool speech                                # the profiles (builtin + yours)
+navig presets duplicate speech/english-reader --name "My reader"
+navig voice policy                     # show: auto · free · premium · offline
+navig voice policy free                # never a paid voice, even when picked
+navig voice policy auto --paid-fallback   # let Auto retry a failed free voice on a paid one
+navig voice budget 20000               # paid read-aloud characters per day (0 = paid off)
+navig voice usage                      # paid characters per day, ≈ USD, per provider
+navig voice packs list                 # offline packs: status, size, license (add --json)
+navig voice packs install en_US-ljspeech-medium   # download + SHA-256 verify (~67 MB, asks first)
+navig voice packs remove ru_RU-denis-medium --yes # delete one installed pack
+navig voice speak "Bonjour" -p local   # speak from an installed pack (on-device only)
+```
+
+- **Profiles** are universal presets (tool `speech`, §23.4.1): provider, model, voice,
+  language, speed, pitch (Hz, Edge), ElevenLabs stability / similarity, a delivery note
+  (MiMo) and pronunciation rules (`pronounce: ["NAVIG=навиг"]`). A field the provider cannot
+  do is reported as ignored, never silently "applied". `navig presets default speech <id>`
+  makes one the default for read-aloud.
+- **Policy** (`voice.policy`, enforced by the daemon for every client): **auto** — free
+  voices; a paid one only when named (by you or a profile) · **free** — never paid ·
+  **premium** — your keyed paid voice first · **offline** — text never leaves the machine:
+  it speaks with an installed on-device pack (`local`) or refuses with what is missing —
+  never a cloud provider, and Auto never picks the local engine implicitly.
+- **Offline packs** (`navig voice packs`): pre-converted Piper voices (fr_FR-siwis-medium,
+  ru_RU-denis-medium, en_US-ljspeech-medium) from a pinned sherpa-onnx release, downloaded
+  once, SHA-256 verified, stored in `<config>/voice/packs/`. The engine itself is the
+  optional extra `pip install "navig-audio[local-tts]"` — sherpa-onnx runs CPU-only, no
+  GPU; about 67 MB download ≈ 81 MB on disk per pack, and a measured 430–560 MB of RAM
+  peak while a voice is loaded (warm synthesis runs at ~0.14× real time). Licenses differ
+  per voice (CC-BY 4.0, CC0, public domain — the model card's own license) and are
+  printed before every install. Under offline, synthesis makes
+  no network call at all — a missing pack is an error with the install command, never a
+  silent download or fallback.
+- **Budget** (`voice.daily_char_budget`, default 20,000): a paid read-aloud request that
+  would pass it is refused (HTTP 429) before the provider is called; a cached clip costs
+  nothing and is always served. Usage is recorded in `<config>/voice/usage.json`. Explicit
+  `navig voice speak` runs are not metered — the budget guards read-aloud.
+- **Prices** shown in Options → Voice and `GET /api/deck/voice/catalog` come from the
+  providers' pricing pages with the date they were checked (ElevenLabs v2 Multilingual
+  $0.08 / 1k characters, OpenAI tts-1 $0.015 / 1k).
+## 23.5.6 Content production (`navig content`)
+
+The assembly line that composes the media engines — topic → script → narration → cut → pack —
+provided by the **navig-pipeline** plugin. `navig content` is the canonical verb;
+**`navig pipeline` is the same command under its old name** (kept registered, hidden from
+`--help`, one notice on stderr) and `navig-content` is its standalone script. The
+distribution name does not change, and nothing moved: data stays in `~/.navig/pipeline`
+([ADR-0002](../../docs/decisions/0002-media-modular-ownership.md)).
+
+```bash
+navig content status                # which stages are wired (their plugin installed) — --json
+navig content run --topic "…"       # script → narrate → cut → fanned-out post
+navig content reel --lang fr        # vertical reel per language: capture, narrate, caption, score
+navig content clip --audio bed.mp3  # cut a clip to a track you already have (no narration)
+navig content captions track.mp3 -o out.srt --language en
+navig content hooks track.mp3 --top 5       # which passages are worth cutting
+navig content episode build ./ep01  # one folder: narrate → check → render → pack
+navig content publish ./ep01/out --youtube   # render → post pack (spec check, cover, caption)
+navig content localize ./ep01/out --to fr    # the same picture in another language
+navig content schedule --every 1d --topic "…"   # autopilot the line on a cadence
+navig content telegram-import --mode link --preview
+```
+
+- **Orchestrator, not a workflow engine.** Each stage calls the owning plugin's public
+  command — `navig text` (script), `navig audio` (narration, captions), `navig video`
+  (render), `navig download`, `navig social`. A stage whose plugin is missing is skipped and
+  reported, never a crash. `status --json` shows the wiring before you start.
+- **Standalone:** `navig-content run …` runs without the daemon; inside NAVIG an integrated
+  run goes through Blocks (`navig apply`) and gets a receipt.
+- `--json` on the verbs above except `localize` and `schedule`.
+- **As a Block:** `navig apply content-reel --input topic="…"` runs the same line under
+  approval with a signed receipt, and verifies the drafted file actually exists
+  (`navig block verify content-reel` lints the spec).
 
 ## 23.6 Windows System Tray Launcher
 
@@ -6164,6 +7207,79 @@ Stored in `~/.navig/tray_settings.json`:
 ## 24. Memory & Context Management
 
 NAVIG provides persistent memory for AI conversations and a knowledge base for storing project information.
+
+#### Memory controls — on/off, incognito, secrets
+
+```bash
+# The global switch (default on). Off: the agent neither recalls nor saves facts,
+# and its memory tools refuse. Deleting a memory always works.
+navig config set memory.enabled false
+navig config set memory.enabled true
+```
+
+- **Incognito chat** — on Telegram, `/incognito` (or `/incognito on|off`). An incognito
+  chat starts fresh, reads and saves no memories, and its messages are not kept in the chat
+  history, the session store or the Telegram catalog. Over HTTP, send
+  `"flags": {"incognito": true}` to `POST /llm/chat`; nothing goes to the Synapse sync log.
+  Custom instructions (`USER.md`) still apply.
+- **Secrets never become memories.** Every saved fact passes one filter: API keys, tokens,
+  connection-string passwords, spoken secrets (`password is …`, `PIN: …`, 2FA codes), card
+  numbers (Luhn-checked) and IBANs are replaced with `***REDACTED***` before the fact, its
+  search index or its embedding is written; the fact is flagged `redacted`. A fact that is
+  *only* a secret is not saved. Keep the value itself in `navig vault`.
+
+```bash
+# Facts saved before the filter existed: report (never prints the original text)…
+navig memory scan-secrets
+# …then redact them in place (pending, deleted and superseded facts included)
+navig memory scan-secrets --apply
+```
+
+#### Personalization — answer style and sources
+
+All of these take effect on the next message, also in a running daemon (they are read
+live from `config.yaml`). The OS **Settings → Personalization** page writes the same keys
+through `GET|POST /api/deck/personalization`.
+
+```bash
+# Style dials — each less | default | more. They extend your persona's tone.
+navig config set style.warmth more
+navig config set style.enthusiasm less
+navig config set style.emoji less          # "less" = never use emoji
+navig config set style.headers_lists less  # plain prose instead of headers/bullets
+navig config set style.visual more         # tables / diagrams when they help
+
+# Web search: auto (default — when the turn calls for it) | always | off (no web at all)
+navig config set ai.web_search.mode off
+
+# Fast answers: simple questions go to the fast model (default off)
+navig config set ai.fast_answers true
+
+# Which of your own sources the agent may search (default on)
+navig config set ai.sources.library false
+navig config set ai.sources.connectors false
+```
+
+Custom instructions are `USER.md` in your workspace (`/api/deck/customize/instructions/USER.md`).
+
+#### Managing saved memories
+
+```bash
+navig memory facts                      # saved memories (📌 = pinned)
+navig memory pin <id>                   # keep it in mind in EVERY conversation
+navig memory unpin <id>                 # back to "recalled when relevant"
+navig memory edit <id> "corrected text" # fix a memory in place
+navig memory forget <id>                # remove it
+navig memory summary                    # "What NAVIG knows about you" (cached)
+navig memory summary --refresh          # rewrite it now (calls the model)
+```
+
+Pinned memories are injected on every turn (at most 10), but only once approved — a
+pending proposal is never used, pinned or not. The summary is written from approved
+memories only and is rewritten when they change. The deck serves the same operations at
+`GET /api/deck/memory/facts`, `PATCH|DELETE /api/deck/memory/facts/{id}` and
+`GET|POST /api/deck/memory/summary` (deck auth only — not on the token-less
+`/api/memory` mirror).
 
 ### 24.1 Conversation Memory
 
@@ -6402,7 +7518,7 @@ git (added to `.gitignore` automatically on first scan).
 
 ### 24.8 Automatic AI Context Injection
 
-Every AI turn — whether through `navig ask` (or deprecated `navig ai ask`), the Gateway REST API, Telegram, or any
+Every AI turn — whether through `navig ask`, the Gateway REST API, Telegram, or any
 other channel — automatically injects the following memory sources into the system prompt:
 
 | Source | What is injected | CLI to manage |
@@ -6611,6 +7727,79 @@ navig agent config show     # Verify email_accounts parsed
 | `imap_host` | auto | Override IMAP host (generic provider) |
 | `imap_port` | `993` | IMAP port |
 
+#### Mailroom outbox — queued replies (`navig email outbox`, navig-email ≥ 0.4.0)
+
+Every message the mailroom sends is one job in `<navig data dir>/mailroom.db`:
+`DRAFT → PENDING_APPROVAL → SCHEDULED → SENDING → SENT` (plus `CANCELLED`, `FAILED`,
+`NEEDS_REVIEW`, `OUTCOME_UNKNOWN`). Approving binds the exact text you saw; editing drops the
+approval. The daemon's mailroom tick sends due jobs **while this computer is online**; a job
+more than 24 h late goes back to you instead. A provider timeout is never retried blindly — the
+job's own `Message-ID` is looked up in Sent first.
+
+```bash
+navig email reply <thread> --space <space> --queue                 # generate → awaiting approval
+navig email reply <thread> --space <space> --queue --yes --send-in 15m
+navig email outbox list [--open] [--json]
+navig email outbox show <job>                                      # text, quality check, history
+navig email outbox approve <job> --version <hash> [--in 15m | --at 2026-10-20T09:00]
+navig email outbox edit <job> --body "…"                           # resets approval
+navig email outbox delay <job> --by 1h | cancel <job> | send-now <job> --yes
+navig email outbox reopen <job> | confirm-sent <job>               # FAILED / NEEDS_REVIEW
+navig email outbox pause [--all] | resume                          # emergency stop
+navig email outbox history                                         # audit trail, no bodies
+navig email send --to … --subject … --body … --yes [--schedule 30m]
+```
+
+Generated replies pass a quality gate first (empty or one-word output, placeholders, a header or
+"as an AI" leak, the wrong language, another identity's signature → rejected and regenerated once;
+unexplained numbers, money or promises → flagged for you). Set `mailroom.ai.fallback_model` in the
+space config to retry with a stronger local model.
+
+**Auto-reply policies** (`navig email policy …`) — all ship off; each is enabled for one account:
+
+```bash
+navig email policy list
+navig email policy enable business-ack --account you@gmail.com --alias hello@yourdomain.com --yes
+navig email policy enable trusted-repetitive --account you@gmail.com --sender partner.com --fact "We ship on Mondays." --yes
+navig email policy enable draft-replies --account you@gmail.com            # drafts only, never sends
+navig email policy test <message-id> --space <space>                        # what would happen (dry run)
+navig email policy disable business-ack                                     # queued replies stop too
+```
+
+Machine mail is ignored; contracts, payments, bank details, job offers, government mail, account
+recovery, credentials, security incidents, sensitive attachments and irreversible requests are
+always drafted for review — no policy can send them.
+
+**Newsletter briefing** (`navig email brief …`) — products, events and jobs extracted from
+newsletters, merged across emails, delivered to Telegram, sources archived only after delivery:
+
+```bash
+navig email brief run --space <space> --dry-run       # build and show, send nothing
+navig email brief run --space <space>                 # deliver now
+navig email brief schedule --space <space> [--apply]  # one cron job; replaces the weekly template digest
+navig email brief items [--kind job] | save <item> | dismiss <item>
+navig email brief extract <message-id>                # what one email yields
+navig email brief restore <message-id>                # undo an archive / Trash
+```
+
+Configure under `mailroom.brief` in the space's `.navig/config.yaml`: `frequency` (daily ·
+every_2_days · every_3_days · weekly · every_2_weeks · monthly · adaptive · manual), `weekday`,
+`time`, `timezone`, `max_sources` (6), `min_items` (3), `max_postpone_days` (14), `quiet_hours`,
+`alert_days` (3), `interests: {label: [keywords]}`, `jobs: {keywords, locations, min_day_rate}`,
+`cleanup: {archive, trash_senders, trash_after_days}`.
+
+**Labels, filters and attachments:**
+
+```bash
+navig email organize audit                                 # read-only
+navig email organize preview --space <space>               # proposed taxonomy, counts
+navig email organize apply --space <space> --yes           # additive + snapshot
+navig email organize rollback <snapshot.json>
+navig email organize retire --space <space> --yes          # old labels off migrated mail
+navig config set connectors.gmail.filters true             # then reconnect Gmail to include filters
+navig email attachments save <message-id> --space <space>  # documents → <space>/inbox/ for paperwork
+```
+
 ### 25.5.2 SOUL.md - Deep Personality
 
 For complete control over your agent's identity and conversational style, create a `SOUL.md` file:
@@ -6726,7 +7915,7 @@ I am **NAVIG** — your server guardian.
 [Core principles]
 ```
 
-See [AGENT_MODE.md](AGENT_MODE.md) for full SOUL.md documentation.
+See `AGENT_MODE.md` (not in this tree) for full SOUL.md documentation.
 
 ### 25.6 Safety Features
 
@@ -6742,6 +7931,40 @@ Every privileged gateway action (`mission.create`, `mission.advance.*`, `system.
 policy gate before executing. The decision model is `allow` / `require_approval` / `deny`,
 driven entirely by config — no hardcoded lists:
 
+#### Security levels — one knob, three postures (router-firewall style)
+
+`approval.security_level` is the single switch an operator touches day to day —
+the same High / Medium / Low concept as a router firewall:
+
+| Level | Posture | What pages |
+|---|---|---|
+| `high` | nothing trusted | **every** gated call, including proven read-only shell commands; **any** approval timeout denies (fail-closed, whatever `default_action` says) |
+| `medium` | the default | proven reads run unprompted (audited); writes page; dangerous always denies on timeout |
+| `low` | terminal exempt | `bash_exec` / `run_command` / `navig_run` never page (reads **and** writes, still audited); `db_query`, `cdp_eval`, connector writes, missions, shutdown — everything else still pages |
+
+```bash
+navig approve status            # level, what it means, configured vs. the running gateway
+navig approve level low         # set it: high | medium | low (aliases strict/balanced/permissive)
+navig approve policy            # the CONFIGURED safe/confirm/dangerous/never patterns
+navig approve list              # requests waiting for you right now
+```
+
+`navig approve status` is the one place that tells **configured** from **running**: the
+policy is built once when the gateway starts, so setting a level without
+`navig service restart` leaves the daemon on the old one — status shows `⚠ differs —
+restart pending`, and a gateway too old to answer reads as restart pending too. `level`
+refuses a typo (it never stores some other level) and reads the value back before it
+prints a tick. `navig config set approval.security_level <x>` still works, but without
+the validation or the read-back.
+
+Rules: explicit granular keys beat the level (`auto_approve_read_only: false`
+wins even under `medium`); aliases `strict`/`balanced`/`permissive` normalize to
+`high`/`medium`/`low`; an unknown value logs a warning and lands on `medium` —
+a typo never kills the gateway at boot and never fails open. `approval.enabled:
+false` stays the master kill-switch **outside** the three levels (the "unplug"
+position) and, being read at gateway startup, like every key here it takes
+effect on `navig service restart`.
+
 ```yaml
 # ~/.navig/config.yaml
 gateway:
@@ -6753,9 +7976,16 @@ gateway:
       - pattern: "mission.*"
         action: require_approval
 approval:
-  enabled: true               # master switch for the approval flow
-  timeout_seconds: 120        # how long a gated request waits for a human
-  default_action: deny        # timeout resolution (dangerous ops always deny)
+  security_level: medium      # high | medium | low — the one knob (see table above)
+  enabled: true               # master switch, outside the three levels
+  timeout_seconds: 900        # how long a gated request waits for a human
+                              # (120 s was the old value — a notification takes
+                              # minutes to notice; longer only delays an auto-deny)
+  default_action: deny        # timeout resolution (dangerous ops always deny;
+                              # high denies on timeout regardless)
+  auto_approve_read_only: true  # OPTIONAL override of the level's read bypass —
+                              # only set this if you want it to differ from what
+                              # security_level derives (explicit key wins)
 ```
 
 - `deny` → rejected immediately (HTTP 403, `policy_denied`).
@@ -6771,11 +8001,21 @@ confirmation through the same approval flow: the prompt lands in the deck Inbox 
 timeout follows `approval.default_action`, and the decision is audited as
 `tool.execute.<tool_name>`. If the approval subsystem is unavailable inside the gateway the
 tool call is **denied** — never silently approved. A denied call returns a clean
-`[Denied: …]` result the agent reads and adapts to. Headless CLI runs (no gateway) keep the
+`[Denied: …]` result the agent reads and adapts to (and is told not to retry). Headless CLI runs (no gateway) keep the
 single-operator default — dangerous tools log a loud warning and proceed — and
 `NAVIG_ALLOW_ALL_COMMANDS=1` bypasses the gate for pre-screened automation. To pin a
 specific tool, add an `approval.levels` pattern matching `tool <name>` (e.g.
 `"tool cdp_eval*"` under `dangerous:` makes its timeout always deny).
+
+**Read-only shell commands never prompt** (chat path, `approval.auto_approve_read_only`,
+default on): a `bash_exec`/`run_command`/`navig_run` whose command is provably a read —
+the `shell_readonly` classifier: verb allow-list, no write flags, pipelines and `;`
+checked segment by segment, `2>/dev/null` and Windows `2>nul` allowed, `git` global
+options (`-C <path>`) skipped when locating the sub-command, a second-level read table
+for `git`/`gh`, and wrappers (`powershell -Command` / `cmd /c` / `bash -c`) unwrapped so
+the payload is classified by the same rules — runs immediately and is audited as
+auto-approved naming the key. Anything that writes, any unknown verb, and every other
+gated tool still pages. Set the key to `false` to prompt for everything.
 
 Every decision is appended to the structured audit log at
 `~/.navig/runtime/audit.jsonl` — who / what / when / decision / matched rule; inputs
@@ -6833,7 +8073,7 @@ navig agent remediation clear
 3. Maximum 5 attempts before manual intervention required
 4. All actions logged and trackable
 
-See [AGENT_SELF_HEALING.md](AGENT_SELF_HEALING.md) for details.
+See `AGENT_SELF_HEALING.md` (not in this tree) for details.
 
 #### Learning System
 
@@ -6863,7 +8103,7 @@ navig agent learn --export
 - Actionable recommendations
 - Exported to `~/.navig/workspace/error-patterns.json`
 
-See [AGENT_LEARNING.md](AGENT_LEARNING.md) for details.
+See `AGENT_LEARNING.md` (not in this tree) for details.
 
 ### 25.8 Operating Modes
 
@@ -6915,9 +8155,13 @@ Get-Service navig-agent | Format-List *
 Get-EventLog -LogName Application -Source "navig-agent"
 ```
 
-See [AGENT_SERVICE.md](AGENT_SERVICE.md) for full installation guide, troubleshooting, and security considerations.
+See `AGENT_SERVICE.md` (not in this tree) for full installation guide, troubleshooting, and security considerations.
 
 ### 25.10 Goal Planning
+
+> **Superseded by `navig goal`** — standing goals worked on a schedule until met
+> (`navig goal add "<objective>"` · `list` · `show <id>` · `remove <id>`). `navig agent goal`
+> still works, prints that pointer, and keeps its own goals (they are not copied over).
 
 Create high-level goals that the agent decomposes and executes:
 
@@ -6970,7 +8214,7 @@ Check progress with: navig agent goal status --id e78423a1
 
 Subtasks can depend on others completing first. Agent automatically determines execution order and only runs subtasks when dependencies are met.
 
-See [AGENT_GOALS.md](AGENT_GOALS.md) for comprehensive guide on goal planning, dependencies, and advanced usage.
+See `AGENT_GOALS.md` (not in this tree) for comprehensive guide on goal planning, dependencies, and advanced usage.
 
 ---
 
@@ -7554,6 +8798,86 @@ result = await coordinator.delegate_task(
     required_capabilities=["docker", "ssh"]
 )
 ```
+
+### 27.7 Decision Model (`navig decider`)
+
+A **decision model** answers fixed questions about a message or document (yes/no, one of
+named options, or a level on a scale) with a probability for each option, in ~40–200 ms. It
+cannot answer outside the list you give it and it never writes prose. NAVIG uses Cloudflare's
+open-weights **Clef** (`@cf/cloudflare/clef`; `clef-flash` is fast, `clef` is stronger) for
+decisions it used to ask a full LLM or a keyword list.
+
+| Use id | What it decides |
+|---|---|
+| `telegram_triage` | how complex a Telegram message is (picks the model tier) |
+| `inbox_sort` | which wiki / hub section a dropped file belongs in |
+| `inbox_space` | which of your spaces a file belongs in |
+| `guard_tool_call` | NAVIG Desktop **Guarded** mode: is a tool call hard to undo, reaching outside the project, or reaching other people? |
+
+**Guarded mode (NAVIG Desktop).** A permission mode between Ask to Edit and Execute: the agent
+works without prompts, but before a command or tool call that is not read-only runs, the
+decision model is asked the three questions above; a likely yes (probability ≥ 0.5) turns
+the call into an ordinary permission prompt that says why. A file write outside the project
+always asks, without a model call. It can only **add** a prompt — never approve one — so
+when the model cannot answer (off, shadow mode, no credential, a timeout of ~2.5–4 s) the
+call asks, saying it could not be checked. Clef-flash answers in ~0.8–1.5 s; if checks
+often come back unchecked, raise `decide.timeout_ms` (default 1500) to 2500. The mode is offered only while
+`decide.enabled` is on and `guard_tool_call` is `on`; otherwise a Guarded session behaves as
+Ask to Edit. What is sent: the tool name, the command or clipped arguments and the project
+directory, redacted when `decide.redact` is on (the default). Unlike the uses below it is
+not compare-only: in shadow mode every call would ask.
+
+It runs on **your own Cloudflare account**, the one connected for Lighthouse, and it is
+**off by default**. Whenever it is off, unsure (below `decide.min_confidence`) or
+unavailable, NAVIG decides exactly as it did before. Workers AI bills Clef-flash at $0.09 per
+million input tokens, and the free daily allowance covers a few thousand decisions.
+
+```bash
+navig decider                         # status: switches, credential, today's usage, last call
+navig decider test "Checkout is failing for every customer" \
+  --yesno "urgent=Is this urgent?" --choice "team=billing,technical,sales"
+navig decider on                      # switch it on (every use)
+navig decider off --use telegram      # switch one use off (id or prefix)
+navig decider use clef                # pick the model: clef-flash | clef
+navig decider shadow on               # log its answers, keep the old logic deciding
+navig decider off                     # everything back to the previous method
+```
+
+**Shadow mode: proving a use before it decides.** Each use runs in one of three modes:
+`on` (Clef decides), `shadow` (Clef answers and is compared with the logic that decides
+today, which still decides) and `off`. Every use added after the first three starts in
+**shadow** and is **compare-only**:
+
+| Use id | Compared with |
+|---|---|
+| `telegram_brief` | ONE call per Telegram message answering mode, depth, system intent, space intent, reminder and settings intent, each compared with its own classifier |
+| `judge_confirm` | the exact-English yes/cancel word lists for a pending action (so "да" or "oui" counts as "other" today) |
+| `judge_reply_quality` | the length/hedge rule that decides whether to retry on a stronger model |
+| `judge_continuation` | the keyword scorer behind auto-continue |
+| `judge_action_safety` | the verifier's self-reported verdict (only while the verifier is on) |
+| `judge_goal` | the model's own "did I achieve the goal?" |
+
+```bash
+navig decider status                  # "Agrees (7d)" per use
+navig decider review                  # the recent disagreements, with redacted text
+navig decider shadow on --use inbox   # put a live use back under comparison
+navig decider off --use judge         # stop comparing (every judge_* use)
+```
+
+None of these comparisons makes the bot wait: they run in the background, and Telegram
+keeps handling one message at a time exactly as before.
+
+**Permission:** Clef needs Workers AI access on your Cloudflare credential. A
+`navig lighthouse login` made before this feature lacks it, so re-run the login once. If you
+use an API token instead, add **Workers AI: Read** to it. `navig decider status` and
+`navig doctor` (the "Decision model (Clef)" row) tell you which applies.
+
+Settings (`navig config set decide.<key> <value>`): `enabled` (false), `model` (clef-flash),
+`use.<id>` (true), `min_confidence` (0.5), `timeout_ms` (1500), `daily_cap` (2000 calls per
+UTC day, 0 = no cap), `shadow` (false), `redact` (true; strips emails, phone numbers and
+secrets before sending), and `account_id` (defaults to Lighthouse's). For example,
+`navig config set decide.enabled false` switches it off from anywhere. The deck exposes the
+same switches under **Settings → Decision model**.
 
 ---
 
@@ -8206,6 +9530,12 @@ navig trigger stats
 --action "script:/path/to/script.sh"
 ```
 
+`notify` actions go through the notification pipeline — routing matrix, quiet hours,
+fan-out and delivery verification — like every other alert. The Telegram chat is
+resolved by the pipeline (the type's route → notify target → `telegram.allowed_users[0]`);
+action params `target`/`chat_id` no longer choose the destination (a fire logs a warning
+if they are set). To pick the chat: `navig notify route set system_alert <chat>`.
+
 ### 31.5 Conditions
 
 Conditions use format: `target operator value`
@@ -8448,8 +9778,8 @@ navig doctor migrate-packs
 |---------|-------------|
 | `pack list` | `navig block list` (outcomes) · `navig plugin list` (bundles) |
 | `pack show <name>` | `navig block show <name>` · `navig plugin show <name>` |
-| `pack install <ref>` | `navig install add <ref>` (community assets) · `navig plugin add` |
-| `pack uninstall <name>` | `navig install remove <name>` · `navig plugin remove` |
+| `pack install <ref>` | `navig install add <ref>` (community assets) · `navig store install` |
+| `pack uninstall <name>` | `navig install remove <name>` · `navig store remove` |
 | `pack run <name>` | `navig apply <name>` |
 | `pack run <name> --dry-run` | `navig apply <name> --dry-run` |
 | `pack run <name> --var k=v` | `navig apply <name> --input k=v` |
@@ -8650,13 +9980,13 @@ When enabled, the sidebar "Command Deck" shows a **🎯 Formation** section with
 
 ```bash
 # Run multi-agent discussion
-navig council run "Should we migrate to microservices?"
+navig formation council "Should we migrate to microservices?"
 
 # Control rounds and timeout
-navig council run "Budget allocation" --rounds 2 --timeout 60
+navig formation council "Budget allocation" --rounds 2 --timeout 60
 
 # JSON output for scripting
-navig council run "Tech strategy" --json
+navig formation council "Tech strategy" --json
 ```
 
 ### Agent Execution
@@ -8803,94 +10133,31 @@ cfg.cache_dir      # platform cache dir (AppData\Local\NAVIG\Cache on Win)
 <a id="33-additional-documentation"></a>
 ## 35. Additional Documentation
 
-For specialized topics, see these detailed guides:
+For specialized topics, see these detailed guides (names kept for search; only PRODUCTION_DEPLOYMENT lives in this tree):
 
 | Document | Description |
 |----------|-------------|
-| [AUTONOMOUS_DEPLOYMENT.md](AUTONOMOUS_DEPLOYMENT.md) | **Complete guide for 24/7 Telegram bot deployment** - VPS, Docker, Windows service |
-| [ARCHITECTURE_GAP_ANALYSIS.md](ARCHITECTURE_GAP_ANALYSIS.md) | NAVIG vs Reference Agent feature comparison & roadmap |
-| [AGENT_MODE.md](AGENT_MODE.md) | Full agent architecture and component details |
-| [AGENT_SERVICE.md](AGENT_SERVICE.md) | Service installation (systemd, launchd, Windows) |
-| [AGENT_SELF_HEALING.md](AGENT_SELF_HEALING.md) | Auto-remediation and recovery system |
-| [AGENT_LEARNING.md](AGENT_LEARNING.md) | Pattern detection and learning system |
-| [AGENT_GOALS.md](AGENT_GOALS.md) | Goal planning and task decomposition |
-| [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) | Production deployment checklist |
+| `AUTONOMOUS_DEPLOYMENT.md` | **Complete guide for 24/7 Telegram bot deployment** - VPS, Docker, Windows service |
+| `ARCHITECTURE_GAP_ANALYSIS.md` | NAVIG vs Reference Agent feature comparison & roadmap |
+| `AGENT_MODE.md` | Full agent architecture and component details |
+| `AGENT_SERVICE.md` | Service installation (systemd, launchd, Windows) |
+| `AGENT_SELF_HEALING.md` | Auto-remediation and recovery system |
+| `AGENT_LEARNING.md` | Pattern detection and learning system |
+| `AGENT_GOALS.md` | Goal planning and task decomposition |
+| [PRODUCTION_DEPLOYMENT.md](../dev/PRODUCTION_DEPLOYMENT.md) | Production deployment checklist |
 
 ## 36. Finance (`navig finance`)
 
-Personal and operational finance tracking using double-entry accounting via **beancount** (MIT).
-
-### Install
-
-```bash
-pip install "navig[finance]"
-```
-
-### Quick start
+There is no finance CLI. Finance lives in the **NAVIG Desktop Finance app** (the `finance`
+module — money, invoices & bizops, gated by the Harbor tier):
 
 ```bash
-# Create a new journal (default: ~/finance/main.beancount)
-navig finance init
-
-# Or specify a custom path
-navig finance init --path ~/documents/money.beancount
-
-# Set a permanent custom path in NAVIG config
-navig config set finance.journal_path ~/documents/money.beancount
+navig store info module:finance    # the module, its tier lock and its surfaces
 ```
 
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| `navig finance init` | Scaffold a new beancount journal with default accounts |
-| `navig finance add "<entry>"` | Append a raw beancount transaction |
-| `navig finance balance [account]` | Show current account balances |
-| `navig finance income [--year N]` | Income vs expenses summary for a year |
-| `navig finance check` | Validate the journal for errors |
-| `navig finance accounts [filter]` | List all declared accounts |
-| `navig finance import <file.csv>` | Import transactions from a CSV file |
-| `navig finance hledger -- <args>` | Pass-through to hledger (if installed separately) |
-
-### Adding a transaction
-
-```bash
-navig finance add '2024-03-01 * "Coffee" Expenses:Food  4.50 USD ; Assets:Checking'
-```
-
-Or edit the `.beancount` file directly — it is plain text.
-
-### Importing from a CSV bank export
-
-The CSV must have `Date`, `Description`, and `Amount` columns (any case):
-
-```bash
-navig finance import ~/downloads/statement-march.csv
-navig finance import ~/downloads/statement-march.csv --dry-run   # preview only
-```
-
-### Checking for errors
-
-```bash
-navig finance check           # 0 exit code = clean journal
-navig finance check --strict  # also exits 1 on warnings
-```
-
-### hledger pass-through
-
-hledger (GPL-3.0) is **not bundled**. If you install it separately, NAVIG will
-find it on PATH and forward commands:
-
-```bash
-navig finance hledger -- bal --cost
-navig finance hledger -- reg Expenses
-```
-
-### Configuration
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `finance.journal_path` | `~/finance/main.beancount` | Path to the primary journal |
+`navig finance status` / `navig finance balance` were never implemented (the beancount
+journal verbs this chapter used to list never shipped); they now print the pointer above and
+exit 1.
 
 ---
 
@@ -9028,10 +10295,51 @@ and never one with a visible window. See `docs/automation/cdp-connector.md`.
 | `navig cdp click` / `type` / `key` / `scroll` / `move` | Interact (by `--ref`, `--xy`, or focused element) |
 | `navig cdp eval` / `nav` | Run JavaScript (gated) / navigate a page |
 | `navig cdp login <domain>` | Auto-login from a vaulted website credential (gated) |
-| `navig cdp inject <script\|@file>` | Register a persistent userscript (runs at document-start) |
+| `navig cdp inject <script\|@file>` | Register a persistent userscript; a `.user.js` header (`@match`, `@run-at`) is honoured |
 
 Every action targets a tab with `--tab <index>` or `--url <substring>`; all support
 `--port` (default 9222) and `--json`.
+
+### Lenses — your userscripts, in every NAVIG browser (`navig lens`)
+
+A **Lens** is a Tampermonkey-compatible `.user.js`: a `==UserScript==` header (`@match`,
+`@include`/`@exclude`, `@run-at`, `@noframes`, `@require`, `@grant`) plus code. Install it
+once and it runs in every NAVIG browser host. Any script from Greasy Fork or OpenUserJS is a
+valid Lens; NAVIG adds optional `@navig-id` / `@navig-capability` keys. Full spec:
+`docs/lenses.md`.
+
+| Command | Purpose |
+|---------|---------|
+| `navig lens list [--json]` | Installed Lenses: state, run-at, origin, sites |
+| `navig lens add <file.user.js \| https://…> [--disabled]` | Install or update (same `@name` + `@namespace` = update) |
+| `navig lens show <id> [--url <url>] [--source]` | Details, warnings, and whether it runs on a URL |
+| `navig lens enable <id>` / `disable <id>` | Turn a Lens on / off (stays installed) |
+| `navig lens export <id> [-o file]` | The original `.user.js`, byte-for-byte |
+| `navig lens remove <id> [--yes]` | Delete it and its cached `@require` files |
+| `navig install add lens:<owner>/<repo>/<path>` | Install from GitHub (a `<path>/lens.user.js` or a `.user.js` path) |
+| `navig lens review [<id>] [--json]` | What waits on you; with an id, the diff and what the change would newly be allowed to do (▲) |
+| `navig lens approve <id>` / `reject <id>` | Apply a staged change or turn on a proposal / discard it (a rejected update is not offered again) |
+| `navig lens update [<id>] [--json]` | Check install links now. Stages new versions for review — applies nothing; exit 1 if a link could not be checked |
+
+```bash
+navig lens add https://greasyfork.org/scripts/12345/code/script.user.js
+navig lens show my-lens --url https://www.youtube.com/
+navig install add lens:navig-run/registry/lenses/youtube-hide-shorts
+```
+
+- A Lens with **no `@match`/`@include` runs nowhere** (with a warning) — never everywhere.
+- **Nothing reaches a page unseen.** A new Lens written by the **agent** is saved switched off;
+  an agent's edit of a Lens you approved is **staged** beside it, and your version keeps
+  running. Updates from a Lens's install link are checked **daily** (the `lens_updates`
+  monitor, on by default) and staged the same way. Each pushes a **Lens reviews**
+  notification; decide with `navig lens review` or NAVIG Desktop → Settings → Lenses.
+- Starter Lenses: `registry/lenses/` (YouTube without Shorts, GitHub full width, Readable
+  Hacker News, Wikipedia reading width).
+- Supported grants: `GM_addStyle`, `GM_get/set/delete/listValue`, `GM_info`, `GM_openInTab`,
+  `GM_setClipboard`, `GM_notification`, `GM_registerMenuCommand`, `GM_log`, `unsafeWindow`
+  (and the `GM.*` forms). `GM_xmlhttpRequest` and `@resource` are not supported yet — the
+  script sees them as `undefined`.
+- Store: `<config dir>/lenses/`. API for hosts: `GET /api/deck/lenses/compiled?host=…`.
 
 ### Website auto-login (`navig cdp login`)
 
@@ -9046,11 +10354,27 @@ navig cdp new --headed                                        # a VISIBLE browse
                                                               # you may have to solve a 2FA
                                                               # prompt or a captcha yourself)
 navig cdp login github.com --open https://github.com/login   # navigate + sign in
+navig vault login capture notion.so --idp-user you@gmail.com # SSO site (see below)
 ```
 
 - **Session-first**: on success the authenticated session (cookies + localStorage) is
   captured to the vault; the next `login` **restores the session** — no password typed —
   and only re-fills the password when the session is stale.
+- **SSO sites ("sign in with Google/GitHub")**: there is no password to store — only a
+  browser session. `navig vault login capture <domain>` opens a persistent per-site
+  profile, you complete the sign-in yourself (Google/GitHub buttons, 2FA, captcha), then
+  Enter captures the session and records which IdP owns the account (`--idp` optional —
+  inferred from the session's cookies; `--idp-user` is your address at the IdP, stored as
+  linkage, never a password). `login list` shows a `Sign-in` column (`password` / `google`
+  / …), and an existing password login is never overwritten by a capture. When the session
+  later dies, `navig cdp login` reports `session_expired` with the re-capture command
+  instead of trying to fill a password that doesn't exist. The same flow is driveable
+  from the GUI (NAVIG Desktop → Vault → Website logins) over `/api/deck/vault/logins/capture`
+  with `--capture-only`; cookies are only ever saved while the page is on the target's
+  registrable domain, so confirming while parked on the IdP saves nothing. A capture also
+  links a matching stored API credential (`navig vault add <provider> …`) onto the record
+  (`api_ref`, shown as `API access` in `login get`) — when the session later expires the
+  error says so: agent-side automation keeps working without the browser.
 - **Origin-bound + https-only**: a credential fills **only** on its registrable domain
   (eTLD+1, public-suffix aware) after IDN/punycode normalisation — never on a look-alike
   (`g00gle.com`), a suffix trick (`github.com.evil.com`), or a cross-origin iframe. The
@@ -9058,7 +10382,36 @@ navig cdp login github.com --open https://github.com/login   # navigate + sign i
 - **2FA**: if the login stored a `--totp` secret, the engine fills the one-time-code step
   itself (RFC 6238). SMS / app-approval 2FA (no stored secret) still needs you.
 - Status values: `session_restored`, `logged_in`, `filled` (2FA/captcha pending),
+  `session_expired` (SSO-linked account, dead session — re-capture),
   `no_credential`, `needs_disambiguation` (pass `--username`), `wrong_origin`.
+
+### Breach checks (`navig vault breach`) — is a vault email in a leak dump?
+
+Checks the email usernames stored as website logins against leak dumps through the
+**CyberAIGen** connector. Opt-in twice: nothing is scanned until a token is connected,
+and the automatic monitor starts only when you enable it. No vault identifier leaves
+the machine before both are true.
+
+```bash
+navig connector connect cyberaigen          # paste the personal API token (vault key
+                                             # `cyberaigen/token`, env CYBERAIGEN_TOKEN)
+navig vault breach check                    # scan every email login now (stores findings)
+navig vault breach check --email you@x.com  # one address
+navig vault breach list                     # stored findings — passwords masked
+navig vault breach list --reveal            # …unmasked (also: --json for scripts)
+navig vault breach status                   # token, monitor, last cycle, counts
+navig config set monitors.breach.enabled true   # turn on the daily monitor
+```
+
+- **Notifications never carry the record list.** The monitor raises one `breach_alert`
+  per cycle with counts and *masked* passwords (`a******9`); the full list is the CLI.
+- **Findings live in the vault** (`breach/state`), encrypted like every other secret —
+  they include leaked passwords, so plaintext on disk would be a downgrade.
+- **Credits**: each hit costs one CyberAIGen scan credit; clean emails are free. The
+  monitor scans a rotating batch (`monitors.breach.batch_size`, default 25) every
+  `monitors.breach.interval_hours` (default 24) so a big vault stays bounded.
+- A failing monitor tells you once per outage (`system_alert` after 3 failed cycles),
+  not once per cycle; `navig vault breach status` shows the last error.
 
 ### Browser profiles (different identities for different projects/cases)
 
@@ -9169,12 +10522,41 @@ guide above.
 
 ---
 
+### Your own browser, for agents (`navig dock`, `dock_*` MCP tools)
+
+`navig cdp` drives a **separate** debug browser. To let Claude Code, Codex or any MCP client
+work in **your everyday Chrome** — your logins, your tabs — use the NAVIG Dock extension:
+
+1. In the Dock: **Settings → NAVIG daemon → Let AI agents use this browser**. The Dock pairs
+   itself with NAVIG on this computer (the first extension to pair is trusted; any other
+   extension is then refused by the daemon) and keeps one connection open.
+2. Point your agent at NAVIG's MCP server, e.g. Claude Code:
+   `claude mcp add navig -- py -3.13 -m navig.mcp_server`
+3. The agent uses `dock_status`, `dock_tabs`, `dock_open`, `dock_snapshot` (with `since`
+   for a diff), `dock_text`, `dock_act` (up to 12 steps in one call: click · type · fill · key ·
+   scroll · hover · select · navigate · wait · wait_for · extract · upload · get_text — each
+   aimed at a `[ref_N]` or a locator: role + name, testid, css, has_text, xpath), `dock_screenshot`,
+   `dock_console`, `dock_network` and `dock_release`.
+
+Agents only touch tabs in the **NAVIG agents** tab group — the ones they open, plus any tab
+you drag into it. While one works, the page glows and names it ("Claude Code clicking …");
+**Stop** or **Esc** halts it and pauses all agents until you press **Resume** in Settings.
+Typing into a password / card field and uploading a file ask you on the page (**Allow /
+Deny**). Two agents never act in the same tab at once: the first one to act holds it until it
+releases it (or 10 idle minutes pass).
+
+```bash
+navig dock status          # paired extension, connected/paused, latency
+navig dock status --json
+navig dock unpair --yes    # forget the pairing (the Dock pairs again when switched on)
+```
+
 ## 39. NAVIG Ecosystem Products
 
 ### Landing Page (`packages/landing`)
 - **Stack**: Next.js 16, React 19, Tailwind v4, static export
 - **Port**: 7003 (dev server)
-- **Routes**: `/` (marketing site), `/deck` (NAVIG Deck demo), `/os` (NAVIG OS demo)
+- **Routes**: `/` (marketing site), `/deck` (NAVIG Deck demo), `/os` (NAVIG Desktop demo)
 - **Components**: `components/marketing/` (12 section components), `components/shared-deck/` (unified Deck UI)
 - **Content**: Externalized in `content/copy.ts` — all marketing copy, pricing tiers, FAQ
 - **Fonts**: Geist + Geist Mono via `next/font/google` with CSS variable approach (`--font-geist-sans`, `--font-geist-mono`)
@@ -9186,7 +10568,7 @@ guide above.
 - **Dependencies**: 9 production deps (Next.js, React, clsx, tailwind-merge, lucide-react, class-variance-authority, @vercel/analytics, next-themes). All pinned, no `"latest"`.
 
 ### Shared Deck (`components/shared-deck/`)
-Unified component library used by both NAVIG Deck (browser extension) and NAVIG OS (desktop overlay):
+Unified component library used by both NAVIG Deck (browser extension) and NAVIG Desktop (desktop overlay):
 - **Context**: `NavigDeckProvider` + `useNavigDeck` hook — themes, workspaces, widgets, notes, settings
 - **Bar**: Top bar with command input, workspace switcher, quick jump, pomodoro, clock, docked widgets
 - **Panels**: CommandPalette, SettingsPanel, OptionsPanel (8-section settings), NotesPopup
@@ -9205,7 +10587,7 @@ Unified component library used by both NAVIG Deck (browser extension) and NAVIG 
 - **Sidebar Sections**: Infrastructure (Hosts, Apps, Tunnels, Files) | Docker | Database | Services (Agent, Telegram, Web, MCP) | Security | Monitoring | Backup | Automation (Workflows, Cron, Triggers, AHK) | Evolution (Evolve, Packs, Skills) | DevOps Lifecycle | Life Ops | Autonomous System | System Operations
 - **Settings Categories**: General, Smart AI, Quick Continue, Detection & Timing, Notifications, OCR, Session & Limits, Planner, NAVIG Integration, DevOps & System Config, Avatar
 - **Dashboard**: Blue-tinted glassmorphism UI with grid background, real-time metrics, connection status
-- **Avatar Companion**: Tamagotchi-style animated sidebar avatar that reacts to extension state (idle, thinking, speaking, working, success, error). Uses 24 Chappy firmware sprite frames with CSS transition animations. See [AVATAR_INTEGRATION.md](../packages/navig-copilot/docs/AVATAR_INTEGRATION.md).
+- **Avatar Companion**: Tamagotchi-style animated sidebar avatar that reacts to extension state (idle, thinking, speaking, working, success, error). Uses 24 Chappy firmware sprite frames with CSS transition animations. See `AVATAR_INTEGRATION.md` (not in this tree).
 - **Settings**: `navig-copilot.avatar.enabled`, `navig-copilot.avatar.animationSpeed`, `navig-copilot.avatar.idleTimeout`
 
 ### NAVIG Voice (`navig/voice/`)
@@ -9219,7 +10601,39 @@ Unified component library used by both NAVIG Deck (browser extension) and NAVIG 
   - Install extras: `pip install openwakeword pyaudio`
 - **Audio Playback**: Cross-platform (Windows/macOS/Linux) with 14 built-in notification sounds from Chappy firmware
 - **Usage**: `from navig.voice import speak, transcribe, play_notification`
-- **See**: [voice-services.md](voice-services.md)
+- **See**: `voice-services.md` (not in this tree)
+
+#### Read aloud — a text read to you like a book (`navig audio read` · Telegram `/read`)
+
+In bed, send a text and it is read to you: numbered parts of about ten minutes that arrive as
+Telegram's own audio player — the first within about a minute, the rest as they are made, so
+you can fall asleep to part 1 while part 4 is still being generated. Quiet and unhurried
+(pace 0.9, steadier delivery, loudness well below the podcast level). Provided by the
+`navig-audio` plugin; ElevenLabs, **one credit per character**.
+
+| Where | Gesture |
+|---|---|
+| Telegram | `/read <text>` — a short text (a message is capped at 4096 characters) |
+| Telegram | send a **`.txt` / `.md` file with the caption `/read`** — the way in for a long text (any code page: UTF-8, UTF-16, cp1251, cp1252) |
+| Telegram | `/read stop` cancel · `/read go` confirm a quoted big one · `/read status` · `/read go` as the file's caption confirms up front |
+| Agent | "read this to me" / "почитай мне" / "lis-moi ça" → the `read_aloud` tool (short texts); `action='stop'` cancels |
+| Terminal | `navig audio read --file chapter.txt` · `... -` (stdin) · `--dry-run` (cost, spends nothing) · `--voice` · `--speed` · `--part-min` · `--out` · `--json` |
+
+**Cost rules.** The quote is shown before anything is spent and is *after the cache* (a chapter
+already read quotes 0). A reading the account cannot afford is refused outright. Above
+**15 000 credits** nothing starts until you say yes (`/read go`, `--yes`, or `confirmed` from the
+agent — which needs no text re-sent). One reading per chat; every chunk is cached by content, so
+a retry, a re-send or a resume re-buys nothing. Stop works between chunks: nothing is generated
+(or charged) after it.
+
+**Config** (`navig config set …`): `audio.read.voice` (an id, or the *name* of one of your
+voices — `navig audio voices`), `audio.read.lang` (`en|ru|fr`; default detected),
+`audio.read.speed` (0.7–1.2), `audio.read.part_minutes` (default 10).
+
+Files land in `<audio dir>/read/<id>/` as `read-<id>-part-01-of-04.mp3`. The `/read` command can
+be switched off from `/extensions` ("Read aloud"). None of this goes through the approval gate —
+`/read` is a command you typed and `read_aloud` is not a destructive tool — so the cost rules above
+are the only brake: a small reading starts at once, a big one waits for your yes.
 
 ### NAVIG Matrix Bridges (`navig bridge matrix`)
 
@@ -9236,7 +10650,7 @@ Unified component library used by both NAVIG Deck (browser extension) and NAVIG 
 
 **14 GA bridges**: whatsapp · discord · telegram · messenger · instagram · linkedin · twitter · sms · email · nextcloud · line · wechat · tox · xmpp
 **Resource limits**: 256 MB RAM / 50% CPU per bridge container (enforced in docker-compose + bench command)
-**See**: [`docs/MATRIX_BRIDGE_SETUP.md`](MATRIX_BRIDGE_SETUP.md)
+**See**: `docs/MATRIX_BRIDGE_SETUP.md` (not in this tree)
 
 ---
 
@@ -9536,25 +10950,16 @@ navig agent soul show                 # Verify the active identity
 
 ## 41. Session Boot & Diary (`navig boot`)
 
-Bootstrap daily sessions and manage the device + session diary system.
+There is no boot sequence to configure: NAVIG starts as the background service.
 
-Session diaries are stored at `<session_dir>/YYYY-MM-DD.md`.
-Device context lives at `<device_dir>/DEVICE.md`.
-
-| Command | Description |
-|---------|-------------|
-| `navig boot init` | Create boot dirs, scaffold today's session diary, generate `DEVICE.md` if missing |
-| `navig boot show` | Print `DEVICE.md` summary and today's session file content |
-| `navig boot edit [device\|session\|boot]` | Open device, today's session, or boot config in `$EDITOR` |
-| `navig boot log` | List recent session diary files |
-
-**Examples:**
 ```bash
-navig boot init            # Morning setup: creates today's YYYY-MM-DD.md
-navig boot show            # Quick device + session overview
-navig boot edit            # Edit today's session diary
-navig boot log             # Browse past sessions
+navig service status     # is it running, and how was it started
+navig service install    # start NAVIG at login
+navig service start
 ```
+
+`navig boot show` / `navig boot run` were never implemented (the session-diary verbs this
+chapter used to list never shipped); they now print the `navig service` pointer and exit 1.
 
 ---
 
@@ -9576,6 +10981,10 @@ Manage *spaces* — contextual namespace bundles that group workspace settings, 
 | `navig space forget <name>` | Remove a space from the registry (the folder stays) |
 | `navig space enable / disable <name>` | Show or hide a space in the deck and switcher (a hidden folder still works when you are in it) |
 | `navig space fold / unfold <path>` | Demote a sub-space so it never claims a top-level id, and undo that |
+| `navig space link <a> <b> [--include …] [--exclude …]` | Authorize another Space's knowledge into this one — a logical read edge recorded in `<a>/.navig/space.json`, nothing copied and no folder moves (`--profile` names a reading profile; `unlink` removes the edge; both take `--json`) |
+| `navig space parent <a> <b>` | Set `<a>`'s logical parent — hierarchy without relocation. `navig space parent <a> --clear` removes it; self-parenting and cycles (a chain that would reach `<a>` again) are refused with the chain named |
+| `navig space related [space]` | One table of a Space's parent, links, children and inbound links, with availability (`●`/`○` + reason for deleted or unregistered targets); default is the active space |
+| `navig space context [space] [--for <query>]` | Exactly what an agent may read from the linked Spaces — per-file provenance (`space · path · mtime`), parent first then links, under include/exclude globs, the deny list (vault/env/credentials/sessions/state/databases/logs), budgets and content dedupe (`--json` for machine output). `--brief` is the SessionStart-hook shape: ≤10 lines with `●`/`○` per edge and a file count — and it never fails (degrades to the active-space line) |
 | `navig space wire` | Wire this folder into the agent ecosystem (alias of `navig wire`) |
 | `navig space install <source>` | Install a space bundle from the community registry (GitHub-backed) |
 | `navig space delete <name>` | Delete a space and all its contents (confirm-gated) |
@@ -9724,7 +11133,9 @@ Built-in sources:
 - `telegram` → Telegram Desktop `contacts.json` or export ZIP
 - `chrome` / `edge` / `firefox` / `safari` → browser bookmarks
 
-Bookmark imports are persisted into the existing links database by default.
+Bookmark imports are persisted into the legacy links database by default (kept for one
+release); the bookmark manager itself is now `navig bookmarks` — see §54, which copies that
+database in automatically.
 
 **Examples:**
 ```bash
@@ -9735,7 +11146,8 @@ navig import list-sources
 
 ### Related Commands
 
-- `navig links import <file> --source auto` now supports native browser bookmark files.
+- `navig bookmarks import <file>` imports native browser bookmark files and HTML exports with
+  their folders (§54). `navig links …` is a deprecated alias that forwards there.
 - `navig contacts import <contacts.json|export.zip>` imports Telegram contacts into NAVIG contacts storage.
 
 ---
@@ -9750,6 +11162,12 @@ Telegram management commands now include direct message sending and target resol
 | `navig telegram sessions list` | List active Telegram sessions |
 | `navig telegram send <chat_id|@username> --message "..."` | Send message using configured bot token |
 | `navig telegram send @username --message "..." --resolve-only` | Resolve target without sending |
+| `navig telegram tidy` | Daily chat tidy status — clears yesterday's routine bot messages overnight, incl. sales rings, the daily sales summary and briefings (`telegram.daily_clean.enabled/hour/scope/routine_types`) |
+| `navig telegram tidy --now [--dry-run]` | Sweep everything recorded before today right away (`--json` for scripts) |
+| `navig telegram tidy --kinds` | Per kind (greeting · tip · spark · reminder · habit_card · body · checkin · briefing · sales · deploy · deletion · notice): swept or kept, and how many wait |
+| `navig telegram tidy --keep <kind>` / `--sweep <kind>` | Leave a kind in the chat for good / sweep it again (`telegram.daily_clean.keep_kinds`) — also in the deck and NAVIG Desktop → Settings → Messaging |
+| `navig telegram tidy --hour 6 --on` | Run after 06:00; `--off` stops the nightly sweep |
+| `navig telegram tidy --system` / `--no-system` | Daily sweep of SYSTEM cards — approval prompts, config-health notices, System Briefing, `/status`, `/plans`, OCR bubbles (`telegram.system_cleanup.enabled`, **on by default**; `--system-hour N` sets its hour, default 04:00). Never touches your messages or the agent's replies |
 | `navig gateway test telegram --target <chat_id|@username>` | Run Telegram smoke-test through gateway test flow |
 | `navig gateway test telegram --target <chat_id|@username> --strict` | Fail with non-zero exit code if channel test fails |
 | `navig gateway test telegram --target <chat_id|@username> --json` | Emit machine-readable JSON summary for automation |
@@ -9915,6 +11333,22 @@ navig repo remove <slug>        # reliably remove that worktree (unregister + de
 navig repo remove <slug> --force    # discard the worktree's uncommitted changes too
 #   a lock left by a `worktree add` that died (`locked: initializing`) is cleared for you;
 #   any other lock is named — `git worktree unlock <path>` if it is yours
+navig repo gates                # every CI gate on this machine: queue # · project · since · ETA · step
+navig repo gates schema         # only that project's gates — a NAME, not a path (also: gates navig)
+navig repo gates --watch 5      # redraw every 5 s until Ctrl-C
+navig repo gates --json         # machine-readable (lane holders + queued gates, with health state)
+navig repo gates --prs          # THIS repo: each open PR's gate-result, the land queue, the last landing, why one is blocked
+navig repo gates --no-github    # local lanes only (offline) · --deep also samples the disk queue
+#   health: running · slow · reused (pid recycled — lane blocked) · dead/expired (lane free) · queued
+#   a job owned by another account (the runner service) shows `running (other user)`; lanes: main · overflow · express · push
+#   ETA is an estimate from each label's typical lane time; a narrow terminal drops PID, then
+#   Since, then Gate, rather than truncating every column
+#   Fleet block (default view): self-hosted runners (idle/busy/offline + local service state, free
+#   workers), Actions jobs running/queued with their wait, the bottleneck (lane-starved · cpu-bound ·
+#   io-bound · github-queued · hung-step · none), a typical-gate-time shown ONLY from >= 5 agreeing
+#   runs (otherwise `—` and why), and this month's Actions spend vs github.ci_budget_usd (default 10)
+npm run land -- --queue         # push · open the PR · label `land` · return; the lander integrates it (docs/dev/ci-local.md)
+navig vm push <vm> <files...> --to <dir>   # scp into a VM with its own key + known_hosts
 navig repo conflicts            # simulate merges between EVERY pair of worktrees
 navig repo conflicts --json     # machine-readable; exit 2 when any pair conflicts
 navig repo conflicts --no-dirty # committed state only (default includes dirty)
@@ -10036,7 +11470,7 @@ collisions surface at session start, not at merge time.
 
 ---
 
-## 51. NAVIG OS in a browser (`navig os`)
+## 51. NAVIG Desktop in a browser (`navig os`)
 
 The desktop build is not released yet, but the same server already serves the whole NAVIG
 OS interface to a browser. `navig os serve` turns that into one command instead of four
@@ -10044,9 +11478,78 @@ environment variables.
 
 **The server runs on your machine and the browser is a window onto it.** That is why it can
 open your files, spaces and sessions at all — and why nothing of yours travels through
-`navig.run`. The public site at `os.navig.run` is a front door: a landing page, a launcher
-that remembers your instances, and a screenshot tour. It never connects to your machine; its
-content policy (`connect-src 'none'`) does not permit it to open a connection at all.
+`navig.run`.
+
+**Use it from your phone or any browser: pair once.** In NAVIG Desktop open
+**Settings → Remote access → Pair** (or run `navig os pair`) and scan the QR code with the
+phone's camera. The phone opens NAVIG Desktop on this computer at `os.navig.run`, with no IP
+address, no ports and nothing to copy. It goes through your **own** Lighthouse relay on
+Cloudflare (set it up once with `navig lighthouse login`), which NAVIG reaches with an
+outbound connection, so nothing on this computer is exposed and nothing passes through
+`navig.run`.
+
+- **Each device gets its own key.** It is not the deck key, is stored here only as a hash,
+  and one device can be removed without touching the others (Settings → Remote access →
+  Remove, or `navig os devices revoke <id>`). Removing a device disconnects it immediately.
+- **New access is only created at the computer.** Pairing codes work once, for two minutes,
+  and can only be made here. The Deck or Telegram can list and remove devices, never add one.
+- Before the first connection the phone asks **"Connect to <this computer>?"**. If the name
+  is not your computer, choose "Not my computer".
+- **The off switch:** `navig config set os.remote.enabled false` (or the toggle in Remote
+  access) disconnects every device at once.
+- **Cost:** Cloudflare's free plan bills messages into the relay, not bandwidth (20 messages =
+  one of its 100,000 free daily requests). Measured on a real phone session: opening the app
+  ≈ 700 messages, leaving it open ≈ 12 a minute, one short chat turn ≈ 70 — a heavy day is
+  around 20,000. NAVIG batches them and caps a day at `os.remote.daily_msg_budget` (default
+  300,000 messages = 15,000 requests, 15% of the free plan, so the Telegram bot always keeps
+  its share). Past it, new sessions are refused until 00:00 UTC and `navig doctor` says so;
+  raise it with `navig config set os.remote.daily_msg_budget 600000` if you need more.
+- A paired device can do anything you can do at this computer. The traffic is TLS to your own
+  Cloudflare account, not end-to-end encrypted.
+
+**On a new device, sign in instead of scanning.** Link this computer to your navig.run email
+once — **Settings → Remote access → Account** or `navig os account link you@example.com` — and
+click the confirmation link navig.run emails you. After that, on any phone or browser: open
+`os.navig.run`, enter the email, open the sign-in link, and pick this computer. The computer
+then **asks you** — a toast in NAVIG Desktop and an **Allow / Deny** message in Telegram (only the
+owner's tap counts) — and only after you allow it does that device get its own key, exactly
+like a paired one.
+
+- **navig.run never grants access.** It stores only your email, this computer's name and its
+  relay address, and signs a five-minute ticket saying "this email just signed in". The
+  computer checks that ticket against the key built into NAVIG and against the email *it* was
+  linked to, and then still waits for you.
+- Sign-in links work once, for 15 minutes; a request you do not answer expires after 10.
+- Approving works only at the computer (or in Telegram as its owner) — a paired phone cannot
+  approve other devices.
+- `navig os account unlink` stops new sign-ins at once; devices already paired keep working.
+
+**A second machine running NAVIG Desktop can use this computer as its brain.** Run `navig os link`
+here (or **Settings → Remote access → Brain → Make a link**), and paste the link into the other
+machine's NAVIG Desktop under **Settings → Remote access → Brain → Connect to my NAVIG**. From then
+on that machine shows this computer's spaces, apps and data, through your relay, and nothing
+is copied to it.
+
+- **It gets its own key.** Never the deck key: it is listed with your phones (`navig os
+  devices`, "uses this brain") and removed the same way. **Disconnect** on that machine
+  removes it here too.
+- **It can do what you can do here,** like the deck key, except create new access: making
+  links and pairing codes, approving devices and the remote-access switch stay at this
+  computer. Turning remote access off cuts linked machines as well.
+- It works even with `deck.telegram_only` on: that setting retires the shared deck key as a
+  remote credential, and a link key is per machine and revocable.
+- Links work once, for 10 minutes. Your relay must be 1.4.0 or newer
+  (`navig lighthouse redeploy`).
+- **Live updates arrive within about 15 seconds:** the linked machine asks this computer for
+  new events every 15 s (about 5,800 relay requests a day, ~6% of Cloudflare's free plan).
+- **Not over a link yet:** uploading files, and console commands longer than 30 seconds.
+- **On the linked machine,** Settings → Remote access shows only whose NAVIG it uses and
+  **Disconnect**: phones, sign-in and the remote-access switch are managed on this computer.
+
+**On the same network,** `navig os serve` also prints a direct `os.navig.run` link that
+carries this server's address and token (in the part of the URL browsers never send). For a
+server on the same machine your browser may ask once whether the page can reach apps on your
+device; allow it.
 
 | Command | Description |
 |---------|-------------|
@@ -10055,6 +11558,15 @@ content policy (`connect-src 'none'`) does not permit it to open a connection at
 | `navig os serve --password <pw>` | Set the web login password (stored in the vault) |
 | `navig os serve --new-password` | Generate and store a fresh password |
 | `navig os status [--json]` | Is it up, where is the source, are credentials stored |
+| `navig os pair [--json]` | Pair a phone or browser: prints a one-time link (and a QR when `qrcode` is installed) |
+| `navig os link [--json]` | A one-time link that lets another NAVIG Desktop use this computer as its brain |
+| `navig os devices [--json]` | Paired devices and linked machines: last seen, connected now, messages today |
+| `navig os devices revoke <id>` | Remove a device; its live session ends at once |
+| `navig os account [--json]` | Which navig.run account this computer is linked to |
+| `navig os account link <email>` | Link it (navig.run emails a confirmation link; nothing is linked until you click) |
+| `navig os account unlink` | Stop new sign-ins through navig.run; paired devices keep working |
+| `navig os requests [--json]` | Devices that signed in and wait for your approval |
+| `navig os requests allow <id>` / `deny <id>` | Answer one (the same as the NAVIG Desktop toast or the Telegram buttons) |
 
 **First run:**
 
@@ -10090,3 +11602,397 @@ interface, because it grants loopback callers an auth bypass.
 
 Licensed features behave exactly as on the desktop — they are decided by your own daemon,
 offline. Your licence is never checked through the website.
+
+---
+
+## 52. Signals — website events and Stripe sales (`navig signals`)
+
+Turn events from sites you run into NAVIG notifications (deck, NAVIG Desktop, Telegram, …).
+Full guide: [`docs/signals.md`](../../../docs/signals.md). Manage visually in
+**NAVIG Desktop → Settings → Signals**.
+
+| Command | What it does |
+|---|---|
+| `navig signals connect <name> --key <env-file>::<VAR> [--host <h>] [--events checkout\|elements]` | One step: uses the project's own Stripe key to create (or reuse) the webhook endpoint and stores its secret. `--host` reads a production env file on that server; the key never leaves it. `elements` = Payment Element / PaymentIntents. |
+| `navig signals add <name> --provider stripe [--secret whsec_…]` | A Stripe webhook endpoint — paste the printed address into Stripe → Developers → Webhooks. No code in the site; sales arrive as **Sales**, refunds/disputes as **Finance alerts**. |
+| `navig signals add <name> [--preset payment_success]` | A source your own server signs (prints its secret once). |
+| `navig signals list [--json]` | Every source: on/off, kind, where it shows, hits, last event. |
+| `navig signals edit <name> [--type …] [--priority …] [--title-tmpl …] [--body-tmpl …]` | Change routing/priority/templates; the address and secret stay. |
+| `navig signals test <name>` | Sends a signed sample through the real path; exits 1 if nothing delivered it. |
+| `navig signals rotate <name> [--secret whsec_…]` | New secret (Stripe: the one you rolled in the dashboard). |
+| `navig signals remove <name>` | Delete; the address stops accepting events at once. |
+
+A Stripe sale made while this computer is off still arrives: the edge answers 503 and Stripe
+retries for up to three days. Each Stripe event is announced once, even across retries and
+restarts.
+
+## 53. Projects (`navig project`)
+
+Every folder with a `.navig/` is a **project** — the same thing NAVIG Desktop lists under **Projects**.
+A project is a registered space (no second registry): its plans, todos, docs, scripts and a
+budgeted **context pack** that tells an agent what the project is.
+
+| Command | What it does |
+|---|---|
+| `navig project list [--refresh] [--json]` | Every project, pinned first, then most recently active: phase, open todos, stack, git branch (`●n` = uncommitted). |
+| `navig project show [id] [--json]` | One project: phase, next action, todo counts, scripts, docs (and which plan docs are missing), git, linked finance/store cards. Defaults to the project you are standing in. |
+| `navig project add <path> [--scaffold]` | Register a folder. One without `.navig/` gets an empty one; `--scaffold` lays down the plans skeleton (never overwrites a file). |
+| `navig project scan <dir> [--add] [--json]` | Look one level inside a folder (e.g. `C:\projects`). Lists what is there; `--add` registers the children that already have `.navig/`. A folder with only `package.json` is suggested, never written to. |
+| `navig project todos [id] [--all] [--json]` | The `- [ ]` checkboxes across every plan doc as one list (`[~]` / `*(in progress)*` = in progress). |
+| `navig project context [id] [--report] [--pin] [--rebuild] [--json]` | The context pack: identity, plans, open todos, agent files, README, scripts, a code outline and git — each on its own budget, with a report of what was cut. `--pin` writes it to `.navig/context.pack.md` for other agents; `--json` is how tools read it. |
+| `navig project scripts [id] [--json]` | Every runnable script — root and workspace packages, pyproject, Makefile, justfile. `⚠` deploys/publishes/deletes, `↻` long-running. |
+| `navig project run <script> [-p id] [--follow] [--yes]` | Start a script in the background. It keeps running if NAVIG restarts; `⚠` scripts ask first. A name that exists in several packages needs its key (`npm:apps/web:dev`). |
+| `navig project ps [--all] [--json]` | What is running, with the ports it listens on. |
+| `navig project logs <run> [--follow]` | A run's output. Ctrl-C detaches; the run keeps going. |
+| `navig project stop <run>` | Stop a run and every process it started; exits 1 if any survived. |
+| `navig project analyze [id] [--doc <path> \| --todos] [--apply] [--into <doc>] [--json]` | AI re-analysis. No flag: a brief (state, next 3 actions, risks, stale docs — staleness is measured from edit dates and commits). `--doc`: a proposed update shown as a diff, written only with `--apply` and refused if the file changed meanwhile. `--todos`: work your briefs/inbox/specs call for that you don't track yet; `--apply --into` adds it. Needs a connected AI provider. |
+
+| `navig project ideas [id] [--add "…" [--stage inbox\|exploring\|parked]] [--json]` | Ideas not planned yet, by stage (Inbox · Exploring · Parked · Promoted · Dropped), kept in the project's `IDEAS.md` beside its plans. `#tags` work inline. Nothing is deleted — "Dropped" is a stage. |
+| `navig project fabric [pattern] [-p id] [--idea "words"] [--doc path] [--sessions N] [--focus "…"] [--apply]` | The **Idea Fabric**: AI patterns over the project. No pattern lists them. `brainstorm` (new ideas, `--focus` steers), `harvest` (ideas the N newest AI work sessions about this project mentioned and never captured), `expand` (an idea → a brief in `ideas/`), `critique`, `plan` (an idea → a numbered plan doc whose tasks show up in todos). Results are proposals; `--apply` keeps them. A project adds its own patterns as `.navig/patterns/<name>.md` (frontmatter `title`, `description`, `input: project\|idea\|doc\|sources`, `output: ideas\|doc\|plan\|todos`). |
+
+Sessions are read locally and only when a harvest runs: Claude Code plan files that name the
+project's folder (`<claude home>/plans`) and its memory notes (`<claude home>/projects/<path-slug>/memory`).
+Chat transcripts are counted, never read, here; searching them is opt-in through `navig recall` (§56). `CLAUDE_CONFIG_DIR` relocates the Claude home.
+
+Folder conventions the hub understands (Schema is the reference layout): numbered plans
+(`00-MASTER-ROADMAP.md`, `07-…`) keep their phase order; `plans/ideas/` is the idea bank;
+`plans/briefs/` shaped work; `plans/archive/` history (shown, but never counted as todos or fed
+to agents); `refs/` reference material; `proposed/` AI output awaiting review. A root `plans/`
+that links to `.navig/plans/` is read once, not twice.
+
+A project's Links show what other parts of NAVIG know about it: **Finance** (what it earned —
+matched by its Microsoft Store product id, its folder, or a manual link; a name match is only
+a suggestion; `navig config set finance.link.auto false` to match manually only) and the
+**Microsoft Store** app in `store/identity.json` with its last 30 days of sales.
+
+Where things live: the project's files stay its own — NAVIG only writes when you edit a doc,
+tick a todo, `--pin`, or `add`. Its own state (preferences, the cached context pack, AI
+analyses, run history) is in `projects.db` under the data dir; run logs are under the log dir
+(`navig paths`) in `projects/<id>/`.
+
+Edits are exact: a todo toggle or doc save changes only the bytes it means to (line endings
+and encoding are kept), and an edit against a file that changed since you loaded it is
+refused rather than overwritten.
+
+Starting and stopping scripts works only from this computer (NAVIG Desktop or the CLI) — the Mini
+App can see runs and their logs, not start them.
+
+---
+
+## 54. Bookmarks (`navig bookmarks`)
+
+The bookmark manager lives in the **navig-bookmarks** plugin (`pip install navig-bookmarks`,
+or `pip install "navig[bookmarks]"`). It also runs on its own as `navig-bookmarks` — same
+commands, same store (`<data dir>/bookmarks.db`). It replaces `navig links`: that name still
+works for one release, prints a deprecation notice, and forwards here (without the plugin it
+prints the install hint and exits 1). Bookmarks saved with `navig links` are copied in
+automatically on first use — read-only on the old `links.db`, safe to repeat, and a bookmark
+deleted here is never copied back.
+
+| Command | What it does |
+|---|---|
+| `navig bookmarks <url>` | Save a bookmark (short for `add`; `--title`, `--notes`, `--tags a,b`, `--folder "Dev/Python"`, `--cred <vault id>`). |
+| `navig bookmarks list` / `search <words>` / `show <id>` | Browse (`--tag`, `--folder`, `--untagged`), full-text search, details. |
+| `navig bookmarks open <id>` | Open it; with a vault credential the login is filled in through navig's browser (`--profile`, `--headless`). |
+| `navig bookmarks import [file]` | Netscape HTML, JSON, Chrome/Edge `Bookmarks`, Firefox `places.sqlite`, Safari `Bookmarks.plist`; `--source chrome` reads the default profile. Folders are kept. |
+| `navig bookmarks export [file]` | Netscape HTML with nested folders (any browser imports it) or `--format json`. |
+| `navig bookmarks organize` | AI folder plan — **dry run**. `--apply` writes it (a plan moving > 20 % of bookmarks or making > 1 000 changes also needs `--force`); `--undo <file>` restores; `--export plan.html`; `--provider/--model` pin the AI. |
+| `navig bookmarks tag --ai` | AI tags (`--untagged`, `--all`, `--curated`, `--dry-run`); a re-run replaces only AI tags, never yours. |
+| `navig bookmarks check` | Dead links and redirects from headers only; every redirect hop is SSRF-checked; archived copies suggested. `--fail-on-dead` exits 1 on a dead link. |
+| `navig bookmarks dedupe` | Same page saved twice (tracking parameters, `www.`, http/https ignored); `--apply` merges. |
+| `navig bookmarks rules add <pattern> <tags…>` | Offline tagging rules (`github.com dev`), applied on add/import; `rules apply` re-tags. |
+
+`organize` and `tag --ai` use navig's AI routing. Standalone, they use any provider key, an
+OpenAI-compatible server (`NAVIG_AI_BASE_URL` + `NAVIG_AI_MODEL`), or a local Ollama. With no AI
+configured they say how to set one up and exit 2. Every list command takes `--json`.
+
+```bash
+navig bookmarks import ~/Downloads/bookmarks.html
+navig bookmarks organize --limit 50          # look at the plan first
+navig bookmarks organize --apply --force
+navig bookmarks check --folder "Dev"
+navig bookmarks export cleaned.html
+```
+
+## 55. Agent Control Center (`navig agentctl`)
+
+The Agent Control Center lives in the **navig-agentctl** plugin (`pip install "navig[agentctl]"`,
+or `pip install -e plugins/navig-agentctl`). Phase 1 is the **Observer** — it shows what is
+already true (live agent sessions, git worktrees, task records) and changes nothing. Launching
+and recovery arrive in later phases. The desktop tile (**Control Center**) and the VS Code
+extension read the same `/api/deck/agents/*` routes this CLI wraps.
+
+| Command | What it does |
+|---|---|
+| `navig agentctl sessions` | Live agent sessions — project, owner, idle/active verdict (`--project <substr>`, `--json`). |
+| `navig agentctl worktrees` | Git worktrees of a repo: branch, ahead/behind, dirty, last commit (`--project <path>`, `--conflicts` adds the pairwise merge radar, `--json`). |
+| `navig agentctl tasks` | Unified tasks from the board + work queue (`--source board\|work`, `--json`). |
+| `navig agentctl status` | One-line overview: sessions, worktrees (this repo), tasks, active claims. |
+| `navig agentctl bindings` | Active task ↔ session claims — one claim per task, the no-duplicate-execution ledger (`--all` shows released history, `--json`). |
+| `navig agentctl bind <task-ref> --session <id>` | Claim `board:<id>` or `work:<slug>` for a session (`--note`); rebinding moves the owner. |
+| `navig agentctl unbind <task-ref>` | Release a claim; the ledger keeps the history. |
+| `navig agentctl runs` | **Agent Monitor** — every observed run (Claude Code sessions, subagents, commands, lands): state, elapsed, idle, declared progress, exit code (`--active`, `--project`, `--state`, `--kind`, `--json`). |
+| `navig agentctl show <run-id>` | One run in detail — stages, history and the redacted log tail (`--log`, `--json`). |
+| `navig agentctl ack <run-id>` | Acknowledge a failed run so it stops lighting the Dock chip (`--all` for every one). |
+| `navig agentctl run -- <command>` | Run a command as a monitored process: real PID, exit code, redacted log, optional `--verify "<cmd>"`, `--stall-after <s>`, `--detach`. `-- npm run land` is recognised and tracked milestone by milestone. |
+| `navig agentctl hooks install` | Wire the monitor into Claude Code (shows the diff; `--yes` writes; `--scope user\|local`). |
+| `navig agentctl hooks status` | Which Claude Code settings files carry the monitor hooks. |
+| `navig agentctl hooks uninstall` | Remove only the monitor's hooks; every other hook is left untouched. |
+
+Sessions reuse `navig procs` verdicts, so "idle" means the same thing in both. The persistent
+ledger (`~/.navig/data/store/agentctl.db`) remembers sessions across restarts and records
+state-change history — Phase 2 reads it to recover interrupted work. Claims bind a task ref to
+one session at a time: two sessions cannot both hold the same task without rebinding it.
+
+### Agent Monitor — what is my agent actually doing?
+
+The run ledger answers "is it still running, did it really succeed, does it need me" for
+every Claude Code session, subagent, long command and `npm run land`, across projects. It is
+a lightweight observer: it never blocks an agent, never restarts anything, and redacts
+tokens, passwords and key-shaped strings before anything is stored or shown.
+
+- **Where to see it:** the **Runs** tab of Control Center in NAVIG Desktop (open it from the Dock
+  chip, or `navig://apps/agentctl`), the compact chip in the Dock bar (hidden when nothing is
+  live), and `navig agentctl runs` in a terminal.
+- **Claude Code:** `navig agentctl hooks install` adds the documented lifecycle hooks
+  (PreToolUse, PostToolUse, PostToolUseFailure, Stop, SubagentStop, TaskCompleted,
+  Notification, SessionStart/End, UserPromptSubmit). Hooks load when a session *starts* —
+  sessions already running are not touched. `Stop` means "the conversation turn finished",
+  never "the work finished": a run only completes on a real exit code or an explicit end.
+- **Background Bash** started by an agent is shown as **launched · completion unknown** —
+  hooks cannot see when it ends. Wrap long commands with `navig agentctl run -- <cmd>` to get
+  the exit code, a log and stall detection.
+- **A stall is only claimed with proof.** Runs are flagged *stalled* only while their own
+  process is verified **alive** but silent (that combination means a hang, not a queue wait);
+  a hook-only run that goes quiet simply shows its idle time — silence alone never becomes a
+  stall claim, and one that can no longer be proven is retracted.
+- **Progress is never invented.** A run shows `3/7 stages` only when it declared its stages
+  (`npm run land` does); otherwise you see elapsed time, last activity and the log — no
+  percentage, no ETA.
+- **`npm run land`** reports preflight, queue, rebase, gate (with attempt n/5 and retries),
+  push, PR close and branch delete from the land script itself, and a land only counts as
+  *verified* after git confirms the commit is on `origin/main` and the branch is gone.
+- **Notifications:** four types — *Agent run finished*, *failed*, *needs you*, *stalled* —
+  default to the Deck only. Opt Telegram or the new **Desktop** (Windows toast) channel in per
+  type from Settings → Notifications. If Windows has app notifications turned off, the Desktop
+  channel says so instead of reporting a toast that never appeared.
+
+```bash
+navig agentctl hooks install --scope user          # shows the diff first
+navig agentctl hooks install --scope user --yes    # writes it
+navig agentctl run --label nightly -- npm run build
+navig agentctl run --detach --stall-after 600 -- npm run land
+navig agentctl runs --active
+navig agentctl show <run-id> --log
+```
+
+```bash
+navig agentctl status
+navig agentctl sessions --json | jq '.[] | select(.state=="active")'
+navig agentctl worktrees --project . --conflicts
+navig agentctl bind work:agent-control-center --session 9d69d3f1 --note "picked up"
+```
+
+---
+
+## 56. Recall (`navig recall`)
+
+**Recall** is the knowledge bank built from your past AI conversations. It reads Claude Code
+and Codex transcripts and earlier session audits, and turns them into records that always
+cite their source: decisions you answered, plans and the verdict you gave them, tables
+(verbatim), agent research reports, and the audited features, decisions (with reversals),
+recovered ideas and conflicts. Everything stays on this computer, and nothing is read until
+you run `navig recall enable`.
+
+| Command | What it does |
+|---|---|
+| `navig recall enable [--auto]` / `disable` | Allow or stop local reading (`recall.read_local`). `--auto` also turns on the daemon monitor that reads new conversations every 5 minutes (§56.2). Disabling keeps the bank. |
+| `navig recall status [--json]` | What is in the bank, where it lives, and whether reading is on. |
+| `navig recall ingest [-s claude-code\|codex\|audit\|chats\|capture\|notes] [-p project] [-n N] [--json]` | Read new or changed conversations. `chats` reads only the chat-library chats you shared (§23.4.2), and forgets those you stopped sharing. `capture` reads what you sent from the browser (below). `notes` reads the web notes the NAVIG Dock synced (§23.4.3), and forgets deleted ones. Incremental and safe to re-run: unchanged files are skipped, and appended turns are read from where the last run stopped. Exits 1 if any source failed (`sources --errors` lists them). |
+| `navig recall search <words> [-p project \| --here] [-t type] [--status s] [--raw] [--json]` | Search records. `"quoted words"` match an exact phrase. `--raw` searches the conversations themselves, and it is also the fallback when no record matches. Accents are ignored; English, Russian and French all work. |
+| `navig recall ask "<question>" [--here]` | Have I asked this before? Earlier matching questions you typed, the answer that followed, and matching decisions. |
+| `navig recall show <rk-id> [--full] [--json]` | One record: status (and what set it), endorsement, implementation state, body, evidence with citations, timeline, related records, and its Markdown file. |
+| `navig recall excerpt <source> <msg-id> [-B n] [-A n]` | The original conversation around a cited turn. |
+| `navig recall decisions\|plans\|ideas\|tables\|findings\|features\|questions [-p\|--here] [--status s]` | Views by record type, newest first. `questions` defaults to unresolved. |
+| `navig recall sources [-a adapter] [-p project] [--errors]` | Every source read, with its project, turn count and last error. |
+| `navig recall reindex` | Rebuild the search index from the archive and the vault (neither is changed). |
+| `navig recall sessions [--file P \| --plan P \| --commit SHA] [-p project \| --here] [--json]` | The Claude Code sessions that edited, planned, committed or were linked to a file, plan or commit — or every session of a project. Newest first, with state (`active` = written in the last 30 min, `recent` = 7 days, else `old`), branch and why it is linked. |
+| `navig recall link <session-id> <file\|plan\|commit>` / `unlink …` | Link a session to a target by hand, or remove a link (any relation). Both survive `reindex`. |
+
+**Who said it is kept separate from whether it is true.** User-role text is split before
+anything is stored: what you typed, pasted material, editor selections and background-agent
+reports each get their own speaker. Each record has a separate status basis (`user`,
+`audit`, `assistant` or `verify`). A plan is `approved` only through your own verdict, and
+an audit's "in force" is shown as `confirmed·audit`, never as your endorsement. Evidence
+with a weaker basis never overrides a stronger status.
+
+**What is read.** Claude Code and Codex transcripts keep your typed text, the assistant's
+visible replies, your answers to structured questions, plans with your approve/decline
+verdict, and agent reports. Shell output, file reads, thinking, attachments and compaction
+summaries are skipped. Subagent transcripts are skipped too, because their final reports
+already reach the parent session. A session reachable through two junctioned project
+folders is read once. Session audits (`<claude home>/session-audit*`) are imported read-only.
+
+**Where it lives** (`<data dir>/recall/`):
+- `archive/` holds immutable, secret-redacted segments with checksums. Evidence survives
+  deletion of the original transcript.
+- `vault/<project>/<type>/rk-….md` is the canonical record: YAML front matter plus a body.
+  You may edit the body between its `recall:body` markers.
+- `vault/.events/` and `vault/.links.jsonl` hold the append-only history and links.
+- `index.db` is a rebuildable FTS5 cache.
+
+Secrets are redacted before anything is stored. Transcript text never goes to logs.
+
+**Session links.** While reading a Claude Code transcript, Recall also records which files the
+session edited (successful `Edit`/`Write` only), which plan file it wrote or approved, and which
+commits it made (`git commit` output) — paths and short commit ids only, never file contents.
+A file edited in a worktree (`.dev/worktrees/<slug>/…`, `~/.codex/worktrees/…`) is the same
+target as in the main checkout, and a nested space (e.g. `core` inside `navig`) owns its files.
+Sessions read before this existed are re-read once, automatically, on the next `ingest`.
+NAVIG Dev's **Sessions for this File** view and NAVIG Desktop → Projects → **Sessions** show the same
+links (`GET /api/deck/recall/sessions`, local only — never through Lighthouse or a browser
+extension), and open a session in Claude Code with `vscode://anthropic.claude-code/open?session=<id>`.
+Removing a link with `navig recall unlink` is remembered in the index *and* the vault, so it
+survives both `reindex` **and** the transcript's next full re-read — derivation never brings it
+back; `navig recall link` re-opens the pair when you change your mind.
+
+### Extraction with a model (`navig recall extract`)
+
+Pass 0 is deterministic. `extract` adds the knowledge only a reader can find: ideas,
+alternatives that were weighed, names coined or rejected, decisions with their reasons, plans,
+answered and open questions, findings, risks, architecture and lore. It is off until
+`navig recall enable --remote`, and `navig recall disable` turns it off again.
+
+| Command | What it does |
+|---|---|
+| `navig recall extract [-p project \| --here] [-s source] [-n N] [--budget USD] [--day-cap USD] [--focus all\|split] [--workers N] [--dry-run]` | Sends **secret- and PII-redacted** conversation prose, one window at a time, to `recall.extract.provider` / `recall.extract.model` (default `mimo` / `mimo-v2.6-flash`). It stops before a call would pass the run budget (default $5, `recall.extract.budget_usd_run`) or the daily cap (`recall.extract.budget_usd_day`, default $20). `--dry-run` sends nothing and prints the window count and the cost. Resumable: a window already extracted is never sent again, even after `reindex`, because the ledger lives in `vault/.extract_runs.jsonl`. |
+| `navig recall eval [-n 6] [--budget 1]` | Quality check against the session audit: for audited sessions, how many of the audit's features and ideas the extraction recovers, plus quote validity and attribution errors (which must be 0). |
+| `navig recall review [list \| accept <id> \| reject <id>]` | Possible duplicates (accepting merges them and keeps the other as `superseded`) and model items with no verifiable quote (never turned into records). |
+| `navig recall verify -p <project> [--root <repo>]` | Checks ideas and plans against the project's code: `likely` (code and tests), `partial` (code only), `not_found`, or `unknown`. It never sets `verified`. Afterwards it re-derives each record's **delivery lifecycle** (`proposed · implemented_uncommitted · committed · merged · verified · deployed · failed · superseded · abandoned · unknown`) from git verdicts and explicit evidence — deterministic, zero inference; merged never implies deployed, and an assistant claim never yields an `observed` basis. |
+| `navig recall terms` · `navig recall forgotten` | Vocabulary (coined and rejected names, with reasons), and ideas that were never rejected and have no implementation found, oldest first. |
+
+**Every extracted record quotes its source verbatim.** The quote must appear in the message
+it cites, or the item goes to review instead. A status of `confirmed`, `approved`, `rejected`
+or `deferred` sticks only when the cited line is yours (typed, an answer, or a plan verdict).
+Otherwise it is capped at `proposed` or `exploring`, with status basis `assistant`. An
+assistant saying "done" never sets an implementation state. Items merge into an existing
+record only when the model names that record or the canonical name matches exactly in the
+same project. Near-duplicates are created and queued for review, never merged silently.
+
+### 56.1 Browser capture (NAVIG Dock)
+
+What you send from the browser lands in Recall under the project you picked, and is
+searchable at once (when Recall is enabled).
+
+- **Selection → Knowledge.** Select text on any page: a small **🧠 Knowledge** button
+  appears beside it (or right-click → NAVIG Dock → **Send … to NAVIG Knowledge…**). The
+  sheet shows what will be sent, as Markdown — tables, lists and code survive — and asks
+  for a **project** (remembered per site, and per ChatGPT conversation), a **kind** (auto ·
+  prompt · idea · decision · term · table · note) and an optional note. Kind *prompt* also
+  saves it to the prompt library. "Hide the floating button" turns the button off; the
+  right-click item stays.
+- **ChatGPT Lens → Prompts (N).** Lists the prompts in the conversation — your messages
+  with role framing ("You are…"), placeholders (`{x}`, `[X]`, `<x>`) or sections, long
+  instructions, prompt-labelled blocks in answers — ticked, plus your other long messages
+  unticked. Pick a project, then **Import selected**: they go to NAVIG Desktop → Knowledge →
+  Prompts with the project and a link to the exact message; importing again reports
+  "already there" (dedupe by content, whitespace ignored). **Export** now writes YAML
+  frontmatter (conversation id, project, message ids) and keeps tables, code and image
+  links.
+- **Offline.** If NAVIG is not running, captures wait in the browser (the toolbar badge
+  counts them) and are sent, in order, as soon as NAVIG answers again. Nothing is dropped;
+  a full queue (200) refuses new captures instead.
+- **What Recall stores.** Each capture is a note in `<data dir>/inbox/` with Navig Capture
+  v1 frontmatter (`navig_capture: 1`, kind, project, url, conversation and message ids,
+  client). Recall reads it as source `capture:<id>`, speaker **web_capture** — page text is
+  never attributed to you as something you typed or decided. A project that is not
+  registered falls back to `shared`. A captured table becomes a table record. A whole
+  conversation sent with "→ NAVIG inbox" stays a note in the inbox only: Recall reads
+  conversations from the chat library (`navig chats`, source `chats`), with the share level
+  you chose there, never a second copy from these notes.
+- **Lenses never read Recall.** A Lens can send captures, but any command it asks NAVIG to
+  run that names `recall` is refused, by the Lens host and again by the Dock's service worker.
+
+```bash
+navig recall ingest -s capture            # re-read every capture note (the Dock indexes each one on arrival)
+navig recall search "pricing" -p navig --raw
+navig recall sources -a capture
+```
+
+```bash
+navig recall enable && navig recall ingest
+navig recall search "telegram controller" --here
+navig recall ask "did we decide on tauri"
+navig recall show rk-xxxxxxxxxxxx
+```
+
+### 56.1 Recall in Claude Code (MCP)
+
+`navig mcp serve --transport stdio --only recall` serves the Recall tools and nothing else.
+Register it with Claude Code once:
+
+```bash
+navig mcp install-config --client claude-code --dry-run     # print the command, change nothing
+navig mcp install-config --client claude-code               # shows it, asks, then runs it
+navig mcp install-config --client claude-code --scope project --yes
+```
+
+That runs `claude mcp add navig-recall --scope user -- <navig> mcp serve --transport stdio --only recall`
+(`--scope user|project|local`, default `user`, which covers every Claude Code session). It
+asks first because a user-scope server is global; without a terminal it needs `--yes`. The
+server reads the bank in-process, so it works without the daemon.
+
+| Tool | Level | What it returns |
+|---|---|---|
+| `recall_search` | safe | Records matching the words; the conversation turns when nothing matches (`raw=true` for turns directly). |
+| `recall_ask` | safe | Questions you typed before, the reply that followed each, and matching decisions. |
+| `recall_get` · `recall_related` · `recall_timeline` | safe | One record with cited evidence; its links; its event history. |
+| `recall_decisions` · `recall_open_questions` · `recall_forgotten_ideas` · `recall_tables` | safe | The views. Forgotten ideas are ideas with no sign of being built (`impl` not_found/unknown), not rejected, the longest-untouched first. Tables come verbatim. |
+| `recall_source_excerpt` | safe | The original turns around one cited message. |
+| `recall_ingest` | moderate | An incremental ingest. Refused until `navig recall enable`. |
+
+**Scope.** A call reads the project the client is working in (from the directory Claude Code
+starts the server in, worktrees folded into their repo) plus `shared`. `project=<id>` reads
+another project; `all_projects=true` reads them all and has to be asked for.
+
+**Authority.** Every result is cited (`source_id`, `msg_id`, `ts`, `speaker`, and `owner`,
+which is true only for your own words), and every record carries `status` with
+`status_basis`. Only `user` means you decided it, so a model cannot pass an assistant reply or
+an audit row off as your decision. Shared chats below `agent` level never leave through MCP:
+their turns, their excerpts and every record they support are withheld.
+
+`--only` takes any bundle names, comma-separated (`--only recall,memory`). A misspelt name is
+an error, never an empty server.
+
+### 56.2 Automatic reading (monitor `recall_ingest`)
+
+```bash
+navig recall enable --auto        # reading on + the daemon monitor on
+navig service restart             # the monitor starts with the daemon
+```
+
+Every 5 minutes the daemon runs one incremental ingest in a worker thread. Unchanged files
+cost a stat, a live session is read from its cursor, and a half-written last line waits for
+the next pass. So a new session is searchable within one poll. The monitor is off by default
+(`monitors.recall_ingest.enabled`). It also checks `recall.read_local` on every pass, so
+`navig recall disable` stops it without a restart. If a pass is still running, the next one is
+skipped. After three failed passes in a row it records one incident (`navig doctor` → Config
+Health). You can switch it on or off live in NAVIG Desktop → Settings → Notifications → Monitors →
+**Recall reading**.
+
+### 56.3 NAVIG Desktop → Knowledge → Recall
+
+The **Recall** tab has three panes:
+- **The rail** holds the views (Forgotten ideas, Open questions, Decisions, Plans, Tables,
+  Findings, Features) and the projects.
+- **The list** shows search results with the matched words highlighted. Each row has a type
+  chip and a `status·basis` chip. Green means you set it yourself; for example `confirmed·user`.
+- **The detail pane** shows the status, endorsement, implementation and confidence chips, then
+  the summary and the body. Tables are shown verbatim, with **Copy as Markdown**. Then comes the
+  evidence, each item with a speaker badge (yours are marked **you**) and **Open source**, which
+  shows the conversation ±3 turns around it. Last are the timeline and related records.
+
+Keys: `/` search · ↑/↓ move · Enter open · `e` open the first source · Esc back.
+
+The tab is read-only: `/api/deck/recall/status|search|ask|views/<name>|record|excerpt`, all
+GET, all behind deck auth. When Recall is off, the tab shows the command to turn it on.

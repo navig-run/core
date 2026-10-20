@@ -205,6 +205,19 @@ _CLEAN_USER_PATH = Remediation(
     hint="navig doctor clean-path --apply",
 )
 
+# Editable-install findings carry a DYNAMIC label (`editable <package>` — every
+# broken package is its own row, named on the machine that has it), so they can
+# never be enumerated in _LABEL_MAP. The fix's shape is constant even though the
+# package isn't: reinstall from its checkout, or uninstall it. pip mutates
+# site-packages for every environment on the box — report-only; the detail line
+# already names the package and the command, the operator runs it.
+_EDITABLE_REINSTALL = Remediation(
+    id="editable-reinstall",
+    title="reinstall the editable package from its checkout",
+    safe=False,
+    hint="pip install -e <its checkout> (or pip uninstall <name>)",
+)
+
 
 def _detail_has(*needles: str) -> Callable[[dict[str, Any]], bool]:
     def _applies(check: dict[str, Any]) -> bool:
@@ -244,7 +257,9 @@ def plan(report: dict[str, Any]) -> list[PlannedAction]:
     Passing checks are never planned. A failing check whose label is unmapped
     (or whose predicate does not apply) is still listed — with
     ``remediation=None`` — so the heal view shows the WHOLE failure surface,
-    not just the part it can act on.
+    not just the part it can act on. Exception: ``editable <package>`` rows
+    map by prefix to the report-only reinstall (:data:`_EDITABLE_REINSTALL`),
+    because the package name is machine-local and never enumerable up front.
     """
     actions: list[PlannedAction] = []
     for section in report.get("sections") or []:
@@ -252,15 +267,18 @@ def plan(report: dict[str, Any]) -> list[PlannedAction]:
             if check.get("ok"):
                 continue
             remediation: Remediation | None = None
-            entry = _LABEL_MAP.get(str(check.get("label") or ""))
+            label = str(check.get("label") or "")
+            entry = _LABEL_MAP.get(label)
             if entry is not None:
                 candidate, applies = entry
                 if applies is None or applies(check):
                     remediation = candidate
+            elif label.startswith("editable "):
+                remediation = _EDITABLE_REINSTALL
             actions.append(
                 PlannedAction(
                     section=str(section.get("name") or ""),
-                    label=str(check.get("label") or ""),
+                    label=label,
                     detail=str(check.get("detail") or ""),
                     warn=bool(check.get("warn")),
                     remediation=remediation,

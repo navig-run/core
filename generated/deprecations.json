@@ -1,5 +1,702 @@
 {
-  "deprecated_commands": [],
-  "generated_at": "2026-09-27T16:11:55.375852+00:00",
-  "total_deprecated": 0
+  "deprecated_commands": [
+    {
+      "kind": "hint",
+      "note": "navig goal keeps standing goals in its own store; goals added with navig agent goal are not copied over and stay listed by navig agent goal list.",
+      "path": "navig agent goal",
+      "remove_after": "",
+      "replaced_by": "navig goal",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "",
+      "path": "navig agents",
+      "remove_after": "",
+      "replaced_by": "navig formation agents",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "",
+      "path": "navig agents list",
+      "remove_after": "",
+      "replaced_by": "navig formation agents",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "",
+      "path": "navig agents run",
+      "remove_after": "",
+      "replaced_by": "navig agent run <agent_id> --task <task>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig ai ask",
+      "remove_after": "",
+      "replaced_by": "navig ask <question>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig ai diagnose",
+      "remove_after": "",
+      "replaced_by": "navig ask <question>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig ai explain",
+      "remove_after": "",
+      "replaced_by": "navig ask <question>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig ai suggest",
+      "remove_after": "",
+      "replaced_by": "navig ask <question>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "alias",
+      "note": "",
+      "path": "navig bb",
+      "remove_after": "",
+      "replaced_by": "navig blackbox",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "There is no boot sequence to configure; NAVIG starts as the background service.",
+      "path": "navig boot",
+      "remove_after": "",
+      "replaced_by": "navig service status",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "There is no boot sequence to configure; NAVIG starts as the background service.",
+      "path": "navig boot run",
+      "remove_after": "",
+      "replaced_by": "navig service start",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "There is no boot sequence to configure; NAVIG starts as the background service.",
+      "path": "navig boot show",
+      "remove_after": "",
+      "replaced_by": "navig service status",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig browser",
+      "remove_after": "",
+      "replaced_by": "navig cdp",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "cdp clicks by accessibility ref: list them with navig cdp snapshot",
+      "path": "navig browser click",
+      "remove_after": "",
+      "replaced_by": "navig cdp click --ref <n>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "focus the field first: navig cdp click --ref <n>",
+      "path": "navig browser fill",
+      "remove_after": "",
+      "replaced_by": "navig cdp type <value>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig browser open",
+      "remove_after": "",
+      "replaced_by": "navig cdp nav <url>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig browser screenshot",
+      "remove_after": "",
+      "replaced_by": "navig cdp screenshot --out <path>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig browser status",
+      "remove_after": "",
+      "replaced_by": "navig cdp status",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig browser stop",
+      "remove_after": "",
+      "replaced_by": "navig cdp stop",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "alias",
+      "note": "",
+      "path": "navig checkins",
+      "remove_after": "",
+      "replaced_by": "navig checkin",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "alias",
+      "note": "",
+      "path": "navig council",
+      "remove_after": "",
+      "replaced_by": "navig formation council",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig council run",
+      "remove_after": "",
+      "replaced_by": "navig formation council <question>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "alias",
+      "note": "",
+      "path": "navig dl",
+      "remove_after": "",
+      "replaced_by": "navig download",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "alias",
+      "note": "",
+      "path": "navig fb",
+      "remove_after": "",
+      "replaced_by": "navig facebook",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "The finance CLI verbs were never implemented; finance lives in the NAVIG OS Finance app.",
+      "path": "navig finance",
+      "remove_after": "",
+      "replaced_by": "navig store info module:finance",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "The finance CLI verbs were never implemented; finance lives in the NAVIG OS Finance app.",
+      "path": "navig finance balance",
+      "remove_after": "",
+      "replaced_by": "navig store info module:finance",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "The finance CLI verbs were never implemented; finance lives in the NAVIG OS Finance app.",
+      "path": "navig finance status",
+      "remove_after": "",
+      "replaced_by": "navig store info module:finance",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "redirect",
+      "note": "",
+      "path": "navig flow add",
+      "remove_after": "",
+      "replaced_by": "navig block new <name>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "redirect",
+      "note": "",
+      "path": "navig flow edit",
+      "remove_after": "",
+      "replaced_by": "navig block show <name>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "redirect",
+      "note": "",
+      "path": "navig flow list",
+      "remove_after": "",
+      "replaced_by": "navig block list",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "redirect",
+      "note": "",
+      "path": "navig flow remove",
+      "remove_after": "",
+      "replaced_by": "navig block list",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "redirect",
+      "note": "",
+      "path": "navig flow run",
+      "remove_after": "",
+      "replaced_by": "navig apply <name>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "redirect",
+      "note": "",
+      "path": "navig flow show",
+      "remove_after": "",
+      "replaced_by": "navig block show <name>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "redirect",
+      "note": "",
+      "path": "navig flow test",
+      "remove_after": "",
+      "replaced_by": "navig block verify <name>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "alias",
+      "note": "",
+      "path": "navig knowledge",
+      "remove_after": "",
+      "replaced_by": "navig kg",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "alias",
+      "note": "",
+      "path": "navig media",
+      "remove_after": "",
+      "replaced_by": "navig generate",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "alias",
+      "note": "",
+      "path": "navig module",
+      "remove_after": "",
+      "replaced_by": "navig store",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig module disable",
+      "remove_after": "",
+      "replaced_by": "navig store disable module:<module_id>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig module enable",
+      "remove_after": "",
+      "replaced_by": "navig store enable module:<module_id>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig module info",
+      "remove_after": "",
+      "replaced_by": "navig store info module:<module_id>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig module list",
+      "remove_after": "",
+      "replaced_by": "navig store list --kind module",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "alias",
+      "note": "",
+      "path": "navig modules",
+      "remove_after": "",
+      "replaced_by": "navig store",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig modules disable",
+      "remove_after": "",
+      "replaced_by": "navig store disable module:<module_id>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig modules enable",
+      "remove_after": "",
+      "replaced_by": "navig store enable module:<module_id>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig modules info",
+      "remove_after": "",
+      "replaced_by": "navig store info module:<module_id>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig modules list",
+      "remove_after": "",
+      "replaced_by": "navig store list --kind module",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "alias",
+      "note": "Same app and verbs; content production is the canonical name (ADR-0002).",
+      "path": "navig pipeline",
+      "remove_after": "",
+      "replaced_by": "navig content",
+      "since": "3.27.2"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig plans run",
+      "remove_after": "",
+      "replaced_by": "navig plans add <goal>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig plugin add",
+      "remove_after": "",
+      "replaced_by": "navig store install <source>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig plugin disable",
+      "remove_after": "",
+      "replaced_by": "navig store disable plugin:<name>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig plugin enable",
+      "remove_after": "",
+      "replaced_by": "navig store enable plugin:<name>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig plugin install",
+      "remove_after": "",
+      "replaced_by": "navig store install <source>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig plugin remove",
+      "remove_after": "",
+      "replaced_by": "navig store remove <name>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig plugin uninstall",
+      "remove_after": "",
+      "replaced_by": "navig store remove <name>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "alias",
+      "note": "",
+      "path": "navig plugins",
+      "remove_after": "",
+      "replaced_by": "navig plugin",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "alias",
+      "note": "",
+      "path": "navig signal",
+      "remove_after": "",
+      "replaced_by": "navig signals",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "alias",
+      "note": "",
+      "path": "navig skills",
+      "remove_after": "",
+      "replaced_by": "navig skill",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "alias",
+      "note": "",
+      "path": "navig snapshot",
+      "remove_after": "",
+      "replaced_by": "navig history files",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "config snapshots were never implemented; a backup export captures the config",
+      "path": "navig snapshot create",
+      "remove_after": "",
+      "replaced_by": "navig backup export",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig snapshot diff",
+      "remove_after": "",
+      "replaced_by": "navig history files diff <filepath>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig snapshot restore",
+      "remove_after": "",
+      "replaced_by": "navig history files restore <filepath>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "hint",
+      "note": "",
+      "path": "navig snapshot versions",
+      "remove_after": "",
+      "replaced_by": "navig history files versions <filepath>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "alias",
+      "note": "",
+      "path": "navig spaces",
+      "remove_after": "",
+      "replaced_by": "navig space",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "redirect",
+      "note": "",
+      "path": "navig task add",
+      "remove_after": "",
+      "replaced_by": "navig block new <name>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "redirect",
+      "note": "",
+      "path": "navig task edit",
+      "remove_after": "",
+      "replaced_by": "navig block show <name>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "redirect",
+      "note": "",
+      "path": "navig task list",
+      "remove_after": "",
+      "replaced_by": "navig block list",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "redirect",
+      "note": "",
+      "path": "navig task remove",
+      "remove_after": "",
+      "replaced_by": "navig block list",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "redirect",
+      "note": "",
+      "path": "navig task run",
+      "remove_after": "",
+      "replaced_by": "navig apply <name>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "redirect",
+      "note": "",
+      "path": "navig task show",
+      "remove_after": "",
+      "replaced_by": "navig block show <name>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "redirect",
+      "note": "",
+      "path": "navig task test",
+      "remove_after": "",
+      "replaced_by": "navig block verify <name>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "alias",
+      "note": "",
+      "path": "navig tiktok",
+      "remove_after": "",
+      "replaced_by": "navig download",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "alias",
+      "note": "",
+      "path": "navig tt",
+      "remove_after": "",
+      "replaced_by": "navig download",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "webdash started a second gateway; the running daemon already serves the deck",
+      "path": "navig webdash",
+      "remove_after": "",
+      "replaced_by": "navig deck open",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "The webhook-management API these verbs called was never served by anything; triggers own webhook actions and inbound webhook triggers.",
+      "path": "navig webhook",
+      "remove_after": "",
+      "replaced_by": "navig trigger",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "The webhook-management API these verbs called was never served by anything; triggers own webhook actions and inbound webhook triggers.",
+      "path": "navig webhook add-inbound",
+      "remove_after": "",
+      "replaced_by": "navig trigger add <name> --type webhook --action <command>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "The webhook-management API these verbs called was never served by anything; triggers own webhook actions and inbound webhook triggers.",
+      "path": "navig webhook add-outbound",
+      "remove_after": "",
+      "replaced_by": "navig trigger add <name> --action webhook:<url>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "The webhook-management API these verbs called was never served by anything; triggers own webhook actions and inbound webhook triggers.",
+      "path": "navig webhook delete",
+      "remove_after": "",
+      "replaced_by": "navig trigger remove <id>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "The webhook-management API these verbs called was never served by anything; triggers own webhook actions and inbound webhook triggers.",
+      "path": "navig webhook disable",
+      "remove_after": "",
+      "replaced_by": "navig trigger disable <id>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "The webhook-management API these verbs called was never served by anything; triggers own webhook actions and inbound webhook triggers.",
+      "path": "navig webhook list",
+      "remove_after": "",
+      "replaced_by": "navig trigger list",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "The webhook-management API these verbs called was never served by anything; triggers own webhook actions and inbound webhook triggers.",
+      "path": "navig webhook test",
+      "remove_after": "",
+      "replaced_by": "navig trigger test <id>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "The webhook-management API these verbs called was never served by anything; triggers own webhook actions and inbound webhook triggers.",
+      "path": "navig webhooks",
+      "remove_after": "",
+      "replaced_by": "navig trigger",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "The webhook-management API these verbs called was never served by anything; triggers own webhook actions and inbound webhook triggers.",
+      "path": "navig webhooks add-inbound",
+      "remove_after": "",
+      "replaced_by": "navig trigger add <name> --type webhook --action <command>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "The webhook-management API these verbs called was never served by anything; triggers own webhook actions and inbound webhook triggers.",
+      "path": "navig webhooks add-outbound",
+      "remove_after": "",
+      "replaced_by": "navig trigger add <name> --action webhook:<url>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "The webhook-management API these verbs called was never served by anything; triggers own webhook actions and inbound webhook triggers.",
+      "path": "navig webhooks delete",
+      "remove_after": "",
+      "replaced_by": "navig trigger remove <id>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "The webhook-management API these verbs called was never served by anything; triggers own webhook actions and inbound webhook triggers.",
+      "path": "navig webhooks disable",
+      "remove_after": "",
+      "replaced_by": "navig trigger disable <id>",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "The webhook-management API these verbs called was never served by anything; triggers own webhook actions and inbound webhook triggers.",
+      "path": "navig webhooks list",
+      "remove_after": "",
+      "replaced_by": "navig trigger list",
+      "since": "3.26.0"
+    },
+    {
+      "kind": "moved",
+      "note": "The webhook-management API these verbs called was never served by anything; triggers own webhook actions and inbound webhook triggers.",
+      "path": "navig webhooks test",
+      "remove_after": "",
+      "replaced_by": "navig trigger test <id>",
+      "since": "3.26.0"
+    }
+  ],
+  "generated_at": "2026-10-19T22:29:39.517021+00:00",
+  "total_deprecated": 87
 }

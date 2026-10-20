@@ -28,5 +28,11 @@
   "unit.kg": "kg",
   "unit.h": "h",
   "weigh.settled": "✅ Recorded {value} kg",
-  "weigh.settled_avg": "✅ Recorded {value} kg · 7-day average {avg} kg"
+  "weigh.settled_avg": "✅ Recorded {value} kg · 7-day average {avg} kg",
+  "btn.edit": "✎ Change",
+  "week.done_title": "✅ Weekly check-in recorded",
+  "week.done_summary": "Mood {mood} · sleep {sleep} · treatment: {treatment}",
+  "week.tx_ok": "all fine",
+  "week.tx_note": "note added",
+  "week.tx_pending": "waiting for your reply"
 }

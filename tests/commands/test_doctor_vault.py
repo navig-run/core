@@ -77,7 +77,8 @@ def test_no_vault_yet_is_informational_green(navig_home):
     assert icon == "✓"
     assert "no vault yet" in line
     assert "navig vault set" in line
-    assert len(results) == 1  # no legacy DB → no legacy row
+    # no legacy DB → no legacy row (the Host credentials row is independent of the vault)
+    assert not [r for r in results if "Legacy" in r[2]]
 
 
 def test_healthy_vault_counts_items_and_probes_encryption(navig_home):

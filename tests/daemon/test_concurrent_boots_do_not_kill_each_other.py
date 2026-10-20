@@ -114,12 +114,14 @@ def test_an_old_supervisor_is_a_stale_generation_not_a_sibling(isolated, monkeyp
 
 def test_run_yields_without_writing_a_pid_file_or_sweeping(isolated, monkeypatch):
     """The case that killed the task-launched daemon: we are the direct-spawn
-    competitor; the older boot is the one with the living parent."""
+    competitor; the older boot is the one with the living parent — and it CLAIMS
+    the boot (the claim is what makes yielding correct; see the takeover test)."""
     d = _daemon()
     swept: list = []
     monkeypatch.setattr(sup.NavigDaemon, "is_running", staticmethod(lambda: False))
     monkeypatch.setattr(sup.NavigDaemon, "_enumerate_navig_pids", staticmethod(lambda: [4242]))
     monkeypatch.setattr(d, "_booting_sibling", lambda candidates=None: 4242)
+    monkeypatch.setattr(d, "_await_sibling_claim", lambda sibling: True)  # sibling claims
     monkeypatch.setattr(
         sup.NavigDaemon, "_kill_orphan_daemons", staticmethod(lambda **kw: swept.append(kw) or [])
     )
@@ -133,6 +135,103 @@ def test_run_yields_without_writing_a_pid_file_or_sweeping(isolated, monkeypatch
     assert not (isolated / "supervisor.pid").exists(), "a yielding boot must not take the pid file"
     assert swept == [], "a yielding boot must not sweep the sibling it yields to"
     assert d._running is False
+
+
+def test_run_takes_over_when_the_sibling_never_claims(isolated, monkeypatch):
+    """2026-10-17: a Windows join stayed dark for hours because every boot
+    yielded — unconditionally, BEFORE the sweep — to a sibling wedged before its
+    first claim. The wait must expire, the sweep must reap it, and we must own
+    the pid file, or nothing on the machine can ever come up."""
+    d = _daemon()
+    swept: list = []
+    claimed: list = []
+
+    async def _loop():
+        # Read while the loop still owns the file — run()'s finally _shutdown()
+        # removes it before run() returns.
+        claimed.append((isolated / "supervisor.pid").read_text(encoding="utf-8"))
+        d._running = False
+
+    monkeypatch.setattr(sup.NavigDaemon, "is_running", staticmethod(lambda: False))
+    monkeypatch.setattr(sup.NavigDaemon, "_enumerate_navig_pids", staticmethod(lambda: [4242]))
+    monkeypatch.setattr(d, "_booting_sibling", lambda candidates=None: 4242)
+    monkeypatch.setattr(d, "_await_sibling_claim", lambda sibling: False)  # never claims
+    monkeypatch.setattr(
+        sup.NavigDaemon, "_kill_orphan_daemons", staticmethod(lambda **kw: swept.append(kw) or [])
+    )
+    monkeypatch.setattr(d, "_supervisor_loop", _loop)
+    monkeypatch.setattr(sup.signal, "signal", lambda *a, **kw: None)
+
+    d.run()
+
+    assert len(swept) == 1, "a wedged sibling must be reaped by the sweep, not king forever"
+    assert claimed == [str(os.getpid())], "the takeover must claim the pid file and run"
+
+
+def test_a_claimed_pid_file_is_yielded_to_without_a_real_wait(isolated, monkeypatch):
+    """_await_sibling_claim: the sibling's claim in the pid file ends the wait."""
+    d = _daemon()
+    monkeypatch.setattr(sup.NavigDaemon, "read_pid", staticmethod(lambda: 4242))
+    assert d._await_sibling_claim(4242) is True
+    monkeypatch.setattr(sup.NavigDaemon, "read_pid", staticmethod(lambda: 9999))
+    assert d._await_sibling_claim(4242) is False  # someone else owns the boot
+    monkeypatch.setattr(sup.NavigDaemon, "read_pid", staticmethod(lambda: None))
+    monkeypatch.setattr(sup.NavigDaemon, "SIBLING_CLAIM_WAIT_S", 0.0)
+    assert d._await_sibling_claim(4242) is False  # nobody claims → takeover
+
+
+def test_claim_pid_excludes_a_second_claimant(isolated):
+    """The airtight half of the race: os.link fails on an existing name, so the
+    second boot loses cleanly instead of overwriting the first one's pid."""
+    d = _daemon()
+    assert d._claim_pid() is True
+    owner = (isolated / "supervisor.pid").read_text(encoding="utf-8")
+    assert owner == str(os.getpid())
+    # Simulate a competitor's claim landing first: rewrite the file as another pid.
+    (isolated / "supervisor.pid").write_text("4242", encoding="utf-8")
+    assert d._claim_pid() is False
+    assert (isolated / "supervisor.pid").read_text(encoding="utf-8") == "4242"
+    # No temp litter either way.
+    assert list(isolated.glob("supervisor.pid.*.tmp")) == []
+
+
+def test_claim_pid_falls_back_when_the_filesystem_has_no_hard_links(isolated, monkeypatch):
+    d = _daemon()
+
+    def _no_links(*a, **kw):
+        raise NotImplementedError("FAT")
+
+    monkeypatch.setattr(sup.os, "link", _no_links)
+    assert d._claim_pid() is True  # free claim
+    (isolated / "supervisor.pid").write_text("4242", encoding="utf-8")
+    monkeypatch.setattr(
+        sup.NavigDaemon, "read_pid", staticmethod(lambda: 4242)
+    )  # live foreign owner
+    assert d._claim_pid() is False
+
+
+def test_run_exits_when_another_supervisor_claims_during_the_sweep(isolated, monkeypatch):
+    """Pre-write arbitration: the pid file appears while we sweep → we exit."""
+    d = _daemon()
+    loop_ran: list = []
+
+    async def _loop_if_reached():
+        loop_ran.append(1)
+        d._running = False
+
+    monkeypatch.setattr(sup.NavigDaemon, "is_running", staticmethod(lambda: False))
+    monkeypatch.setattr(sup.NavigDaemon, "_enumerate_navig_pids", staticmethod(lambda: [4242]))
+    monkeypatch.setattr(d, "_booting_sibling", lambda candidates=None: None)
+    monkeypatch.setattr(sup.NavigDaemon, "_kill_orphan_daemons", staticmethod(lambda **kw: []))
+    monkeypatch.setattr(sup.NavigDaemon, "read_pid", staticmethod(lambda: 4242))
+    monkeypatch.setattr(d, "_supervisor_loop", _loop_if_reached)
+    monkeypatch.setattr(sup.signal, "signal", lambda *a, **kw: None)
+
+    d.run()
+
+    assert not (isolated / "supervisor.pid").exists()
+    assert d._running is False
+    assert loop_ran == [], "a boot that lost the pid-file race must never reach the loop"
 
 
 def test_the_boot_sweep_skips_anything_younger_than_us(isolated, monkeypatch):

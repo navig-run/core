@@ -13,9 +13,18 @@ _BROWSER_REQUEST_TIMEOUT: int = 30  # Browser automation calls can take a few se
 
 browser_app = typer.Typer(
     name="browser",
-    help="Browser automation via the NAVIG gateway",
+    help="Browser automation via the NAVIG gateway (superseded → navig cdp)",
     no_args_is_help=True,
 )
+
+
+def _superseded(verb: str, **values: object) -> None:
+    """`navig browser` is superseded by `navig cdp`, which drives a real, isolated
+    browser it owns. Every verb keeps working (no CLI break) and first names its
+    `navig cdp` equivalent, filled with what the operator typed."""
+    from navig.cli.superseded import hint  # noqa: PLC0415 — lazy
+
+    hint(f"navig browser {verb}", **values)
 
 
 def _browser_api(
@@ -118,6 +127,7 @@ def _safe_get_error(response) -> str:
 @browser_app.command("status")
 def browser_status() -> None:
     """Show browser status."""
+    _superseded("status")
     # 5s, not the 30s automation timeout: this is a quick probe.
     data = _browser_api("GET", "/browser/status", action="get browser status", timeout=5)
     if not data.get("started"):
@@ -135,6 +145,7 @@ def browser_open(
     url: str = typer.Argument(..., help="URL to navigate to"),
 ) -> None:
     """Navigate browser to a URL."""
+    _superseded("open", url=url)
     _browser_api(
         "POST",
         "/browser/navigate",
@@ -151,6 +162,7 @@ def browser_screenshot(
     full_page: bool = typer.Option(False, "--full", "-f", help="Capture full page"),
 ) -> None:
     """Capture a browser screenshot."""
+    _superseded("screenshot", path=path)
     data = _browser_api(
         "POST",
         "/browser/screenshot",
@@ -165,6 +177,7 @@ def browser_click(
     selector: str = typer.Argument(..., help="CSS selector to click"),
 ) -> None:
     """Click an element on the active page."""
+    _superseded("click")
     _browser_api(
         "POST",
         "/browser/click",
@@ -181,6 +194,7 @@ def browser_fill(
     value: str = typer.Argument(..., help="Value to fill"),
 ) -> None:
     """Fill an input field on the active page."""
+    _superseded("fill", value=value)
     _browser_api(
         "POST",
         "/browser/fill",
@@ -194,6 +208,7 @@ def browser_fill(
 @browser_app.command("stop")
 def browser_stop() -> None:
     """Stop the browser controller."""
+    _superseded("stop")
     _browser_api("POST", "/browser/stop", action="stop the browser", timeout=10,
                  expect_payload=False)
     ch.success("Browser stopped")

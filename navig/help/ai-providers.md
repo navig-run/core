@@ -121,7 +121,7 @@ ai_model_preference:
 
 ```bash
 # Ask AI with specific model
-navig ai ask "How do I optimize nginx?" --model gpt-4o
+navig ask "How do I optimize nginx?" --model gpt-4o
 
 # Check which providers are configured
 navig ai providers

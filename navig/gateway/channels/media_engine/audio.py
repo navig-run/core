@@ -164,7 +164,9 @@ async def _stage_audd(file_bytes: bytes, budget: BudgetGuard) -> dict | None:
 
 async def _stage_whisper(file_bytes: bytes, budget: BudgetGuard) -> str | None:
     """Transcribe audio using OpenAI Whisper API."""
-    api_key = _env("OPENAI_API_KEY")
+    from .credentials import provider_key  # vault-by-provider-id, not only env names
+
+    api_key = provider_key("openai", "OPENAI_API_KEY")
     if not api_key:
         return None
     if not budget.can_afford("openai_whisper"):

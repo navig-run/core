@@ -1,0 +1,19 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: speech/premium-narrator
+name: Premium narrator (ElevenLabs)
+tool: speech
+layer: style
+category: Voice
+tags:
+- premium
+- narration
+- multilingual
+description: 'ElevenLabs multilingual narration for French, Russian and English. Paid — needs your ElevenLabs key and counts against the daily voice budget.'
+params:
+  provider: elevenlabs
+  model: eleven_multilingual_v2
+  lang: auto
+  stability: 0.6
+  similarity: 0.8

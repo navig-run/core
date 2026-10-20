@@ -257,8 +257,15 @@ def classify_probe_error(exc: Exception) -> tuple[str, str]:
         return "auth", "auth failed (401 — key/token invalid or expired)"
     if "403" in msg:
         return "auth", "forbidden (403)"
-    # Before `unreachable` on purpose — see _TRANSIENT_MARKERS.
+    # Before `unreachable` on purpose — see _TRANSIENT_MARKERS. A 429 gets its
+    # OWN detail: still transient (a blip must never alarm), but named, because
+    # `probe_model` feeds the detail to the sustained rate-limit watch — the
+    # seam that makes a week-long cap visible where the taxonomy sees only a
+    # blip. A 5xx is the provider failing, NOT a quota, and must not count.
     if any(s in msg for s in _TRANSIENT_MARKERS):
+        if ("429" in msg or "too many requests" in msg
+                or "rate limit" in msg or "ratelimit" in msg):
+            return "transient", "provider rate-limited (429) (retried) — not a config problem"
         return "transient", "provider busy / rate-limited (retried) — not a config problem"
     # A READ timeout is not an unreachable endpoint — the connection SUCCEEDED
     # and the request was accepted; the model is merely slow to answer. Measured
@@ -296,6 +303,34 @@ def probe_model(provider: str, model: str, *, timeout: float = 25.0) -> tuple[st
     # unfalsifiable — it reports "dead" having never asked.
     if is_retired(model, provider):
         return "dead", f"known-retired model on {provider} (denylisted)"
+    status, detail = _probe_model_uncached(provider, model, timeout=timeout)
+    # A 429 counts toward the sustained rate-limit watch (the seam that makes a
+    # week-long cap visible where the taxonomy sees only a blip). A 5xx or a
+    # slow answer is the provider failing, NOT a quota, and must not count —
+    # hence "(429)", the marker unique to the 429 detail: the generic transient
+    # detail also says "rate-limited", and a substring match on that would
+    # count every 503 as quota.
+    if status == "transient" and "(429)" in detail:
+        try:
+            from navig.llm.rate_limit_watch import note_rate_limited  # noqa: PLC0415
+
+            note_rate_limited(provider, model)
+        except Exception:  # noqa: BLE001
+            pass
+    # Remember the verdict: the runtime fallback picks its stand-ins from the
+    # models a probe last saw answering (navig.llm.model_health). A busy or slow
+    # answer says nothing about the model, so it does not overwrite a verdict.
+    if status not in ("transient", "slow"):
+        try:
+            from navig.llm import model_health  # noqa: PLC0415
+
+            model_health.record(provider, model, status, detail, source="probe")
+        except Exception:  # noqa: BLE001
+            pass
+    return status, detail
+
+
+def _probe_model_uncached(provider: str, model: str, *, timeout: float) -> tuple[str, str]:
     import time  # noqa: PLC0415 — keep this module import-cheap
 
     from navig.llm.generate import llm_generate  # noqa: PLC0415

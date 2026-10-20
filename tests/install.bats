@@ -95,3 +95,21 @@ INSTALL_SH="$REPO_ROOT/install.sh"
     # Should still exit 0 (dev sync failure must not kill the main install)
     [ "$status" -eq 0 ]
 }
+
+# ---------------------------------------------------------------------------
+# 6. -p/--profile: previews the profile, never the install
+# ---------------------------------------------------------------------------
+@test "dry-run with --profile previews the profile row" {
+    local prof_pat='Profile'
+    run bash "$INSTALL_SH" --dry-run --profile server
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ $prof_pat ]]
+    [[ "$output" == *"server"* ]]
+}
+
+@test "dry-run without --profile shows no profile row" {
+    local prof_pat='Profile'
+    run bash "$INSTALL_SH" --dry-run
+    [ "$status" -eq 0 ]
+    [[ ! "$output" =~ $prof_pat ]]
+}

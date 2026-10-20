@@ -395,8 +395,8 @@ tar -czf navig-backup-$(date +%Y%m).tar.gz ~/.navig/
 # 2. Analyze learning trends
 navig agent learn --report
 
-# 3. Review goal completion rate
-navig agent goal list --completed --since "1 month ago"
+# 3. Review goals, finished ones included
+navig goal list --all
 
 # 4. Security audit
 navig audit --security
@@ -473,7 +473,7 @@ ps aux | grep "navig agent"  # macOS
 Get-Process | Where-Object {$_.ProcessName -like "*navig*"}  # Windows
 
 # 2. Check for stuck goals
-navig agent goal list --state blocked
+navig goal list
 
 # 3. Restart service
 navig agent service restart

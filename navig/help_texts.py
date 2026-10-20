@@ -604,16 +604,17 @@ FLOW_ADD = CommandHelp(
 )
 
 BROWSER = CommandHelp(
-    short_help="Browser automation",
-    description="Control headless browser for web automation tasks.",
+    short_help="Browser automation (superseded by navig cdp)",
+    description="Gateway browser automation — superseded by `navig cdp`, which drives a real browser.",
     epilog="""
-Examples:
-  navig browser open https://example.com    Navigate to URL
-  navig browser click "#submit"             Click element by CSS selector
-  navig browser fill "#email" "test@ex.com" Fill form field
-  navig browser screenshot output.png       Capture screenshot
-  navig browser status                      Check browser status
-  navig browser stop                        Stop browser session
+Use navig cdp instead:
+  navig cdp nav https://example.com         Navigate to URL
+  navig cdp snapshot                        List clickable elements (a11y refs)
+  navig cdp click --ref 3                   Click element by ref
+  navig cdp type "test@ex.com"              Type into the focused field
+  navig cdp screenshot --out output.png     Capture screenshot
+  navig cdp status                          Check browser status
+  navig cdp stop                            Stop browser session
 """,
 )
 
@@ -793,7 +794,7 @@ Examples:
   navig agent config --show        View current configuration
   navig agent logs --follow        Follow agent log output
   navig agent personality list     List available personalities
-  navig agent goal add "Deploy app" Execute autonomous goal
+  navig goal add "Deploy app"      Standing goal, worked on a schedule
 """,
 )
 

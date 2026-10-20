@@ -20,7 +20,6 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
 import time
 import urllib.parse
 import urllib.request
@@ -28,6 +27,7 @@ from typing import Any
 
 from navig.connectors.base import BaseConnector, ConnectorManifest
 from navig.connectors.errors import ConnectorAuthError, ConnectorRateLimitError
+from navig.connectors.secrets import KeyField, resolve
 from navig.connectors.types import (
     Action,
     ActionResult,
@@ -74,6 +74,15 @@ def _payload_result(label: str, payload: dict, *, success: bool = True) -> Actio
     )
 
 
+GOOGLE_MAPS_API_KEY = KeyField(
+    name="api_key",
+    label="Google Maps API key",
+    vault_label="google_maps/api_key",
+    env=("GOOGLE_MAPS_API_KEY", "GMAPS_API_KEY"),
+    placeholder="AIza…",
+)
+
+
 class GoogleMapsConnector(BaseConnector):
     """Connector for Google Maps Platform — Geocoding and Places API.
 
@@ -97,6 +106,8 @@ class GoogleMapsConnector(BaseConnector):
         oauth_scopes=[],
         oauth_provider="",
         requires_oauth=False,
+        auth_mode="api_key",
+        key_fields=(GOOGLE_MAPS_API_KEY,),
         can_search=True,
         can_fetch=True,
         can_act=False,
@@ -110,9 +121,7 @@ class GoogleMapsConnector(BaseConnector):
 
     async def connect(self) -> None:
         """Load API key from env or vault label ``google_maps/api_key``."""
-        key = os.environ.get("GOOGLE_MAPS_API_KEY", "").strip()
-        if not key:
-            key = os.environ.get("GMAPS_API_KEY", "").strip()
+        key = resolve(GOOGLE_MAPS_API_KEY)
         if not key:
             self._status = ConnectorStatus.ERROR
             raise ConnectorAuthError(

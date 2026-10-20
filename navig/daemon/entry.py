@@ -34,10 +34,12 @@ DEFAULT_DAEMON_CONFIG = {
     "telegram_bot": True,
     "gateway": False,
     "gateway_port": _GATEWAY_PORT,
-    "scheduler": False,
     "health_port": 0,
     "engagement": True,
 }
+# NOTE: no "scheduler" key — cron runs gateway-attached (NavigGateway._start_cron
+# owns the CronService singleton; see daemon/supervisor.py). A legacy
+# "scheduler": true left in an existing config.json is ignored, not an error.
 
 # Use a lightweight standard logger at module level so that importing
 # navig.daemon.entry does NOT open a RotatingFileHandler on debug.log.
@@ -91,7 +93,7 @@ def _load_config() -> dict:
     Reads through ``read_text_retrying`` so a transient OS lock (an antivirus/backup
     agent, a read landing mid-``os.replace``) doesn't collapse to defaults at daemon
     boot — which would silently run this session with the DEFAULT feature toggles
-    (gateway/scheduler/ports), ignoring the operator's config. A lock that survives the
+    (gateway/ports), ignoring the operator's config. A lock that survives the
     retries still degrades to defaults; genuine corruption is not retried.
     """
     if _daemon_config_path().exists():
@@ -124,7 +126,7 @@ def save_default_config() -> Path:
         except OSError:
             # A transient read failure (an antivirus/backup agent holding the file, a read
             # landing mid-replace) — NOT corruption. Overwriting with defaults here would
-            # silently reset the daemon's feature toggles (gateway/scheduler/ports). We
+            # silently reset the daemon's feature toggles (gateway/ports). We
             # can't verify it right now, so leave the existing config untouched.
             should_repair = False
 
@@ -146,6 +148,16 @@ def main() -> None:
 
         install_windowless_spawn_default()
     except Exception:  # noqa: BLE001 — cosmetic; must never block daemon boot
+        pass
+
+    # Started by Task Scheduler, this process (and every child it spawns) inherits
+    # BELOW_NORMAL CPU + LOW I/O unless the task says otherwise — and was starved on a
+    # busy machine (a 0.3 s deck read took 18–42 s). Restore normal before spawning.
+    try:
+        from navig.platform.process import restore_normal_priority
+
+        restore_normal_priority()
+    except Exception:  # noqa: BLE001
         pass
 
     # Bind to the daemon's HOME before anything resolves a path. `ConfigManager.base_dir`
@@ -189,6 +201,16 @@ def main() -> None:
             return
     except Exception:  # noqa: BLE001
         pass  # If anything goes wrong checking the flag, proceed normally.
+
+    # This NAVIG moved to another machine (`navig move out`): its identity answers there
+    # now, and a second brain on the same relay tenant would fight it for every update.
+    # Unlike the stop flag this is not "proceed on error" — read_moved() already treats an
+    # unreadable marker as moved.
+    from navig.move.marker import moved_message, read_moved
+
+    if read_moved() is not None:
+        logger.info("Daemon start refused: %s", moved_message())
+        return
 
     # Already running? Then this launch is a duplicate — exit cleanly.
     #
@@ -259,8 +281,11 @@ def main() -> None:
     if _as_bool(cfg.get("gateway", False), False):
         daemon.add_gateway(port=_as_int(cfg.get("gateway_port", _GATEWAY_PORT), _GATEWAY_PORT))
 
-    if _as_bool(cfg.get("scheduler", False), False):
-        daemon.add_scheduler()
+    # No scheduler child: cron runs gateway-attached (NavigGateway._start_cron).
+    # The legacy `scheduler` config toggle used to register
+    # `python -m navig.scheduler.cron_service` — a module with no runner that
+    # imported and exited 0, so the supervisor respawned a silent no-op forever.
+    # A stale `scheduler` key in config.json is now ignored.
 
     daemon.run()
 

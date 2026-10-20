@@ -107,15 +107,47 @@ def test_an_unreadable_source_regenerates_rather_than_serving_stale(tmp_path, ca
 # ── where the cache lives ────────────────────────────────────────────────────
 
 
-def test_the_cache_is_per_user_not_the_shared_temp_dir(monkeypatch, tmp_path):
-    """A fixed name in the shared temp dir is the first account's to own."""
-    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "cfg"))
-    import tempfile
+def test_the_cache_delegates_to_the_per_user_cache_dir(monkeypatch, tmp_path):
+    """The cache location is `cache_dir()`'s answer, not a name of this module's own.
+
+    Asserted as a DELEGATION rather than by inspecting the path that comes back, because
+    the ambient answer cannot decide it here: `tests/conftest.py` deliberately points
+    NAVIG_CACHE_DIR at a temp dir so no test writes into the operator's real cache, so
+    inside this suite the cache always *is* under the shared temp dir. This test used to
+    patch NAVIG_CONFIG_DIR and assert the path — `cache_dir()` reads NAVIG_CACHE_DIR, so
+    the patch was inert and the assertion could never hold. See the companion test below
+    for the property the original was reaching for.
+    """
+    from navig.platform import paths  # noqa: PLC0415
+
+    monkeypatch.setenv("NAVIG_CACHE_DIR", str(tmp_path / "cache"))
 
     d = _thumb_cache()
 
     assert d.is_dir()
+    assert d == paths.cache_dir() / "browse-thumbs", (
+        f"the thumbnail cache ({d}) is not derived from cache_dir() — a name of its own "
+        "cannot follow the per-user cache when that moves"
+    )
+
+
+def test_the_per_user_cache_dir_is_not_the_shared_temp_dir(monkeypatch):
+    """A fixed name in the shared temp dir is the first account's to own.
+
+    With nothing overriding it, `cache_dir()` must land in this account's own cache
+    (LOCALAPPDATA/navig/cache, ~/Library/Caches/navig, $XDG_CACHE_HOME/navig) — never
+    the shared temp dir. Read-only: `cache_dir()` creates nothing, so this touches none of
+    the operator's real directories.
+    """
+    import tempfile  # noqa: PLC0415
+
+    from navig.platform import paths  # noqa: PLC0415
+
+    monkeypatch.delenv("NAVIG_CACHE_DIR", raising=False)
+
+    d = paths.cache_dir().resolve()
     shared = Path(tempfile.gettempdir()).resolve()
-    assert shared not in d.resolve().parents, (
-        f"the thumbnail cache is under the shared temp dir ({d}) — it must be per-user"
+
+    assert shared not in d.parents and d != shared, (
+        f"the per-user cache dir is under the shared temp dir ({d}) — it must be per-user"
     )

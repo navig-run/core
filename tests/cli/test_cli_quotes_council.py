@@ -153,9 +153,11 @@ def test_council_run_json_output():
     }):
         result = runner.invoke(council_app, ["run", "test question", "--json"])
     assert result.exit_code == 0
-    # JSON output should be parseable
-    data = json.loads(result.output)
+    # JSON on STDOUT must be parseable — `council run` is superseded and says so, but on
+    # stderr, so a script reading stdout still gets clean JSON.
+    data = json.loads(result.stdout)
     assert data["final_decision"] == "Do it."
+    assert "navig formation council" in result.stderr
 
 
 def test_council_run_plain_output():

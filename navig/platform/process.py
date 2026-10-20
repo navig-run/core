@@ -221,7 +221,7 @@ def posix_shell() -> str | None:
     On Windows a bare ``["bash", ...]`` is a trap: ``CreateProcess`` searches ``System32``
     BEFORE ``PATH``, so it runs ``C:\Windows\System32\bash.exe`` — the WSL launcher — even
     when ``shutil.which("bash")`` (PATH only) reports Git Bash. The launcher cannot take an
-    ``E:\...`` path (``/bin/bash: E:projectsapps...: No such file``) and translates every
+    ``C:\...`` path (``/bin/bash: E:projectsapps...: No such file``) and translates every
     argument through WSL, so a ``.sh`` trigger script simply did not run, or ran against
     paths that do not exist there. Git Bash is derived from ``git`` itself, which lives in
     one of several places (Program Files, scoop, a portable install); a hardcoded
@@ -244,3 +244,36 @@ def posix_shell() -> str | None:
     if found and "system32" not in found.lower():
         return found
     return None
+
+
+def restore_normal_priority() -> bool:
+    """Raise THIS process to normal CPU + I/O priority if it was started lower.
+
+    Windows Task Scheduler runs a task at priority 7 unless its XML says
+    otherwise: BELOW_NORMAL CPU and LOW I/O. The daemon is launched by such a
+    task, so every child inherited it and, on a loaded machine, was starved —
+    measured: the deck's CPU/RAM/Disk snapshot took 18–42 s inside the daemon
+    against 0.3 s in a normal-priority process, while trivial routes answered in
+    milliseconds. The task XML now sets a normal priority; this heals installs
+    whose task predates that, without a reinstall. Children spawned afterwards
+    inherit the restored class.
+
+    Only RAISES a lowered process to normal — never above. Windows-only; never raises.
+    Returns True when it changed something.
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        import psutil  # noqa: PLC0415
+
+        proc = psutil.Process()
+        changed = False
+        if proc.nice() in (psutil.BELOW_NORMAL_PRIORITY_CLASS, psutil.IDLE_PRIORITY_CLASS):
+            proc.nice(psutil.NORMAL_PRIORITY_CLASS)
+            changed = True
+        if proc.ionice() < psutil.IOPRIO_NORMAL:
+            proc.ionice(psutil.IOPRIO_NORMAL)
+            changed = True
+        return changed
+    except Exception:  # noqa: BLE001 — a priority tweak must never block a boot
+        return False

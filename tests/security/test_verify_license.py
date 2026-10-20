@@ -442,3 +442,52 @@ def test_perpetual_fallback_with_carried_modules(dev_private_key: bytes):
     assert "security_ops" in status.capabilities
     # But not deploy_ops (Business-only, not carried)
     assert "deploy_ops" not in status.capabilities
+
+
+# ─── Contract-sized hosts (Team / Enterprise) ───────────────────────────────
+#
+# Enterprise used to grant a flat 100000 hosts — a number no brain can serve and
+# that the Deck printed raw ("7 / 100000"). Team/Enterprise are sold by contract,
+# so the negotiated count travels in the signed token as `contract_hosts`; the
+# tier default (1000) applies when it is absent.
+
+
+def _contract(tier: str, contract_hosts, **kw) -> dict:
+    p = _payload(tier=tier, **kw)
+    if contract_hosts is not None:
+        p["contract_hosts"] = contract_hosts
+    return p
+
+
+def test_enterprise_contract_hosts_are_honoured(dev_private_key: bytes):
+    token = _sign(_contract("enterprise", 2500, billing_period="one_time",
+                            subscription_until_days=None), dev_private_key)
+    assert verify_license(token).host_limit == 2500
+
+
+def test_enterprise_without_contract_gets_the_default_not_the_old_hosts_field(dev_private_key: bytes):
+    # Every issuer wrote the tier default into `hosts` at signing time, so an
+    # old Enterprise token carries hosts=100000. Reading it would freeze that
+    # number in forever; only `contract_hosts` is a negotiated value.
+    payload = _contract("enterprise", None, billing_period="one_time", subscription_until_days=None)
+    payload["hosts"] = 100_000
+    status = verify_license(_sign(payload, dev_private_key))
+    assert status.host_limit == TIER_HOST_LIMIT["enterprise"] == 1000
+
+
+def test_a_self_serve_tier_cannot_raise_its_own_limit(dev_private_key: bytes):
+    token = _sign(_contract("max", 9999), dev_private_key)
+    assert verify_license(token).host_limit == TIER_HOST_LIMIT["max"]
+
+
+def test_a_lapsed_contract_falls_back_to_the_free_default(dev_private_key: bytes):
+    token = _sign(_contract("team", 800, subscription_until_days=-1), dev_private_key)
+    status = verify_license(token)
+    assert status.effective_tier == "free"
+    assert status.host_limit == 1, "the contract number belongs to the tier it was signed for"
+
+
+@pytest.mark.parametrize("bad", ["5000", True, 0, -3, 12.5])
+def test_a_malformed_contract_number_is_ignored(dev_private_key: bytes, bad):
+    token = _sign(_contract("team", bad), dev_private_key)
+    assert verify_license(token).host_limit == TIER_HOST_LIMIT["team"]

@@ -84,6 +84,14 @@ def _add(gw):
                 return json_error_response(
                     reason or "invalid schedule", status=400, code="validation_error"
                 )
+            from navig.core.coerce import coerce_bool  # noqa: PLC0415
+
+            # Cron has no year: a date-pinned schedule ("0 11 9 10 *") repeats every
+            # year. Refuse it unless the caller says that is the point.
+            if not coerce_bool(data.get("yearly"), default=False):
+                pin_err = CronParser.yearly_pin_error(schedule)
+                if pin_err:
+                    return json_error_response(pin_err, status=400, code="validation_error")
 
             timeout = data.get("timeout", 300)
             try:

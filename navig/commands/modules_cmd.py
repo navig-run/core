@@ -1,4 +1,8 @@
-"""navig modules — list / enable / disable / inspect operator modules.
+"""navig module / modules — SUPERSEDED by `navig store` (still works, hidden from --help).
+
+`navig store` is the one hub for everything connectable — modules included
+(`navig store list --kind module`, `navig store enable module:<id>`, `navig store info
+module:<id>`). Every verb here keeps working and names its store equivalent first.
 
 Modules are the tier-gated capability units surfaces render (Finance · DevOps ·
 Goals · Life · Projects · launchers · plugins). This command reads the canonical
@@ -14,7 +18,7 @@ from navig import console_helper as ch
 
 modules_app = typer.Typer(
     name="modules",
-    help="[deprecated → navig store] List and toggle operator modules.",
+    help="List and toggle operator modules (superseded → navig store)",
     no_args_is_help=False,
     invoke_without_command=True,
 )
@@ -22,7 +26,10 @@ modules_app = typer.Typer(
 
 @modules_app.callback()
 def _modules_callback(ctx: typer.Context):
-    ch.dim("[deprecated] `navig modules` is folding into `navig store` — one hub for everything.")
+    from navig.cli.superseded import hint  # noqa: PLC0415
+
+    group = ctx.info_name if ctx.info_name in ("module", "modules") else "modules"
+    hint(f"navig {group} {ctx.invoked_subcommand or 'list'}")
     if ctx.invoked_subcommand is None:
         _modules_list(dev=False)
         raise typer.Exit()

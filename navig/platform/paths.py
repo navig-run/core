@@ -653,7 +653,13 @@ def _is_system_service() -> bool:
     if is_unix():
         try:
             import pwd
-            if pwd.getpwuid(os.getuid()).pw_name == "navig":
+            # The legacy system deploy runs as a SYSTEM account named navig. A PERSON named
+            # navig (uid >= 1000, home under /home) is not a system install: treating it as one
+            # moved their config to /etc/navig and the daemon crash-looped on a real Debian VM.
+            entry = pwd.getpwuid(os.getuid())
+            if entry.pw_name == "navig" and (
+                entry.pw_uid < 1000 or not entry.pw_dir.startswith("/home/")
+            ):
                 return True
         except (ImportError, KeyError):
             pass

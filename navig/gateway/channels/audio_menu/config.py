@@ -96,6 +96,34 @@ PROVIDERS: dict[str, dict] = {
             "aura-angus-en": {"label": "Angus EN-IE (M)", "voices": []},
         },
     },
+    "mimo": {
+        "label": "Xiaomi MiMo (official)",
+        "models": {
+            "mimo-v2.5-tts": {
+                "label": "MiMo V2.5 TTS (free in promo, 9 built-in voices)",
+                "voices": ["mimo_default", "Mia", "Chloe", "Milo", "Dean"],
+            },
+            "mimo-v2.5-tts-voiceclone": {
+                "label": "Voice Clone (base64 mp3/wav sample)",
+                "voices": [],
+            },
+            "mimo-v2.5-tts-voicedesign": {
+                "label": "Voice Design (describe the voice)",
+                "voices": [],
+            },
+        },
+    },
+    "openrouter": {
+        "label": "OpenRouter (Fish Audio)",
+        "models": {
+            # Measured 2026-10-12: the "-free" variant 404s ("No endpoints
+            # found") — the pro id is the only routable one on OpenRouter.
+            "fish-audio/s2.1-pro": {
+                "label": "Fish Audio S2.1 Pro (multilingual, high quality)",
+                "voices": [],
+            },
+        },
+    },
     "google_cloud": {
         "label": "Google Cloud",
         "models": {

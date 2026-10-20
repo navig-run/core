@@ -1200,3 +1200,54 @@ async def test_claim_does_not_break_retry_scheduling(tmp_path, monkeypatch):
     assert job.last_status is JobStatus.FAILED
     assert job.retry_count == 1
     assert job.next_run < datetime.now() + timedelta(hours=1)  # ~5-min retry, not tomorrow
+
+
+# ─── NAVIG_EXEC: a local program, run directly ──────────────────────────────
+
+
+class _NoAI:
+    async def run_agent_turn(self, **_kw):  # pragma: no cover - must never run
+        raise AssertionError("a NAVIG_EXEC job must not become an AI turn")
+
+
+def _exec_job(command: str) -> CronJob:
+    return CronJob(id="x", name="exec", schedule="hourly", command=command)
+
+
+def test_exec_job_runs_the_program_and_never_asks_the_ai(tmp_path):
+    import sys
+
+    from navig.scheduler.cron_service import EXEC_PREFIX
+
+    svc = CronService(gateway=_NoAI(), storage_path=tmp_path)
+    line = f'"{sys.executable}" -c "print(\'from-exec\')"'
+    out = asyncio.run(svc._execute_job_command(_exec_job(EXEC_PREFIX + line)))
+    assert "from-exec" in out
+
+
+def test_exec_job_failure_is_a_failure(tmp_path):
+    import sys
+
+    from navig.scheduler.cron_service import EXEC_PREFIX
+
+    svc = CronService(gateway=_NoAI(), storage_path=tmp_path)
+    line = f'"{sys.executable}" -c "import sys; sys.exit(3)"'
+    with pytest.raises(RuntimeError, match="exit code 3"):
+        asyncio.run(svc._execute_job_command(_exec_job(EXEC_PREFIX + line)))
+
+
+def test_split_exec_command_keeps_windows_paths(monkeypatch):
+    import os
+
+    from navig.scheduler import cron_service
+
+    monkeypatch.setattr(os, "name", "nt")
+    assert cron_service.split_exec_command(
+        r'"C:\Program Files\node.exe" E:\repo\x.mjs --at 03:30'
+    ) == [
+        r"C:\Program Files\node.exe",
+        r"E:\repo\x.mjs",
+        "--at",
+        "03:30",
+    ]
+    assert cron_service.split_exec_command("   ") == []

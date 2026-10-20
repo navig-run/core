@@ -19,16 +19,23 @@ def _make_channel(
     running: bool = True,
     last_event_offset_s: float = 0.0,
     use_webhook: bool = False,
+    parked_on_webhook: bool = False,
+    registered_webhook: object = None,
 ) -> MagicMock:
     """Return a mock channel with _running, _last_event_at and _use_webhook set.
 
     ``_use_webhook`` MUST be set explicitly — a bare MagicMock auto-creates a
     truthy attribute, which the monitor now reads to skip webhook channels.
+    ``registered_webhook`` MUST default to None for the same reason: it stands
+    for the getWebhookInfo probe, and an auto-created callable MagicMock would
+    make every mock look like "webhook registered, not stale".
     """
     ch = MagicMock()
     ch._running = running
     ch._last_event_at = time.monotonic() - last_event_offset_s
     ch._use_webhook = use_webhook
+    ch._parked_on_webhook = parked_on_webhook
+    ch._registered_webhook_url = registered_webhook
     return ch
 
 
@@ -202,3 +209,90 @@ async def test_multiple_channels_independent():
     m = _make_monitor({"healthy": healthy, "stale": stale}, restart)
     await m._check_all()
     restart.assert_called_once_with("stale")
+
+
+@pytest.mark.asyncio
+async def test_poller_parked_on_a_webhook_is_never_restarted_on_silence():
+    """In Lighthouse mode the edge owns the webhook, so getUpdates is a guaranteed 409
+    and the poller parks — delivery flows through the webhook and silence is normal.
+    Before this, a quiet bot was restarted every 10 minutes (10/hr budget), measured
+    on the operator's daemon: 'channel telegram stale (last event 600 s ago)'."""
+    restart = AsyncMock()
+    ch = _make_channel(last_event_offset_s=3_600, parked_on_webhook=True)
+    monitor = _make_monitor({"telegram": ch}, restart_fn=restart)
+    await monitor._check_all()
+    restart.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_silent_poller_that_is_NOT_parked_is_still_restarted():
+    """The exemption is scoped: a genuinely wedged poller must still be restarted."""
+    restart = AsyncMock()
+    ch = _make_channel(last_event_offset_s=3_600, parked_on_webhook=False)
+    monitor = _make_monitor({"telegram": ch}, restart_fn=restart)
+    await monitor._check_all()
+    restart.assert_awaited()
+
+
+# ── provider-side truth: a registered webhook means NOT stale ───────────────
+
+
+def _make_channel_with_webhook_probe(last_event_offset_s: float, probe):
+    """A channel that is neither webhook-flagged nor parked, but can answer
+    `_registered_webhook_url()` (the getWebhookInfo path)."""
+    return _make_channel(last_event_offset_s=last_event_offset_s,
+                         use_webhook=False, parked_on_webhook=False,
+                         registered_webhook=probe)
+
+
+@pytest.mark.asyncio
+async def test_a_silent_channel_with_a_registered_webhook_is_not_restarted():
+    """Measured 2026-10: the webhook is registered through the Lighthouse edge
+    while the local `_use_webhook` flag is unset, so silence-staleness fired
+    and the bot was restarted every ~5-10 minutes (536 'Telegram bot started'
+    lines in one log) — each restart a latency window for arriving messages.
+    Telegram's own getWebhookInfo is the verdict that ends the flap."""
+    restart = AsyncMock()
+
+    async def _registered():
+        return "https://example.app/tg/secret"
+
+    ch = _make_channel_with_webhook_probe(3_600, _registered)
+    monitor = _make_monitor({"telegram": ch}, restart_fn=restart)
+
+    await monitor._check_all()
+
+    restart.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_silent_channel_with_NO_registered_webhook_is_still_restarted():
+    """The exemption is scoped: silence with no delivery route is real staleness."""
+    restart = AsyncMock()
+
+    async def _registered():
+        return None
+
+    ch = _make_channel_with_webhook_probe(3_600, _registered)
+    monitor = _make_monitor({"telegram": ch}, restart_fn=restart)
+
+    await monitor._check_all()
+
+    restart.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_failed_webhook_probe_does_not_restart_the_channel():
+    """An unreadable verdict is not breakage: falling through to the stale path
+    on a probe error would recreate the flap loop the exemption exists to end."""
+    restart = AsyncMock()
+
+    async def _boom():
+        raise RuntimeError("telegram api unreachable")
+
+    ch = _make_channel_with_webhook_probe(3_600, _boom)
+    monitor = _make_monitor({"telegram": ch}, restart_fn=restart)
+
+    await monitor._check_all()  # must not raise
+
+    restart.assert_not_awaited()

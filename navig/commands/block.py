@@ -56,7 +56,7 @@ def block_list(
         return
 
     if not blocks:
-        ch.info("No blocks installed. Try: navig install add block:navig-run/community/blocks/<id>")
+        ch.info("No blocks installed. Try: navig install add block:navig-run/registry/blocks/<id>")
         return
 
     if plain:
@@ -163,7 +163,7 @@ def block_doctor(
     if b is None:
         ch.warning(
             f"block '{block_id}' not found. Install it: "
-            f"navig install add block:navig-run/community/blocks/{block_id}")
+            f"navig install add block:navig-run/registry/blocks/{block_id}")
         raise typer.Exit(1)
 
     # probe=True: doctor is the one display path that DOES run the detect probes —
@@ -300,13 +300,19 @@ def block_sign(block_id: str = typer.Argument(..., help="Block id (or path to a 
 
 @block_app.command("verify-receipt")
 def block_verify_receipt(
-    path: str = typer.Argument(..., help="Path to a receipt JSON (e.g. ~/.navig/runtime/receipts/<id>.json)"),
+    path: str = typer.Argument(
+        ...,
+        help="Path to a receipt JSON (e.g. ~/.navig/runtime/receipts/<id>.json), "
+        "or the id of a mission receipt in the runtime store.",
+    ),
     as_json: bool = typer.Option(False, "--json", help="Emit the verdict and the chain as JSON."),
 ) -> None:
     """Verify a receipt's device signature — proves it wasn't altered after the run.
 
-    Also follows the block's child-receipt chain, so a composed outcome is
-    verifiable as a whole and not only at its top level.
+    Works for block receipts (a file) and mission receipts (an id — every mission,
+    including each cycle of a standing goal, leaves a signed one). Also follows a
+    block's child-receipt chain, so a composed outcome is verifiable as a whole and
+    not only at its top level.
     """
     from navig.license.device_keys import verify_receipt_dict
     from navig.platform.paths import resolve_user_path
@@ -314,13 +320,14 @@ def block_verify_receipt(
     # A receipt downloaded next to you (navig.run/proof: "download, then verify")
     # is a relative path typed in YOUR directory — not inside the active space.
     p = resolve_user_path(path)
-    if not p.exists():
+    stored = None if p.exists() else _stored_receipt(path)
+    if not p.exists() and stored is None:
         if as_json:
             ch.raw_print(json.dumps({"error": "receipt not found", "path": str(path)}, indent=2))
         else:
             ch.error(f"receipt not found: {path}")
         raise typer.Exit(1)
-    data = json.loads(p.read_text(encoding="utf-8"))
+    data = stored if stored is not None else json.loads(p.read_text(encoding="utf-8"))
     ok, reason = verify_receipt_dict(data)
     outcome = data.get("outcome", "?")
     cap = data.get("capability", "?")
@@ -350,6 +357,17 @@ def block_verify_receipt(
         raise typer.Exit(1)
 
     _verify_chain(data, p)
+
+
+def _stored_receipt(receipt_id: str) -> dict | None:
+    """A receipt from the runtime store by id (mission receipts live there, not in files)."""
+    try:
+        from navig.contracts.store import RuntimeStore
+
+        receipt = RuntimeStore().get_receipt(receipt_id.strip())
+    except Exception:  # noqa: BLE001 — an unreadable store reads as "not found"
+        return None
+    return receipt.to_dict() if receipt is not None else None
 
 
 def _verify_chain(data: dict, parent_path: Path) -> None:
@@ -572,7 +590,7 @@ def apply_command(
         _install_block(spec, dev_untrusted=dev_untrusted)
         block = find_block(block_id)
     if block is None:
-        ch.warning(f"block '{spec}' not found. Install it: navig install add block:navig-run/community/blocks/{block_id}")
+        ch.warning(f"block '{spec}' not found. Install it: navig install add block:navig-run/registry/blocks/{block_id}")
         raise typer.Exit(1)
 
     problems = validate_block(block)

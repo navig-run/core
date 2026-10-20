@@ -77,16 +77,21 @@ _TIER_SCAN_ORDER: tuple[RequestTier, ...] = (
     "SIMPLE",
 )
 
+# What each tier means — shared by the LLM prompt and the decision-model question.
+_TIER_DESCRIPTIONS: dict[str, str] = {
+    "SIMPLE": "factual lookup, single-step, no reasoning required",
+    "MEDIUM": "moderate complexity, some context, light reasoning",
+    "COMPLEX": "multi-step, domain knowledge, analytical depth",
+    "REASONING": "formal logic, proofs, deep causal or mathematical chains",
+    "AGENTIC": "autonomous task execution, tool use, multi-turn planning",
+}
+
 # System prompt sent with every LLM classification call.
 _SYSTEM_PROMPT: str = (
     "You are a prompt-complexity classifier.\n"
     "Categories:\n"
-    "  SIMPLE    — factual lookup, single-step, no reasoning required\n"
-    "  MEDIUM    — moderate complexity, some context, light reasoning\n"
-    "  COMPLEX   — multi-step, domain knowledge, analytical depth\n"
-    "  REASONING — formal logic, proofs, deep causal or mathematical chains\n"
-    "  AGENTIC   — autonomous task execution, tool use, multi-turn planning\n"
-    "Respond with ONLY one word from the list above. No punctuation."
+    + "".join(f"  {tier:<9} — {desc}\n" for tier, desc in _TIER_DESCRIPTIONS.items())
+    + "Respond with ONLY one word from the list above. No punctuation."
 )
 
 # ---------------------------------------------------------------------------
@@ -220,6 +225,32 @@ async def _call_llm(prompt: str) -> RequestTier:
     return tier
 
 
+async def _decide_tier(prompt: str) -> RequestTier | None:
+    """Ask the decision model for the tier; ``None`` means "use the LLM path"."""
+    from navig.agent import decide
+
+    answers = await decide.adecide(
+        prompt[:500],
+        [
+            decide.choice(
+                "tier",
+                "How complex is this request for an AI assistant to handle?",
+                _TIER_DESCRIPTIONS,
+            )
+        ],
+        use="telegram_triage",
+    )
+    if not answers or "tier" not in answers:
+        return None
+    tier = answers["tier"].answer
+    if tier not in _TIER_DESCRIPTIONS:
+        return None
+    logger.debug(
+        "llm_classifier: method=clef tier={} confidence={:.2f}", tier, answers["tier"].confidence
+    )
+    return tier  # type: ignore[return-value]  # membership-checked against the five tiers
+
+
 # ---------------------------------------------------------------------------
 # Public interface
 # ---------------------------------------------------------------------------
@@ -277,7 +308,12 @@ async def classify_by_llm(prompt: str) -> RequestTier:
         if cached is not None:
             return cached
 
-        tier = await _call_llm(prompt)
+        # A decision model (Clef, opt-in via `navig decider on`) answers first: it can
+        # only return one of the five tiers, with a calibrated confidence, in ~40-200 ms.
+        # None = off / unsure / unavailable → the LLM call below, exactly as before.
+        tier = await _decide_tier(prompt)
+        if tier is None:
+            tier = await _call_llm(prompt)
         _write_cache(key, tier)
         return tier
 

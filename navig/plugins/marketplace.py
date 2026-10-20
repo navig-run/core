@@ -5,7 +5,7 @@ A **marketplace** is a source (git repo or local dir) that ships a
 `.claude-plugin/marketplace.json` (or `marketplace.json`) listing installable
 plugins:
 
-    {"name": "navig-community",
+    {"name": "navig-registry",
      "plugins": [{"name": "telegram", "source": "./plugins/telegram",
                   "description": "Telegram manager", "version": "1.2.0"}]}
 
@@ -16,7 +16,7 @@ through the CC-compatible package host (`package.load_package`) before it lands
 in the plugins dir — a broken bundle is rejected, never copied.
 
 See `docs/plugin-spec.md`. Distribution is polyrepo: the canonical marketplace is
-`navig-community`; `api.navig.run` indexes it (control plane only, no user data).
+`navig-run/registry` (formerly `community`); `api.navig.run` indexes it (control plane only, no user data).
 """
 
 from __future__ import annotations

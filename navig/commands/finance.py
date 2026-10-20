@@ -1,36 +1,36 @@
-"""navig finance — beancount double-entry accounting integration.
+"""navig finance — SUPERSEDED. Finance lives in the NAVIG OS Finance app (the `finance`
+module: `navig store info module:finance`); there is no finance CLI.
 
-Install the optional finance extra to unlock full functionality:
-    pip install navig[finance]
+`balance` was a "not yet implemented" stub and `status` only reported whether the
+`beancount` package happened to be importable. The group stays registered so old
+invocations get a pointer — each prints where finance lives and exits 1.
 """
+
 import typer
 
-from navig.console_helper import get_console
+from navig.cli.superseded import moved
 
-finance_app = typer.Typer(help="Beancount / double-entry accounting tools", no_args_is_help=True)
-console = get_console()
+finance_app = typer.Typer(
+    help="There is no finance CLI (moved → NAVIG OS Finance app)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
 
-
-@finance_app.command("status")
-def finance_status():
-    """Show finance integration status."""
-    try:
-        import beancount  # noqa: F401
-
-        console.print("[green]beancount available.[/green]")
-    except ImportError:
-        console.print(
-            "[yellow]beancount not installed.[/yellow]  "
-            "Run: [bold]pip install navig[finance][/bold]"
-        )
+_ANY_ARGS = {"ignore_unknown_options": True, "allow_extra_args": True}
 
 
-@finance_app.command("balance")
-def finance_balance(
-    ledger: str = typer.Argument("", help="Path to beancount ledger file"),
-):
-    """Show account balances from a beancount ledger."""
-    from navig import console_helper as ch
+@finance_app.callback()
+def _finance_callback(ctx: typer.Context) -> None:
+    moved(f"navig finance {ctx.invoked_subcommand}" if ctx.invoked_subcommand else "navig finance")
 
-    ch.warning("navig finance balance is not yet implemented in this build.")
-    raise typer.Exit(1)
+
+@finance_app.command("status", context_settings=_ANY_ARGS)
+def finance_status() -> None:
+    """Moved — see `navig store info module:finance`."""
+    moved("navig finance status")
+
+
+@finance_app.command("balance", context_settings=_ANY_ARGS)
+def finance_balance() -> None:
+    """Moved — see `navig store info module:finance`."""
+    moved("navig finance balance")

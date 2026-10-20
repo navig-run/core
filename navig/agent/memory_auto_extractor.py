@@ -360,8 +360,15 @@ class MemoryAutoExtractor:
                         )
                     )
                 stored.append(fact)
-            except Exception:
-                logger.debug("Failed to store fact: %s", fact.fact[:60], exc_info=True)
+            except Exception as exc:
+                from navig.memory.fact_redaction import SensitiveContentError
+
+                if isinstance(exc, SensitiveContentError):
+                    # The proposal was nothing but a secret; never echo it into a log.
+                    logger.debug("Dropped a proposed fact that held only a secret")
+                    continue
+                # No fact text here: it is pre-redaction and may hold a secret.
+                logger.debug("Failed to store a %s fact: %s", fact.category, type(exc).__name__)
 
         return stored
 

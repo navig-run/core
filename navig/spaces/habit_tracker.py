@@ -68,11 +68,24 @@ def read_tracker(path: Path) -> list[dict]:
 
 
 def write_tracker(path: Path, rows: list[dict]) -> None:
+    """Replace the tracker ATOMICALLY.
+
+    It used to truncate the file and then write it, so a crash, a full disk or a
+    second writer landing mid-write left a torn or empty habits.csv — the whole
+    streak history. The CLI, the Telegram check-in and the deck tick all write it.
+    """
+    import io  # noqa: PLC0415
+
+    from navig.core.yaml_io import atomic_write_text  # noqa: PLC0415
+
+    buf = io.StringIO(newline="")
+    # LF, not csv's default CRLF: atomic_write_text writes in TEXT mode, which turns
+    # LF into the platform ending — a CRLF handed to it would land as CR CR LF.
+    writer = csv.DictWriter(buf, fieldnames=TRACKER_FIELDS, lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(rows)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=TRACKER_FIELDS)
-        writer.writeheader()
-        writer.writerows(rows)
+    atomic_write_text(path, buf.getvalue(), encoding="utf-8")
 
 
 def is_done(value: str) -> bool:
@@ -182,6 +195,35 @@ def last_card(chat_id: int) -> tuple[int | None, str | None]:
     entry = _chat_state(_read_state(), chat_id)
     mid = entry.get("message_id")
     return (int(mid) if mid is not None else None), entry.get("day")
+
+
+def remember_morning(chat_id: int, message_id: int, day: str) -> None:
+    """Record the MORNING card on its own, beside the last-card pointer.
+
+    The last-card pointer is shared: the 22:15 card overwrites it, so by evening
+    nothing knew which message the 08:00 card was. The morning card is reposted at
+    11:30 and removed at 19:00, and both need exactly that id."""
+    data = _read_state()
+    entry = _chat_state(data, chat_id)
+    entry["morning"] = {"message_id": int(message_id), "day": day}
+    data[str(chat_id)] = entry
+    _write_state(data)
+
+
+def morning_card(chat_id: int) -> tuple[int | None, str | None]:
+    """``(message_id, day)`` of the morning card still in *chat_id*, if any."""
+    slot = _chat_state(_read_state(), chat_id).get("morning")
+    if not isinstance(slot, dict) or slot.get("message_id") is None:
+        return None, None
+    return int(slot["message_id"]), slot.get("day")
+
+
+def forget_morning(chat_id: int) -> None:
+    data = _read_state()
+    entry = _chat_state(data, chat_id)
+    if entry.pop("morning", None) is not None:
+        data[str(chat_id)] = entry
+        _write_state(data)
 
 
 def mark_day_closed(chat_id: int, day: str) -> None:
@@ -368,3 +410,18 @@ def streak_for(rows: list[dict], habit: str, today: date) -> int:
         count += 1
         cursor -= timedelta(days=1)
     return count
+
+
+def mark_done_today(habit: str, path: Path | None = None, note: str = "") -> bool:
+    """Record *habit* as done today unless today already says it is done.
+
+    For one-tap surfaces (the deck tick). A row the operator logged with a value
+    (``navig habit log deep --value 2``) is already "done" and is left exactly as it
+    is. Returns True when a row was written.
+    """
+    target = path or tracker_path()
+    day = date.today().isoformat()
+    if is_done(day_map(target, day).get(habit, "")):
+        return False
+    upsert(target, day, habit, "yes", note)
+    return True

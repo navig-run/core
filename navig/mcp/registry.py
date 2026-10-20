@@ -28,6 +28,8 @@ _HEALTH_INTERVAL_S = 60.0
 #: that mattered" failure this tree already documents for `navig doctor`.
 _BACKOFF_BASE_S = 60.0
 _BACKOFF_MAX_S = 30 * 60.0
+# Backoff rounds after which an absent client's connect failures log at DEBUG.
+_QUIET_AFTER_FAILURES = 3
 
 
 class MCPClientManager:
@@ -484,13 +486,20 @@ class MCPClientManager:
         retry_delay: float = 5.0,
     ) -> None:
         """Attempt to connect *client*, retrying up to *max_attempts* times."""
+        # Same rule the health sweep applies to its own "is down" line: the first
+        # rounds are news, after that the peer is simply absent. A client that has
+        # failed _QUIET_AFTER_FAILURES backoff rounds logs at DEBUG, so a retired or
+        # stopped optional server cannot fill the log with WARN+ERROR forever.
+        quiet = self._reconnect_failures.get(client.id, 0) >= _QUIET_AFTER_FAILURES
+        warn = logger.debug if quiet else logger.warning
+        err = logger.debug if quiet else logger.error
         for attempt in range(max_attempts):
             try:
                 await client.connect()
                 logger.info("MCP client %s connected", client.id)
                 return
             except Exception as exc:
-                logger.warning(
+                warn(
                     "MCP client %s connect failed (attempt %d/%d): %s",
                     client.id,
                     attempt + 1,
@@ -501,7 +510,7 @@ class MCPClientManager:
                     # Exponential back-off: 5 s, 10 s, 15 s, …
                     await asyncio.sleep(retry_delay * (attempt + 1))
 
-        logger.error(
+        err(
             "MCP client %s failed to connect after %d attempt(s)",
             client.id,
             max_attempts,
@@ -594,7 +603,7 @@ class MCPClientManager:
                             # The first few rounds are news; after that the client is
                             # simply absent and saying so every minute is what buried
                             # the log. The retry itself continues, quietly.
-                            say = logger.info if failures < 3 else logger.debug
+                            say = logger.info if failures < _QUIET_AFTER_FAILURES else logger.debug
                             say(
                                 "MCP client %s is down — scheduling reconnect%s",
                                 client.id,

@@ -335,3 +335,22 @@ class TestGmailMailroomApi:
         assert r.metadata["internal_date"] == "1700000000000"
         assert r.metadata["in_reply_to"] == "<x@y>"
         assert r.metadata["cc"] == "c@c.com"
+
+    def test_send_raw_sends_the_message_exactly_as_built(self, connector):
+        """The mailroom outbox stamps its own Message-ID; send_raw must not rebuild it."""
+        import base64
+
+        posted = {}
+
+        async def mock_post(path, json_body=None):
+            posted["path"], posted["body"] = path, json_body
+            return {"id": "sent1", "threadId": "t9"}
+
+        connector._api_post = mock_post
+        raw = b"From: a@b.c\r\nTo: d@e.f\r\nMessage-ID: <navig.job1@b.c>\r\nSubject: s\r\n\r\nbody"
+        out = asyncio.run(connector.send_raw(raw, thread_id="t9"))
+        assert out["id"] == "sent1" and posted["path"] == "/users/me/messages/send"
+        assert posted["body"]["threadId"] == "t9"
+        assert base64.urlsafe_b64decode(posted["body"]["raw"]) == raw
+        asyncio.run(connector.send_raw(raw))
+        assert "threadId" not in posted["body"]

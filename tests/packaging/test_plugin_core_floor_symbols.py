@@ -233,3 +233,155 @@ def test_a_lazy_guarded_import_inside_a_function_counts_as_guarded(guard, tmp_pa
             return helper
         """)
     assert guard._imported_core_symbols(tmp_path) == {}
+
+
+# ---------------------------------------------------------------------------
+# Every plugin standalone vs. nothing found
+# ---------------------------------------------------------------------------
+
+
+def _plugin(root: Path, name: str, deps: list[str]) -> None:
+    d = root / name
+    d.mkdir(parents=True)
+    quoted = ", ".join(f'"{x}"' for x in deps)
+    (d / "pyproject.toml").write_text(
+        f'[project]\nname = "{name}"\nversion = "1.0"\ndependencies = [{quoted}]\n',
+        encoding="utf-8",
+    )
+
+
+def test_every_plugin_standalone_is_a_pass_not_a_vacuous_failure(guard, tmp_path, monkeypatch, capsys):
+    """Once no plugin declares navig there is no floor to hold — the goal, not a broken guard."""
+    _plugin(tmp_path, "navig-a", ["navig-sdk>=2.0"])
+    _plugin(tmp_path, "navig-b", ["requests"])
+    monkeypatch.setattr(guard, "PLUGINS", tmp_path)
+    assert guard.main([]) == 0
+    assert "all 2 plugin(s) are standalone" in capsys.readouterr().out
+
+
+def test_no_plugin_found_still_fails(guard, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(guard, "PLUGINS", tmp_path)
+    assert guard.main([]) == 1
+    assert "no plugin found" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# Stage A1 — the classification gap this guard was rewritten to close
+# ---------------------------------------------------------------------------
+
+
+def _sourced_plugin(root: Path, name: str, deps: list[str], source: str) -> Path:
+    """A plugin with both metadata AND source, so its imports are discoverable."""
+    d = root / name
+    d.mkdir(parents=True)
+    quoted = ", ".join(f'"{x}"' for x in deps)
+    (d / "pyproject.toml").write_text(
+        f'[project]\nname = "{name}"\nversion = "1.0"\ndependencies = [{quoted}]\n',
+        encoding="utf-8",
+    )
+    (d / "mod.py").write_text(source, encoding="utf-8")
+    return d
+
+
+def test_importing_core_without_a_floor_is_reported_but_not_failed(
+    guard, tmp_path, monkeypatch, capsys
+):
+    """The classification gap, closed the right way round.
+
+    Declaring no `navig` used to fold a plugin straight into "standalone" with its core
+    imports never counted. The fix counts them and NAMES the plugin — but it does not
+    fail, because `mode = "standalone"` is a promise two other guards actually test
+    (`check_plugins_publishable` at import time, and the empirical
+    `test_standalone_plugins_run_without_navig`, which blocks `navig` in a fresh
+    interpreter and runs the console script). Failing here would put this guard in charge
+    of a promise it has no way to test, and would block publishing over an assertion
+    already made elsewhere.
+    """
+    _sourced_plugin(
+        tmp_path, "navig-a", ["navig-sdk>=2.0"],
+        "from navig.core.coerce import coerce_bool\n",
+    )
+    monkeypatch.setattr(guard, "PLUGINS", tmp_path)
+    assert guard.main([]) == 0
+    out = capsys.readouterr().out
+    # Counted and named…
+    assert "STANDALONE, NOT FLOORED" in out
+    assert "navig-a" in out
+    assert "1 standalone-declared" in out
+    # …with the hand-off spelled out rather than implied…
+    assert "test_standalone_plugins_run_without_navig" in out
+    assert "RESIDUAL GAP" in out
+    # …and it must not be laundered into the clean-standalone bucket.
+    assert "0 standalone-clean" in out
+
+
+def test_the_coverage_line_always_names_what_was_not_verified(
+    guard, tmp_path, monkeypatch, capsys
+):
+    """The reader must see the split, not just the verdict — otherwise a pass is
+    indistinguishable from a pass over nothing."""
+    _sourced_plugin(tmp_path, "navig-loose", ["navig-sdk>=2.0"], "import navig.core\n")
+    _plugin(tmp_path, "navig-plain", ["requests"])
+    monkeypatch.setattr(guard, "PLUGINS", tmp_path)
+    guard.main([])
+    out = capsys.readouterr().out
+    assert "coverage:" in out
+    assert "1 standalone-declared" in out
+    assert "1 standalone-clean" in out
+
+
+def test_an_unresolvable_floor_does_not_erase_the_other_plugins(
+    guard, tmp_path, monkeypatch, capsys
+):
+    """One floor that cannot be fetched (offline, or a version never published) used to
+    `return 0` for the whole run — one plugin's problem ended the verdict for all."""
+    _plugin(tmp_path, "navig-floored", ["navig>=9.9"])
+    _sourced_plugin(tmp_path, "navig-loose", ["navig-sdk>=2.0"], "import navig.core\n")
+    monkeypatch.setattr(guard, "PLUGINS", tmp_path)
+    monkeypatch.setattr(guard, "_navig_surface", lambda version: None)
+
+    rc = guard.main([])
+    out = capsys.readouterr().out
+    # Nothing here is a failure, so this must not be red — but BOTH must be visible.
+    assert rc == 0
+    assert "SKIPPED" in out                  # the unresolvable floor is named, not swallowed
+    assert "navig-floored" in out
+    assert "navig-loose" in out              # …and the other plugin is still reported
+    assert "NO FLOOR VERIFIED" in out
+
+
+def test_a_declared_floor_still_reaches_a_real_verdict(
+    guard, tmp_path, monkeypatch, capsys
+):
+    """The original job, still intact: a plugin that declares a floor is checked against
+    a wheel, and a symbol core does not ship is a finding."""
+    _sourced_plugin(
+        tmp_path, "navig-floored", ["navig>=3.0"],
+        "from navig.store.contacts import create_schema\n",
+    )
+    monkeypatch.setattr(guard, "PLUGINS", tmp_path)
+    monkeypatch.setattr(
+        guard, "_navig_surface",
+        lambda version: ({"navig.store.contacts"}, {"navig.store.contacts": {"OTHER"}}),
+    )
+    assert guard.main([]) == 1
+    out = capsys.readouterr().out
+    assert "FAIL plugin core floor" in out
+    assert "create_schema" in out
+    assert "1 floor-verified" in out
+
+
+def test_a_floor_that_holds_is_still_a_pass(guard, tmp_path, monkeypatch, capsys):
+    _sourced_plugin(
+        tmp_path, "navig-ok", ["navig>=3.0"],
+        "from navig.store.contacts import create_schema\n",
+    )
+    monkeypatch.setattr(guard, "PLUGINS", tmp_path)
+    monkeypatch.setattr(
+        guard, "_navig_surface",
+        lambda version: ({"navig.store.contacts"}, {"navig.store.contacts": {"create_schema"}}),
+    )
+    assert guard.main([]) == 0
+    out = capsys.readouterr().out
+    assert "OK plugin core floor: 1 plugin(s)" in out
+    assert "UNVERIFIED" not in out

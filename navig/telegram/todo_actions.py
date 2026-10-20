@@ -127,17 +127,25 @@ def _store() -> Any:
 
 # ── keyboards ────────────────────────────────────────────────────────────────
 
-def _nav_row(active: str) -> list[dict[str, str]]:
-    """The view switcher. The active view is marked rather than removed — a button
-    that disappears when you are on its view makes the row jump under your thumb."""
-    rows = (
+def _nav_rows(active: str) -> list[list[dict[str, str]]]:
+    """The view switcher, as TWO rows of two.
+
+    Four buttons on one row left each a quarter of a phone's width, and Telegram cut
+    every Russian label to its first letters ("• 📋 В…", "📥 Вхо…", "📅 Сег…") — the
+    switcher became four icons and an ellipsis. Two per row fits "📥 Входящие".
+
+    The active view is marked rather than removed — a button that disappears when you
+    are on its view makes the row jump under your thumb. The mark is a single leading
+    "•", because a trailing one costs width on exactly the labels that need it.
+    """
+    views = (
         ("all", "📋", "All"),
         ("inbox", "📥", "Inbox"),
         ("today", "📅", "Today"),
         ("cats", "🗂", "Category"),
     )
     out: list[dict[str, str]] = []
-    for key, emoji, fallback in rows:
+    for key, emoji, fallback in views:
         # `cats` is the view name; the locale key reads `category`, which is what the
         # button says. Keeping them separate means renaming one cannot silently
         # repoint the other.
@@ -145,11 +153,11 @@ def _nav_row(active: str) -> list[dict[str, str]]:
         label = f"{emoji} {word}"
         out.append(
             {
-                "text": f"• {label} •" if key == active else label,
+                "text": f"• {label}" if key == active else label,
                 "callback_data": f"td:v:{key}",
             }
         )
-    return out
+    return [out[:2], out[2:]]
 
 
 def build_list_keyboard(
@@ -182,10 +190,58 @@ def build_list_keyboard(
         extra = len(todos) - limit
         more = _t("pim.button.more", n=extra) or f"… and {extra} more"
         rows.append([{"text": more, "callback_data": "td:v:all"}])
-    rows.append(_nav_row(view))
+    rows.extend(_nav_rows(view))
+    # Appointments and pings are their own views now — one tap away, never mixed in.
+    agenda = _t("pim.agenda.nav") or "Agenda"
+    pings = _t("pim.nav.reminders") or "Reminders"
+    rows.append([
+        {"text": f"📅 {agenda}", "callback_data": "ag:v"},
+        {"text": f"🔔 {pings}", "callback_data": "rv:v"},
+    ])
     add = _t("pim.button.add") or "Add a task"
     rows.append([{"text": f"＋ {add}", "callback_data": "td:add"}])
     return {"inline_keyboard": rows}
+
+
+def _category_chip(cat: dict[str, Any]) -> str:
+    from navig.pim.render import category_label  # noqa: PLC0415
+
+    emoji = str(cat.get("emoji") or "🗂")
+    return f"{emoji} {cat.get('label') or category_label(str(cat['name']))}"
+
+
+def build_added(todo: dict[str, Any], *, now: datetime | None = None) -> tuple[str, dict[str, Any]]:
+    """The reply to a quick capture: what was saved, and ONE tap to file it.
+
+    Capture is the shortest path on purpose ("/todo buy paper"), so the category is
+    asked AFTER, as buttons, instead of being a field you must fill first. Typing
+    `#work` in the line skips the question.
+    """
+    import html  # noqa: PLC0415
+
+    now = now or local_now()
+    title = html.escape(str(todo.get("title") or ""))
+    added = _t("pim.added", title=title) or f"✓ <b>Added</b>: {title}"
+    lines = [added]
+    if todo.get("due_at"):
+        lines.append(f"🕐 {_short_date(todo.get('due_at'), now)}")
+    rows: list[list[dict[str, str]]] = []
+    category = str(todo.get("category") or "")
+    if category:
+        cat = _store().get_category(category) or {"name": category}
+        lines.append(_category_chip(cat))
+    else:
+        lines.append(f"<i>{_t('pim.pick_category') or 'Pick a category:'}</i>")
+        chips = [
+            {"text": _category_chip(c), "callback_data": f"td:k:{todo['id']}:{i}"}
+            for i, c in enumerate(_store().list_categories())
+        ][:8]
+        rows.extend(chips[i : i + 2] for i in range(0, len(chips), 2))
+    rows.append([
+        {"text": f"⋯ {_t('pim.button.details') or 'Details'}", "callback_data": f"td:o:{todo['id']}"},
+        {"text": f"📋 {_t('pim.rv.tasks') or 'Tasks'}", "callback_data": "td:v:all"},
+    ])
+    return "\n".join(lines), {"inline_keyboard": rows}
 
 
 def build_category_keyboard(categories: list[dict[str, Any]]) -> dict[str, Any]:
@@ -209,7 +265,7 @@ def build_category_keyboard(categories: list[dict[str, Any]]) -> dict[str, Any]:
             pair = []
     if pair:
         rows.append(pair)
-    rows.append(_nav_row("cats"))
+    rows.extend(_nav_rows("cats"))
     return {"inline_keyboard": rows}
 
 
@@ -236,12 +292,16 @@ def build_detail_keyboard(todo: dict[str, Any]) -> dict[str, Any]:
     rows.extend([quick[:3], quick[3:]])
 
     leads = set(todo.get("remind_before") or [])
+    # The first three picker leads, plus any OTHER lead that is on — a chat-captured
+    # appointment starts with "1h", and a reminder you cannot see is one you cannot
+    # switch off.
+    shown = [*LEAD_TIMES[:3], *(t for t in LEAD_TIMES[3:] if t in leads)]
     rows.append([
         {
             "text": ("🔔 " if token in leads else "") + describe_lead(token).replace(" before", ""),
             "callback_data": f"td:r:{tid}:{token}",
         }
-        for token in LEAD_TIMES[:3]
+        for token in shown
     ])
 
     current = todo.get("recur")
@@ -330,7 +390,8 @@ def capture(text: str, *, now: datetime | None = None, origin: str = "manual") -
     matches "monday 9:30" and the recurrence stays in the title.
     """
     now = now or local_now()
-    rest, recur = split_recurrence(text or "")
+    raw, category = _take_category(text or "")
+    rest, recur = split_recurrence(raw)
     title, due = split_due(rest, now)
     title = title.strip()
     if not title:
@@ -341,7 +402,30 @@ def capture(text: str, *, now: datetime | None = None, origin: str = "manual") -
         due_at=to_utc_iso(due) if due else None,
         recur=recur,
         origin=origin,
+        category=category,
     )
+
+
+def _take_category(text: str) -> tuple[str, str]:
+    """Pull a `#work` token out of a captured line → (rest, category key).
+
+    Matches a category's key or its label, case-insensitively; an unknown word becomes
+    a new category on the spot — the same rule as `pim.service.parse_capture`, against
+    THIS module's store so a test's isolated board is the one written.
+    """
+    from navig.pim.service import _CATEGORY_TOKEN  # noqa: PLC0415
+
+    m = _CATEGORY_TOKEN.search(text)
+    if not m:
+        return text, ""
+    token = m.group(1).strip().lower()
+    rest = (text[: m.start()] + text[m.end():]).strip()
+    store = _store()
+    for cat in store.list_categories(include_archived=True):
+        if cat["name"] == token or (cat.get("label") or "").strip().lower() == token:
+            return rest, str(cat["name"])
+    created = store.ensure_category(token)
+    return rest, str(created["name"]) if created else token
 
 
 def _quick_date(slot: str, now: datetime) -> datetime | None:
@@ -430,6 +514,9 @@ async def handle_callback(
             todo = store.update_todo(parts[1], {"origin": "manual"})
             if todo is None:
                 return _t("pim.toast.gone") or "That task is gone"
+            # A suggestion schedules nothing until it is kept (see
+            # `appointments.save`), so keeping it is when its reminders begin.
+            _resync_reminders(store, todo, user_id=user_id, chat_id=chat_id, now=now)
             await _rerender_list(channel, chat_id, message_id, now)
             return _t("pim.toast.kept") or "Kept"
 
@@ -502,6 +589,21 @@ async def handle_callback(
                 return _t("pim.toast.repeat_off") or "Repeat off"
             word = _t(f"pim.recur.{recur}") or recur
             return _t("pim.toast.repeats", recur=word) or f"Repeats {word}"
+
+        if action == "k" and len(parts) >= 3:
+            # File a just-captured task. The category is addressed by ORDINAL into the
+            # managed list (names never ride in callback_data: 64-byte budget, and a
+            # rename must not strand an old button).
+            card_id = parts[1]
+            cats = store.list_categories()
+            index = int(parts[2]) if parts[2].isdigit() else -1
+            if not 0 <= index < len(cats):
+                return _t("pim.toast.gone") or "That category is gone"
+            todo = store.update_todo(card_id, {"category": cats[index]["name"]})
+            if todo is None:
+                return _t("pim.toast.gone") or "That task is gone"
+            await _edit(channel, chat_id, message_id, *build_added(todo, now=now))
+            return _category_chip(cats[index])
 
         if action == "add":
             return _t("pim.toast.add_hint") or "Send: /todo <task> [when]"

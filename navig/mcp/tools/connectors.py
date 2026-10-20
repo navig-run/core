@@ -21,10 +21,12 @@ import asyncio
 import atexit
 import concurrent.futures
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from navig.connectors.registry import get_connector_registry
 from navig.connectors.types import Action, ActionType
+from navig.mcp.annotations import connector_annotations
 
 logger = logging.getLogger("navig.mcp.tools.connectors")
 
@@ -42,15 +44,29 @@ atexit.register(_POOL.shutdown, wait=False)
 # ---------------------------------------------------------------------------
 
 
+#: Hard ceiling on ``limit`` for a connector search. The handler clamps to the same bound
+#: (``_clamp_limit``), so the schema cannot promise 50 while the runtime happily asks a
+#: provider for 10 000 rows.
+MAX_SEARCH_LIMIT = 50
+DEFAULT_SEARCH_LIMIT = 5
+
+
 def _search_input_schema() -> dict[str, Any]:
     return {
         "type": "object",
         "properties": {
-            "query": {"type": "string", "description": "Natural-language search query"},
+            "query": {
+                "type": "string",
+                "description": "Natural-language query, e.g. 'invoices from Acme last month'",
+            },
             "limit": {
                 "type": "integer",
-                "description": "Maximum number of results to return",
-                "default": 5,
+                "description": (
+                    f"Maximum number of results to return ({1}-{MAX_SEARCH_LIMIT})"
+                ),
+                "default": DEFAULT_SEARCH_LIMIT,
+                "minimum": 1,
+                "maximum": MAX_SEARCH_LIMIT,
             },
         },
         "required": ["query"],
@@ -63,7 +79,11 @@ def _fetch_input_schema() -> dict[str, Any]:
         "properties": {
             "resource_id": {
                 "type": "string",
-                "description": "Native resource ID to fetch",
+                "minLength": 1,
+                "description": (
+                    "Native id of the item, exactly as returned by the matching "
+                    "connector_<id>_search result"
+                ),
             },
         },
         "required": ["resource_id"],
@@ -76,22 +96,44 @@ def _act_input_schema() -> dict[str, Any]:
         "properties": {
             "action_type": {
                 "type": "string",
+                "enum": [action.value for action in ActionType],
                 "description": (
-                    "Action to perform. Allowed values: "
-                    "reply, create, update, delete, archive, label, send, move"
+                    "Write to perform. The provider must support it — a value outside its "
+                    "supported set is refused with success: false, not silently applied."
                 ),
             },
             "resource_id": {
                 "type": "string",
-                "description": "ID of the resource to act on (if applicable)",
+                "minLength": 1,
+                "description": (
+                    "Native id of the item to change, when the action targets an existing "
+                    "item (reply, update, delete, archive, label, move). Omit it for create/send."
+                ),
             },
             "params": {
                 "type": "object",
-                "description": "Action-specific parameters (e.g. body, subject, labels)",
+                "description": (
+                    "Action-specific payload, e.g. {to, subject, body} for send, "
+                    "{body} for reply, {add_labels, remove_labels} for label"
+                ),
             },
         },
         "required": ["action_type"],
     }
+
+
+def _clamp_limit(value: Any) -> int:
+    """Coerce ``limit`` to an int inside ``1..MAX_SEARCH_LIMIT``.
+
+    The schema states the bound, but a client is free to ignore a schema — and the old
+    handler forwarded whatever arrived straight to the provider (``limit=10000`` became
+    ten thousand rows from Gmail). Clamping is what makes the advertised bound true.
+    """
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        limit = DEFAULT_SEARCH_LIMIT
+    return max(1, min(limit, MAX_SEARCH_LIMIT))
 
 
 def _list_connectors_input_schema() -> dict[str, Any]:
@@ -116,6 +158,103 @@ def _health_input_schema() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Per-capability definitions — title, description, annotations
+# ---------------------------------------------------------------------------
+#
+# A connector exposes up to three verbs and the name alone does not tell an agent which to
+# reach for, so each description answers four questions: what the verb does, what comes
+# back, which sibling continues the workflow, and what it will NOT do.
+#
+# They are built here from the manifest's capability flags — deliberately NOT from
+# ``manifest.description``. That text describes the CONNECTOR ("Search, read, send, and
+# manage Gmail messages"), so appending it to a search-only tool advertised send and
+# delete on a schema that cannot reach them. That is the defect the published
+# tool-definition evaluation scored 2.2-2.8/5: search tools claiming write capabilities
+# while annotated ``destructiveHint: true``.
+
+
+@dataclass(frozen=True)
+class _Provider:
+    """The manifest fields a tool definition needs, read once behind the guard.
+
+    A hostile or half-built manifest can raise from any property (``display_name`` is a
+    property on real connectors), and that must skip ONE connector, never take the whole
+    catalogue down — which is why the fields are snapshotted in the ``try`` instead of
+    being touched later by each builder.
+    """
+
+    display_name: str
+    can_search: bool
+    can_fetch: bool
+    can_act: bool
+
+
+def _title(provider: _Provider, operation: str) -> str:
+    """Human label for one connector capability, e.g. ``Search Gmail``."""
+    display = provider.display_name
+    return {
+        "search": f"Search {display}",
+        "fetch": f"Read one {display} item",
+        "act": f"Change {display}",
+    }[operation]
+
+
+def _search_description(cid: str, provider: _Provider) -> str:
+    parts = [
+        f"Find {provider.display_name} resources matching a query. Read-only: nothing is changed.",
+        "Returns matching items with their native id, title, preview, url and timestamp; "
+        "an empty list means nothing matched.",
+    ]
+    if provider.can_fetch:
+        parts.append(f"Pass an item's id to connector_{cid}_fetch to read it in full.")
+    if provider.can_act:
+        parts.append(f"To change data instead, use connector_{cid}_act.")
+    return " ".join(parts)
+
+
+def _fetch_description(cid: str, provider: _Provider) -> str:
+    return (
+        f"Read one {provider.display_name} item by the id returned from connector_{cid}_search. "
+        "Read-only: returns the item's full content and metadata. An id the connected account "
+        "cannot see surfaces as an error or a null resource — never as a different item."
+    )
+
+
+def _act_description(cid: str, provider: _Provider) -> str:  # noqa: ARG001 - mirrors the sibling builders
+    return (
+        f"Change data in {provider.display_name}: reply, create, update, delete, archive, "
+        "label, send or move — whichever this provider supports. Pass resource_id for an "
+        "existing item and params for the payload; returns success plus the affected "
+        "resource, or success: false with the reason. An unsupported action is refused, "
+        "never silently applied."
+    )
+
+
+_DEFINITION_BUILDERS: dict[str, Any] = {
+    "search": (_search_input_schema, _search_description),
+    "fetch": (_fetch_input_schema, _fetch_description),
+    "act": (_act_input_schema, _act_description),
+}
+
+
+def _connector_tool(cid: str, provider: _Provider, operation: str) -> dict[str, Any]:
+    """One complete MCP tool definition for a connector capability.
+
+    Complete on purpose: ``register()`` copies title and annotations through, and
+    ``navig.mcp.annotations.annotate_tools`` only fills blanks (``setdefault``), so the
+    generator that knows the provider's capability matrix owns the verdict.
+    """
+    schema_fn, description_fn = _DEFINITION_BUILDERS[operation]
+    return {
+        "name": f"connector_{cid}_{operation}",
+        "title": _title(provider, operation),
+        "description": description_fn(cid, provider),
+        "annotations": connector_annotations(operation),
+        "inputSchema": schema_fn(),
+    }
+
+
 def list_connector_tools(registry=None) -> list[dict[str, Any]]:
     """Return one MCP tool-schema dict per connector capability.
 
@@ -134,6 +273,7 @@ def list_connector_tools(registry=None) -> list[dict[str, Any]]:
     tools: list[dict[str, Any]] = [
         {
             "name": "connector_list",
+            "title": "List connectors",
             "description": (
                 "List all registered connectors with their id, display name, domain, "
                 "status, and capability flags (can_search / can_fetch / can_act)."
@@ -142,6 +282,7 @@ def list_connector_tools(registry=None) -> list[dict[str, Any]]:
         },
         {
             "name": "connector_health",
+            "title": "Check connector health",
             "description": (
                 "Probe the health of a specific connector and return latency + ok status."
             ),
@@ -152,8 +293,14 @@ def list_connector_tools(registry=None) -> list[dict[str, Any]]:
     for cid, cls in reg.all_classes().items():
         try:
             manifest = cls.manifest
-            display = manifest.display_name
-            desc = manifest.description
+            # Snapshot every field the builders need INSIDE the guard: a manifest property
+            # that raises must cost us one connector, not the catalogue.
+            provider = _Provider(
+                display_name=manifest.display_name,
+                can_search=bool(manifest.can_search),
+                can_fetch=bool(manifest.can_fetch),
+                can_act=bool(manifest.can_act),
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Connector %r: manifest access failed (%s) — skipping MCP tool registration",
@@ -162,35 +309,13 @@ def list_connector_tools(registry=None) -> list[dict[str, Any]]:
             )
             continue
 
-        if manifest.can_search:
-            tools.append(
-                {
-                    "name": f"connector_{cid}_search",
-                    "description": f"Search {display}. {desc}",
-                    "inputSchema": _search_input_schema(),
-                }
-            )
-
-        if manifest.can_fetch:
-            tools.append(
-                {
-                    "name": f"connector_{cid}_fetch",
-                    "description": f"Fetch a single resource from {display} by its ID.",
-                    "inputSchema": _fetch_input_schema(),
-                }
-            )
-
-        if manifest.can_act:
-            tools.append(
-                {
-                    "name": f"connector_{cid}_act",
-                    "description": (
-                        f"Execute a write action on {display} "
-                        "(reply, create, update, delete, archive, label, send, move)."
-                    ),
-                    "inputSchema": _act_input_schema(),
-                }
-            )
+        for operation, enabled in (
+            ("search", provider.can_search),
+            ("fetch", provider.can_fetch),
+            ("act", provider.can_act),
+        ):
+            if enabled:
+                tools.append(_connector_tool(cid, provider, operation))
 
     return tools
 
@@ -280,7 +405,7 @@ async def handle_connector_call(
 
     if operation == "search":
         query = params.get("query", "")
-        limit = int(params.get("limit", 5))
+        limit = _clamp_limit(params.get("limit", DEFAULT_SEARCH_LIMIT))
         results = await connector.search(query, limit=limit)
         return {"results": [r.to_dict() for r in results]}
 
@@ -398,14 +523,14 @@ def register(server: Any) -> None:
 
     tool_list = list_connector_tools()
 
-    # Schema dict — used by tools/list to advertise the tool surface
+    # Schema dict — used by tools/list to advertise the tool surface. Every field the
+    # generator set travels with it: title and annotations are part of the definition, not
+    # decoration (a dropped annotation makes annotate_tools fall back to its conservative
+    # default and the read verbs reappear as destructive).
+    _DEFINITION_FIELDS = ("name", "title", "description", "annotations", "inputSchema")
     server.tools.update(
         {
-            t["name"]: {
-                "name": t["name"],
-                "description": t["description"],
-                "inputSchema": t["inputSchema"],
-            }
+            t["name"]: {key: t[key] for key in _DEFINITION_FIELDS if key in t}
             for t in tool_list
         }
     )

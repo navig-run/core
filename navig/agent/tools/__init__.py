@@ -9,7 +9,7 @@ Tool groups
 -----------
 ``register_core_tools()``   — bash_exec, read_file, write_file, list_files
 
-``register_search_tools()`` — search, web_fetch
+``register_search_tools()`` — search, web_fetch, domain_lookup
 
 ``register_memory_tools()`` — memory_read, memory_write, memory_delete, kb_lookup
 
@@ -21,6 +21,12 @@ Tool groups
 ``register_background_task_tools()`` — background_task_start, _status, _output, _kill
 
 ``register_worktree_tools()``       — worktree_create, _list, _merge, _remove
+
+``register_chat_media_tools()``     — chat_send_file (deliver a generated file
+                                      back to the conversation's chat)
+
+``register_read_aloud_tools()``     — read_aloud (the bedtime reader: "read this to
+                                      me"; only when navig-audio is installed)
 
 ``register_all_tools()``    — convenience wrapper that calls all of the above
 
@@ -51,14 +57,16 @@ def register_core_tools() -> None:
 
 
 def register_search_tools() -> None:
-    """Register search (DuckDuckGo) and web_fetch tools."""
+    """Register search (DuckDuckGo), web_fetch and domain_lookup tools."""
     from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+    from navig.tools.domain_lookup import DomainLookupTool
     from navig.tools.search import SearchTool
     from navig.tools.web_fetch import WebFetchTool
 
     _AGENT_REGISTRY.register(SearchTool(), toolset="search")
     _AGENT_REGISTRY.register(WebFetchTool(), toolset="search")
-    logger.debug("Agent search tools registered: search, web_fetch")
+    _AGENT_REGISTRY.register(DomainLookupTool(), toolset="search")
+    logger.debug("Agent search tools registered: search, web_fetch, domain_lookup")
 
 
 def register_memory_tools() -> None:
@@ -281,6 +289,20 @@ def register_pim_tools() -> None:
     _register()
 
 
+def register_calendar_tools() -> None:
+    """Register ``calendar_find_slots`` — read-only free/busy over Google Calendar."""
+    from navig.agent.tools.calendar_tools import register_calendar_tools as _register
+
+    _register()
+
+
+def register_prompt_tools() -> None:
+    """Register ``prompt_library_search`` / ``prompt_library_get`` — the prompt library, read-only."""
+    from navig.agent.tools.prompt_tools import register_prompt_tools as _register
+
+    _register()
+
+
 def register_skill_tools() -> None:
     """Register ``manage_skills`` — the escape hatch when auto-activation misses.
 
@@ -290,6 +312,33 @@ def register_skill_tools() -> None:
     from navig.agent.tools.skill_tools import register_skill_tools as _register
 
     _register()
+
+
+def register_chat_media_tools() -> None:
+    """Register ``chat_send_file`` — hand a generated file back to the chat.
+
+    Delegates to the module that owns the tool so there is exactly one
+    registration site to keep correct.
+    """
+    from navig.agent.tools.chat_media_tools import register_chat_media_tools as _register
+
+    _register()
+
+
+def register_read_aloud_tools() -> None:
+    """Register ``read_aloud`` — "read this to me" (bedtime reader).
+
+    Delegates to the module that owns the tool. It registers behind an availability
+    check, so a machine without the ``navig-audio`` plugin never offers it.
+    """
+    from navig.agent.tools.read_aloud_tool import register_read_aloud_tools as _register
+
+    _register()
+def register_search_all_tools() -> None:
+    """Register search_all — one search across the user's own sources (+ web)."""
+    from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+    from navig.agent.tools.search_all_tool import SearchAllTool
+    _AGENT_REGISTRY.register(SearchAllTool(), toolset="search_all")
 
 
 def register_all_tools() -> None:
@@ -316,6 +365,11 @@ def register_all_tools() -> None:
         ("skills", register_skill_tools),
         ("todo", register_todo_tools),
         ("tasks", register_pim_tools),
+        ("calendar", register_calendar_tools),
+        ("prompts", register_prompt_tools),
+        ("chat_media", register_chat_media_tools),
+        ("read_aloud", register_read_aloud_tools),
+        ("search_all", register_search_all_tools),
     ]:
         try:
             fn()

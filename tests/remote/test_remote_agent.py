@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -772,3 +773,82 @@ class TestLargePayloadTempFile:
         assert result.success is True
         call_cmd = mock_sub.call_args[0][0]
         assert "--b64" in call_cmd
+
+
+# ═════════════════════════════════════════════════════════════
+# Authorization contract — `--yes` is confined, callers are classified
+# ═════════════════════════════════════════════════════════════
+
+
+class TestAutoConfirmContract:
+    """The executor always appends `--yes`, so a subprocess confirm can never be the
+    authorization decision for agent-driven remote execution — the ApprovalGate is.
+    That is only safe while (a) no OTHER agent-side module teaches a subprocess to
+    skip its confirm and (b) every production caller of the executor is either a
+    gated agent tool or a read-only one. Gate 0E closed the bypass these guard."""
+
+    def test_built_commands_carry_the_auto_confirm_flag(self):
+        assert "--yes" in _build_navig_command("ls /var/log")
+        assert "--yes" in _build_navig_file_command("/tmp/cmd.sh")
+
+    def test_append_yes_appears_only_in_remote_agent_module(self):
+        """Source-level confinement inside the agent tree.
+
+        Other core modules (`commands/menu.py`, `commands/skills.py`) also append
+        `--yes`, but they are interactive CLI paths with their own confirm upstream;
+        inside `navig/agent/` the executor module is the ONLY place allowed to teach
+        a subprocess to skip its prompt.
+        """
+        import navig
+
+        agent_root = Path(navig.__file__).parent / "agent"
+        assert agent_root.is_dir(), f"agent package not found at {agent_root}"
+
+        offenders = [
+            p.relative_to(agent_root).as_posix()
+            for p in agent_root.rglob("*.py")
+            if p.name != "remote_agent.py"
+            and b'append("--yes")' in p.read_bytes()
+        ]
+        assert not offenders, (
+            "A module other than remote_agent.py appends --yes inside navig/agent/ — "
+            "it would skip a subprocess confirm without being classified by the "
+            "authorization contract:\n" + "\n".join(f"  {o}" for o in offenders)
+        )
+
+        src = (agent_root / "remote_agent.py").read_bytes()
+        assert src.count(b'append("--yes")') == 2, (
+            "expected exactly the two command builders "
+            "(_build_navig_command, _build_navig_file_command) to append --yes"
+        )
+
+    def test_every_production_caller_of_the_executor_is_classified(self):
+        """Inventory guard: grep the production tree at test time.
+
+        A new production file that touches `RemoteAgentExecutor` without being
+        classified here fails — each caller must be an ApprovalGate-gated tool
+        (`remote_execute`, `remote_multi_host`) or a read-only one
+        (`remote_file_read`), per the contract in `execute_command`'s docstring.
+        """
+        import navig
+        from navig.tools.approval import DESTRUCTIVE_TOOLS
+
+        root = Path(navig.__file__).parent
+        executor_self = root / "agent" / "remote_agent.py"
+        callers = {
+            p.relative_to(root).as_posix()
+            for p in root.rglob("*.py")
+            if p.resolve() != executor_self.resolve()
+            and b"RemoteAgentExecutor" in p.read_bytes()
+        }
+
+        assert callers == {"agent/tools/remote_tools.py"}, (
+            "Production callers of RemoteAgentExecutor changed. Each must be an "
+            "ApprovalGate-gated tool or a read-only tool (see the contract in "
+            "remote_agent.execute_command's docstring); classify these:\n"
+            + "\n".join(f"  {c}" for c in sorted(callers))
+        )
+
+        # The classified caller's command-running tools must actually be gated —
+        # being listed above is not itself a gate.
+        assert {"remote_execute", "remote_multi_host"} <= set(DESTRUCTIVE_TOOLS)

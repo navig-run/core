@@ -38,6 +38,7 @@ class LinearConnector(BaseConnector):
         oauth_scopes=["read", "write", "issues:create"],
         oauth_provider="linear",
         requires_oauth=True,
+        oauth_app=("linear", "LINEAR", "Linear OAuth app"),
         can_search=True,
         can_fetch=True,
         can_act=True,

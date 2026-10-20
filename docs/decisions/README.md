@@ -10,3 +10,4 @@ sequentially; never edit a decided ADR's intent — supersede it with a new one.
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
 | [0001](0001-core-stays-python-no-native-host-rewrite.md) | `navig-core` stays Python; no native (Rust/Go) host rewrite | Accepted | 2026-06-19 |
+| [0002](0002-media-modular-ownership.md) | Media stays modular: one owner per operation, not one plugin | Accepted | 2026-10-16 |

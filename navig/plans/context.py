@@ -18,10 +18,18 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+# wiki search empty-verdict cache — see PlanContext._search_wiki
+_WIKI_EMPTY_TTL_S = 15 * 60.0
+_wiki_empty_until: dict[str, float] = {}
 from typing import Any
 
 from navig.plans.frontmatter import (
@@ -39,6 +47,33 @@ from navig.plans.frontmatter import (
 from navig.platform import paths
 
 logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────────────────────
+# Process-level gather cache
+# ─────────────────────────────────────────────────────────────
+# ``gather()`` is a wiki search + several disk-bound reads that cost ~5s cold.
+# It was previously cached only on each ConversationalAgent INSTANCE, so every
+# new session (a new chat_id → a new agent) paid the full cost again on its
+# first substantive turn, and the gateway's warmup — which uses a throwaway
+# agent — could not pre-pay it for the real sessions. This shared snapshot cache
+# lets warmup prime it once and every session's first turn read it instantly.
+# The TTL matches the per-instance TTL (``_PLAN_CTX_TTL`` in agent.conv.agent),
+# so ``/plans update`` propagation is bounded exactly as before — this only
+# shares the snapshot across instances, it does not make it staler.
+_GATHER_CACHE_TTL = 300.0
+_GATHER_CACHE: dict[tuple, tuple[float, dict[str, Any]]] = {}
+_GATHER_LOCK = threading.Lock()
+
+
+def clear_gather_cache() -> None:
+    """Drop the process-level ``gather()`` snapshot cache.
+
+    Call after a write that changes plan/wiki/docs state (e.g. ``/plans
+    update``) when a sub-TTL refresh is wanted; otherwise the ``_GATHER_CACHE_TTL``
+    bound applies, identical to the long-standing per-instance behaviour.
+    """
+    with _GATHER_LOCK:
+        _GATHER_CACHE.clear()
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -102,6 +137,15 @@ class PlanContext:
         """
         errors: dict[str, str] = {}
         space_name = self._resolve_space_name(space)
+
+        # Serve a fresh shared snapshot if one exists (see _GATHER_CACHE note).
+        cache_key = (space_name, self.space_root, self.mcp_enabled, str(self.cwd))
+        _now = time.time()
+        with _GATHER_LOCK:
+            hit = _GATHER_CACHE.get(cache_key)
+            if hit is not None and (_now - hit[0]) < _GATHER_CACHE_TTL:
+                return hit[1]
+
         space_path = self._resolve_space_path(space_name, errors)
 
         # current_phase + dev_plan are quick local file reads; do them
@@ -175,7 +219,7 @@ class PlanContext:
             project_docs = f_project_docs.result()
             mcp_resources = f_mcp.result() if f_mcp is not None else None
 
-        return {
+        snapshot = {
             "current_phase": current_phase,
             "dev_plan": dev_plan,
             "wiki": wiki,
@@ -185,6 +229,9 @@ class PlanContext:
             "mcp_resources": mcp_resources,
             "errors": errors,
         }
+        with _GATHER_LOCK:
+            _GATHER_CACHE[cache_key] = (time.time(), snapshot)
+        return snapshot
 
     # ─────────────────────────────────────────────────────────
     # Private readers
@@ -197,8 +244,14 @@ class PlanContext:
         ``.navig/plans/phases/CURRENT_PHASE.md``.
         """
         try:
-            # Space root (canonical for spaces layout)
-            cp = space_path / "CURRENT_PHASE.md"
+            # The space's own copy, wherever it keeps it (.navig/plans, plans/, root) —
+            # the one locator every reader shares. Reading the root first found nothing
+            # for 10 of 11 spaces that have a phase file (see spaces/plan_files.py).
+            from navig.spaces.plan_files import plan_file
+
+            cp = plan_file(space_path, "CURRENT_PHASE.md") or (space_path / "CURRENT_PHASE.md")
+            if not cp.is_file():
+                cp = space_path / ".navig" / "plans" / "phases" / "CURRENT_PHASE.md"
             if not cp.is_file():
                 # Fallback: plans/phases directory
                 cp = self.cwd / ".navig" / "plans" / "phases" / "CURRENT_PHASE.md"
@@ -216,8 +269,10 @@ class PlanContext:
     def _read_dev_plan(self, space_path: Path) -> str | None:
         """Read ``DEV_PLAN.md`` from the space root or project plans directory."""
         try:
+            from navig.spaces.plan_files import plan_file
+
             candidates = [
-                space_path / "DEV_PLAN.md",
+                plan_file(space_path, "DEV_PLAN.md") or (space_path / "DEV_PLAN.md"),
                 self.cwd / ".navig" / "plans" / "DEV_PLAN.md",
             ]
             for dev_plan in candidates:
@@ -229,7 +284,20 @@ class PlanContext:
             raise
 
     def _search_wiki(self, query: str, space_name: str) -> list[dict[str, str]]:
-        """Search the project wiki for content relevant to the active phase."""
+        """Search the project wiki for content relevant to the active phase.
+
+        The empty verdict is CACHED per space: a wiki-less space answers
+        "nothing relevant" almost deterministically, and paying the search on
+        every chat turn is pure first-message latency (measured 2026-10-12: the
+        empty-search warning fired on EVERY turn of a wiki-less install). One
+        real hit clears the marker immediately.
+        """
+        import time as _time
+
+        now = _time.monotonic()
+        if now < _wiki_empty_until.get(space_name, 0.0):
+            logger.debug("PlanContext wiki search: cached-empty for space=%s", space_name)
+            return []
         try:
             from navig.agent.tools import wiki_tools
 
@@ -241,9 +309,13 @@ class PlanContext:
                 limit=5,
             )
             if not results:
-                logger.warning("PlanContext wiki search returned empty for space=%s", space_name)
+                _wiki_empty_until[space_name] = now + _WIKI_EMPTY_TTL_S
+                # debug, not warning: on a wiki-less install this is the NORMAL
+                # steady state, not an anomaly worth alarming about every turn.
+                logger.debug("PlanContext wiki search returned empty for space=%s", space_name)
                 return []
 
+            _wiki_empty_until.pop(space_name, None)
             out: list[dict[str, str]] = []
             for result in results[:5]:
                 out.append(

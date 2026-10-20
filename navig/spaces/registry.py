@@ -14,9 +14,14 @@ Atomic JSON read/write mirrors the gateway ``cron_jobs.json``/``tasks.json`` pat
 """
 from __future__ import annotations
 
+import functools
+import sys
+import threading
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from navig.core.json_io import (
     JsonReadError,
@@ -31,9 +36,83 @@ logger = get_debug_logger()
 
 _DEFAULT_REGISTRY: dict[str, Any] = {"version": 1, "active": None, "spaces": []}
 
+# Paths the user forgot. Discovery must not re-add them: before this list existed,
+# `space forget` on a folder under a spaces root was undone by the very next scan.
+# Cleared by an explicit `register` / `ensure_registered` (switch, doctor --fix).
+_FORGOTTEN = "forgotten"
+
+_F = TypeVar("_F", bound=Callable[..., Any])
+_lock_state = threading.local()
+
 
 def _registry_file() -> Path:
     return paths.config_dir() / "spaces.json"
+
+
+@contextmanager
+def _registry_lock() -> Iterator[None]:
+    """Serialise load-modify-save across processes (CLI, gateway, discovery threads).
+
+    Without it two writers each load, change one row, and save — the second save
+    silently drops the first one's change. Re-entrant within a thread. A lock that
+    cannot be taken (timeout, read-only dir) degrades to the old unlocked behaviour
+    rather than failing the write.
+    """
+    depth = getattr(_lock_state, "depth", 0)
+    if depth:
+        _lock_state.depth = depth + 1
+        try:
+            yield
+        finally:
+            _lock_state.depth -= 1
+        return
+    lock_path = _registry_file().with_name("spaces.json.lock")
+    handle = None
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(lock_path, "a+b")  # noqa: SIM115 — held for the critical section
+        if sys.platform == "win32":
+            import msvcrt  # noqa: PLC0415
+
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)  # retries ~10 s, then OSError
+        else:
+            import fcntl  # noqa: PLC0415
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    except OSError as exc:
+        logger.warning("spaces registry lock unavailable, writing unlocked: %s", exc)
+        if handle is not None:
+            handle.close()
+            handle = None
+    _lock_state.depth = 1
+    try:
+        yield
+    finally:
+        _lock_state.depth = 0
+        if handle is not None:
+            try:
+                if sys.platform == "win32":
+                    import msvcrt  # noqa: PLC0415
+
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl  # noqa: PLC0415
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass  # closing the handle releases it anyway
+            handle.close()
+
+
+def _locked(fn: _F) -> _F:
+    @functools.wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        with _registry_lock():
+            return fn(*args, **kwargs)
+
+    return wrapper  # type: ignore[return-value]
 
 
 def _norm(p: str | Path) -> str:
@@ -134,6 +213,38 @@ def id_taken_by_another_path(space_id: str, path: str | Path) -> str | None:
     return None
 
 
+def forgotten_paths(reg: dict[str, Any] | None = None) -> set[str]:
+    """Normalised paths the user forgot — discovery skips them (read-only)."""
+    raw = (reg if reg is not None else load_registry()).get(_FORGOTTEN)
+    return {_norm(p) for p in raw if isinstance(p, str)} if isinstance(raw, list) else set()
+
+
+def is_forgotten(path: str | Path) -> bool:
+    return _norm(path) in forgotten_paths()
+
+
+def _unforget(reg: dict[str, Any], rp: str) -> bool:
+    """Drop *rp* from the tombstone list; True when it was there."""
+    raw = reg.get(_FORGOTTEN)
+    if not isinstance(raw, list):
+        return False
+    kept = [p for p in raw if not (isinstance(p, str) and _norm(p) == rp)]
+    if len(kept) == len(raw):
+        return False
+    if kept:
+        reg[_FORGOTTEN] = kept
+    else:
+        reg.pop(_FORGOTTEN, None)
+    return True
+
+
+def _id_held_elsewhere(reg: dict[str, Any], space_id: str, rp: str) -> bool:
+    return any(
+        e.get("id") == space_id and _norm(e.get("path", "")) != rp for e in reg["spaces"]
+    )
+
+
+@_locked
 def register(
     path: str | Path,
     *,
@@ -146,6 +257,7 @@ def register(
 
     Keys on PATH. It does not police id uniqueness — see ``id_taken_by_another_path``,
     which every user-facing entry point (init, wire, doctor --fix) consults first.
+    An explicit register also lifts a previous ``forget``.
     """
     rp = _norm(path)
     entry = {
@@ -159,6 +271,7 @@ def register(
     reg = _load_for_mutation()
     if reg is None:
         return entry  # registry locked — not persisted now; usable in-memory, next write persists
+    _unforget(reg, rp)
     existing = next((e for e in reg["spaces"] if _norm(e.get("path", "")) == rp), None)
     if existing is not None:
         if id:
@@ -173,8 +286,37 @@ def register(
     return entry
 
 
+def _ensure_in(
+    reg: dict[str, Any], rp: str, id: str | None, name: str | None, source: str, auto: bool
+) -> bool:
+    """Apply ``ensure_registered`` to *reg* in memory; True when it changed anything."""
+    if auto and rp in forgotten_paths(reg):
+        return False  # the user forgot it; a scan is not a decision to bring it back
+    changed = False if auto else _unforget(reg, rp)
+    existing = next((e for e in reg["spaces"] if _norm(e.get("path", "")) == rp), None)
+    if existing is not None:
+        # Never relabel a row onto an id another folder already holds: that undid the
+        # `-2` suffix `projects` gives a clash and recreated the duplicate every scan.
+        if id and existing.get("id") != id and not _id_held_elsewhere(reg, id, rp):
+            existing["id"] = id
+            if name:
+                existing["name"] = name
+            changed = True
+        return changed
+    reg["spaces"].append({
+        "id": id or Path(rp).name, "name": name or Path(rp).name,
+        "path": rp, "source": source, "enabled": True, "last_active": None,
+    })
+    return True
+
+
 def ensure_registered(
-    path: str | Path, *, id: str | None = None, name: str | None = None, source: str = "root"
+    path: str | Path,
+    *,
+    id: str | None = None,
+    name: str | None = None,
+    source: str = "root",
+    auto: bool = False,
 ) -> None:
     """Register *path*, and correct a drifted id. Writes only when something changed.
 
@@ -185,27 +327,26 @@ def ensure_registered(
 
     The id is a derived LABEL, not a key held anywhere else: `_find` matches by id or
     path, `is_enabled`/`is_trusted` take a path, and `enabled`/`trusted` live on the row
-    — so correcting it preserves every stored state.
+    — so correcting it preserves every stored state. A label another path already holds
+    is left alone.
+
+    *auto* marks a call from discovery: it never brings back a forgotten path. Explicit
+    callers (switch, doctor --fix, repath) lift the tombstone, as ``register`` does.
     """
-    reg = _load_for_mutation()
-    if reg is None:
-        return  # registry locked — skip; a corrupt/locked read must not wipe it
     rp = _norm(path)
-    existing = next((e for e in reg["spaces"] if _norm(e.get("path", "")) == rp), None)
-    if existing is not None:
-        if id and existing.get("id") != id:
-            existing["id"] = id
-            if name:
-                existing["name"] = name
-            save_registry(reg)
+    # Cheap unlocked dry run first: discovery calls this once per space per scan, and
+    # almost every call is a no-op that must not take the cross-process lock.
+    if not _ensure_in(load_registry(), rp, id, name, source, auto):
         return
-    reg["spaces"].append({
-        "id": id or Path(rp).name, "name": name or Path(rp).name,
-        "path": rp, "source": source, "enabled": True, "last_active": None,
-    })
-    save_registry(reg)
+    with _registry_lock():
+        reg = _load_for_mutation()
+        if reg is None:
+            return  # registry locked — skip; a corrupt/locked read must not wipe it
+        if _ensure_in(reg, rp, id, name, source, auto):
+            save_registry(reg)
 
 
+@_locked
 def set_enabled(id_or_path: str, enabled: bool) -> bool:
     reg = _load_for_mutation()
     if reg is None:
@@ -218,22 +359,40 @@ def set_enabled(id_or_path: str, enabled: bool) -> bool:
     return True
 
 
-def forget(id_or_path: str) -> bool:
+@_locked
+def forget(id_or_path: str, *, remember: bool = True) -> bool:
+    """Drop the row(s) for an id or path. The folder is never touched.
+
+    With *remember* (the default) the forgotten paths are tombstoned so discovery does
+    not re-register them on its next scan; ``register`` lifts it. ``space fold`` passes
+    ``remember=False`` — the fold marker already hides the folder, and ``unfold`` must
+    make it discoverable again without a second step.
+    """
     reg = _load_for_mutation()
     if reg is None:
         return False  # registry locked — don't drop anyone
     rp = _norm(id_or_path)
-    before = len(reg["spaces"])
-    reg["spaces"] = [
+    dropped = [
         e for e in reg["spaces"]
-        if not (e.get("id") == id_or_path or _norm(e.get("path", "")) == rp)
+        if e.get("id") == id_or_path or _norm(e.get("path", "")) == rp
     ]
-    if len(reg["spaces"]) != before:
-        save_registry(reg)
-        return True
-    return False
+    if not dropped:
+        return False
+    reg["spaces"] = [e for e in reg["spaces"] if not any(e is d for d in dropped)]
+    if remember:
+        tomb = reg.get(_FORGOTTEN) if isinstance(reg.get(_FORGOTTEN), list) else []
+        known = {_norm(p) for p in tomb if isinstance(p, str)}
+        for e in dropped:
+            p = _norm(e.get("path", ""))
+            if p and p not in known:
+                tomb.append(p)
+                known.add(p)
+        reg[_FORGOTTEN] = tomb
+    save_registry(reg)
+    return True
 
 
+@_locked
 def rename(path: str | Path, new_id: str) -> str | None:
     """Re-key the entry for *path* as *new_id*; returns the id it had, or None if unregistered.
 
@@ -265,6 +424,7 @@ def rename(path: str | Path, new_id: str) -> str | None:
     return old_id
 
 
+@_locked
 def repath(old_path: str | Path, new_path: str | Path) -> bool:
     """Point the row for *old_path* at *new_path*, preserving every other field.
 
@@ -312,6 +472,7 @@ def is_trusted(path: str | Path) -> bool | None:
     return bool(e.get("trusted"))
 
 
+@_locked
 def set_trusted(id_or_path: str, trusted: bool) -> bool:
     reg = _load_for_mutation()
     if reg is None:
@@ -324,6 +485,7 @@ def set_trusted(id_or_path: str, trusted: bool) -> bool:
     return True
 
 
+@_locked
 def mark_active(path: str | Path) -> None:
     reg = _load_for_mutation()
     if reg is None:

@@ -165,7 +165,9 @@ class TestVolatileContentRidesTheUserTurn:
     def test_run_agentic_prepends_the_clock_to_the_user_turn(self, agent_ast):
         import ast
 
-        fn = self._fn(agent_ast, "run_agentic")
+        # The loop body; `run_agentic` is a thin wrapper that scopes the turn's
+        # incognito flag (navig.memory.controls) around it.
+        fn = self._fn(agent_ast, "_run_agentic_turn")
         calls = [
             node.func.attr
             for node in ast.walk(fn)

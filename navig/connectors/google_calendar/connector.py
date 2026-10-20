@@ -42,6 +42,14 @@ _GOOGLE_API_TIMEOUT: float = 15.0
 
 _API_BASE = "https://www.googleapis.com/calendar/v3"
 
+# events.insert ``sendUpdates``: who Google emails about a new event.
+_SEND_UPDATES = ("none", "externalOnly", "all")
+
+
+def _parse_rfc3339(value: str) -> datetime:
+    """Google's RFC 3339 timestamps (``...Z`` or ``+02:00``) as aware datetimes."""
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
 
 class GoogleCalendarConnector(BaseConnector):
     """
@@ -60,6 +68,7 @@ class GoogleCalendarConnector(BaseConnector):
         ],
         oauth_provider="google_calendar",
         requires_oauth=True,
+        oauth_app=("google", "GOOGLE", "Google OAuth"),
     )
 
     def __init__(self) -> None:
@@ -87,7 +96,12 @@ class GoogleCalendarConnector(BaseConnector):
                 raise ConnectorAPIError("google_calendar", resp.status_code, resp.text[:200])
             return resp.json()
 
-    async def _api_post(self, path: str, json_body: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def _api_post(
+        self,
+        path: str,
+        json_body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         if not HTTPX_AVAILABLE:
             raise ImportError("httpx is required. Install: pip install httpx")
         async with httpx.AsyncClient(timeout=_GOOGLE_API_TIMEOUT) as client:
@@ -95,6 +109,7 @@ class GoogleCalendarConnector(BaseConnector):
                 f"{_API_BASE}{path}",
                 headers=self._headers(),
                 json=json_body,
+                params=params,
             )
             if resp.status_code not in (200, 201):
                 raise ConnectorAPIError("google_calendar", resp.status_code, resp.text[:200])
@@ -165,7 +180,9 @@ class GoogleCalendarConnector(BaseConnector):
 
         Supported action_types:
             CREATE — create a new event (params: summary, start, end,
-                     description, location, attendees)
+                     description, location, attendees, send_updates —
+                     "none" (default) | "externalOnly" | "all": whether Google
+                     emails the attendees an invitation)
             UPDATE — update an event (resource_id required, params: partial event)
             DELETE — delete an event (resource_id required)
         """
@@ -230,6 +247,42 @@ class GoogleCalendarConnector(BaseConnector):
         events = data.get("items", [])
         return [calendar_event_to_resource(e) for e in events]
 
+    # -- Free/busy ---------------------------------------------------------
+
+    async def free_busy(
+        self,
+        calendars: list[str],
+        start: datetime,
+        end: datetime,
+    ) -> dict[str, dict[str, Any]]:
+        """Busy intervals per calendar (an email address, or ``primary``).
+
+        Returns ``{calendar: {"busy": [(start, end), ...], "error": str | None}}``.
+        Someone who does not share their calendar comes back with an ``error``
+        (Google says ``notFound``) and no busy blocks — which must NOT be read as
+        "free all week", so callers get the error and decide.
+        """
+        body = {
+            "timeMin": start.isoformat(),
+            "timeMax": end.isoformat(),
+            "items": [{"id": c} for c in calendars],
+        }
+        data = await self._api_post("/freeBusy", json_body=body)
+        out: dict[str, dict[str, Any]] = {}
+        for cal_id in calendars:
+            entry = (data.get("calendars") or {}).get(cal_id) or {}
+            errors = entry.get("errors") or []
+            busy = [
+                (_parse_rfc3339(b["start"]), _parse_rfc3339(b["end"]))
+                for b in entry.get("busy") or []
+                if b.get("start") and b.get("end")
+            ]
+            out[cal_id] = {
+                "busy": busy,
+                "error": ", ".join(str(e.get("reason") or e) for e in errors) or None,
+            }
+        return out
+
     # -- Private action implementations ------------------------------------
 
     async def _create_event(self, action: Action) -> ActionResult:
@@ -247,9 +300,18 @@ class GoogleCalendarConnector(BaseConnector):
         if params.get("attendees"):
             body["attendees"] = [{"email": e} for e in params["attendees"]]
 
+        # Google emails invitations only when asked. Default "none": sending mail to
+        # other people is an outward action the caller has to choose explicitly.
+        send_updates = str(params.get("send_updates") or "none")
+        if send_updates not in _SEND_UPDATES:
+            return ActionResult(
+                success=False,
+                error=f"send_updates must be one of {', '.join(_SEND_UPDATES)}",
+            )
         event = await self._api_post(
             f"/calendars/{self._calendar_id}/events",
             json_body=body,
+            params={"sendUpdates": send_updates},
         )
         resource = calendar_event_to_resource(event)
         return ActionResult(success=True, resource=resource)

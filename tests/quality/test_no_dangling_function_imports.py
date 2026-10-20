@@ -35,8 +35,6 @@ NAVIG = CORE / "navig"
 # (relative posix path, target module, imported name) -> short reason.
 # See the module docstring for the two categories. Shrinking this list is the goal.
 ALLOWLIST: dict[tuple[str, str, str], str] = {
-    ("navig/commands/agents.py", "navig.agents", "list_agents"):
-        "intentional: `navig agents` is not built yet; the except prints 'not implemented'",
     ("navig/gateway/channels/telegram_autoheal.py", "navig.proactive.error_resolution", "analyze_error"):
         "api-drift: error_resolution exposes ErrorResolution class, not an analyze_error function. "
         "NOT a mechanical fix: analyze_error is a METHOD on ErrorResolution(assistant), whose "

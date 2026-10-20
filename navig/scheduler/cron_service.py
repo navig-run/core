@@ -60,6 +60,29 @@ class CronConfig:
         )
 
 
+#: A job whose command starts with this runs a local program directly (no shell,
+#: no AI turn) — `navig cron add --exec`. The rest of the string is the command
+#: line, split like the platform's own shell would split it.
+EXEC_PREFIX = "NAVIG_EXEC:"
+
+
+def split_exec_command(line: str) -> list[str]:
+    """Split a NAVIG_EXEC command line into argv. Windows keeps its backslashes
+    (a ``C:/tools/x.exe`` path written either way) and strips the quotes around
+    an argument; POSIX splits the usual way."""
+    import shlex
+
+    line = line.strip()
+    if not line:
+        return []
+    if os.name == "nt":
+        return [
+            a[1:-1] if len(a) >= 2 and a[0] == a[-1] == '"' else a
+            for a in shlex.split(line, posix=False)
+        ]
+    return shlex.split(line)
+
+
 @dataclass
 class CronJob:
     """A scheduled cron job."""
@@ -258,6 +281,39 @@ class CronParser:
         you want the human reason for a rejection.
         """
         return cls.validate(schedule)[0]
+
+    @classmethod
+    def yearly_pin(cls, schedule: str) -> tuple[int, int] | None:
+        """``(day, month)`` when *schedule* is pinned to ONE calendar date, else None.
+
+        ``0 11 9 10 *`` reads like "9 October at 11:00" but cron has no year field, so
+        it fires on that date EVERY year. That is how one-off reminders written as cron
+        jobs came back a year later (``oliviers:relance-rappel`` → next run 2027-10-09).
+        Only a literal day AND a literal month count: ``1 1,4,7,10 *`` (quarterly) and
+        ``0 9 * 10 *`` (every day in October) are genuinely recurring.
+        """
+        cron = cls._to_cron(schedule) or (schedule or "").strip()
+        parts = cron.split()
+        if len(parts) < 5:
+            return None
+        day, month = parts[2], parts[3]
+        if not (day.isdigit() and month.isdigit()):
+            return None
+        return int(day), int(month)
+
+    @classmethod
+    def yearly_pin_error(cls, schedule: str) -> str | None:
+        """The refusal shown when a date-pinned schedule arrives without ``yearly``."""
+        pin = cls.yearly_pin(schedule)
+        if pin is None:
+            return None
+        day, month = pin
+        return (
+            f"schedule {schedule!r} fires every year on {day:02d}/{month:02d} — a cron job "
+            "is not a one-off reminder. For a one-off reminder use: "
+            'navig todo add "<text>" --at "YYYY-MM-DD HH:MM". '
+            "If it really should repeat every year, pass --yearly."
+        )
 
     @classmethod
     def validate(cls, schedule: str) -> tuple[bool, str | None]:
@@ -1231,39 +1287,41 @@ class CronService:
             except Exception as exc:
                 raise RuntimeError(f"Failed to queue habit reminder: {exc}") from exc
 
+        # Check-ins (weigh-in, pills, water): run IN PROCESS, like the habit
+        # reminder above — no CLI cold start, which is what overran the weigh-in's
+        # old 60 s timeout. The engine applies the extension gate (Health for the
+        # weigh-in, Check-ins for the rest) and marks "asked" BEFORE it sends, so
+        # the 5-minute retry after a timeout cannot ask twice. A raise here means
+        # Telegram did not take the message, which IS worth that retry.
+        if command.startswith("NAVIG_CHECKIN:"):
+            from navig.checkins.engine import run_command as _run_checkin
+
+            return await _run_checkin(command, gateway=self.gateway)
+
+        # Standing goal: one cycle through the MissionExecutor (see missions.standing_goals).
+        # It records its own outcome on the goal and never raises for a failed cycle, so
+        # cron's 5-minute retry cannot run cycles the operator never scheduled.
+        if command.startswith("NAVIG_GOAL:"):
+            if self.gateway is None:
+                raise RuntimeError("standing goals run only in the gateway's scheduler")
+            from navig.missions.standing_goals import GOAL_COMMAND_PREFIX, run_goal_cycle
+
+            return await run_goal_cycle(self.gateway, command[len(GOAL_COMMAND_PREFIX):].strip())
+
+        # A local program, run directly — no shell, no AI. Opted into explicitly
+        # (`navig cron add --exec`), so a plain sentence is never mistaken for a
+        # program and a program is never read as a prompt.
+        if command.startswith(EXEC_PREFIX):
+            argv = split_exec_command(command[len(EXEC_PREFIX) :])
+            if not argv:
+                raise RuntimeError("NAVIG_EXEC job has no program to run")
+            return await self._run_argv(argv)
+
         # Check if it's a direct NAVIG command
         if command.startswith("navig "):
             import shlex
 
-            process = await asyncio.create_subprocess_exec(
-                *shlex.split(command),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-
-            try:
-                stdout_bytes, stderr_bytes = await process.communicate()
-            finally:
-                # If we leave before the child exited — the timeout wrapper in
-                # _run_job_locked cancels us right here at communicate(), or an error
-                # propagates — kill it. Cancelling communicate() stops draining the
-                # pipes but does NOT signal the child, and GC of the Process object
-                # won't either. And a bare kill of the direct child is not enough: a
-                # `navig …` infra command spawns grandchildren (backup → pg_dump, db
-                # dump → mysqldump, host → ssh) that would keep running orphaned past
-                # the timeout — and the 5-min retry could launch a second concurrent
-                # copy against live infra. Kill the whole tree.
-                if process.returncode is None:
-                    await kill_process_tree(process)
-
-            output = stdout_bytes.decode()
-            if stderr_bytes:
-                output += f"\n{stderr_bytes.decode()}"
-
-            if process.returncode != 0:
-                raise RuntimeError(f"Command failed with exit code {process.returncode}")
-
-            return output
+            return await self._run_argv(shlex.split(command))
 
         # Otherwise, treat as AI prompt
         response = await self.gateway.run_agent_turn(
@@ -1278,6 +1336,38 @@ class CronService:
         # raised TypeError and the job was recorded as a spurious FAILURE instead of a
         # success with empty output. Normalise to a string.
         return response or ""
+
+    async def _run_argv(self, argv: list[str]) -> str:
+        """Run one program to completion; its output, or an error on a non-zero exit."""
+        process = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            stdout_bytes, stderr_bytes = await process.communicate()
+        finally:
+            # If we leave before the child exited — the timeout wrapper in
+            # _run_job_locked cancels us right here at communicate(), or an error
+            # propagates — kill it. Cancelling communicate() stops draining the
+            # pipes but does NOT signal the child, and GC of the Process object
+            # won't either. And a bare kill of the direct child is not enough: a
+            # `navig …` infra command spawns grandchildren (backup → pg_dump, db
+            # dump → mysqldump, host → ssh) that would keep running orphaned past
+            # the timeout — and the 5-min retry could launch a second concurrent
+            # copy against live infra. Kill the whole tree.
+            if process.returncode is None:
+                await kill_process_tree(process)
+
+        output = stdout_bytes.decode()
+        if stderr_bytes:
+            output += f"\n{stderr_bytes.decode()}"
+
+        if process.returncode != 0:
+            raise RuntimeError(f"Command failed with exit code {process.returncode}")
+
+        return output
 
     async def run_job_now(self, job_id: str) -> dict[str, Any] | None:
         """Manually trigger a job.
@@ -1327,3 +1417,18 @@ class CronService:
             "next_job": next_job.name if next_job else None,
             "next_run_in": next_run_in,
         }
+
+
+if __name__ == "__main__":
+    # There is NO standalone scheduler process. The live scheduler is
+    # gateway-attached: NavigGateway._start_cron() constructs THE CronService
+    # singleton and starts its loop (in-process consumers — Telegram commands,
+    # deck routes — resolve it via get_live_service()). This module used to
+    # have no runner at all, so `python -m navig.scheduler.cron_service`
+    # imported and exited 0: the supervisor's former `scheduler` child respawned
+    # that silent no-op forever. Fail loudly instead of pretending to serve.
+    raise SystemExit(
+        "navig.scheduler.cron_service has no standalone runner — cron runs "
+        "inside the gateway (NavigGateway._start_cron). "
+        "Start it with: navig gateway start"
+    )

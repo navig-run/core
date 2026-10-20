@@ -281,7 +281,8 @@ async def test_toggle_task_flips_checkbox_both_ways(space):
             client, "/api/deck/plans/toggle-task", {"path": "DEV_PLAN.md", "line": 4}
         )
         assert status == 200 and body["data"]["checked"] is True
-        on_disk = (space / ".navig" / "plans" / "DEV_PLAN.md").read_text(encoding="utf-8")
+        # Exact bytes: the route returns the file's real line endings, not a folded copy.
+        on_disk = (space / ".navig" / "plans" / "DEV_PLAN.md").read_bytes().decode("utf-8")
         assert "- [x] First goal" in on_disk
         assert body["data"]["content"] == on_disk
 
@@ -636,3 +637,55 @@ async def test_generate_ai_force_redrafts_but_never_vision(ai_space, monkeypatch
     assert "plans/ROADMAP.md" in body["data"]["created"]
     assert "redrafted" in (plans / "ROADMAP.md").read_text(encoding="utf-8")
     assert (plans / "VISION.md").read_text(encoding="utf-8") == VISION_MD  # force ≠ touch the seed
+
+
+# ── Line endings + stale guard (regression) ──────────────────────────────────
+# A text-mode write on Windows turned every LF plan doc into CRLF on the first toggle
+# or save — one checkbox click became a whole-file git diff. These pin the bytes.
+
+
+@pytest.mark.parametrize("eol", ["\n", "\r\n"])
+async def test_toggle_preserves_the_files_line_endings(space, eol):
+    doc = space / ".navig" / "plans" / "DEV_PLAN.md"
+    doc.write_bytes(DEV_PLAN_MD.replace("\n", eol).encode("utf-8"))
+    before = doc.read_bytes()
+    async with TestClient(TestServer(_app())) as client:
+        for _ in range(2):
+            status, _body = await _post(
+                client, "/api/deck/plans/toggle-task", {"path": "DEV_PLAN.md", "line": 4}
+            )
+            assert status == 200
+    assert doc.read_bytes() == before  # toggled twice → byte-identical
+
+
+@pytest.mark.parametrize("eol", ["\n", "\r\n"])
+async def test_doc_save_keeps_the_files_line_endings(space, eol):
+    doc = space / ".navig" / "plans" / "DEV_PLAN.md"
+    doc.write_bytes(DEV_PLAN_MD.replace("\n", eol).encode("utf-8"))
+    async with TestClient(TestServer(_app())) as client:
+        status, _body = await _post(
+            client, "/api/deck/plans/doc",
+            {"path": "DEV_PLAN.md", "content": DEV_PLAN_MD + "- [ ] added\n"},
+        )
+        assert status == 200
+    raw = doc.read_bytes().decode("utf-8")
+    assert raw == (DEV_PLAN_MD + "- [ ] added\n").replace("\n", eol)
+
+
+async def test_toggle_with_a_stale_fingerprint_is_refused(space):
+    from navig.projects.todos import line_fingerprint
+
+    doc = space / ".navig" / "plans" / "DEV_PLAN.md"
+    before = doc.read_bytes()
+    async with TestClient(TestServer(_app())) as client:
+        status, body = await _post(
+            client, "/api/deck/plans/toggle-task",
+            {"path": "DEV_PLAN.md", "line": 4, "expect": line_fingerprint("- [ ] some other line")},
+        )
+        assert status == 409, body
+        assert doc.read_bytes() == before
+        status, _body = await _post(
+            client, "/api/deck/plans/toggle-task",
+            {"path": "DEV_PLAN.md", "line": 4, "expect": line_fingerprint("- [ ] First goal")},
+        )
+        assert status == 200

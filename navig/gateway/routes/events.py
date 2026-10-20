@@ -40,18 +40,22 @@ async def handle_api_events(request: "web.Request") -> "web.Response":
     absent so the connection still stays open.
     """
     # Telegram-Mini-App lockdown: when deck.telegram_only is on, the event stream
-    # is no longer open. EventSource can't set headers, so the client passes the
-    # Telegram initData as the `?init_data=` query param; validate it against the
-    # bot token (same HMAC as the deck REST surface). Reject otherwise.
+    # is no longer open to REMOTE callers. EventSource can't set headers, so the
+    # client passes the Telegram initData as the `?init_data=` query param; validate
+    # it against the bot token (same HMAC as the deck REST surface). The operator's
+    # own desktop on this machine keeps the same exception it has on the REST
+    # surface (`trusted_local_desktop`) — without it the desktop app's event bridge
+    # was locked out of every live event.
     from navig.gateway.deck.auth import (
         deck_auth_max_age,
         deck_bot_token,
         deck_telegram_only,
+        trusted_local_desktop,
         validate_init_data,
     )
     from navig.gateway.middleware import cors_headers_for
 
-    if deck_telegram_only():
+    if deck_telegram_only() and not trusted_local_desktop(request):
         init_data = request.query.get("init_data", "")
         token = deck_bot_token()
         reasons: list[str] = []

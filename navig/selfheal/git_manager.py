@@ -87,6 +87,9 @@ def _run_git(
         result = decode_console_result(subprocess.run(
             cmd,
             cwd=str(work_dir),
+            # Nothing here reads stdin; an inherited one lets a git prompt (credentials,
+            # an editor) hang an unattended run instead of failing.
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             timeout=timeout,
             check=True,
@@ -255,26 +258,78 @@ def sync_fork(repo_path: Path) -> None:
     logger.info("Fork synced successfully")
 
 
-def create_branch(repo_path: Path) -> str:
-    """Create and checkout a new ``navig-selfheal/{date}-{hash}`` branch.
+def branch_name(prefix: str = "navig-selfheal") -> str:
+    """A unique ``{prefix}/{YYYYMMDD}-{hash}`` branch name (not created)."""
+    date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+    # secrets.token_hex(4) produces 8 hex chars of cryptographically random
+    # entropy — simpler and more idiomatic than mixing time_ns + os.urandom.
+    return f"{prefix}/{date_str}-{secrets.token_hex(4)}"
 
-    The short hash is derived from the current UTC timestamp to guarantee
-    uniqueness across multiple scans per day.
+
+def create_branch(repo_path: Path, prefix: str = "navig-selfheal") -> str:
+    """Create and checkout a new ``{prefix}/{date}-{hash}`` branch.
+
+    The short hash is random to guarantee uniqueness across multiple scans
+    per day.
 
     Args:
         repo_path: Absolute path to the local git repository.
+        prefix: Branch namespace; the self-heal pipeline keeps the default.
 
     Returns:
         Branch name, e.g. ``"navig-selfheal/20260315-a3f8c2d1"``.
     """
-    date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
-    # secrets.token_hex(4) produces 8 hex chars of cryptographically random
-    # entropy — simpler and more idiomatic than mixing time_ns + os.urandom.
-    short_hash = secrets.token_hex(4)
-    branch = f"navig-selfheal/{date_str}-{short_hash}"
+    branch = branch_name(prefix)
     _run_git("checkout", "-b", branch, cwd=repo_path)
     logger.info("Created branch {}", branch)
     return branch
+
+
+def create_worktree(repo_path: Path, dest: Path, prefix: str, base: str = "HEAD") -> str:
+    """Check out a NEW branch ``{prefix}/{date}-{hash}`` at *base* into *dest*.
+
+    Unlike :func:`create_branch` this never moves the caller's checkout: the
+    operator's working tree (and whatever uncommitted work sits in it) is left
+    exactly as it was. Returns the branch name.
+    """
+    branch = branch_name(prefix)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _run_git("worktree", "add", "-b", branch, str(dest), base, cwd=repo_path)
+    logger.info("Created worktree {} on {}", dest, branch)
+    return branch
+
+
+def remove_worktree(repo_path: Path, dest: Path, branch: str | None = None) -> str | None:
+    """Remove the worktree at *dest* (a throwaway the caller created); also delete *branch*.
+
+    Goes through ``navig repo``'s remover — the ONE remover — because a bare
+    ``git worktree remove`` often cannot delete a fresh checkout on Windows (a
+    scanner briefly holds it) and leaves an orphaned folder behind. Deleting the
+    branch uses ``-D`` because the caller passes it only for a branch it created
+    itself. Returns None, or why the folder could not be removed.
+    """
+    from navig.commands.repo import remove_worktree as _remove  # noqa: PLC0415
+
+    result = _remove(repo_path, dest, force=True)
+    if branch:
+        _run_git("branch", "-D", branch, cwd=repo_path, ignore_errors=True)
+    if result.get("removed"):
+        return None
+    return result.get("leftover_error") or result.get("refused") or "the worktree folder remains"
+
+
+def commit_paths(repo_path: Path, paths: list[str], message: str) -> str:
+    """Commit ONLY *paths* (never ``add --all``) and return the new commit sha.
+
+    Nothing is pushed. :func:`commit_and_push` stages everything and publishes,
+    which is right for the self-heal fork clone and wrong anywhere an operator
+    may have unrelated work.
+    """
+    if not paths:
+        raise ValueError("commit_paths needs at least one path")
+    _run_git("add", "--", *paths, cwd=repo_path)
+    _run_git("commit", "-m", message, "--", *paths, cwd=repo_path)
+    return _run_git("rev-parse", "HEAD", cwd=repo_path)
 
 
 def apply_patch(repo_path: Path, patch_content: str) -> None:

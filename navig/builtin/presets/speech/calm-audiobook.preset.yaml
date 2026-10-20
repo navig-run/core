@@ -1,0 +1,16 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: speech/calm-audiobook
+name: Calm audiobook
+tool: speech
+layer: style
+category: Voice
+tags:
+- audiobook
+- calm
+description: Unhurried and even, for long listening. Follows the text's language.
+params:
+  provider: auto
+  lang: auto
+  speed: 0.9

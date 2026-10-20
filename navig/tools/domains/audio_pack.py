@@ -2,40 +2,31 @@
 Audio Tool Pack - audio_generate.
 
 Wraps navig.tools.audio_generation for the ToolRouter.
-Note: audio generation is async; the handler bridges async->sync.
+The handler is async; the ToolRouter awaits it (async_execute) or drives it (execute).
 """
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from navig.tools.router import ToolRegistry
 
 
-def _sync_generate(**kwargs):
-    """Sync wrapper for async AudioGenerator.generate()."""
+async def _generate(**kwargs):
+    """Run AudioGenerator.generate() — an async tool handler (no sync bridge)."""
     from navig.tools.audio_generation import AudioGenerator
 
     gen = AudioGenerator()
 
-    async def _run():
-        # generate + close on the SAME loop (the client is bound to it).
-        try:
-            return await gen.generate(**kwargs)
-        finally:
-            await gen.close()
-
+    # generate + close on the SAME loop (the client is bound to it). An async handler:
+    # the router awaits it in async_execute and drives it in a loop-less thread for
+    # execute(). The old sync bridge blocked the caller's event loop on .result() for
+    # the whole render.
     try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        result = asyncio.run(_run())
-    else:
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            result = pool.submit(asyncio.run, _run()).result()
+        result = await gen.generate(**kwargs)
+    finally:
+        await gen.close()
     return {
         "local_path": str(result.local_path) if result.local_path else None,
         "kind": result.kind.value,
@@ -75,5 +66,5 @@ def register_tools(registry: ToolRegistry) -> None:
             required_config=[],
             tags=["audio", "music", "tts", "sfx", "elevenlabs"],
         ),
-        handler=_sync_generate,
+        handler=_generate,
     )

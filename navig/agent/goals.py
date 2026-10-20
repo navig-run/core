@@ -196,9 +196,15 @@ class GoalPlanner:
             try:
                 goal = Goal.from_dict(goal_data)
             except Exception as e:  # noqa: BLE001 — one bad row must not drop the rest
+                # Keep loading the good goals (so reads still work), but LATCH the
+                # failure so `_save_goals` refuses — otherwise the next mutation would
+                # atomically rewrite the file WITHOUT the row we couldn't parse,
+                # turning a parse glitch into silent data loss. `continue`, not
+                # `return`: the old `return` stopped at the first bad row and
+                # contradicted this method's own "must not drop the rest" contract.
                 self._load_failed = True
                 self.logger.log_operation("goals", {"action": "load", "error": str(e)})
-                return
+                continue
             self._goals[goal.id] = goal
 
         self.logger.log_operation("goals", {"action": "load", "count": len(self._goals)})

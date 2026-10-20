@@ -596,6 +596,30 @@ def _try_decode_b64(text: str) -> str | None:
         return None
 
 
+# winget's "found an existing package already installed … No available upgrade
+# found" is HRESULT 0x8A15002B (UPDATE_NOT_APPLICABLE); over ssh the HRESULT
+# arrives byte-truncated, so the client exit code is 43 (0x2B). For an *install*
+# that is the desired end state — the package is present — not a failure.
+_WINGET_PRESENT_RC = 43
+
+
+def _install_verdict(pm_cmd: str, returncode: int, output: str) -> tuple[bool, bool]:
+    """Classify an install attempt: ``(success, already_present)``.
+
+    ``already_present`` only ever comes from winget's not-applicable signature
+    (byte-truncated HRESULT or the English marker text — localized winget still
+    hits the numeric path).
+    """
+    if returncode == 0:
+        return True, False
+    if pm_cmd != "winget":
+        return False, False
+    text = (output or "").lower()
+    if returncode == _WINGET_PRESENT_RC or "no available upgrade" in text:
+        return True, True
+    return False, False
+
+
 def install_remote_package(package: str, options: dict[str, Any]):
     """Auto-detect package manager and install."""
     from navig.cli.recovery import require_active_host
@@ -647,15 +671,47 @@ def install_remote_package(package: str, options: dict[str, Any]):
         {"cmd": "apk", "install": f"apk add {package}", "systems": ["alpine"]},
     ]
 
+    # Windows package managers. winget ships with Win11 (and Win10 via the
+    # App Installer update); choco/scoop are the fallbacks. Each is probed with
+    # its own `--version` because Windows has no `which`. `-e` + the exact
+    # query keeps winget from prompting on ambiguous substring matches.
+    windows_package_managers = [
+        {
+            "cmd": "winget",
+            "install": (
+                f"winget install {package} -e --accept-source-agreements "
+                "--accept-package-agreements --disable-interactivity"
+            ),
+            "probe": "winget --version",
+        },
+        {"cmd": "choco", "install": f"choco install {package} -y", "probe": "choco --version"},
+        {"cmd": "scoop", "install": f"scoop install {package}", "probe": "scoop --version"},
+    ]
+
+    def _detect_windows_pm() -> dict | None:
+        for pm in windows_package_managers:
+            try:
+                probe = remote_ops.execute_command(pm["probe"], host_config)
+            except Exception:  # noqa: BLE001 — a broken pm must not abort the probe chain
+                continue
+            if probe.returncode == 0:
+                ch.success(f"   ✓ Detected: {pm['cmd']}")
+                return pm
+        return None
+
     # First try OS-based detection
     detected_pm = None
-    for pm in package_managers:
-        if any(sys in os_type for sys in pm["systems"]):
-            detected_pm = pm
-            break
+    if "windows" in os_type:
+        ch.info("   Windows target — probing winget / choco / scoop...")
+        detected_pm = _detect_windows_pm()
+    else:
+        for pm in package_managers:
+            if any(sys in os_type for sys in pm["systems"]):
+                detected_pm = pm
+                break
 
     # If no OS match, check which package manager exists
-    if not detected_pm:
+    if not detected_pm and "windows" not in os_type:
         ch.info("   Auto-detecting package manager...")
         for pm in package_managers:
             result = remote_ops.execute_command(f"which {pm['cmd']}", host_config)
@@ -663,10 +719,20 @@ def install_remote_package(package: str, options: dict[str, Any]):
                 detected_pm = pm
                 ch.success(f"   ✓ Detected: {pm['cmd']}")
                 break
+        if not detected_pm:
+            # No OS metadata and no `which` match: one `ver` probe decides
+            # whether this is a Windows target (never probed on a Linux host).
+            try:
+                ver = remote_ops.execute_command("ver", host_config)
+            except Exception:  # noqa: BLE001 — unreachable host: keep "not detected"
+                ver = None
+            if ver is not None and ver.returncode == 0 and "windows" in (ver.stdout or "").lower():
+                ch.info("   Windows target — probing winget / choco / scoop...")
+                detected_pm = _detect_windows_pm()
 
     if not detected_pm:
         ch.error("Could not detect package manager.")
-        ch.info("Supported: apt-get, yum, dnf, pacman, zypper, apk")
+        ch.info("Supported: apt-get, yum, dnf, pacman, zypper, apk · winget, choco, scoop")
         ch.info(f'Try manually: navig run "<package-manager> install {package}"')
         raise typer.Exit(1)
 
@@ -687,8 +753,16 @@ def install_remote_package(package: str, options: dict[str, Any]):
     ch.info(f"   Using: {detected_pm['cmd']}")
     result = remote_ops.execute_command(detected_pm["install"], host_config)
 
-    if result.returncode == 0:
-        ch.success(f"✅ Package installed: {package}")
+    success, already_present = _install_verdict(
+        detected_pm["cmd"],
+        result.returncode,
+        (result.stdout or "") + "\n" + (result.stderr or ""),
+    )
+    if success:
+        if already_present:
+            ch.success(f"✅ Package already installed: {package}")
+        else:
+            ch.success(f"✅ Package installed: {package}")
         if result.stdout:
             ch.dim(f"\n{result.stdout}")
     else:

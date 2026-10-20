@@ -29,6 +29,17 @@ import pytest
 from navig.heartbeat.runner import HeartbeatRunner
 
 
+@pytest.fixture(autouse=True)
+def _own_notify_db(tmp_path, monkeypatch):
+    """Each test gets its own notify.db: the announce-once claim is PERSISTENT (that is
+    the point — it survives restarts), so a shared DB would carry one test's claim into
+    the next and make "a fresh runner" not fresh."""
+    monkeypatch.setenv("NAVIG_DATA_DIR", str(tmp_path))
+    from navig.notify import store
+
+    monkeypatch.setattr(store, "_initialised", False)
+
+
 class _ConfigManager:
     """A DEFAULT install: no `notifications` section at all."""
 
@@ -187,6 +198,20 @@ async def test_an_unchanged_issue_set_is_not_resent(monkeypatch) -> None:
         await runner._notify_issue("[!] Health check found issues:\n[HIGH] auth 401")
 
     assert len(sent) == 1, f"the operator would have been alerted {len(sent)} times"
+
+
+@pytest.mark.asyncio
+async def test_a_restart_does_not_resend_an_unchanged_issue_set(monkeypatch) -> None:
+    """Measured: one unchanged finding ("Anthropic key rejected") reached Telegram 5×
+    in an afternoon behind a 6-hour cooldown — the daemon was restarted in between, and
+    the in-memory throttle started empty each time. A NEW runner is a restart."""
+    sent = _capture(monkeypatch)
+    msg = "[!] Health check found issues:\n[HIGH] auth 401"
+
+    await _runner()._notify_issue(msg)
+    await _runner()._notify_issue(msg)  # restarted daemon / the other process
+
+    assert len(sent) == 1, f"a restart re-announced the same finding ({len(sent)} sends)"
 
 
 @pytest.mark.asyncio

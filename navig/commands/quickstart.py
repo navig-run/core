@@ -98,7 +98,7 @@ def _suggest_skills_beat(*, auto_yes: bool = False, quiet: bool = False) -> None
             from navig.commands.install import install_asset
 
             for sk in picks:
-                spec = f"github:navig-run/community/cli-skills/{sk.get('category')}/{sk.get('id')}"
+                spec = f"github:navig-run/registry/cli-skills/{sk.get('category')}/{sk.get('id')}"
                 try:
                     install_asset(spec, force=False)
                 except Exception as exc:  # noqa: BLE001

@@ -160,3 +160,51 @@ def test_route_store_singleton_and_handler_resolve(tmp_path, monkeypatch):
     assert isinstance(s, BoardStore)
     assert route._store() is s               # module singleton
     assert set(s.snapshot()) == {"goals", "cards", "subtasks", "stages", "settings"}
+
+
+# ─── Card claims + per-card reads (coordination Phase 1) ────────────────────
+
+
+def test_claim_card_is_one_winner_and_idempotent_for_the_holder(store):
+    c = store.create_card("claim me")
+    assert store.claim_card(c["id"], "sess-a") is True
+    assert store.claim_card(c["id"], "sess-a") is True      # re-claim = still yours
+    assert store.claim_card(c["id"], "sess-b") is False     # exactly one winner
+    held = store.get_card(c["id"])
+    assert held["agent_status"] == "running" and held["origin_ref"] == "sess-a"
+
+
+def test_claim_loses_to_a_card_an_ai_run_left_running(store):
+    c = store.create_card("runaway")
+    store.update_card(c["id"], {"agent_status": "running"})  # origin_ref unset
+    assert store.claim_card(c["id"], "sess-a") is False
+
+
+def test_release_is_holder_scoped_and_force_is_the_adjudication_path(store):
+    c = store.create_card("hold")
+    store.claim_card(c["id"], "sess-a")
+    assert store.release_card(c["id"], "sess-b") is False    # wrong holder
+    assert store.release_card(c["id"], "sess-a") is True
+    free = store.get_card(c["id"])
+    assert free["agent_status"] == "idle" and free["origin_ref"] is None
+    assert store.release_card(c["id"], "sess-a") is False    # nothing held now
+
+    store.claim_card(c["id"], "sess-a")
+    assert store.release_card(c["id"], "orchestrator", force=True) is True
+    forced = store.get_card(c["id"])
+    assert forced["agent_status"] == "idle" and forced["origin_ref"] is None
+
+
+def test_card_history_and_subtasks_are_per_card_reads(store):
+    c1, c2 = store.create_card("one"), store.create_card("two")
+    store.move_card(c1["id"], "in_progress", actor="agent")
+    store.add_subtask(c1["id"], "criterion")
+
+    hist = store.card_history(c1["id"])
+    assert [(h["from_stage"], h["to_stage"], h["actor"]) for h in hist] == [
+        ("backlog", "in_progress", "agent"),
+    ]
+    assert store.card_history(c2["id"]) == []
+    subs = store.card_subtasks(c1["id"])
+    assert [s["title"] for s in subs] == ["criterion"]
+    assert store.card_subtasks(c2["id"]) == []

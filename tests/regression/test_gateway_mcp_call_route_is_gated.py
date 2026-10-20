@@ -175,8 +175,9 @@ async def test_a_broken_gate_denies_rather_than_proceeds(wired, monkeypatch) -> 
 # Registering a stdio MCP server means "run this binary, as me, and keep it running" —
 # strictly more powerful than `bash_exec`, which the agent cannot invoke without asking.
 # This route asked nobody, and bearer auth is not the boundary it looks like:
-# `require_bearer_auth` returns None (open access) when `gateway.auth.token` is unset,
-# and there is no default.
+# `require_bearer_auth` failed open (None, open access) when `gateway.auth.token` was
+# unset — it now fails closed with 503 — but the route still needs its own gate: on any
+# healthy install the token exists and authenticates the call.
 
 
 class _ConnectRequest:

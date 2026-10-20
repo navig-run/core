@@ -1,6 +1,6 @@
 # NAVIG Command Reference
 
-_Generated 2026-09-27T16:11:55.375852+00:00_
+_Generated 2026-10-19T22:29:39.517021+00:00_
 
 ## `navig action add`
 **Status:** `stable` · **Since:** 
@@ -40,6 +40,14 @@ Show details of a specific action.
 **Examples:**
 ```sh
 navig action show
+```
+
+## `navig agent`
+**Status:** `stable` · **Since:** 
+Run navig agent
+**Examples:**
+```sh
+navig agent
 ```
 
 ## `navig agent config`
@@ -96,14 +104,6 @@ Show continuation policy for local runtime state.
 **Examples:**
 ```sh
 navig agent continuation status
-```
-
-## `navig agent goal`
-**Status:** `stable` · **Since:** 
-Autonomous goal planning and execution tracking.
-**Examples:**
-```sh
-navig agent goal
 ```
 
 ## `navig agent install`
@@ -234,20 +234,116 @@ Transcribe an audio file to text using the best available backend.
 navig agent transcribe
 ```
 
-## `navig agents list`
+## `navig agentctl ack`
 **Status:** `stable` · **Since:** 
-List registered agents.
+Acknowledge a failed run so it stops lighting the Dock indicator.
 **Examples:**
 ```sh
-navig agents list
+navig agentctl ack
 ```
 
-## `navig agents run`
+## `navig agentctl bind`
 **Status:** `stable` · **Since:** 
-Run a specific agent on a task.
+Claim a task for a session. Rebinding MOVES the owner (one claim per task).
 **Examples:**
 ```sh
-navig agents run
+navig agentctl bind
+```
+
+## `navig agentctl bindings`
+**Status:** `stable` · **Since:** 
+Active task <-> session claims (one claim per task — no duplicate execution).
+**Examples:**
+```sh
+navig agentctl bindings
+```
+
+## `navig agentctl hooks install`
+**Status:** `stable` · **Since:** 
+Add the Agent Monitor hooks to Claude Code settings (shows the diff first).
+**Examples:**
+```sh
+navig agentctl hooks install
+```
+
+## `navig agentctl hooks status`
+**Status:** `stable` · **Since:** 
+Which Claude Code settings files carry the monitor hooks.
+**Examples:**
+```sh
+navig agentctl hooks status
+```
+
+## `navig agentctl hooks uninstall`
+**Status:** `stable` · **Since:** 
+Remove only the Agent Monitor hooks; every other hook is left as it was.
+**Examples:**
+```sh
+navig agentctl hooks uninstall
+```
+
+## `navig agentctl run`
+**Status:** `stable` · **Since:** 
+Run a command as a monitored, verified process:  navig agentctl run -- <command…>
+**Examples:**
+```sh
+navig agentctl run
+```
+
+## `navig agentctl runs`
+**Status:** `stable` · **Since:** 
+Agent runs: sessions, subagents, commands and lands, live and historical.
+**Examples:**
+```sh
+navig agentctl runs
+```
+
+## `navig agentctl sessions`
+**Status:** `stable` · **Since:** 
+Live agent sessions (who is working where, idle or active).
+**Examples:**
+```sh
+navig agentctl sessions
+```
+
+## `navig agentctl show`
+**Status:** `stable` · **Since:** 
+One run in detail: state, stages, history, and optionally its log tail.
+**Examples:**
+```sh
+navig agentctl show
+```
+
+## `navig agentctl status`
+**Status:** `stable` · **Since:** 
+One-line overview: sessions, worktrees (cwd repo), tasks.
+**Examples:**
+```sh
+navig agentctl status
+```
+
+## `navig agentctl tasks`
+**Status:** `stable` · **Since:** 
+Unified tasks from the board and the work queue.
+**Examples:**
+```sh
+navig agentctl tasks
+```
+
+## `navig agentctl unbind`
+**Status:** `stable` · **Since:** 
+Release a task claim (the ledger keeps the history).
+**Examples:**
+```sh
+navig agentctl unbind
+```
+
+## `navig agentctl worktrees`
+**Status:** `stable` · **Since:** 
+Git worktrees of a repo: branch, ahead/behind, dirty, last commit.
+**Examples:**
+```sh
+navig agentctl worktrees
 ```
 
 ## `navig ahk activate`
@@ -650,6 +746,14 @@ Run a cross-platform workflow.
 navig ahk workflow run
 ```
 
+## `navig ai`
+**Status:** `stable` · **Since:** 
+AI Assistant — ask anything, or run a subcommand.
+**Examples:**
+```sh
+navig ai
+```
+
 ## `navig ai airllm`
 **Status:** `stable` · **Since:** 
 Configure and manage AirLLM local inference provider.
@@ -688,6 +792,30 @@ navig ai edit
 **Examples:**
 ```sh
 navig ai explain
+```
+
+## `navig ai fallback history`
+**Status:** `stable` · **Since:** 
+Recent model switches and recoveries (newest first).
+**Examples:**
+```sh
+navig ai fallback history
+```
+
+## `navig ai fallback set`
+**Status:** `stable` · **Since:** 
+Set (or --clear) the model a mode falls back to.
+**Examples:**
+```sh
+navig ai fallback set
+```
+
+## `navig ai fallback status`
+**Status:** `stable` · **Since:** 
+Per mode: primary, its health, the fallback in use or ready, last switch.
+**Examples:**
+```sh
+navig ai fallback status
 ```
 
 ## `navig ai login`
@@ -834,6 +962,54 @@ adb sideload a zip (device must be in recovery). Consent + --yes required.
 navig android sideload
 ```
 
+## `navig antivirus extensions`
+**Status:** `stable` · **Since:** 
+🔎 Scan every installed extension across all profiles for malware/PUP/proxyware signatures.
+**Examples:**
+```sh
+navig antivirus extensions
+```
+
+## `navig antivirus recover-profiles`
+**Status:** `stable` · **Since:** 
+🩹 Rebuild a collapsed Chrome profile list (picker shows only 'Default' but the folders exist).
+**Examples:**
+```sh
+navig antivirus recover-profiles
+```
+
+## `navig antivirus registry`
+**Status:** `stable` · **Since:** 
+🗝  Audit registry-forced Chrome extensions + install policies for PUP signatures (Windows).
+**Examples:**
+```sh
+navig antivirus registry
+```
+
+## `navig antivirus report`
+**Status:** `stable` · **Since:** 
+📋 One-pass read-only health report: extensions + registry + AV engine status.
+**Examples:**
+```sh
+navig antivirus report
+```
+
+## `navig antivirus system`
+**Status:** `stable` · **Since:** 
+🦠 Kick off an on-demand system malware scan via Windows Defender.
+**Examples:**
+```sh
+navig antivirus system
+```
+
+## `navig app`
+**Status:** `stable` · **Since:** 
+App management - run without subcommand for help.
+**Examples:**
+```sh
+navig app
+```
+
 ## `navig app add`
 **Status:** `stable` · **Since:** 
 Add new app to a host (or clone from existing).
@@ -906,6 +1082,22 @@ Apply a block — run its outcome end-to-end and write a receipt.
 navig apply
 ```
 
+## `navig approve`
+**Status:** `stable` · **Since:** 
+Approval management - run without subcommand to list pending.
+**Examples:**
+```sh
+navig approve
+```
+
+## `navig approve level`
+**Status:** `stable` · **Since:** 
+Set the security level — one knob, three postures, like a router firewall.
+**Examples:**
+```sh
+navig approve level
+```
+
 ## `navig approve list`
 **Status:** `stable` · **Since:** 
 List pending approval requests.
@@ -930,6 +1122,14 @@ Show approval policy (patterns and levels).
 navig approve policy
 ```
 
+## `navig approve status`
+**Status:** `stable` · **Since:** 
+Show the security level and what it means — configured vs. what the gateway runs.
+**Examples:**
+```sh
+navig approve status
+```
+
 ## `navig approve yes`
 **Status:** `stable` · **Since:** 
 Approve a pending request.
@@ -946,6 +1146,14 @@ Ask AI about server/configuration.
 navig ask
 ```
 
+## `navig audio ambience`
+**Status:** `stable` · **Since:** 
+🌧 Rain, static or city weather under a cut — deterministic, seeded by kind.
+**Examples:**
+```sh
+navig audio ambience
+```
+
 ## `navig audio beat analyse`
 **Status:** `stable` · **Since:** 
 🔍 What is this beat — tempo, key, structure, spectrum, and a style brief derived from them.
@@ -954,12 +1162,44 @@ navig ask
 navig audio beat analyse
 ```
 
+## `navig audio beat demo`
+**Status:** `stable` · **Since:** 
+🎤 A 30-second guide-vocal demo: the hook spoken in character voices on its bars. GUIDE ONLY.
+**Examples:**
+```sh
+navig audio beat demo
+```
+
+## `navig audio beat fit`
+**Status:** `stable` · **Since:** 
+📏 Does a lyric sit on the beat? (alias of `navig text lyrics fit`)
+**Examples:**
+```sh
+navig audio beat fit
+```
+
 ## `navig audio beat gen`
 **Status:** `stable` · **Since:** 
 🎛  Render beats from a style — bar-exact sections, no vocals, tempo and key checked afterwards.
 **Examples:**
 ```sh
 navig audio beat gen
+```
+
+## `navig audio beat grid`
+**Status:** `stable` · **Since:** 
+📐 Beat times for a bed — the grid a cut lands on, cached per (file, offset, length).
+**Examples:**
+```sh
+navig audio beat grid
+```
+
+## `navig audio beat layer`
+**Status:** `stable` · **Since:** 
+🎚  Layer sound effects onto a beat — on bars, with fades. The dry beat is never touched.
+**Examples:**
+```sh
+navig audio beat layer
 ```
 
 ## `navig audio beat plan`
@@ -978,12 +1218,28 @@ navig audio beat plan
 navig audio beat styles
 ```
 
+## `navig audio bed assign`
+**Status:** `stable` · **Since:** 
+🎼 (Re)use the episode's track — stable across renders, unique per episode.
+**Examples:**
+```sh
+navig audio bed assign
+```
+
 ## `navig audio check`
 **Status:** `stable` · **Since:** 
 Show whether AI audio generation is configured (a provider key resolves).
 **Examples:**
 ```sh
 navig audio check
+```
+
+## `navig audio clean-video`
+**Status:** `stable` · **Since:** 
+🎬 Clean the dialogue in a video and put it back in sync (picture copied untouched).
+**Examples:**
+```sh
+navig audio clean-video
 ```
 
 ## `navig audio clone`
@@ -994,12 +1250,44 @@ navig audio check
 navig audio clone
 ```
 
+## `navig audio delivery`
+**Status:** `stable` · **Since:** 
+📡 Check loudness against a platform's delivery spec — and fix it to fit.
+**Examples:**
+```sh
+navig audio delivery
+```
+
 ## `navig audio draft`
 **Status:** `stable` · **Since:** 
 📝 Turn rough notes into a strict scenario you can review before rendering.
 **Examples:**
 ```sh
 navig audio draft
+```
+
+## `navig audio dub`
+**Status:** `stable` · **Since:** 
+🌍 Dub into other languages — the same voices, the timing kept.
+**Examples:**
+```sh
+navig audio dub
+```
+
+## `navig audio enhance`
+**Status:** `stable` · **Since:** 
+🎛 Restore and master a recording — measured, explained, verified, never overwritten.
+**Examples:**
+```sh
+navig audio enhance
+```
+
+## `navig audio enhance-presets`
+**Status:** `stable` · **Since:** 
+🎚 The enhancement presets (Preserve Original, Clean SFX, Studio Polish, …).
+**Examples:**
+```sh
+navig audio enhance-presets
 ```
 
 ## `navig audio gen`
@@ -1010,6 +1298,46 @@ Generate audio from a text prompt and save it locally.
 navig audio gen
 ```
 
+## `navig audio isolate`
+**Status:** `stable` · **Since:** 
+🎤 Strip background noise, keep the voice — the ElevenLabs voice isolator.
+**Examples:**
+```sh
+navig audio isolate
+```
+
+## `navig audio loop`
+**Status:** `stable` · **Since:** 
+🌧 A seamless, loopable ambience bed at any length (rain, room tone, server room, …).
+**Examples:**
+```sh
+navig audio loop
+```
+
+## `navig audio loudness`
+**Status:** `stable` · **Since:** 
+📏 Integrated loudness (LUFS), loudness range and true peak — how a master is judged.
+**Examples:**
+```sh
+navig audio loudness
+```
+
+## `navig audio master`
+**Status:** `stable` · **Since:** 
+🎚️ Mix a vocal over a beat and master it — a finished song at a measured loudness.
+**Examples:**
+```sh
+navig audio master
+```
+
+## `navig audio match`
+**Status:** `stable` · **Since:** 
+🎚 Match a reference's tonal balance and loudness (dynamics kept unless asked).
+**Examples:**
+```sh
+navig audio match
+```
+
 ## `navig audio plan`
 **Status:** `stable` · **Since:** 
 🧮 What this episode will cost, before it costs it. Spends nothing.
@@ -1018,12 +1346,36 @@ navig audio gen
 navig audio plan
 ```
 
+## `navig audio podcast-edit`
+**Status:** `stable` · **Since:** 
+✂️ Find fillers, long pauses and repeats — review the cut list, then apply it.
+**Examples:**
+```sh
+navig audio podcast-edit
+```
+
 ## `navig audio publish`
 **Status:** `stable` · **Since:** 
-📤 Show exactly what would be uploaded to NobiCast. Uploads nothing yet.
+📤 Publish a rendered episode to NobiCast — plan it first, --upload to send.
 **Examples:**
 ```sh
 navig audio publish
+```
+
+## `navig audio read`
+**Status:** `stable` · **Since:** 
+📖 Read a text aloud, like a book — numbered ten-minute parts, quiet and unhurried.
+**Examples:**
+```sh
+navig audio read
+```
+
+## `navig audio regenerate`
+**Status:** `stable` · **Since:** 
+🧪 Make NEW audio from a recording with AI — new voice, variations, or a replaced stem.
+**Examples:**
+```sh
+navig audio regenerate
 ```
 
 ## `navig audio render`
@@ -1034,12 +1386,52 @@ navig audio publish
 navig audio render
 ```
 
+## `navig audio score`
+**Status:** `stable` · **Since:** 
+🎼 Compose music that follows the cuts of a video, mixed under its dialogue.
+**Examples:**
+```sh
+navig audio score
+```
+
+## `navig audio similar`
+**Status:** `stable` · **Since:** 
+🔎 Find sounds that sound like this one — local fingerprints, cached.
+**Examples:**
+```sh
+navig audio similar
+```
+
 ## `navig audio slowed`
 **Status:** `stable` · **Since:** 
 🐢 The "slowed" sound — pitch drops with the speed, plus optional reverb.
 **Examples:**
 ```sh
 navig audio slowed
+```
+
+## `navig audio songs card`
+**Status:** `stable` · **Since:** 
+🪪 Create or refresh a song card (README.md front matter + facts read from the folder).
+**Examples:**
+```sh
+navig audio songs card
+```
+
+## `navig audio songs catalog`
+**Status:** `stable` · **Since:** 
+📚 Build the catalog from every song card under ROOT.
+**Examples:**
+```sh
+navig audio songs catalog
+```
+
+## `navig audio songs check`
+**Status:** `stable` · **Since:** 
+🩺 Duplicate ids, unknown status, a recorded song with no audio. Exit 1 when anything is wrong.
+**Examples:**
+```sh
+navig audio songs check
 ```
 
 ## `navig audio speed`
@@ -1050,6 +1442,22 @@ navig audio slowed
 navig audio speed
 ```
 
+## `navig audio spoken`
+**Status:** `stable` · **Since:** 
+🔢 Display text → the words a voice should actually speak (cases, ordinals, years).
+**Examples:**
+```sh
+navig audio spoken
+```
+
+## `navig audio stems`
+**Status:** `stable` · **Since:** 
+🎛 Split a song into parts once, then mute / solo / re-balance them locally.
+**Examples:**
+```sh
+navig audio stems
+```
+
 ## `navig audio translate`
 **Status:** `stable` · **Since:** 
 🌍 Translate the spoken lines, keeping the album structure identical.
@@ -1058,12 +1466,36 @@ navig audio speed
 navig audio translate
 ```
 
+## `navig audio voice-line`
+**Status:** `stable` · **Since:** 
+🗣 One narration line with word timings — the kinetic renderer reads the same cache.
+**Examples:**
+```sh
+navig audio voice-line
+```
+
+## `navig audio voice-stats`
+**Status:** `stable` · **Since:** 
+📊 What the shared voice cache holds — counts, size, orphans, age.
+**Examples:**
+```sh
+navig audio voice-stats
+```
+
 ## `navig audio voices`
 **Status:** `stable` · **Since:** 
 🗣  List the voices this key can speak with — your clones first.
 **Examples:**
 ```sh
 navig audio voices
+```
+
+## `navig audit`
+**Status:** `stable` · **Since:** 
+Privileged-action audit trail (gateway policy + approval decisions).
+**Examples:**
+```sh
+navig audit
 ```
 
 ## `navig audit tail`
@@ -1138,6 +1570,14 @@ List all windows.
 navig auto windows
 ```
 
+## `navig backup`
+**Status:** `stable` · **Since:** 
+Backup management - run without subcommand for help.
+**Examples:**
+```sh
+navig backup
+```
+
 ## `navig backup config`
 **Status:** `stable` · **Since:** 
 Backup/export NAVIG configuration (hosts, apps, settings).
@@ -1194,108 +1634,12 @@ Show backup details or list all backups (canonical command).
 navig backup show
 ```
 
-## `navig bb bundle create`
+## `navig backup watch`
 **Status:** `stable` · **Since:** 
-Create a .navbox bundle from recent events and logs.
+Is the newest backup in PATH fresh? Exit 0 fresh, 1 stale/unreachable.
 **Examples:**
 ```sh
-navig bb bundle create
-```
-
-## `navig bb bundle export`
-**Status:** `stable` · **Since:** 
-Re-export an existing .navbox bundle, optionally with encryption.
-**Examples:**
-```sh
-navig bb bundle export
-```
-
-## `navig bb bundle inspect`
-**Status:** `stable` · **Since:** 
-Inspect the contents of a .navbox bundle.
-**Examples:**
-```sh
-navig bb bundle inspect
-```
-
-## `navig bb capture`
-**Status:** `stable` · **Since:** 
-Capture a session snapshot to a .navbox bundle.
-**Examples:**
-```sh
-navig bb capture
-```
-
-## `navig bb clear`
-**Status:** `stable` · **Since:** 
-Delete all recorded blackbox events (irreversible).
-**Examples:**
-```sh
-navig bb clear
-```
-
-## `navig bb crashes`
-**Status:** `stable` · **Since:** 
-List recent crash reports.
-**Examples:**
-```sh
-navig bb crashes
-```
-
-## `navig bb disable`
-**Status:** `stable` · **Since:** 
-Pause event recording (events will not be written).
-**Examples:**
-```sh
-navig bb disable
-```
-
-## `navig bb enable`
-**Status:** `stable` · **Since:** 
-Enable event recording.
-**Examples:**
-```sh
-navig bb enable
-```
-
-## `navig bb record`
-**Status:** `stable` · **Since:** 
-Manually record an event into the blackbox.
-**Examples:**
-```sh
-navig bb record
-```
-
-## `navig bb seal`
-**Status:** `stable` · **Since:** 
-Seal the blackbox (prevents recording new events until unsealed).
-**Examples:**
-```sh
-navig bb seal
-```
-
-## `navig bb status`
-**Status:** `stable` · **Since:** 
-Show blackbox recorder status and storage statistics.
-**Examples:**
-```sh
-navig bb status
-```
-
-## `navig bb tail`
-**Status:** `stable` · **Since:** 
-Show the most recent N events from the blackbox.
-**Examples:**
-```sh
-navig bb tail
-```
-
-## `navig bb timeline`
-**Status:** `stable` · **Since:** 
-Render a Rich timeline table of recorded events.
-**Examples:**
-```sh
-navig bb timeline
+navig backup watch
 ```
 
 ## `navig benchmark run`
@@ -1482,6 +1826,22 @@ List available blueprints.
 navig blueprint list
 ```
 
+## `navig body`
+**Status:** `stable` · **Since:** 
+Show today's record when called with no subcommand.
+**Examples:**
+```sh
+navig body
+```
+
+## `navig body cadence`
+**Status:** `stable` · **Since:** 
+Show — or set — how often the scheduled weigh-in asks.
+**Examples:**
+```sh
+navig body cadence
+```
+
 ## `navig body checkin`
 **Status:** `stable` · **Since:** 
 Preview — or send to Telegram — the weigh-in prompt or the weekly card.
@@ -1522,20 +1882,180 @@ Show the moving average and the change against the previous window.
 navig body trend
 ```
 
-## `navig boot run`
+## `navig bookmarks add`
 **Status:** `stable` · **Since:** 
-Execute the boot sequence hooks.
+Save a bookmark.
 **Examples:**
 ```sh
-navig boot run
+navig bookmarks add
 ```
 
-## `navig boot show`
+## `navig bookmarks check`
 **Status:** `stable` · **Since:** 
-Show the current boot configuration.
+Find dead links and redirects (headers only; private addresses are never contacted).
 **Examples:**
 ```sh
-navig boot show
+navig bookmarks check
+```
+
+## `navig bookmarks dedupe`
+**Status:** `stable` · **Since:** 
+Find bookmarks that point at the same page (tracking parameters, www., http/https ignored).
+**Examples:**
+```sh
+navig bookmarks dedupe
+```
+
+## `navig bookmarks delete`
+**Status:** `stable` · **Since:** 
+Delete a bookmark.
+**Examples:**
+```sh
+navig bookmarks delete
+```
+
+## `navig bookmarks edit`
+**Status:** `stable` · **Since:** 
+Change a bookmark.
+**Examples:**
+```sh
+navig bookmarks edit
+```
+
+## `navig bookmarks export`
+**Status:** `stable` · **Since:** 
+Export bookmarks as Netscape HTML (with folders) or JSON.
+**Examples:**
+```sh
+navig bookmarks export
+```
+
+## `navig bookmarks folders`
+**Status:** `stable` · **Since:** 
+Folders and how many bookmarks each holds.
+**Examples:**
+```sh
+navig bookmarks folders
+```
+
+## `navig bookmarks import`
+**Status:** `stable` · **Since:** 
+Import bookmarks — folders are kept; URLs already saved are skipped.
+**Examples:**
+```sh
+navig bookmarks import
+```
+
+## `navig bookmarks list`
+**Status:** `stable` · **Since:** 
+List bookmarks, most recently used first.
+**Examples:**
+```sh
+navig bookmarks list
+```
+
+## `navig bookmarks migrate`
+**Status:** `stable` · **Since:** 
+Copy bookmarks from navig's old `links` store (also done automatically; safe to repeat).
+**Examples:**
+```sh
+navig bookmarks migrate
+```
+
+## `navig bookmarks open`
+**Status:** `stable` · **Since:** 
+Open a bookmark. With a vault credential and navig installed, the login is filled in.
+**Examples:**
+```sh
+navig bookmarks open
+```
+
+## `navig bookmarks organize`
+**Status:** `stable` · **Since:** 
+Plan a clean folder tree with your AI. Dry run unless --apply.
+**Examples:**
+```sh
+navig bookmarks organize
+```
+
+## `navig bookmarks rules add`
+**Status:** `stable` · **Since:** 
+Add a rule (applies to new bookmarks; run `rules apply` for existing ones).
+**Examples:**
+```sh
+navig bookmarks rules add
+```
+
+## `navig bookmarks rules apply`
+**Status:** `stable` · **Since:** 
+Re-tag every bookmark from the current rules (only rule tags are replaced).
+**Examples:**
+```sh
+navig bookmarks rules apply
+```
+
+## `navig bookmarks rules list`
+**Status:** `stable` · **Since:** 
+List tagging rules.
+**Examples:**
+```sh
+navig bookmarks rules list
+```
+
+## `navig bookmarks rules remove`
+**Status:** `stable` · **Since:** 
+Remove a rule (its tags stay until `rules apply`).
+**Examples:**
+```sh
+navig bookmarks rules remove
+```
+
+## `navig bookmarks search`
+**Status:** `stable` · **Since:** 
+Full-text search.
+**Examples:**
+```sh
+navig bookmarks search
+```
+
+## `navig bookmarks show`
+**Status:** `stable` · **Since:** 
+Everything about one bookmark.
+**Examples:**
+```sh
+navig bookmarks show
+```
+
+## `navig bookmarks tag`
+**Status:** `stable` · **Since:** 
+Add or remove tags — or let the AI tag (it only ever replaces its own tags).
+**Examples:**
+```sh
+navig bookmarks tag
+```
+
+## `navig bookmarks tags`
+**Status:** `stable` · **Since:** 
+Tags and how often each is used.
+**Examples:**
+```sh
+navig bookmarks tags
+```
+
+## `navig bookmarks version`
+**Status:** `stable` · **Since:** 
+Print the plugin version.
+**Examples:**
+```sh
+navig bookmarks version
+```
+
+## `navig bot`
+**Status:** `stable` · **Since:** 
+Bot commands - run without subcommand to start bot.
+**Examples:**
+```sh
+navig bot
 ```
 
 ## `navig bot start`
@@ -1618,52 +2138,12 @@ Show current Bridge connection configuration.
 navig bridge status
 ```
 
-## `navig browser click`
+## `navig build`
 **Status:** `stable` · **Since:** 
-Click an element on the active page.
+Run navig build
 **Examples:**
 ```sh
-navig browser click
-```
-
-## `navig browser fill`
-**Status:** `stable` · **Since:** 
-Fill an input field on the active page.
-**Examples:**
-```sh
-navig browser fill
-```
-
-## `navig browser open`
-**Status:** `stable` · **Since:** 
-Navigate browser to a URL.
-**Examples:**
-```sh
-navig browser open
-```
-
-## `navig browser screenshot`
-**Status:** `stable` · **Since:** 
-Capture a browser screenshot.
-**Examples:**
-```sh
-navig browser screenshot
-```
-
-## `navig browser status`
-**Status:** `stable` · **Since:** 
-Show browser status.
-**Examples:**
-```sh
-navig browser status
-```
-
-## `navig browser stop`
-**Status:** `stable` · **Since:** 
-Stop the browser controller.
-**Examples:**
-```sh
-navig browser stop
+navig build
 ```
 
 ## `navig cabinet add`
@@ -1852,10 +2332,90 @@ navig calendar list
 
 ## `navig calendar sync`
 **Status:** `stable` · **Since:** 
-Sync calendar data from remote providers.
+Nothing to sync: events are read live from your provider on every `list`.
 **Examples:**
 ```sh
 navig calendar sync
+```
+
+## `navig card add`
+**Status:** `stable` · **Since:** 
+Create a task card (orchestrator only — assignment is one session's job).
+**Examples:**
+```sh
+navig card add
+```
+
+## `navig card claim`
+**Status:** `stable` · **Since:** 
+Take exclusive ownership of a card (atomic CAS — one holder wins).
+**Examples:**
+```sh
+navig card claim
+```
+
+## `navig card deps add`
+**Status:** `stable` · **Since:** 
+Declare a dependency (orchestrator only; cycles are rejected by the store).
+**Examples:**
+```sh
+navig card deps add
+```
+
+## `navig card deps remove`
+**Status:** `stable` · **Since:** 
+Drop a dependency (orchestrator only).
+**Examples:**
+```sh
+navig card deps remove
+```
+
+## `navig card list`
+**Status:** `stable` · **Since:** 
+List task cards — their real lanes, gate and holder.
+**Examples:**
+```sh
+navig card list
+```
+
+## `navig card move`
+**Status:** `stable` · **Since:** 
+Move a card between lifecycle stages — allowed only inside the caller's role matrix.
+**Examples:**
+```sh
+navig card move
+```
+
+## `navig card release`
+**Status:** `stable` · **Since:** 
+Release a claim (your own — or, with --force, an abandoned one).
+**Examples:**
+```sh
+navig card release
+```
+
+## `navig card show`
+**Status:** `stable` · **Since:** 
+One card in full: record pointer, dependencies, checklist, stage history.
+**Examples:**
+```sh
+navig card show
+```
+
+## `navig card subtask add`
+**Status:** `stable` · **Since:** 
+Add an acceptance criterion (orchestrator seeds the checklist).
+**Examples:**
+```sh
+navig card subtask add
+```
+
+## `navig card subtask done`
+**Status:** `stable` · **Since:** 
+Tick one acceptance criterion (never a reviewer — its write surface is the receipt).
+**Examples:**
+```sh
+navig card subtask done
 ```
 
 ## `navig cdp click`
@@ -2130,6 +2690,214 @@ Type text into the focused element.
 navig cdp type
 ```
 
+## `navig chats`
+**Status:** `stable` · **Since:** 
+Run navig chats
+**Examples:**
+```sh
+navig chats
+```
+
+## `navig chats export`
+**Status:** `stable` · **Since:** 
+Export chats — readable without NAVIG. Several chats go into one .zip with a manifest.
+**Examples:**
+```sh
+navig chats export
+```
+
+## `navig chats folders add`
+**Status:** `stable` · **Since:** 
+Create a folder.
+**Examples:**
+```sh
+navig chats folders add
+```
+
+## `navig chats folders list`
+**Status:** `stable` · **Since:** 
+Every folder, as a tree.
+**Examples:**
+```sh
+navig chats folders list
+```
+
+## `navig chats folders rm`
+**Status:** `stable` · **Since:** 
+Delete a folder. Its chats stay in the library; subfolders move up a level.
+**Examples:**
+```sh
+navig chats folders rm
+```
+
+## `navig chats handoff`
+**Status:** `stable` · **Since:** 
+Continue this work — a context pack (decisions, open items, code, sources) for another agent.
+**Examples:**
+```sh
+navig chats handoff
+```
+
+## `navig chats import`
+**Status:** `stable` · **Since:** 
+Import a ChatGPT account export. Safe to re-run: unchanged chats are skipped.
+**Examples:**
+```sh
+navig chats import
+```
+
+## `navig chats list`
+**Status:** `stable` · **Since:** 
+List chats in the library.
+**Examples:**
+```sh
+navig chats list
+```
+
+## `navig chats move`
+**Status:** `stable` · **Since:** 
+Put chats in a NAVIG folder (a local change — nothing moves in ChatGPT).
+**Examples:**
+```sh
+navig chats move
+```
+
+## `navig chats reindex`
+**Status:** `stable` · **Since:** 
+Rebuild the search index from the stored messages.
+**Examples:**
+```sh
+navig chats reindex
+```
+
+## `navig chats restore`
+**Status:** `stable` · **Since:** 
+Restore chats from a NAVIG export into the library (not into ChatGPT itself).
+**Examples:**
+```sh
+navig chats restore
+```
+
+## `navig chats search`
+**Status:** `stable` · **Since:** 
+Search every message and title, ranked by relevance.
+**Examples:**
+```sh
+navig chats search
+```
+
+## `navig chats share`
+**Status:** `stable` · **Since:** 
+Choose what NAVIG's knowledge index may read. Nothing is shared until you say so.
+**Examples:**
+```sh
+navig chats share
+```
+
+## `navig chats shared`
+**Status:** `stable` · **Since:** 
+Every chat NAVIG's knowledge index may read, and at which level.
+**Examples:**
+```sh
+navig chats shared
+```
+
+## `navig chats show`
+**Status:** `stable` · **Since:** 
+Read one chat.
+**Examples:**
+```sh
+navig chats show
+```
+
+## `navig chats stats`
+**Status:** `stable` · **Since:** 
+How much the library holds, and where.
+**Examples:**
+```sh
+navig chats stats
+```
+
+## `navig checkin`
+**Status:** `stable` · **Since:** 
+Show today's check-ins when called with no subcommand.
+**Examples:**
+```sh
+navig checkin
+```
+
+## `navig checkin add pills`
+**Status:** `stable` · **Since:** 
+Add a medication check-in — one prompt per time of day.
+**Examples:**
+```sh
+navig checkin add pills
+```
+
+## `navig checkin add water`
+**Status:** `stable` · **Since:** 
+Add the water check-in — a daily target and optional reminders.
+**Examples:**
+```sh
+navig checkin add water
+```
+
+## `navig checkin list`
+**Status:** `stable` · **Since:** 
+Every check-in, its schedule and today's state.
+**Examples:**
+```sh
+navig checkin list
+```
+
+## `navig checkin log`
+**Status:** `stable` · **Since:** 
+Record an answer by hand (the weigh-in has `navig body log --weight`).
+**Examples:**
+```sh
+navig checkin log
+```
+
+## `navig checkin migrate`
+**Status:** `stable` · **Since:** 
+Move the old weigh-in jobs (habit:weigh / habit:bodyreview) onto check-ins.
+**Examples:**
+```sh
+navig checkin migrate
+```
+
+## `navig checkin pause`
+**Status:** `stable` · **Since:** 
+Stop asking. Nothing is deleted; resume restores it exactly.
+**Examples:**
+```sh
+navig checkin pause
+```
+
+## `navig checkin remove`
+**Status:** `stable` · **Since:** 
+Remove a check-in and its schedule. Answers already recorded are kept.
+**Examples:**
+```sh
+navig checkin remove
+```
+
+## `navig checkin resume`
+**Status:** `stable` · **Since:** 
+Start asking again.
+**Examples:**
+```sh
+navig checkin resume
+```
+
+## `navig checkin stats`
+**Status:** `stable` · **Since:** 
+Pill adherence and water totals over the last N days.
+**Examples:**
+```sh
+navig checkin stats
+```
+
 ## `navig cloud connect`
 **Status:** `stable` · **Since:** 
 Enable cloud routing on this daemon and register with the broker.
@@ -2176,6 +2944,14 @@ Self-host the Mini App via Tailscale Funnel — stable HTTPS, no domain needed.
 **Examples:**
 ```sh
 navig cloud tailscale
+```
+
+## `navig config`
+**Status:** `stable` · **Since:** 
+Configuration management - run without subcommand for help.
+**Examples:**
+```sh
+navig config
 ```
 
 ## `navig config audit`
@@ -2282,6 +3058,14 @@ Validate configuration for a host, the project, the global scope, or all.
 navig config validate
 ```
 
+## `navig connect`
+**Status:** `stable` · **Since:** 
+List connections when invoked with no subcommand.
+**Examples:**
+```sh
+navig connect
+```
+
 ## `navig connect add`
 **Status:** `stable` · **Since:** 
 Add a connection. The API key is read via hidden prompt or --stdin (never argv).
@@ -2352,6 +3136,14 @@ Re-validate connection(s) and persist the fresh status.
 **Examples:**
 ```sh
 navig connect test
+```
+
+## `navig connector catalog`
+**Status:** `stable` · **Since:** 
+Every service NAVIG knows about, ranked into batches of 25.
+**Examples:**
+```sh
+navig connector catalog
 ```
 
 ## `navig connector connect`
@@ -2498,6 +3290,14 @@ Remove a contact.
 navig contacts remove
 ```
 
+## `navig contacts resolve`
+**Status:** `stable` · **Since:** 
+Ask Telegram which of these handles still reach a person.
+**Examples:**
+```sh
+navig contacts resolve
+```
+
 ## `navig contacts review`
 **Status:** `stable` · **Since:** 
 Record that a flagged merge was looked at and found correct.
@@ -2552,6 +3352,182 @@ Reverse a merge, restoring the absorbed contact.
 **Examples:**
 ```sh
 navig contacts undo
+```
+
+## `navig content`
+**Status:** `stable` · **Since:** 
+Run navig content
+**Examples:**
+```sh
+navig content
+```
+
+## `navig content captions`
+**Status:** `stable` · **Since:** 
+✍️  Transcribe a track to an .srt — with word-level timings.
+**Examples:**
+```sh
+navig content captions
+```
+
+## `navig content cast`
+**Status:** `stable` · **Since:** 
+🎬 Capture a REAL command's output for the Reel Stage — once, replayable at any size.
+**Examples:**
+```sh
+navig content cast
+```
+
+## `navig content clip`
+**Status:** `stable` · **Since:** 
+🎵 Build a vertical clip cut to a track you already have — no narration.
+**Examples:**
+```sh
+navig content clip
+```
+
+## `navig content episode build`
+**Status:** `stable` · **Since:** 
+🎬 Build an episode end to end — and stop at the first stage that fails.
+**Examples:**
+```sh
+navig content episode build
+```
+
+## `navig content episode draft`
+**Status:** `stable` · **Since:** 
+📝 Draft an episode from an article — hook, beats, narration, posting copy.
+**Examples:**
+```sh
+navig content episode draft
+```
+
+## `navig content episode plan`
+**Status:** `stable` · **Since:** 
+🧭 Reconstruct a narration plan (rebuild.json) from a legacy episode's voice + cuts.
+**Examples:**
+```sh
+navig content episode plan
+```
+
+## `navig content episode stats record`
+**Status:** `stable` · **Since:** 
+Store a snapshot of a posted episode's numbers (from TikTok's insights screen).
+**Examples:**
+```sh
+navig content episode stats record
+```
+
+## `navig content episode stats show`
+**Status:** `stable` · **Since:** 
+Every episode side by side: what the cut is (hook, cuts, pace) and how it did.
+**Examples:**
+```sh
+navig content episode stats show
+```
+
+## `navig content hooks`
+**Status:** `stable` · **Since:** 
+🎣 Rank the passages of a track worth cutting a short clip from.
+**Examples:**
+```sh
+navig content hooks
+```
+
+## `navig content localize`
+**Status:** `stable` · **Since:** 
+🌍 The same picture in another language — captures untouched.
+**Examples:**
+```sh
+navig content localize
+```
+
+## `navig content publish`
+**Status:** `stable` · **Since:** 
+📦 A render → a ready-to-post pack: spec check, cover, caption, hashtags.
+**Examples:**
+```sh
+navig content publish
+```
+
+## `navig content qa`
+**Status:** `stable` · **Since:** 
+🔎 Catch a video's design bugs before (and after) rendering it.
+**Examples:**
+```sh
+navig content qa
+```
+
+## `navig content recipe apply`
+**Status:** `stable` · **Since:** 
+Unpack a recipe into an episode folder — hash-checked, never half-applied.
+**Examples:**
+```sh
+navig content recipe apply
+```
+
+## `navig content recipe export`
+**Status:** `stable` · **Since:** 
+Pack an episode's irreplaceable sources — scenes, shotlists, narration plan, casts.
+**Examples:**
+```sh
+navig content recipe export
+```
+
+## `navig content reel`
+**Status:** `stable` · **Since:** 
+🎬 Build a vertical reel per language — capture, narrate, caption, score.
+**Examples:**
+```sh
+navig content reel
+```
+
+## `navig content run`
+**Status:** `stable` · **Since:** 
+Run the assembly line from a topic (or a source clip) to a fanned-out post.
+**Examples:**
+```sh
+navig content run
+```
+
+## `navig content schedule`
+**Status:** `stable` · **Since:** 
+Autopilot — run + publish the assembly line on a recurring cadence.
+**Examples:**
+```sh
+navig content schedule
+```
+
+## `navig content stage`
+**Status:** `stable` · **Since:** 
+📱 Compile a scene into a self-contained, phone-sized page a reel or clip can film.
+**Examples:**
+```sh
+navig content stage
+```
+
+## `navig content status`
+**Status:** `stable` · **Since:** 
+Show which assembly-line stages are wired (their plugin is installed).
+**Examples:**
+```sh
+navig content status
+```
+
+## `navig content telegram-import`
+**Status:** `stable` · **Since:** 
+Import a Telegram channel's media into the local library, then optionally delete the
+**Examples:**
+```sh
+navig content telegram-import
+```
+
+## `navig context`
+**Status:** `stable` · **Since:** 
+Context management - shows current context if no subcommand.
+**Examples:**
+```sh
+navig context
 ```
 
 ## `navig context clear`
@@ -2738,6 +3714,14 @@ Start the Cortex Hybrid Brain Loop on a specific goal.
 navig cortex run
 ```
 
+## `navig cost`
+**Status:** `stable` · **Since:** 
+Show current session cost summary (default sub-command).
+**Examples:**
+```sh
+navig cost
+```
+
 ## `navig cost clear`
 **Status:** `stable` · **Since:** 
 Clear session cost history (irreversible).
@@ -2754,20 +3738,20 @@ Show recent session cost history.
 navig cost history
 ```
 
-## `navig council run`
-**Status:** `stable` · **Since:** 
-Run a council deliberation across all agents in the active formation.
-**Examples:**
-```sh
-navig council run
-```
-
 ## `navig crash export`
 **Status:** `stable` · **Since:** 
 Export the latest crash report for GitHub issues.
 **Examples:**
 ```sh
 navig crash export
+```
+
+## `navig cron`
+**Status:** `stable` · **Since:** 
+Run navig cron
+**Examples:**
+```sh
+navig cron
 ```
 
 ## `navig cron add`
@@ -2832,6 +3816,14 @@ Live operator console: identity, services, safety, hosts and activity.
 **Examples:**
 ```sh
 navig dashboard
+```
+
+## `navig db`
+**Status:** `stable` · **Since:** 
+Database management - run without subcommand for help.
+**Examples:**
+```sh
+navig db
 ```
 
 ## `navig db dump`
@@ -2960,6 +3952,46 @@ List tables in a database.
 navig db tables
 ```
 
+## `navig debrief build`
+**Status:** `stable` · **Since:** 
+Build a visual debrief of a session (facts from the transcript, prose from story.json).
+**Examples:**
+```sh
+navig debrief build
+```
+
+## `navig debrief list`
+**Status:** `stable` · **Since:** 
+List recent DSH sessions a debrief can be built from.
+**Examples:**
+```sh
+navig debrief list
+```
+
+## `navig debrief open`
+**Status:** `stable` · **Since:** 
+Build (if needed) and open a session's debrief.
+**Examples:**
+```sh
+navig debrief open
+```
+
+## `navig debrief shot`
+**Status:** `stable` · **Since:** 
+Capture PNGs for an existing (or freshly built) debrief.
+**Examples:**
+```sh
+navig debrief shot
+```
+
+## `navig debug`
+**Status:** `stable` · **Since:** 
+Show debug log info.
+**Examples:**
+```sh
+navig debug
+```
+
 ## `navig debug clear`
 **Status:** `stable` · **Since:** 
 Clear the NAVIG debug log.
@@ -2974,6 +4006,70 @@ Tail the NAVIG debug log.
 **Examples:**
 ```sh
 navig debug tail
+```
+
+## `navig decider`
+**Status:** `stable` · **Since:** 
+Show the decision model's status (default sub-command).
+**Examples:**
+```sh
+navig decider
+```
+
+## `navig decider off`
+**Status:** `stable` · **Since:** 
+Switch the decision model off — everywhere, or for one use.
+**Examples:**
+```sh
+navig decider off
+```
+
+## `navig decider on`
+**Status:** `stable` · **Since:** 
+Switch the decision model on — for everything, or for one use.
+**Examples:**
+```sh
+navig decider on
+```
+
+## `navig decider review`
+**Status:** `stable` · **Since:** 
+The most recent shadow-mode DISAGREEMENTS — what to read before switching a use on.
+**Examples:**
+```sh
+navig decider review
+```
+
+## `navig decider shadow`
+**Status:** `stable` · **Since:** 
+Shadow mode: Clef answers are compared with the old logic and recorded, not applied.
+**Examples:**
+```sh
+navig decider shadow
+```
+
+## `navig decider status`
+**Status:** `stable` · **Since:** 
+Switches, credential, today's usage and the last call.
+**Examples:**
+```sh
+navig decider status
+```
+
+## `navig decider test`
+**Status:** `stable` · **Since:** 
+One live call — works even while the decider is switched off.
+**Examples:**
+```sh
+navig decider test
+```
+
+## `navig decider use`
+**Status:** `stable` · **Since:** 
+Pick the model.
+**Examples:**
+```sh
+navig decider use
 ```
 
 ## `navig deck deploy`
@@ -2998,6 +4094,14 @@ Open the control deck — the gateway already serves it (no Node, no second daem
 **Examples:**
 ```sh
 navig deck open
+```
+
+## `navig dedupe`
+**Status:** `stable` · **Since:** 
+Find, quarantine & restore duplicate photos, video, audio & files — non-destructive.
+**Examples:**
+```sh
+navig dedupe
 ```
 
 ## `navig dedupe restore`
@@ -3064,6 +4168,38 @@ Show the status of the last deploy.
 navig deploy status
 ```
 
+## `navig design check`
+**Status:** `stable` · **Since:** 
+Show whether AI design edits are ready (an AI provider is configured).
+**Examples:**
+```sh
+navig design check
+```
+
+## `navig design edit`
+**Status:** `stable` · **Since:** 
+Restyle/rewrite one element per an instruction; print the revised HTML as JSON.
+**Examples:**
+```sh
+navig design edit
+```
+
+## `navig design tokens save`
+**Status:** `stable` · **Since:** 
+Persist a token set as tokens.json + tokens.css (global, or a space's .navig/design).
+**Examples:**
+```sh
+navig design tokens save
+```
+
+## `navig design tokens show`
+**Status:** `stable` · **Since:** 
+Show the stored design tokens (colors, type scale, spacing, radii).
+**Examples:**
+```sh
+navig design tokens show
+```
+
 ## `navig desktop ahk`
 **Status:** `stable` · **Since:** 
 Execute an AutoHotkey v2 script via AutoHotkey.exe.
@@ -3120,6 +4256,14 @@ Dump the UI element tree to the specified depth.
 navig desktop tree
 ```
 
+## `navig dev`
+**Status:** `stable` · **Since:** 
+Run navig dev
+**Examples:**
+```sh
+navig dev
+```
+
 ## `navig devhost add`
 **Status:** `stable` · **Since:** 
 Register a dev domain: hosts entry + (optional) trusted cert.
@@ -3168,6 +4312,310 @@ Run the HTTPS relay (foreground). Ctrl+C to stop.
 navig devhost up
 ```
 
+## `navig devnet api`
+**Status:** `stable` · **Since:** 
+Discover and parse an OpenAPI/Swagger spec; list its endpoints.
+**Examples:**
+```sh
+navig devnet api
+```
+
+## `navig devnet crawl`
+**Status:** `stable` · **Since:** 
+Map a site: a polite, same-origin, robots-respecting read-only crawl.
+**Examples:**
+```sh
+navig devnet crawl
+```
+
+## `navig devnet diff`
+**Status:** `stable` · **Since:** 
+Compare two recorded responses (status, headers, body).
+**Examples:**
+```sh
+navig devnet diff
+```
+
+## `navig devnet dns`
+**Status:** `stable` · **Since:** 
+Resolve DNS records (MX/TXT/NS/… with dnspython; A/AAAA always).
+**Examples:**
+```sh
+navig devnet dns
+```
+
+## `navig devnet history`
+**Status:** `stable` · **Since:** 
+List recent repeater requests in this space.
+**Examples:**
+```sh
+navig devnet history
+```
+
+## `navig devnet http`
+**Status:** `stable` · **Since:** 
+Send an HTTP request and read the full response (the repeater).
+**Examples:**
+```sh
+navig devnet http
+```
+
+## `navig devnet ssl`
+**Status:** `stable` · **Since:** 
+Read a server's TLS certificate (issuer, validity, SANs, days left).
+**Examples:**
+```sh
+navig devnet ssl
+```
+
+## `navig devnet whois`
+**Status:** `stable` · **Since:** 
+WHOIS registration record (bare-TCP; no system whois binary needed).
+**Examples:**
+```sh
+navig devnet whois
+```
+
+## `navig discord bot invite`
+**Status:** `stable` · **Since:** 
+Open the link that adds the bot to a server you manage.
+**Examples:**
+```sh
+navig discord bot invite
+```
+
+## `navig discord bot profile`
+**Status:** `stable` · **Since:** 
+Show the bot's profile, or change its name, avatar and About Me.
+**Examples:**
+```sh
+navig discord bot profile
+```
+
+## `navig discord bot set`
+**Status:** `stable` · **Since:** 
+Store the bot token (Developer Portal → your app → Bot → Reset Token).
+**Examples:**
+```sh
+navig discord bot set
+```
+
+## `navig discord channel create`
+**Status:** `stable` · **Since:** 
+Create a channel or category.
+**Examples:**
+```sh
+navig discord channel create
+```
+
+## `navig discord channel delete`
+**Status:** `stable` · **Since:** 
+Delete a channel (its messages go with it — this cannot be undone).
+**Examples:**
+```sh
+navig discord channel delete
+```
+
+## `navig discord channel edit`
+**Status:** `stable` · **Since:** 
+Rename, re-topic, move or slow down a channel.
+**Examples:**
+```sh
+navig discord channel edit
+```
+
+## `navig discord channels`
+**Status:** `stable` · **Since:** 
+Channels of a server, grouped by category.
+**Examples:**
+```sh
+navig discord channels
+```
+
+## `navig discord join`
+**Status:** `stable` · **Since:** 
+Preview an invite and open it in your browser to accept it (never joins by API).
+**Examples:**
+```sh
+navig discord join
+```
+
+## `navig discord leave`
+**Status:** `stable` · **Since:** 
+Leave a server (as you, or remove the bot from it).
+**Examples:**
+```sh
+navig discord leave
+```
+
+## `navig discord login`
+**Status:** `stable` · **Since:** 
+Opt in to account mode: store YOUR user token (list, read and leave your servers).
+**Examples:**
+```sh
+navig discord login
+```
+
+## `navig discord logout`
+**Status:** `stable` · **Since:** 
+Forget your user token (the bot is untouched).
+**Examples:**
+```sh
+navig discord logout
+```
+
+## `navig discord members`
+**Status:** `stable` · **Since:** 
+Members of a server the bot is in (bot only — needs the Server Members intent).
+**Examples:**
+```sh
+navig discord members
+```
+
+## `navig discord mod ban`
+**Status:** `stable` · **Since:** 
+Ban a member (also works for users who already left).
+**Examples:**
+```sh
+navig discord mod ban
+```
+
+## `navig discord mod bans`
+**Status:** `stable` · **Since:** 
+Everyone banned from a server, with the reason.
+**Examples:**
+```sh
+navig discord mod bans
+```
+
+## `navig discord mod kick`
+**Status:** `stable` · **Since:** 
+Kick a member (they can rejoin with an invite).
+**Examples:**
+```sh
+navig discord mod kick
+```
+
+## `navig discord mod log`
+**Status:** `stable` · **Since:** 
+NAVIG's own record of every moderation action it took (newest first).
+**Examples:**
+```sh
+navig discord mod log
+```
+
+## `navig discord mod timeout`
+**Status:** `stable` · **Since:** 
+Time a member out: they can read but not talk, react or join voice.
+**Examples:**
+```sh
+navig discord mod timeout
+```
+
+## `navig discord mod unban`
+**Status:** `stable` · **Since:** 
+Lift a ban.
+**Examples:**
+```sh
+navig discord mod unban
+```
+
+## `navig discord mod untimeout`
+**Status:** `stable` · **Since:** 
+End a member's timeout early.
+**Examples:**
+```sh
+navig discord mod untimeout
+```
+
+## `navig discord role add`
+**Status:** `stable` · **Since:** 
+Give a member a role.
+**Examples:**
+```sh
+navig discord role add
+```
+
+## `navig discord role create`
+**Status:** `stable` · **Since:** 
+Create a role (never with permissions the bot itself lacks).
+**Examples:**
+```sh
+navig discord role create
+```
+
+## `navig discord role delete`
+**Status:** `stable` · **Since:** 
+Delete a role (members lose it; this cannot be undone).
+**Examples:**
+```sh
+navig discord role delete
+```
+
+## `navig discord role edit`
+**Status:** `stable` · **Since:** 
+Rename, recolour or change a role's permissions.
+**Examples:**
+```sh
+navig discord role edit
+```
+
+## `navig discord role remove`
+**Status:** `stable` · **Since:** 
+Take a role from a member.
+**Examples:**
+```sh
+navig discord role remove
+```
+
+## `navig discord roles`
+**Status:** `stable` · **Since:** 
+Roles of a server, highest first.
+**Examples:**
+```sh
+navig discord roles
+```
+
+## `navig discord server`
+**Status:** `stable` · **Since:** 
+Details of one server.
+**Examples:**
+```sh
+navig discord server
+```
+
+## `navig discord servers`
+**Status:** `stable` · **Since:** 
+Every server you are in — members, online, your role, and where the bot is.
+**Examples:**
+```sh
+navig discord servers
+```
+
+## `navig discord settings`
+**Status:** `stable` · **Since:** 
+The bot's settings (discord.* in config) and what each one does.
+**Examples:**
+```sh
+navig discord settings
+```
+
+## `navig discord setup`
+**Status:** `stable` · **Since:** 
+Guided setup of the NAVIG Discord bot — token, library, intents, owners, invite.
+**Examples:**
+```sh
+navig discord setup
+```
+
+## `navig discord status`
+**Status:** `stable` · **Since:** 
+Which Discord identities are set up, and whether their tokens still work.
+**Examples:**
+```sh
+navig discord status
+```
+
 ## `navig dispatch send`
 **Status:** `stable` · **Since:** 
 Send a message through the unified messaging layer.
@@ -3192,84 +4640,244 @@ List active conversation threads.
 navig dispatch threads
 ```
 
-## `navig dl analyse`
+## `navig distribution adapters`
 **Status:** `stable` · **Since:** 
-AI markdown briefing of a post (description + best comments combined).
+Reviewed form maps on disk and whether each one is usable.
 **Examples:**
 ```sh
-navig dl analyse
+navig distribution adapters
 ```
 
-## `navig dl batch`
+## `navig distribution analytics`
 **Status:** `stable` · **Since:** 
-Download every URL in a links file (videos via yt-dlp, /photo/ posts via the browser).
+Measured outcomes — and explicit gaps where nothing was measured.
 **Examples:**
 ```sh
-navig dl batch
+navig distribution analytics
 ```
 
-## `navig dl comments`
+## `navig distribution channel`
 **Status:** `stable` · **Since:** 
-List the top comments, ranked by likes.
+Everything recorded about one channel, with its evidence.
 **Examples:**
 ```sh
-navig dl comments
+navig distribution channel
 ```
 
-## `navig dl download`
+## `navig distribution channels`
 **Status:** `stable` · **Since:** 
-Download TikTok posts (organized <out>/<creator>/<id>) — concurrent, resumable.
+Search the channel database (project-scoped when --project is given).
 **Examples:**
 ```sh
-navig dl download
+navig distribution channels
 ```
 
-## `navig dl info`
+## `navig distribution content block`
 **Status:** `stable` · **Since:** 
-Show metadata: creator, description, stats (and image URLs for /photo/ posts).
+Replace exactly one block. Every save is a recoverable version.
 **Examples:**
 ```sh
-navig dl info
+navig distribution content block
 ```
 
-## `navig dl login`
+## `navig distribution content import`
 **Status:** `stable` · **Since:** 
-Log into TikTok once and vault the session; afterwards every command uses it automatically.
+Import a written article package as editable drafts (idempotent per folder).
 **Examples:**
 ```sh
-navig dl login
+navig distribution content import
 ```
 
-## `navig dl logout`
+## `navig distribution content new`
 **Status:** `stable` · **Since:** 
-Forget the vaulted TikTok session (go back to anonymous browsing).
+Create a first draft scaffolded from the project's verified claims.
 **Examples:**
 ```sh
-navig dl logout
+navig distribution content new
 ```
 
-## `navig dl music-links`
+## `navig distribution content regenerate`
 **Status:** `stable` · **Since:** 
-Resolve a music link to the same track on every other platform (via song.link).
+Rewrite one block with the model. The rest of the article is untouched.
 **Examples:**
 ```sh
-navig dl music-links
+navig distribution content regenerate
 ```
 
-## `navig dl post`
+## `navig distribution content review`
 **Status:** `stable` · **Since:** 
-Read a whole post via the browser in ONE pass — description + stats + comments.
+Quality, canon and localisation review for one document.
 **Examples:**
 ```sh
-navig dl post
+navig distribution content review
 ```
 
-## `navig dl profile`
+## `navig distribution content show`
 **Status:** `stable` · **Since:** 
-Download a creator's whole profile — videos, slideshows images, audio, or just metadata.
+Print a document block by block, with ids so a single block can be edited.
 **Examples:**
 ```sh
-navig dl profile
+navig distribution content show
+```
+
+## `navig distribution maintain`
+**Status:** `stable` · **Since:** 
+Recompute eligibility, list stale verifications, and report the policy.
+**Examples:**
+```sh
+navig distribution maintain
+```
+
+## `navig distribution plan`
+**Status:** `stable` · **Since:** 
+The best N places for this project, with the reasons and the mode.
+**Examples:**
+```sh
+navig distribution plan
+```
+
+## `navig distribution projects`
+**Status:** `stable` · **Since:** 
+List the registered projects and what each still needs.
+**Examples:**
+```sh
+navig distribution projects
+```
+
+## `navig distribution publish approve`
+**Status:** `stable` · **Since:** 
+Bind an approval to the exact content hash, identity and destination.
+**Examples:**
+```sh
+navig distribution publish approve
+```
+
+## `navig distribution publish journal`
+**Status:** `stable` · **Since:** 
+The publication journal.
+**Examples:**
+```sh
+navig distribution publish journal
+```
+
+## `navig distribution publish prepare`
+**Status:** `stable` · **Since:** 
+Run the gate and create the publication row (or return the existing one).
+**Examples:**
+```sh
+navig distribution publish prepare
+```
+
+## `navig distribution publish record`
+**Status:** `stable` · **Since:** 
+Record the operator's own submission and verify the public URL.
+**Examples:**
+```sh
+navig distribution publish record
+```
+
+## `navig distribution publish reject`
+**Status:** `stable` · **Since:** 
+Record a rejection with its reason.
+**Examples:**
+```sh
+navig distribution publish reject
+```
+
+## `navig distribution publish run`
+**Status:** `stable` · **Since:** 
+Execute the publication: manual package, delegated Social post, or a refusal.
+**Examples:**
+```sh
+navig distribution publish run
+```
+
+## `navig distribution publish verify`
+**Status:** `stable` · **Since:** 
+Re-check a published URL and update its status.
+**Examples:**
+```sh
+navig distribution publish verify
+```
+
+## `navig distribution research import`
+**Status:** `stable` · **Since:** 
+Import researched channels; refuses unless every record is valid.
+**Examples:**
+```sh
+navig distribution research import
+```
+
+## `navig distribution research stale`
+**Status:** `stable` · **Since:** 
+Channels whose verification is older than the window (or never happened).
+**Examples:**
+```sh
+navig distribution research stale
+```
+
+## `navig distribution research validate`
+**Status:** `stable` · **Since:** 
+Check records against the research contract before anything is imported.
+**Examples:**
+```sh
+navig distribution research validate
+```
+
+## `navig distribution schedule`
+**Status:** `stable` · **Since:** 
+Schedule re-verification and re-scoring through NAVIG's own scheduler.
+**Examples:**
+```sh
+navig distribution schedule
+```
+
+## `navig distribution seed`
+**Status:** `stable` · **Since:** 
+Import the bundled channel research, campaigns and identities.
+**Examples:**
+```sh
+navig distribution seed
+```
+
+## `navig distribution status`
+**Status:** `stable` · **Since:** 
+Cross-project health: channels, campaigns, publications and the policy.
+**Examples:**
+```sh
+navig distribution status
+```
+
+## `navig do`
+**Status:** `stable` · **Since:** 
+Run a one-shot AI browser task on the active (or --profile) browser.
+**Examples:**
+```sh
+navig do
+```
+
+## `navig dock status`
+**Status:** `stable` · **Since:** 
+Which extension is paired, and whether agents can use the browser now.
+**Examples:**
+```sh
+navig dock status
+```
+
+## `navig dock unpair`
+**Status:** `stable` · **Since:** 
+Forget the paired extension. The Dock pairs again when browser control is turned on.
+**Examples:**
+```sh
+navig dock unpair
+```
+
+## `navig docker`
+**Status:** `stable` · **Since:** 
+Docker management — run without subcommand for help.
+**Examples:**
+```sh
+navig docker
 ```
 
 ## `navig docker compose`
@@ -3350,6 +4958,14 @@ Search NAVIG documentation for relevant information.
 **Examples:**
 ```sh
 navig docs
+```
+
+## `navig doctor`
+**Status:** `stable` · **Since:** 
+Run self-diagnostics on the NAVIG installation.
+**Examples:**
+```sh
+navig doctor
 ```
 
 ## `navig doctor clean-path`
@@ -3560,9 +5176,81 @@ Show an inventory item and its offers.
 navig ebay show
 ```
 
+## `navig email`
+**Status:** `stable` · **Since:** 
+Gmail mailroom. `navig email --account other@gmail.com <command>` selects a linked account.
+**Examples:**
+```sh
+navig email
+```
+
+## `navig email attachments save`
+**Status:** `stable` · **Since:** 
+Save the message's documents into <space>/inbox/ for paperwork to file (local only).
+**Examples:**
+```sh
+navig email attachments save
+```
+
+## `navig email brief dismiss`
+**Status:** `stable` · **Since:** 
+Not interested: the item is not shown again.
+**Examples:**
+```sh
+navig email brief dismiss
+```
+
+## `navig email brief extract`
+**Status:** `stable` · **Since:** 
+What the briefing extracts from one email (no model, nothing stored).
+**Examples:**
+```sh
+navig email brief extract
+```
+
+## `navig email brief items`
+**Status:** `stable` · **Since:** 
+Items the briefing has extracted, newest first.
+**Examples:**
+```sh
+navig email brief items
+```
+
+## `navig email brief restore`
+**Status:** `stable` · **Since:** 
+Bring a newsletter the briefing archived (or moved to Trash) back to the inbox.
+**Examples:**
+```sh
+navig email brief restore
+```
+
+## `navig email brief run`
+**Status:** `stable` · **Since:** 
+Build the briefing and deliver it to Telegram (then archive the newsletters it used).
+**Examples:**
+```sh
+navig email brief run
+```
+
+## `navig email brief save`
+**Status:** `stable` · **Since:** 
+Keep an item: its source email is never archived or trashed while it is saved.
+**Examples:**
+```sh
+navig email brief save
+```
+
+## `navig email brief schedule`
+**Status:** `stable` · **Since:** 
+Move the weekly template digest to the briefing: one job that decides itself when it is due.
+**Examples:**
+```sh
+navig email brief schedule
+```
+
 ## `navig email connect`
 **Status:** `stable` · **Since:** 
-Link a Gmail account (OAuth). Same as `navig connector connect gmail`.
+Link a Gmail account: OAuth inside navig, a Gmail app password on its own.
 **Examples:**
 ```sh
 navig email connect
@@ -3632,6 +5320,30 @@ Draft follow-ups in the space's style for ledger threads (opt-in model; drafts o
 navig email followup
 ```
 
+## `navig email imap connect`
+**Status:** `stable` · **Since:** 
+Sign in to Gmail over IMAP with an app password, and keep it in the encrypted vault.
+**Examples:**
+```sh
+navig email imap connect
+```
+
+## `navig email imap disconnect`
+**Status:** `stable` · **Since:** 
+Forget the stored app password.
+**Examples:**
+```sh
+navig email imap disconnect
+```
+
+## `navig email imap status`
+**Status:** `stable` · **Since:** 
+Whether an app password is stored, and where it comes from (never shows it).
+**Examples:**
+```sh
+navig email imap status
+```
+
 ## `navig email labels ensure`
 **Status:** `stable` · **Since:** 
 Create a label (and its parents) if missing; print its id.
@@ -3656,6 +5368,190 @@ List messages of a folder (newest first).
 navig email list
 ```
 
+## `navig email organize apply`
+**Status:** `stable` · **Since:** 
+Add the new labels to the messages (old labels kept), create new filters. Snapshot written first.
+**Examples:**
+```sh
+navig email organize apply
+```
+
+## `navig email organize audit`
+**Status:** `stable` · **Since:** 
+Labels with counts, equivalent and unused labels, conflicting / forwarding filters (read-only).
+**Examples:**
+```sh
+navig email organize audit
+```
+
+## `navig email organize preview`
+**Status:** `stable` · **Since:** 
+The proposed taxonomy for THIS mailbox, with message counts. Changes nothing.
+**Examples:**
+```sh
+navig email organize preview
+```
+
+## `navig email organize retire`
+**Status:** `stable` · **Since:** 
+After checking `apply`: take the OLD labels off migrated messages (labels and filters are kept).
+**Examples:**
+```sh
+navig email organize retire
+```
+
+## `navig email organize rollback`
+**Status:** `stable` · **Since:** 
+Undo an apply: take off the labels it added, delete the filters it created.
+**Examples:**
+```sh
+navig email organize rollback
+```
+
+## `navig email outbox approve`
+**Status:** `stable` · **Since:** 
+Approve the text you reviewed and schedule it (default: in 15 minutes — time to cancel).
+**Examples:**
+```sh
+navig email outbox approve
+```
+
+## `navig email outbox cancel`
+**Status:** `stable` · **Since:** 
+Cancel a queued message. A cancelled job can never be sent.
+**Examples:**
+```sh
+navig email outbox cancel
+```
+
+## `navig email outbox confirm-sent`
+**Status:** `stable` · **Since:** 
+You found a NEEDS_REVIEW message in Sent: record that it did go out.
+**Examples:**
+```sh
+navig email outbox confirm-sent
+```
+
+## `navig email outbox delay`
+**Status:** `stable` · **Since:** 
+Move a scheduled send later (or to a given time).
+**Examples:**
+```sh
+navig email outbox delay
+```
+
+## `navig email outbox dispatch`
+**Status:** `stable` · **Since:** 
+Run one dispatcher pass now (the daemon does this every ~45 s).
+**Examples:**
+```sh
+navig email outbox dispatch
+```
+
+## `navig email outbox edit`
+**Status:** `stable` · **Since:** 
+Change the text. The approval is dropped — the new version must be approved again.
+**Examples:**
+```sh
+navig email outbox edit
+```
+
+## `navig email outbox history`
+**Status:** `stable` · **Since:** 
+The mailroom audit trail: who did what, when (no message bodies).
+**Examples:**
+```sh
+navig email outbox history
+```
+
+## `navig email outbox list`
+**Status:** `stable` · **Since:** 
+Queued, sent and stuck messages, newest first.
+**Examples:**
+```sh
+navig email outbox list
+```
+
+## `navig email outbox pause`
+**Status:** `stable` · **Since:** 
+Emergency stop: hold automatic replies (--all: every send) until `resume`.
+**Examples:**
+```sh
+navig email outbox pause
+```
+
+## `navig email outbox reopen`
+**Status:** `stable` · **Since:** 
+Put a failed or reviewed job back in front of you for approval (never straight to sending).
+**Examples:**
+```sh
+navig email outbox reopen
+```
+
+## `navig email outbox resume`
+**Status:** `stable` · **Since:** 
+Lift the pause.
+**Examples:**
+```sh
+navig email outbox resume
+```
+
+## `navig email outbox send-now`
+**Status:** `stable` · **Since:** 
+Send an approved, scheduled message right now (skips the rest of the wait).
+**Examples:**
+```sh
+navig email outbox send-now
+```
+
+## `navig email outbox show`
+**Status:** `stable` · **Since:** 
+One job: the exact text, its approval, and its full history.
+**Examples:**
+```sh
+navig email outbox show
+```
+
+## `navig email policy disable`
+**Status:** `stable` · **Since:** 
+Turn a policy off. Replies it already queued will not be sent.
+**Examples:**
+```sh
+navig email policy disable
+```
+
+## `navig email policy enable`
+**Status:** `stable` · **Since:** 
+Turn a policy on for one account. Sending policies need --yes.
+**Examples:**
+```sh
+navig email policy enable
+```
+
+## `navig email policy list`
+**Status:** `stable` · **Since:** 
+Every policy, its scope, and whether it is on.
+**Examples:**
+```sh
+navig email policy list
+```
+
+## `navig email policy show`
+**Status:** `stable` · **Since:** 
+One policy in full.
+**Examples:**
+```sh
+navig email policy show
+```
+
+## `navig email policy test`
+**Status:** `stable` · **Since:** 
+What the enabled policies would do with one real message — a dry run, no model call.
+**Examples:**
+```sh
+navig email policy test
+```
+
 ## `navig email read`
 **Status:** `stable` · **Since:** 
 Read one message (or its whole thread), body included.
@@ -3670,6 +5566,14 @@ Find every Sent reply to mail that sat in a folder (spam): ledger, corpus, label
 **Examples:**
 ```sh
 navig email replied
+```
+
+## `navig email reply`
+**Status:** `stable` · **Since:** 
+Draft a reply to one thread in a chosen style — to Drafts, or the outbox with --queue.
+**Examples:**
+```sh
+navig email reply
 ```
 
 ## `navig email rules apply`
@@ -3726,6 +5630,14 @@ Connected account, mailbox size, rules loaded, last watch.
 **Examples:**
 ```sh
 navig email status
+```
+
+## `navig email styles`
+**Status:** `stable` · **Since:** 
+The writing styles available to `reply` (the space's own shadow the built-in ones).
+**Examples:**
+```sh
+navig email styles
 ```
 
 ## `navig email tag`
@@ -3800,12 +5712,44 @@ Show performance trends and regression alerts from the auto-profiler.
 navig evolve status
 ```
 
+## `navig evolve sweep`
+**Status:** `stable` · **Since:** 
+Check a repo with ruff + pytest and fix what fails, using a local model.
+**Examples:**
+```sh
+navig evolve sweep
+```
+
 ## `navig evolve workflow`
 **Status:** `stable` · **Since:** 
 Generate and refine a new automation workflow (YAML).
 **Examples:**
 ```sh
 navig evolve workflow
+```
+
+## `navig explore`
+**Status:** `stable` · **Since:** 
+Explore & organize any folder in a local web UI.
+**Examples:**
+```sh
+navig explore
+```
+
+## `navig explore audio-ingest`
+**Status:** `stable` · **Since:** 
+🗂️ Ingest clips into a sound library — classified, renamed, cleaned to mp3, reversible.
+**Examples:**
+```sh
+navig explore audio-ingest
+```
+
+## `navig explore audio-ingest-undo`
+**Status:** `stable` · **Since:** 
+↩️  Put every ingested original back and remove the mp3s made from it.
+**Examples:**
+```sh
+navig explore audio-ingest-undo
 ```
 
 ## `navig explore audio-sort`
@@ -4072,6 +6016,38 @@ navig explore photos views-remove
 navig explore probe
 ```
 
+## `navig explore rename apply`
+**Status:** `stable` · **Since:** 
+Move every file in the plan (MD5-checked), then rewrite references to them.
+**Examples:**
+```sh
+navig explore rename apply
+```
+
+## `navig explore rename plan`
+**Status:** `stable` · **Since:** 
+Compute every new name and write the plan CSV. Moves NOTHING — read it first.
+**Examples:**
+```sh
+navig explore rename plan
+```
+
+## `navig explore rename undo`
+**Status:** `stable` · **Since:** 
+Restore rewritten text files from their backups and move every file back.
+**Examples:**
+```sh
+navig explore rename undo
+```
+
+## `navig explore rename verify`
+**Status:** `stable` · **Since:** 
+Every file where the manifest says, same MD5, nothing left behind, no old path named.
+**Examples:**
+```sh
+navig explore rename verify
+```
+
 ## `navig explore route`
 **Status:** `stable` · **Since:** 
 🚚 Route media to the master library. Default: PLAN (manifest only). --apply to move.
@@ -4152,76 +6128,20 @@ Update the Page's about / description / category text.
 navig facebook set-about
 ```
 
-## `navig fb backup`
-**Status:** `stable` · **Since:** 
-Download EVERY uploaded photo at full resolution + a manifest. Do this before deleting.
-**Examples:**
-```sh
-navig fb backup
-```
-
-## `navig fb caption`
-**Status:** `stable` · **Since:** 
-Edit one photo's caption (best-effort; some photos reject edits).
-**Examples:**
-```sh
-navig fb caption
-```
-
-## `navig fb check`
-**Status:** `stable` · **Since:** 
-Verify the token works and show which Page it controls.
-**Examples:**
-```sh
-navig fb check
-```
-
-## `navig fb delete`
-**Status:** `stable` · **Since:** 
-Delete a single photo (permanent).
-**Examples:**
-```sh
-navig fb delete
-```
-
-## `navig fb delete-all`
-**Status:** `stable` · **Since:** 
-Delete every uploaded photo that is already backed up (never un-backed ones).
-**Examples:**
-```sh
-navig fb delete-all
-```
-
-## `navig fb info`
-**Status:** `stable` · **Since:** 
-Show the Page's current about / description / category / contact fields.
-**Examples:**
-```sh
-navig fb info
-```
-
-## `navig fb photos`
-**Status:** `stable` · **Since:** 
-Count and preview the Page's uploaded photos.
-**Examples:**
-```sh
-navig fb photos
-```
-
-## `navig fb set-about`
-**Status:** `stable` · **Since:** 
-Update the Page's about / description / category text.
-**Examples:**
-```sh
-navig fb set-about
-```
-
 ## `navig fetch`
 **Status:** `stable` · **Since:** 
 Fetch and extract content from a URL.
 **Examples:**
 ```sh
 navig fetch
+```
+
+## `navig file`
+**Status:** `stable` · **Since:** 
+File operations - run without subcommand for help.
+**Examples:**
+```sh
+navig file
 ```
 
 ## `navig file add`
@@ -4272,20 +6192,12 @@ Show remote file contents or download.
 navig file show
 ```
 
-## `navig finance balance`
+## `navig flow`
 **Status:** `stable` · **Since:** 
-Show account balances from a beancount ledger.
+Flow management - run without subcommand for help.
 **Examples:**
 ```sh
-navig finance balance
-```
-
-## `navig finance status`
-**Status:** `stable` · **Since:** 
-Show finance integration status.
-**Examples:**
-```sh
-navig finance status
+navig flow
 ```
 
 ## `navig flow add`
@@ -4384,6 +6296,14 @@ Test/validate flow syntax and structure.
 navig flow test
 ```
 
+## `navig flux`
+**Status:** `stable` · **Since:** 
+Run navig flux
+**Examples:**
+```sh
+navig flux
+```
+
 ## `navig flux add`
 **Status:** `stable` · **Since:** 
 Manually add a peer by its gateway URL.
@@ -4448,12 +6368,28 @@ Show (and optionally copy) the mesh_token.
 navig flux token
 ```
 
+## `navig formation`
+**Status:** `stable` · **Since:** 
+Formation commands - run without subcommand for help.
+**Examples:**
+```sh
+navig formation
+```
+
 ## `navig formation agents`
 **Status:** `stable` · **Since:** 
 List agents in the active formation (from .navig/profile.json).
 **Examples:**
 ```sh
 navig formation agents
+```
+
+## `navig formation council`
+**Status:** `stable` · **Since:** 
+Run a council deliberation across all agents in the active formation.
+**Examples:**
+```sh
+navig formation council
 ```
 
 ## `navig formation init`
@@ -4486,6 +6422,14 @@ Show detailed information about a formation.
 **Examples:**
 ```sh
 navig formation show
+```
+
+## `navig formation sync`
+**Status:** `stable` · **Since:** 
+Render the active formation's agents into .navig/agents/<id>.md (Claude Code).
+**Examples:**
+```sh
+navig formation sync
 ```
 
 ## `navig games art`
@@ -4720,6 +6664,14 @@ Send a smoke-test message through one or all configured channels.
 navig gateway test
 ```
 
+## `navig generate`
+**Status:** `stable` · **Since:** 
+Run navig generate
+**Examples:**
+```sh
+navig generate
+```
+
 ## `navig generate analyse`
 **Status:** `stable` · **Since:** 
 Extract a **briefing.md** from a video/audio/doc: frames + transcript + links + AI summary.
@@ -4798,6 +6750,70 @@ Instruction-edit an image variant (OpenAI gpt-image).
 **Examples:**
 ```sh
 navig generate edit
+```
+
+## `navig generate eleven change-voice`
+**Status:** `stable` · **Since:** 
+Re-speak a recording in another voice, keeping timing and delivery (costs credits).
+**Examples:**
+```sh
+navig generate eleven change-voice
+```
+
+## `navig generate eleven fetch`
+**Status:** `stable` · **Since:** 
+Download one history item's audio (free — the bytes are already stored).
+**Examples:**
+```sh
+navig generate eleven fetch
+```
+
+## `navig generate eleven history`
+**Status:** `stable` · **Since:** 
+List what this key has already generated (free — GET only, costs no credits).
+**Examples:**
+```sh
+navig generate eleven history
+```
+
+## `navig generate eleven isolate`
+**Status:** `stable` · **Since:** 
+Remove background noise, keep the voice (costs credits).
+**Examples:**
+```sh
+navig generate eleven isolate
+```
+
+## `navig generate eleven stems`
+**Status:** `stable` · **Since:** 
+Split a track into stems — returns a zip (costs credits; slow on long files).
+**Examples:**
+```sh
+navig generate eleven stems
+```
+
+## `navig generate eleven subscription`
+**Status:** `stable` · **Since:** 
+Plan, credits and cloning entitlements behind the configured key (free GET).
+**Examples:**
+```sh
+navig generate eleven subscription
+```
+
+## `navig generate eleven transcribe`
+**Status:** `stable` · **Since:** 
+Transcribe with ElevenLabs Scribe (costs credits; word timings included).
+**Examples:**
+```sh
+navig generate eleven transcribe
+```
+
+## `navig generate eleven voices`
+**Status:** `stable` · **Since:** 
+Search the voice library — or list your own voices with `--mine` (free GETs).
+**Examples:**
+```sh
+navig generate eleven voices
 ```
 
 ## `navig generate frames`
@@ -4896,6 +6912,30 @@ Remove the background → transparent PNG (Recraft).
 navig generate rembg
 ```
 
+## `navig generate statement`
+**Status:** `stable` · **Since:** 
+⬛ Render a STATEMENT overlay — one line, in Schema's own interface language.
+**Examples:**
+```sh
+navig generate statement
+```
+
+## `navig generate style list`
+**Status:** `stable` · **Since:** 
+List every template id with its kind and title.
+**Examples:**
+```sh
+navig generate style list
+```
+
+## `navig generate style show`
+**Status:** `stable` · **Since:** 
+Print one template: source, prompt, motion (side effects), layout.
+**Examples:**
+```sh
+navig generate style show
+```
+
 ## `navig generate tiktok analyse`
 **Status:** `stable` · **Since:** 
 AI markdown briefing of a post (description + best comments combined).
@@ -4974,6 +7014,86 @@ Download a creator's whole profile — videos, slideshows images, audio, or just
 **Examples:**
 ```sh
 navig generate tiktok profile
+```
+
+## `navig generate wallpaper generate`
+**Status:** `stable` · **Since:** 
+Generate an image, compose it for the display, and set it as the wallpaper.
+**Examples:**
+```sh
+navig generate wallpaper generate
+```
+
+## `navig generate wallpaper list`
+**Status:** `stable` · **Since:** 
+What this verb has produced, newest first.
+**Examples:**
+```sh
+navig generate wallpaper list
+```
+
+## `navig generate wallpaper make`
+**Status:** `stable` · **Since:** 
+Compose a wallpaper file without touching the desktop (works on any OS).
+**Examples:**
+```sh
+navig generate wallpaper make
+```
+
+## `navig generate wallpaper restore`
+**Status:** `stable` · **Since:** 
+Put the wallpaper that was active before the last `set`/`generate` back.
+**Examples:**
+```sh
+navig generate wallpaper restore
+```
+
+## `navig generate wallpaper schedule`
+**Status:** `stable` · **Since:** 
+Rotate the wallpaper on a cadence: set the prompt, the day and the clock.
+**Examples:**
+```sh
+navig generate wallpaper schedule
+```
+
+## `navig generate wallpaper screens`
+**Status:** `stable` · **Since:** 
+List displays with the exact pixel size each wallpaper must be composed for.
+**Examples:**
+```sh
+navig generate wallpaper screens
+```
+
+## `navig generate wallpaper set`
+**Status:** `stable` · **Since:** 
+Compose an existing image for the display and apply it.
+**Examples:**
+```sh
+navig generate wallpaper set
+```
+
+## `navig generate wallpaper status`
+**Status:** `stable` · **Since:** 
+What is on the desktop now, and what this machine supports.
+**Examples:**
+```sh
+navig generate wallpaper status
+```
+
+## `navig generate wallpaper style`
+**Status:** `stable` · **Since:** 
+Change how Windows fits the current image to the screen.
+**Examples:**
+```sh
+navig generate wallpaper style
+```
+
+## `navig github`
+**Status:** `stable` · **Since:** 
+Run navig github
+**Examples:**
+```sh
+navig github
 ```
 
 ## `navig github analytics`
@@ -5424,6 +7544,158 @@ Open a pre-filled Gmail compose window (and optionally send it).
 navig gmail compose
 ```
 
+## `navig goal add`
+**Status:** `stable` · **Since:** 
+Start a standing goal. Its first cycle runs at the first scheduled time.
+**Examples:**
+```sh
+navig goal add
+```
+
+## `navig goal list`
+**Status:** `stable` · **Since:** 
+Your standing goals and where each one is.
+**Examples:**
+```sh
+navig goal list
+```
+
+## `navig goal pause`
+**Status:** `stable` · **Since:** 
+Stop scheduling cycles, keeping the goal's history.
+**Examples:**
+```sh
+navig goal pause
+```
+
+## `navig goal remove`
+**Status:** `stable` · **Since:** 
+Delete a goal and its schedule. Its mission receipts are kept.
+**Examples:**
+```sh
+navig goal remove
+```
+
+## `navig goal resume`
+**Status:** `stable` · **Since:** 
+Start scheduling a paused goal again, from where it left off.
+**Examples:**
+```sh
+navig goal resume
+```
+
+## `navig goal run`
+**Status:** `stable` · **Since:** 
+Run one cycle now and print what it found (counts toward the cycle limit).
+**Examples:**
+```sh
+navig goal run
+```
+
+## `navig goal session clear`
+**Status:** `stable` · **Since:** 
+Remove the goal from a session. Its injected rounds stay in history.
+**Examples:**
+```sh
+navig goal session clear
+```
+
+## `navig goal session list`
+**Status:** `stable` · **Since:** 
+List every NAVIG OS session that has a goal.
+**Examples:**
+```sh
+navig goal session list
+```
+
+## `navig goal session pause`
+**Status:** `stable` · **Since:** 
+Stop injecting rounds; the goal stays on the session, resumable.
+**Examples:**
+```sh
+navig goal session pause
+```
+
+## `navig goal session resume`
+**Status:** `stable` · **Since:** 
+Re-arm a paused goal so the session works it again.
+**Examples:**
+```sh
+navig goal session resume
+```
+
+## `navig goal session set`
+**Status:** `stable` · **Since:** 
+Give a NAVIG OS session a goal; it works the rounds until done or blocked.
+**Examples:**
+```sh
+navig goal session set
+```
+
+## `navig goal session show`
+**Status:** `stable` · **Since:** 
+Show a session's goal: objective, phase, rounds, loop arming.
+**Examples:**
+```sh
+navig goal session show
+```
+
+## `navig goal show`
+**Status:** `stable` · **Since:** 
+Everything about one goal, including its latest report and receipt.
+**Examples:**
+```sh
+navig goal show
+```
+
+## `navig guard install`
+**Status:** `stable` · **Since:** 
+Register Navig-Guard (at logon) and Navig-ProcSweep (hourly) as scheduled tasks.
+**Examples:**
+```sh
+navig guard install
+```
+
+## `navig guard run`
+**Status:** `stable` · **Since:** 
+Watch memory hogs: warn with ancestry, kill past the ceiling, hold builds down.
+**Examples:**
+```sh
+navig guard run
+```
+
+## `navig guard status`
+**Status:** `stable` · **Since:** 
+Show the watchdog tasks and the last guard log lines.
+**Examples:**
+```sh
+navig guard status
+```
+
+## `navig guard sweep`
+**Status:** `stable` · **Since:** 
+The full hourly sweep: orphans, runaway node/python, leaked test browsers,
+**Examples:**
+```sh
+navig guard sweep
+```
+
+## `navig guard uninstall`
+**Status:** `stable` · **Since:** 
+Remove the Navig-Guard / Navig-ProcSweep tasks.
+**Examples:**
+```sh
+navig guard uninstall
+```
+
+## `navig habit`
+**Status:** `stable` · **Since:** 
+Run navig habit
+**Examples:**
+```sh
+navig habit
+```
+
 ## `navig habit add`
 **Status:** `stable` · **Since:** 
 Add a recurring habit reminder.
@@ -5544,6 +7816,14 @@ Show what is logged for today and which non-negotiables are still open.
 navig habit today
 ```
 
+## `navig heartbeat`
+**Status:** `stable` · **Since:** 
+Heartbeat commands - run without subcommand for help.
+**Examples:**
+```sh
+navig heartbeat
+```
+
 ## `navig heartbeat configure`
 **Status:** `stable` · **Since:** 
 Configure heartbeat settings.
@@ -5584,6 +7864,14 @@ In-app help system for predictable, AI-friendly help output.
 navig help
 ```
 
+## `navig history`
+**Status:** `stable` · **Since:** 
+History management - shows recent history if no subcommand.
+**Examples:**
+```sh
+navig history
+```
+
 ## `navig history clear`
 **Status:** `stable` · **Since:** 
 Clear all operation history.
@@ -5598,6 +7886,30 @@ Export operation history to file.
 **Examples:**
 ```sh
 navig history export
+```
+
+## `navig history files diff`
+**Status:** `stable` · **Since:** 
+Show a unified diff between two stored versions of a file.
+**Examples:**
+```sh
+navig history files diff
+```
+
+## `navig history files restore`
+**Status:** `stable` · **Since:** 
+Roll back a file to a previously stored version.
+**Examples:**
+```sh
+navig history files restore
+```
+
+## `navig history files versions`
+**Status:** `stable` · **Since:** 
+List all stored versions of a file.
+**Examples:**
+```sh
+navig history files versions
 ```
 
 ## `navig history list`
@@ -5638,6 +7950,14 @@ Undo a reversible (green) operation — confirm-gated.
 **Examples:**
 ```sh
 navig history undo
+```
+
+## `navig host`
+**Status:** `stable` · **Since:** 
+Host management - run without subcommand for help.
+**Examples:**
+```sh
+navig host
 ```
 
 ## `navig host add`
@@ -5835,6 +8155,14 @@ Switch active host context (global).
 navig host use
 ```
 
+## `navig hosts`
+**Status:** `stable` · **Since:** 
+Hosts file operations - run without subcommand for help.
+**Examples:**
+```sh
+navig hosts
+```
+
 ## `navig hosts add`
 **Status:** `stable` · **Since:** 
 Add an entry to the hosts file (requires admin).
@@ -5859,12 +8187,28 @@ View the system hosts file with syntax highlighting.
 navig hosts view
 ```
 
+## `navig import`
+**Status:** `stable` · **Since:** 
+Run navig import
+**Examples:**
+```sh
+navig import
+```
+
 ## `navig import list-sources`
 **Status:** `stable` · **Since:** 
 List all built-in import sources.
 **Examples:**
 ```sh
 navig import list-sources
+```
+
+## `navig inbox`
+**Status:** `stable` · **Since:** 
+Run navig inbox
+**Examples:**
+```sh
+navig inbox
 ```
 
 ## `navig inbox add`
@@ -6003,6 +8347,14 @@ Roll back the most recent installer run.
 navig init-rollback
 ```
 
+## `navig insights`
+**Status:** `stable` · **Since:** 
+Operations insights - analytics on your command patterns.
+**Examples:**
+```sh
+navig insights
+```
+
 ## `navig insights anomalies`
 **Status:** `stable` · **Since:** 
 Detect unusual patterns and potential issues.
@@ -6061,7 +8413,7 @@ navig insights time
 
 ## `navig install`
 **Status:** `stable` · **Since:** 
-Auto-detect package manager and install.
+Install community assets from GitHub into store/.
 **Examples:**
 ```sh
 navig install
@@ -6145,6 +8497,14 @@ Upgrade an asset's **capabilities only** — memory/plans/inbox/state untouched.
 **Examples:**
 ```sh
 navig install upgrade
+```
+
+## `navig instructions audit`
+**Status:** `stable` · **Since:** 
+Report the bytes, duplicates and broken links in the loaded instruction set.
+**Examples:**
+```sh
+navig instructions audit
 ```
 
 ## `navig ios crashlogs`
@@ -6251,52 +8611,12 @@ Kill processes by group or name (cross-platform).
 navig kill
 ```
 
-## `navig knowledge forget`
+## `navig ledger`
 **Status:** `stable` · **Since:** 
-Delete a fact by ID.
+Operations-ledger integrity (tamper-evident hash chain).
 **Examples:**
 ```sh
-navig knowledge forget
-```
-
-## `navig knowledge recall`
-**Status:** `stable` · **Since:** 
-Recall all facts about a subject.
-**Examples:**
-```sh
-navig knowledge recall
-```
-
-## `navig knowledge remember`
-**Status:** `stable` · **Since:** 
-Store a fact triple in the knowledge graph.
-**Examples:**
-```sh
-navig knowledge remember
-```
-
-## `navig knowledge routines`
-**Status:** `stable` · **Since:** 
-List all registered routines.
-**Examples:**
-```sh
-navig knowledge routines
-```
-
-## `navig knowledge search`
-**Status:** `stable` · **Since:** 
-Full-text search across all facts (subject, predicate, object).
-**Examples:**
-```sh
-navig knowledge search
-```
-
-## `navig knowledge status`
-**Status:** `stable` · **Since:** 
-Show knowledge graph statistics.
-**Examples:**
-```sh
-navig knowledge status
+navig ledger
 ```
 
 ## `navig ledger reap`
@@ -6323,12 +8643,108 @@ Walk the operations ledger and re-check every hash-chain link.
 navig ledger verify
 ```
 
+## `navig lens add`
+**Status:** `stable` · **Since:** 
+Install (or update) a Lens from a file or an https URL.
+**Examples:**
+```sh
+navig lens add
+```
+
+## `navig lens approve`
+**Status:** `stable` · **Since:** 
+Apply a staged change, or turn on a Lens the agent proposed.
+**Examples:**
+```sh
+navig lens approve
+```
+
+## `navig lens disable`
+**Status:** `stable` · **Since:** 
+Turn a Lens off (it stays installed).
+**Examples:**
+```sh
+navig lens disable
+```
+
+## `navig lens enable`
+**Status:** `stable` · **Since:** 
+Turn a Lens on.
+**Examples:**
+```sh
+navig lens enable
+```
+
+## `navig lens export`
+**Status:** `stable` · **Since:** 
+Export a Lens's original .user.js (works in Tampermonkey / Violentmonkey too).
+**Examples:**
+```sh
+navig lens export
+```
+
+## `navig lens list`
+**Status:** `stable` · **Since:** 
+List installed Lenses.
+**Examples:**
+```sh
+navig lens list
+```
+
+## `navig lens reject`
+**Status:** `stable` · **Since:** 
+Discard a staged change (the Lens stays as it was), or delete an agent's proposal.
+**Examples:**
+```sh
+navig lens reject
+```
+
+## `navig lens remove`
+**Status:** `stable` · **Since:** 
+Delete a Lens and its cached @require files.
+**Examples:**
+```sh
+navig lens remove
+```
+
+## `navig lens review`
+**Status:** `stable` · **Since:** 
+What is waiting on you: agent proposals and staged updates, with the diff.
+**Examples:**
+```sh
+navig lens review
+```
+
+## `navig lens show`
+**Status:** `stable` · **Since:** 
+Show a Lens: where it runs, what it may use, warnings.
+**Examples:**
+```sh
+navig lens show
+```
+
+## `navig lens update`
+**Status:** `stable` · **Since:** 
+Check install links for new versions. Stages them for review — applies nothing.
+**Examples:**
+```sh
+navig lens update
+```
+
 ## `navig license paste`
 **Status:** `stable` · **Since:** 
 Validate a license token and persist it to ``~/.navig/license.key``.
 **Examples:**
 ```sh
 navig license paste
+```
+
+## `navig license refresh`
+**Status:** `stable` · **Since:** 
+Fetch your newest licence from navig.run (renewals, Bay purchases).
+**Examples:**
+```sh
+navig license refresh
 ```
 
 ## `navig license remove`
@@ -6353,6 +8769,14 @@ Show detailed entitlement (tier, hosts, modules, subscription).
 **Examples:**
 ```sh
 navig license status
+```
+
+## `navig life`
+**Status:** `stable` · **Since:** 
+Run navig life
+**Examples:**
+```sh
+navig life
 ```
 
 ## `navig life show`
@@ -6419,76 +8843,12 @@ Compare the deployed edge to the version bundled in this navig release.
 navig lighthouse version
 ```
 
-## `navig links add`
+## `navig local`
 **Status:** `stable` · **Since:** 
-Add a new bookmark. Optionally associate a vault credential for auto-login.
+Local system management - run without subcommand for help.
 **Examples:**
 ```sh
-navig links add
-```
-
-## `navig links delete`
-**Status:** `stable` · **Since:** 
-Delete a bookmark permanently.
-**Examples:**
-```sh
-navig links delete
-```
-
-## `navig links edit`
-**Status:** `stable` · **Since:** 
-Edit link metadata.
-**Examples:**
-```sh
-navig links edit
-```
-
-## `navig links import`
-**Status:** `stable` · **Since:** 
-Bulk import bookmarks from legacy JSON or native browser bookmark files.
-**Examples:**
-```sh
-navig links import
-```
-
-## `navig links list`
-**Status:** `stable` · **Since:** 
-List all bookmarks.
-**Examples:**
-```sh
-navig links list
-```
-
-## `navig links open`
-**Status:** `stable` · **Since:** 
-Open a bookmark in the browser.
-**Examples:**
-```sh
-navig links open
-```
-
-## `navig links search`
-**Status:** `stable` · **Since:** 
-Full-text search bookmarks by URL, title, notes, or tags.
-**Examples:**
-```sh
-navig links search
-```
-
-## `navig links show`
-**Status:** `stable` · **Since:** 
-Show full details for a bookmark.
-**Examples:**
-```sh
-navig links show
-```
-
-## `navig links tag`
-**Status:** `stable` · **Since:** 
-Add a tag to a link.
-**Examples:**
-```sh
-navig links tag
+navig local
 ```
 
 ## `navig local audit`
@@ -6547,6 +8907,14 @@ Show local system information.
 navig local show
 ```
 
+## `navig log`
+**Status:** `stable` · **Since:** 
+Log operations - run without subcommand for help.
+**Examples:**
+```sh
+navig log
+```
+
 ## `navig log run`
 **Status:** `stable` · **Since:** 
 Run log maintenance operations.
@@ -6563,6 +8931,14 @@ Show service or container logs.
 navig log show
 ```
 
+## `navig logs`
+**Status:** `stable` · **Since:** 
+Log operations - run without subcommand for help.
+**Examples:**
+```sh
+navig logs
+```
+
 ## `navig logs run`
 **Status:** `stable` · **Since:** 
 Run log maintenance operations.
@@ -6577,6 +8953,14 @@ Show service or container logs.
 **Examples:**
 ```sh
 navig logs show
+```
+
+## `navig matrix`
+**Status:** `stable` · **Since:** 
+Run navig matrix
+**Examples:**
+```sh
+navig matrix
 ```
 
 ## `navig matrix accounts`
@@ -6925,7 +9309,7 @@ navig mcp install
 
 ## `navig mcp install-config`
 **Status:** `stable` · **Since:** 
-Wire this editor to NAVIG's MCP server so blocks/tools are callable in-editor.
+Wire an editor or agent to NAVIG's MCP server so its tools are callable there.
 **Examples:**
 ```sh
 navig mcp install-config
@@ -6971,262 +9355,6 @@ List every tool the NAVIG MCP server exposes (what an editor/agent can call).
 navig mcp tools
 ```
 
-## `navig media analyse`
-**Status:** `stable` · **Since:** 
-Extract a **briefing.md** from a video/audio/doc: frames + transcript + links + AI summary.
-**Examples:**
-```sh
-navig media analyse
-```
-
-## `navig media analyze`
-**Status:** `stable` · **Since:** 
-Extract a **briefing.md** from a video/audio/doc: frames + transcript + links + AI summary.
-**Examples:**
-```sh
-navig media analyze
-```
-
-## `navig media browse`
-**Status:** `stable` · **Since:** 
-Launch a local web gallery for any media folder (grid + preview, streams video).
-**Examples:**
-```sh
-navig media browse
-```
-
-## `navig media contact-sheet`
-**Status:** `stable` · **Since:** 
-Montage variants into a review contact sheet (Pillow).
-**Examples:**
-```sh
-navig media contact-sheet
-```
-
-## `navig media dedupe-audio`
-**Status:** `stable` · **Since:** 
-Find & collapse re-shared/re-encoded duplicate tracks via acoustic fingerprints.
-**Examples:**
-```sh
-navig media dedupe-audio
-```
-
-## `navig media dedupe-files`
-**Status:** `stable` · **Since:** 
-Exact byte-identical duplicates (content SHA-256). Keeps one, quarantines the rest.
-**Examples:**
-```sh
-navig media dedupe-files
-```
-
-## `navig media dedupe-images`
-**Status:** `stable` · **Since:** 
-Perceptual image near-dups (256-bit dHash) + redundant thumbnails. Keeps highest-res.
-**Examples:**
-```sh
-navig media dedupe-images
-```
-
-## `navig media dedupe-video`
-**Status:** `stable` · **Since:** 
-Perceptual video near-dups via keyframe signatures (catches re-encodes/re-uploads).
-**Examples:**
-```sh
-navig media dedupe-video
-```
-
-## `navig media download`
-**Status:** `stable` · **Since:** 
-Download a video (TikTok & friends) — same engine as `navig download`.
-**Examples:**
-```sh
-navig media download
-```
-
-## `navig media edit`
-**Status:** `stable` · **Since:** 
-Instruction-edit an image variant (OpenAI gpt-image).
-**Examples:**
-```sh
-navig media edit
-```
-
-## `navig media frames`
-**Status:** `stable` · **Since:** 
-Extract keyframes from a video (ffmpeg scene-change or interval sampling).
-**Examples:**
-```sh
-navig media frames
-```
-
-## `navig media gen`
-**Status:** `stable` · **Since:** 
-Generate variant(s) into the active space's refs library.
-**Examples:**
-```sh
-navig media gen
-```
-
-## `navig media ingest`
-**Status:** `stable` · **Since:** 
-Pull externally-generated files into the refs library for review (Midjourney, etc.).
-**Examples:**
-```sh
-navig media ingest
-```
-
-## `navig media keep`
-**Status:** `stable` · **Since:** 
-Promote a staged variant to the kept library.
-**Examples:**
-```sh
-navig media keep
-```
-
-## `navig media license`
-**Status:** `stable` · **Since:** 
-Record the license for a variant (provenance).
-**Examples:**
-```sh
-navig media license
-```
-
-## `navig media list`
-**Status:** `stable` · **Since:** 
-List variants in THIS space, newest first (clickable). --all spans every space.
-**Examples:**
-```sh
-navig media list
-```
-
-## `navig media palette`
-**Status:** `stable` · **Since:** 
-Extract a hex palette from reference frames.
-**Examples:**
-```sh
-navig media palette
-```
-
-## `navig media probe`
-**Status:** `stable` · **Since:** 
-Print video metadata (duration / resolution / fps) via ffprobe.
-**Examples:**
-```sh
-navig media probe
-```
-
-## `navig media process`
-**Status:** `stable` · **Since:** 
-LOCAL pixel pipeline → a game-ready sprite variant (Pillow).
-**Examples:**
-```sh
-navig media process
-```
-
-## `navig media redesign`
-**Status:** `stable` · **Since:** 
-Reference-based img2img redesign (Recraft).
-**Examples:**
-```sh
-navig media redesign
-```
-
-## `navig media reject`
-**Status:** `stable` · **Since:** 
-Reject a staged variant (retained in .rejected, never deleted).
-**Examples:**
-```sh
-navig media reject
-```
-
-## `navig media rembg`
-**Status:** `stable` · **Since:** 
-Remove the background → transparent PNG (Recraft).
-**Examples:**
-```sh
-navig media rembg
-```
-
-## `navig media tiktok analyse`
-**Status:** `stable` · **Since:** 
-AI markdown briefing of a post (description + best comments combined).
-**Examples:**
-```sh
-navig media tiktok analyse
-```
-
-## `navig media tiktok batch`
-**Status:** `stable` · **Since:** 
-Download every URL in a links file (videos via yt-dlp, /photo/ posts via the browser).
-**Examples:**
-```sh
-navig media tiktok batch
-```
-
-## `navig media tiktok comments`
-**Status:** `stable` · **Since:** 
-List the top comments, ranked by likes.
-**Examples:**
-```sh
-navig media tiktok comments
-```
-
-## `navig media tiktok download`
-**Status:** `stable` · **Since:** 
-Download TikTok posts (organized <out>/<creator>/<id>) — concurrent, resumable.
-**Examples:**
-```sh
-navig media tiktok download
-```
-
-## `navig media tiktok info`
-**Status:** `stable` · **Since:** 
-Show metadata: creator, description, stats (and image URLs for /photo/ posts).
-**Examples:**
-```sh
-navig media tiktok info
-```
-
-## `navig media tiktok login`
-**Status:** `stable` · **Since:** 
-Log into TikTok once and vault the session; afterwards every command uses it automatically.
-**Examples:**
-```sh
-navig media tiktok login
-```
-
-## `navig media tiktok logout`
-**Status:** `stable` · **Since:** 
-Forget the vaulted TikTok session (go back to anonymous browsing).
-**Examples:**
-```sh
-navig media tiktok logout
-```
-
-## `navig media tiktok music-links`
-**Status:** `stable` · **Since:** 
-Resolve a music link to the same track on every other platform (via song.link).
-**Examples:**
-```sh
-navig media tiktok music-links
-```
-
-## `navig media tiktok post`
-**Status:** `stable` · **Since:** 
-Read a whole post via the browser in ONE pass — description + stats + comments.
-**Examples:**
-```sh
-navig media tiktok post
-```
-
-## `navig media tiktok profile`
-**Status:** `stable` · **Since:** 
-Download a creator's whole profile — videos, slideshows images, audio, or just metadata.
-**Examples:**
-```sh
-navig media tiktok profile
-```
-
 ## `navig memory approve`
 **Status:** `stable` · **Since:** 
 Approve a proposed fact so the agent may use it in future conversations.
@@ -7265,6 +9393,14 @@ Compress a session's history into a single AI-generated summary.
 **Examples:**
 ```sh
 navig memory compact
+```
+
+## `navig memory edit`
+**Status:** `stable` · **Since:** 
+Correct a saved memory in place.
+**Examples:**
+```sh
+navig memory edit
 ```
 
 ## `navig memory export`
@@ -7355,6 +9491,14 @@ List facts the agent has PROPOSED, awaiting your approval.
 navig memory pending
 ```
 
+## `navig memory pin`
+**Status:** `stable` · **Since:** 
+Pin a memory so the agent keeps it in mind in every conversation.
+**Examples:**
+```sh
+navig memory pin
+```
+
 ## `navig memory reject`
 **Status:** `stable` · **Since:** 
 Reject a proposed fact. It's kept for audit but never used.
@@ -7369,6 +9513,14 @@ Manually add a key fact to memory.
 **Examples:**
 ```sh
 navig memory remember
+```
+
+## `navig memory scan-secrets`
+**Status:** `stable` · **Since:** 
+Find secrets stored in memory before the write filter existed.
+**Examples:**
+```sh
+navig memory scan-secrets
 ```
 
 ## `navig memory search`
@@ -7395,12 +9547,36 @@ Show memory usage statistics.
 navig memory stats
 ```
 
+## `navig memory summary`
+**Status:** `stable` · **Since:** 
+What NAVIG knows about you — a short profile written from your approved memories.
+**Examples:**
+```sh
+navig memory summary
+```
+
 ## `navig memory sync`
 **Status:** `stable` · **Since:** 
 Pull memory chunks from a remote NAVIG formation.
 **Examples:**
 ```sh
 navig memory sync
+```
+
+## `navig memory unpin`
+**Status:** `stable` · **Since:** 
+Unpin a memory (it is still recalled when relevant).
+**Examples:**
+```sh
+navig memory unpin
+```
+
+## `navig menu`
+**Status:** `stable` · **Since:** 
+Open the menu (auto-builds on first run). Subcommands: build/scan/setup/doctor/run.
+**Examples:**
+```sh
+navig menu
 ```
 
 ## `navig menu build`
@@ -7459,6 +9635,30 @@ Guided config (offers the `menu` npm script).
 navig menu setup
 ```
 
+## `navig mesh agents claim`
+**Status:** `stable` · **Since:** 
+Claim a role for this session (upsert — one entry per session, refreshed).
+**Examples:**
+```sh
+navig mesh agents claim
+```
+
+## `navig mesh agents list`
+**Status:** `stable` · **Since:** 
+Who holds which role — the assignment board's read side.
+**Examples:**
+```sh
+navig mesh agents list
+```
+
+## `navig mesh agents release`
+**Status:** `stable` · **Since:** 
+Release this session's registry claim (kept as history, status=released).
+**Examples:**
+```sh
+navig mesh agents release
+```
+
 ## `navig mesh peers`
 **Status:** `stable` · **Since:** 
 List all known mesh peers (alias for 'mesh status').
@@ -7473,6 +9673,14 @@ Show the current mesh topology and peer status.
 **Examples:**
 ```sh
 navig mesh status
+```
+
+## `navig migrate`
+**Status:** `stable` · **Since:** 
+Run navig migrate
+**Examples:**
+```sh
+navig migrate
 ```
 
 ## `navig migrate addons`
@@ -7505,6 +9713,54 @@ Show which migration steps have been completed.
 **Examples:**
 ```sh
 navig migrate status
+```
+
+## `navig mini deploy`
+**Status:** `stable` · **Since:** 
+[bold]Upload agent files[/bold] to a remote device via SSH and restart.
+**Examples:**
+```sh
+navig mini deploy
+```
+
+## `navig mini list`
+**Status:** `stable` · **Since:** 
+[bold]List all configured NAVIG Mini agents.[/bold]
+**Examples:**
+```sh
+navig mini list
+```
+
+## `navig mini logs`
+**Status:** `stable` · **Since:** 
+[bold]Tail agent or monitor logs[/bold] from the remote device via SSH.
+**Examples:**
+```sh
+navig mini logs
+```
+
+## `navig mini restart`
+**Status:** `stable` · **Since:** 
+[bold]Restart the agent daemon[/bold] (or a watched service) remotely.
+**Examples:**
+```sh
+navig mini restart
+```
+
+## `navig mini run`
+**Status:** `stable` · **Since:** 
+[bold]Execute an allowlisted command[/bold] on the remote agent (HMAC-signed).
+**Examples:**
+```sh
+navig mini run
+```
+
+## `navig mini status`
+**Status:** `stable` · **Since:** 
+[bold]Show health and system stats[/bold] of the remote agent.
+**Examples:**
+```sh
+navig mini status
 ```
 
 ## `navig miniapp deploy`
@@ -7787,6 +10043,62 @@ Pair a device — Android wireless (`adb pair host:port`), else guidance.
 navig mobile pair
 ```
 
+## `navig mobile quest awake`
+**Status:** `stable` · **Since:** 
+Keep the headset awake without wearing it (for mirroring, setup, demos).
+**Examples:**
+```sh
+navig mobile quest awake
+```
+
+## `navig mobile quest connect`
+**Status:** `stable` · **Since:** 
+Switch a USB-connected Quest to wireless ADB (port 5555) and connect to it.
+**Examples:**
+```sh
+navig mobile quest connect
+```
+
+## `navig mobile quest mirror`
+**Status:** `stable` · **Since:** 
+Mirror the headset on this PC (scrcpy) — clean one-eye view, optional MP4.
+**Examples:**
+```sh
+navig mobile quest mirror
+```
+
+## `navig mobile quest perf`
+**Status:** `stable` · **Since:** 
+Live FPS / foveation / CPU-GPU / temperature from the compositor — the proof
+**Examples:**
+```sh
+navig mobile quest perf
+```
+
+## `navig mobile quest status`
+**Status:** `stable` · **Since:** 
+Model, Horizon build, battery, sleep state, storage, active tweaks.
+**Examples:**
+```sh
+navig mobile quest status
+```
+
+## `navig mobile quest tweaks`
+**Status:** `stable` · **Since:** 
+Apply render/perf tweaks and verify each by read-back. Reboot clears them;
+**Examples:**
+```sh
+navig mobile quest tweaks
+```
+
+## `navig mobile quest watch`
+**Status:** `stable` · **Since:** 
+Re-apply your saved tweaks whenever the headset comes back.
+**Examples:**
+```sh
+navig mobile quest watch
+```
+
 ## `navig mobile restore`
 **Status:** `stable` · **Since:** 
 Restore a backup — DESTRUCTIVE (overwrites device data). Consent + --yes required.
@@ -7963,12 +10275,124 @@ Wait for the UI to settle.
 navig mobile ui wait
 ```
 
+## `navig mobile unpack audio`
+**Status:** `stable` · **Since:** 
+Batch-convert game audio (Wwise, XACT, FMOD, Bink…) to .ogg via vgmstream + ffmpeg.
+**Examples:**
+```sh
+navig mobile unpack audio
+```
+
+## `navig mobile unpack carve-ogg`
+**Status:** `stable` · **Since:** 
+Recover every complete Ogg stream from an unknown archive (CRC-verified).
+**Examples:**
+```sh
+navig mobile unpack carve-ogg
+```
+
+## `navig mobile unpack civ6`
+**Status:** `stable` · **Since:** 
+Civilization VI: rebuild the in-game database (Gathering Storm + DLC) and export readable lists.
+**Examples:**
+```sh
+navig mobile unpack civ6
+```
+
+## `navig mobile unpack classes`
+**Status:** `stable` · **Since:** 
+Turn decoded Unity objects into one readable CSV per script class.
+**Examples:**
+```sh
+navig mobile unpack classes
+```
+
+## `navig mobile unpack dds`
+**Status:** `stable` · **Since:** 
+Convert every .dds texture to .png.
+**Examples:**
+```sh
+navig mobile unpack dds
+```
+
+## `navig mobile unpack detect`
+**Status:** `stable` · **Since:** 
+Name the engine(s) of an unpacked game folder.
+**Examples:**
+```sh
+navig mobile unpack detect
+```
+
+## `navig mobile unpack doctor`
+**Status:** `stable` · **Since:** 
+Show which external tools and optional Python packages are available.
+**Examples:**
+```sh
+navig mobile unpack doctor
+```
+
+## `navig mobile unpack game`
+**Status:** `stable` · **Since:** 
+Pull a game off the device and extract everything (pull + run).
+**Examples:**
+```sh
+navig mobile unpack game
+```
+
+## `navig mobile unpack kairo`
+**Status:** `stable` · **Since:** 
+Unpack Kairosoft .bin archives (auto-detects the title's XOR key).
+**Examples:**
+```sh
+navig mobile unpack kairo
+```
+
+## `navig mobile unpack pull`
+**Status:** `stable` · **Since:** 
+Copy APK + splits, OBB data files and Android/data content of a package off the device.
+**Examples:**
+```sh
+navig mobile unpack pull
+```
+
+## `navig mobile unpack run`
+**Status:** `stable` · **Since:** 
+Detect the engine and extract all data and media from a game folder.
+**Examples:**
+```sh
+navig mobile unpack run
+```
+
+## `navig mobile unpack setup`
+**Status:** `stable` · **Since:** 
+Download vgmstream and Il2CppDumper (GitHub releases) into ~/.navig/tools.
+**Examples:**
+```sh
+navig mobile unpack setup
+```
+
+## `navig mobile unpack xnb`
+**Status:** `stable` · **Since:** 
+Decode .xnb tables → JSON and textures → PNG (Stardew Valley and other XNA games).
+**Examples:**
+```sh
+navig mobile unpack xnb
+```
+
 ## `navig mobile watch`
 **Status:** `stable` · **Since:** 
 Watch for device arrival/removal until interrupted (Ctrl-C).
 **Examples:**
 ```sh
 navig mobile watch
+```
+
+## `navig mode`
+**Status:** `stable` · **Since:** 
+LLM Mode Router — run without subcommand to show modes.
+**Examples:**
+```sh
+navig mode
 ```
 
 ## `navig mode detect`
@@ -8027,68 +10451,12 @@ Display all LLM modes with their configuration.
 navig mode show
 ```
 
-## `navig module disable`
+## `navig mount`
 **Status:** `stable` · **Since:** 
-Disable a module for this operator (persisted override).
+Run navig mount
 **Examples:**
 ```sh
-navig module disable
-```
-
-## `navig module enable`
-**Status:** `stable` · **Since:** 
-Enable a module for this operator (persisted override).
-**Examples:**
-```sh
-navig module enable
-```
-
-## `navig module info`
-**Status:** `stable` · **Since:** 
-Show a module's kind, tier lock, surfaces, and requirements.
-**Examples:**
-```sh
-navig module info
-```
-
-## `navig module list`
-**Status:** `stable` · **Since:** 
-List all modules with their tier lock + enabled state.
-**Examples:**
-```sh
-navig module list
-```
-
-## `navig modules disable`
-**Status:** `stable` · **Since:** 
-Disable a module for this operator (persisted override).
-**Examples:**
-```sh
-navig modules disable
-```
-
-## `navig modules enable`
-**Status:** `stable` · **Since:** 
-Enable a module for this operator (persisted override).
-**Examples:**
-```sh
-navig modules enable
-```
-
-## `navig modules info`
-**Status:** `stable` · **Since:** 
-Show a module's kind, tier lock, surfaces, and requirements.
-**Examples:**
-```sh
-navig modules info
-```
-
-## `navig modules list`
-**Status:** `stable` · **Since:** 
-List all modules with their tier lock + enabled state.
-**Examples:**
-```sh
-navig modules list
+navig mount
 ```
 
 ## `navig mount add`
@@ -8129,6 +10497,38 @@ Verify all registered junctions are alive and update registry status.
 **Examples:**
 ```sh
 navig mount verify
+```
+
+## `navig move in`
+**Status:** `stable` · **Since:** 
+Unpack a moved NAVIG here. Whatever was here before is kept as a backup.
+**Examples:**
+```sh
+navig move in
+```
+
+## `navig move out`
+**Status:** `stable` · **Since:** 
+Pack this NAVIG into one encrypted file and stand it down here.
+**Examples:**
+```sh
+navig move out
+```
+
+## `navig move status`
+**Status:** `stable` · **Since:** 
+Has this NAVIG moved to another machine?
+**Examples:**
+```sh
+navig move status
+```
+
+## `navig move undo`
+**Status:** `stable` · **Since:** 
+Bring a moved NAVIG back on this (old) machine.
+**Examples:**
+```sh
+navig move undo
 ```
 
 ## `navig mstore auth`
@@ -8195,6 +10595,14 @@ Upload + commit a Store submission by applying the msstore-publish block.
 navig mstore publish
 ```
 
+## `navig mstore sales`
+**Status:** `stable` · **Since:** 
+Paid sales (paid apps + add-on purchases) from Partner Center. Read-only.
+**Examples:**
+```sh
+navig mstore sales
+```
+
 ## `navig mstore show`
 **Status:** `stable` · **Since:** 
 Show an app's Store identity + latest built MSIX.
@@ -8243,6 +10651,182 @@ Remove a registered node.
 navig node remove
 ```
 
+## `navig notes add`
+**Status:** `stable` · **Since:** 
+Add a note — it appears in the browser on the Dock's next sync.
+**Examples:**
+```sh
+navig notes add
+```
+
+## `navig notes export`
+**Status:** `stable` · **Since:** 
+Export notes to a file the Dock's Library can import (JSON) or anyone can read (Markdown).
+**Examples:**
+```sh
+navig notes export
+```
+
+## `navig notes list`
+**Status:** `stable` · **Since:** 
+Your notes, most recently edited first.
+**Examples:**
+```sh
+navig notes list
+```
+
+## `navig notes rm`
+**Status:** `stable` · **Since:** 
+Delete a note everywhere (the Dock moves it to its Trash on the next sync).
+**Examples:**
+```sh
+navig notes rm
+```
+
+## `navig notes search`
+**Status:** `stable` · **Since:** 
+Search every note's title, text, tags, page title and website.
+**Examples:**
+```sh
+navig notes search
+```
+
+## `navig notes share pull`
+**Status:** `stable` · **Since:** 
+Read the Space's .navig/notes/*.md back — ids kept, newer revision wins.
+**Examples:**
+```sh
+navig notes share pull
+```
+
+## `navig notes share push`
+**Status:** `stable` · **Since:** 
+Write every note into the Space's .navig/notes/ as .md files (ids preserved).
+**Examples:**
+```sh
+navig notes share push
+```
+
+## `navig notes share status`
+**Status:** `stable` · **Since:** 
+How many notes, how many files, and which side is ahead.
+**Examples:**
+```sh
+navig notes share status
+```
+
+## `navig notes show`
+**Status:** `stable` · **Since:** 
+One note in full.
+**Examples:**
+```sh
+navig notes show
+```
+
+## `navig notes status`
+**Status:** `stable` · **Since:** 
+How many notes, where they live, and when the Dock last synced.
+**Examples:**
+```sh
+navig notes status
+```
+
+## `navig notify pushover call`
+**Status:** `stable` · **Since:** 
+Telephone you when a Pushover emergency goes unacknowledged.
+**Examples:**
+```sh
+navig notify pushover call
+```
+
+## `navig notify pushover emergency`
+**Status:** `stable` · **Since:** 
+Choose which priorities ring on silent and repeat until acknowledged.
+**Examples:**
+```sh
+navig notify pushover emergency
+```
+
+## `navig notify pushover escalate`
+**Status:** `stable` · **Since:** 
+Choose when an unacknowledged emergency is escalated to SMS.
+**Examples:**
+```sh
+navig notify pushover escalate
+```
+
+## `navig notify pushover setup`
+**Status:** `stable` · **Since:** 
+Validate and save your Pushover keys (to the vault). Prompts for any not given.
+**Examples:**
+```sh
+navig notify pushover setup
+```
+
+## `navig notify pushover sound`
+**Status:** `stable` · **Since:** 
+Pick the Pushover sound NAVIG asks for ('default' = your device setting).
+**Examples:**
+```sh
+navig notify pushover sound
+```
+
+## `navig notify pushover status`
+**Status:** `stable` · **Since:** 
+Show whether Pushover is connected, which types use it, and the emergency rule.
+**Examples:**
+```sh
+navig notify pushover status
+```
+
+## `navig notify pushover test`
+**Status:** `stable` · **Since:** 
+Send a test message to your phone.
+**Examples:**
+```sh
+navig notify pushover test
+```
+
+## `navig notify route clear`
+**Status:** `stable` · **Since:** 
+Send a type back to your DM.
+**Examples:**
+```sh
+navig notify route clear
+```
+
+## `navig notify route list`
+**Status:** `stable` · **Since:** 
+Show where each type lands on Telegram and whether it rings.
+**Examples:**
+```sh
+navig notify route list
+```
+
+## `navig notify route set`
+**Status:** `stable` · **Since:** 
+Route a type to a chat. The bot must already be in it (an admin, for a channel).
+**Examples:**
+```sh
+navig notify route set
+```
+
+## `navig notify route sound`
+**Status:** `stable` · **Since:** 
+Choose whether a type rings or lands silently on Telegram.
+**Examples:**
+```sh
+navig notify route sound
+```
+
+## `navig notify route test`
+**Status:** `stable` · **Since:** 
+Post a test message where this type is routed now.
+**Examples:**
+```sh
+navig notify route test
+```
+
 ## `navig notify send`
 **Status:** `stable` · **Since:** 
 Dispatch one notification and report which channels accepted it.
@@ -8257,6 +10841,150 @@ Show every notification type and the channels it currently routes to.
 **Examples:**
 ```sh
 navig notify types
+```
+
+## `navig obs`
+**Status:** `stable` · **Since:** 
+Connect target: flags > NAVIG_OBS_* env > navig obs.* config > local OBS file.
+**Examples:**
+```sh
+navig obs
+```
+
+## `navig obs clips`
+**Status:** `stable` · **Since:** 
+Cut the Grid Pigeon's moments from a recording into 9:16 clips, captions burned in.
+**Examples:**
+```sh
+navig obs clips
+```
+
+## `navig obs doctor`
+**Status:** `stable` · **Since:** 
+Local OBS health check: install, websocket config, plugin load errors, missing files.
+**Examples:**
+```sh
+navig obs doctor
+```
+
+## `navig obs events`
+**Status:** `stable` · **Since:** 
+Stream OBS events live (scene changes, output state, media, …).
+**Examples:**
+```sh
+navig obs events
+```
+
+## `navig obs marker`
+**Status:** `stable` · **Since:** 
+Append a marker to the session's recording clock (OBS must be recording).
+**Examples:**
+```sh
+navig obs marker
+```
+
+## `navig obs request`
+**Status:** `stable` · **Since:** 
+Send any obs-websocket v5 request and print its responseData.
+**Examples:**
+```sh
+navig obs request
+```
+
+## `navig obs screenshot`
+**Status:** `stable` · **Since:** 
+Capture a source/scene image from OBS and save it locally (proof shot).
+**Examples:**
+```sh
+navig obs screenshot
+```
+
+## `navig obs stats`
+**Status:** `stable` · **Since:** 
+OBS resource stats: CPU, memory, FPS, render/output frame health.
+**Examples:**
+```sh
+navig obs stats
+```
+
+## `navig obs status`
+**Status:** `stable` · **Since:** 
+Live OBS state: version, current scene, stream/record/replay/vcam/studio.
+**Examples:**
+```sh
+navig obs status
+```
+
+## `navig origin`
+**Status:** `stable` · **Since:** 
+Show where this NAVIG installation came from.
+**Examples:**
+```sh
+navig origin
+```
+
+## `navig os account link`
+**Status:** `stable` · **Since:** 
+Link this computer to a navig.run email; nothing is linked until you click the emailed link.
+**Examples:**
+```sh
+navig os account link
+```
+
+## `navig os account unlink`
+**Status:** `stable` · **Since:** 
+Unlink this computer. Paired devices keep working; new ones need a QR code again.
+**Examples:**
+```sh
+navig os account unlink
+```
+
+## `navig os devices revoke`
+**Status:** `stable` · **Since:** 
+Remove a device now. Its live session ends; it must pair again to come back.
+**Examples:**
+```sh
+navig os devices revoke
+```
+
+## `navig os link`
+**Status:** `stable` · **Since:** 
+Let ANOTHER NAVIG OS use this computer as its brain, through your own relay.
+**Examples:**
+```sh
+navig os link
+```
+
+## `navig os open`
+**Status:** `stable` · **Since:** 
+Open NAVIG OS from this machine's local server — no password to type.
+**Examples:**
+```sh
+navig os open
+```
+
+## `navig os pair`
+**Status:** `stable` · **Since:** 
+Pair a phone or browser to use NAVIG OS here, through your own relay.
+**Examples:**
+```sh
+navig os pair
+```
+
+## `navig os requests allow`
+**Status:** `stable` · **Since:** 
+Let this device use NAVIG OS. Only allow a sign-in you made yourself, just now.
+**Examples:**
+```sh
+navig os requests allow
+```
+
+## `navig os requests deny`
+**Status:** `stable` · **Since:** 
+Refuse this device.
+**Examples:**
+```sh
+navig os requests deny
 ```
 
 ## `navig os serve`
@@ -8379,68 +11107,404 @@ Reverse an apply, restoring every source from the quarantine.
 navig paperwork undo
 ```
 
-## `navig pipeline captions`
+## `navig paths`
 **Status:** `stable` · **Since:** 
-✍️  Transcribe a track to an .srt — with word-level timings.
+Show key NAVIG directory paths.
 **Examples:**
 ```sh
-navig pipeline captions
+navig paths
 ```
 
-## `navig pipeline clip`
+## `navig pentest amass`
 **Status:** `stable` · **Since:** 
-🎵 Build a vertical clip cut to a track you already have — no narration.
+Attack-surface mapping (OWASP amass). GATED unless --passive.
 **Examples:**
 ```sh
-navig pipeline clip
+navig pentest amass
 ```
 
-## `navig pipeline hooks`
+## `navig pentest binwalk`
 **Status:** `stable` · **Since:** 
-🎣 Rank the passages of a track worth cutting a short clip from.
+Firmware image analysis (binwalk). Local — no gate.
 **Examples:**
 ```sh
-navig pipeline hooks
+navig pentest binwalk
 ```
 
-## `navig pipeline reel`
+## `navig pentest cewl`
 **Status:** `stable` · **Since:** 
-🎬 Build a vertical reel per language — capture, narrate, caption, score.
+Generate a wordlist from a target site (cewl). Passive read of a single URL.
 **Examples:**
 ```sh
-navig pipeline reel
+navig pentest cewl
 ```
 
-## `navig pipeline run`
+## `navig pentest crawl`
 **Status:** `stable` · **Since:** 
-Run the assembly line from a topic (or a source clip) to a fanned-out post.
+Web crawler for endpoint discovery (katana). GATED.
 **Examples:**
 ```sh
-navig pipeline run
+navig pentest crawl
 ```
 
-## `navig pipeline schedule`
+## `navig pentest dns`
 **Status:** `stable` · **Since:** 
-Autopilot — run + publish the assembly line on a recurring cadence.
+Resolve DNS records (A/AAAA via the system resolver; others via UDP).
 **Examples:**
 ```sh
-navig pipeline schedule
+navig pentest dns
 ```
 
-## `navig pipeline status`
+## `navig pentest dnsx`
 **Status:** `stable` · **Since:** 
-Show which assembly-line stages are wired (their plugin is installed).
+Fast DNS record resolution (dnsx). Passive.
 **Examples:**
 ```sh
-navig pipeline status
+navig pentest dnsx
 ```
 
-## `navig pipeline telegram-import`
+## `navig pentest doctor`
 **Status:** `stable` · **Since:** 
-Import a Telegram channel's media into the local library, then optionally delete the
+Tool health: detected engines by category, engagement store, and gate status.
 **Examples:**
 ```sh
-navig pipeline telegram-import
+navig pentest doctor
+```
+
+## `navig pentest engage`
+**Status:** `stable` · **Since:** 
+Open an AUTHORIZED engagement. Refuses without a written authorization.
+**Examples:**
+```sh
+navig pentest engage
+```
+
+## `navig pentest enum4linux`
+**Status:** `stable` · **Since:** 
+SMB / null-session enumeration (enum4linux). GATED — requires an engagement.
+**Examples:**
+```sh
+navig pentest enum4linux
+```
+
+## `navig pentest exif`
+**Status:** `stable` · **Since:** 
+Read/write file metadata (exiftool). Local — no gate.
+**Examples:**
+```sh
+navig pentest exif
+```
+
+## `navig pentest fingerprint`
+**Status:** `stable` · **Since:** 
+HTTP fingerprint — status, headers, tech-stack guesses, TLS metadata.
+**Examples:**
+```sh
+navig pentest fingerprint
+```
+
+## `navig pentest fuzz`
+**Status:** `stable` · **Since:** 
+Directory/content fuzzing. GATED — requires an authorized engagement.
+**Examples:**
+```sh
+navig pentest fuzz
+```
+
+## `navig pentest harvester`
+**Status:** `stable` · **Since:** 
+OSINT emails, hosts and subdomains (theHarvester). Passive.
+**Examples:**
+```sh
+navig pentest harvester
+```
+
+## `navig pentest hashcat`
+**Status:** `stable` · **Since:** 
+GPU-accelerated hash cracking (hashcat). Local — no network gate.
+**Examples:**
+```sh
+navig pentest hashcat
+```
+
+## `navig pentest hashid`
+**Status:** `stable` · **Since:** 
+Identify a hash type (hashid). Local — no gate.
+**Examples:**
+```sh
+navig pentest hashid
+```
+
+## `navig pentest hydra`
+**Status:** `stable` · **Since:** 
+Network login brute force (hydra). GATED — very loud; confirm scope first.
+**Examples:**
+```sh
+navig pentest hydra
+```
+
+## `navig pentest john`
+**Status:** `stable` · **Since:** 
+Hash cracking (John the Ripper). Local — no network gate.
+**Examples:**
+```sh
+navig pentest john
+```
+
+## `navig pentest nikto`
+**Status:** `stable` · **Since:** 
+Web server vulnerability scan (nikto). GATED.
+**Examples:**
+```sh
+navig pentest nikto
+```
+
+## `navig pentest nuclei`
+**Status:** `stable` · **Since:** 
+Run nuclei template checks. GATED — requires an authorized engagement.
+**Examples:**
+```sh
+navig pentest nuclei
+```
+
+## `navig pentest osint`
+**Status:** `stable` · **Since:** 
+One-pass passive sweep: whois + DNS + certificate-transparency subdomains.
+**Examples:**
+```sh
+navig pentest osint
+```
+
+## `navig pentest ports`
+**Status:** `stable` · **Since:** 
+TCP port scan. GATED — requires an authorized engagement covering the host.
+**Examples:**
+```sh
+navig pentest ports
+```
+
+## `navig pentest probe`
+**Status:** `stable` · **Since:** 
+HTTP liveness probe over hosts (httpx-style). GATED — requires an engagement.
+**Examples:**
+```sh
+navig pentest probe
+```
+
+## `navig pentest run`
+**Status:** `stable` · **Since:** 
+Run any detected Kali tool through the authorization gate.
+**Examples:**
+```sh
+navig pentest run
+```
+
+## `navig pentest scope`
+**Status:** `stable` · **Since:** 
+List engagements, or check whether a target is authorized.
+**Examples:**
+```sh
+navig pentest scope
+```
+
+## `navig pentest searchsploit`
+**Status:** `stable` · **Since:** 
+Exploit-DB search (searchsploit). Passive — local database.
+**Examples:**
+```sh
+navig pentest searchsploit
+```
+
+## `navig pentest sherlock`
+**Status:** `stable` · **Since:** 
+Username OSINT across social networks (sherlock). Passive.
+**Examples:**
+```sh
+navig pentest sherlock
+```
+
+## `navig pentest sqlmap`
+**Status:** `stable` · **Since:** 
+Automatic SQL injection (sqlmap). GATED — intrusive; confirm scope first.
+**Examples:**
+```sh
+navig pentest sqlmap
+```
+
+## `navig pentest subdomains`
+**Status:** `stable` · **Since:** 
+Enumerate subdomains from certificate-transparency logs (passive).
+**Examples:**
+```sh
+navig pentest subdomains
+```
+
+## `navig pentest subfinder`
+**Status:** `stable` · **Since:** 
+Passive subdomain enumeration (subfinder).
+**Examples:**
+```sh
+navig pentest subfinder
+```
+
+## `navig pentest surface`
+**Status:** `stable` · **Since:** 
+Attack-surface mapping: passive subdomains → DNS resolution → optional live probe.
+**Examples:**
+```sh
+navig pentest surface
+```
+
+## `navig pentest tools`
+**Status:** `stable` · **Since:** 
+List the Kali toolchain catalog with detection status and install guidance.
+**Examples:**
+```sh
+navig pentest tools
+```
+
+## `navig pentest urls`
+**Status:** `stable` · **Since:** 
+Discover known URLs from archives/engines (gau + waybackurls). Passive.
+**Examples:**
+```sh
+navig pentest urls
+```
+
+## `navig pentest whois`
+**Status:** `stable` · **Since:** 
+RDAP lookup (the modern whois) — public registry records.
+**Examples:**
+```sh
+navig pentest whois
+```
+
+## `navig pentest wordlist`
+**Status:** `stable` · **Since:** 
+Find installed wordlists, or generate one from a target site (cewl).
+**Examples:**
+```sh
+navig pentest wordlist
+```
+
+## `navig pentest wpscan`
+**Status:** `stable` · **Since:** 
+WordPress security scan (wpscan). GATED.
+**Examples:**
+```sh
+navig pentest wpscan
+```
+
+## `navig perplexity ask`
+**Status:** `stable` · **Since:** 
+Delegate any task; model, reasoning mode and conversation are chosen for you.
+**Examples:**
+```sh
+navig perplexity ask
+```
+
+## `navig perplexity attach`
+**Status:** `stable` · **Since:** 
+Launch the app with a debug port (or report the port it already has).
+**Examples:**
+```sh
+navig perplexity attach
+```
+
+## `navig perplexity model`
+**Status:** `stable` · **Since:** 
+Show or change the model the composer will use (explicit, not routed).
+**Examples:**
+```sh
+navig perplexity model
+```
+
+## `navig perplexity models`
+**Status:** `stable` · **Since:** 
+What this account can select, and what each model is good at.
+**Examples:**
+```sh
+navig perplexity models
+```
+
+## `navig perplexity new`
+**Status:** `stable` · **Since:** 
+Start a fresh conversation in the app (the current one stays in the sidebar).
+**Examples:**
+```sh
+navig perplexity new
+```
+
+## `navig perplexity open`
+**Status:** `stable` · **Since:** 
+Open a conversation from the app's sidebar by index.
+**Examples:**
+```sh
+navig perplexity open
+```
+
+## `navig perplexity selftest`
+**Status:** `stable` · **Since:** 
+Verify the whole path: port, window, composer, models, modes, registry.
+**Examples:**
+```sh
+navig perplexity selftest
+```
+
+## `navig perplexity status`
+**Status:** `stable` · **Since:** 
+Is the app attachable, what thread is open, which model, and is a composer busy?
+**Examples:**
+```sh
+navig perplexity status
+```
+
+## `navig perplexity threads archive`
+**Status:** `stable` · **Since:** 
+Hide a conversation from automatic selection (its remote history is untouched).
+**Examples:**
+```sh
+navig perplexity threads archive
+```
+
+## `navig perplexity threads list`
+**Status:** `stable` · **Since:** 
+Conversations this machine has delegated, newest first.
+**Examples:**
+```sh
+navig perplexity threads list
+```
+
+## `navig perplexity threads resume`
+**Status:** `stable` · **Since:** 
+Reopen a registry thread in the app (and mark it active).
+**Examples:**
+```sh
+navig perplexity threads resume
+```
+
+## `navig perplexity threads show`
+**Status:** `stable` · **Since:** 
+One conversation's identity, state and last result reference.
+**Examples:**
+```sh
+navig perplexity threads show
+```
+
+## `navig perplexity threads sidebar`
+**Status:** `stable` · **Since:** 
+What the app's own sidebar currently shows (not the registry).
+**Examples:**
+```sh
+navig perplexity threads sidebar
+```
+
+## `navig perplexity write`
+**Status:** `stable` · **Since:** 
+Write something publication-shaped: an article, launch copy, a report.
+**Examples:**
+```sh
+navig perplexity write
 ```
 
 ## `navig plan list`
@@ -8461,7 +11525,7 @@ navig plan new
 
 ## `navig plan run`
 **Status:** `stable` · **Since:** 
-Execute a plan file via the NAVIG agent.
+Execute a plan file via the NAVIG agent (`navig agent plan`).
 **Examples:**
 ```sh
 navig plan run
@@ -8473,6 +11537,14 @@ Print a stored plan.
 **Examples:**
 ```sh
 navig plan show
+```
+
+## `navig plans`
+**Status:** `stable` · **Since:** 
+Run navig plans
+**Examples:**
+```sh
+navig plans
 ```
 
 ## `navig plans add`
@@ -8497,14 +11569,6 @@ Show the best next action across spaces (or a specific space).
 **Examples:**
 ```sh
 navig plans next
-```
-
-## `navig plans run`
-**Status:** `stable` · **Since:** 
-Deprecated alias for `plans add` — add a goal to a plan.
-**Examples:**
-```sh
-navig plans run
 ```
 
 ## `navig plans status`
@@ -8539,28 +11603,12 @@ Recompute a plan file's completion from its checklist.
 navig plans update
 ```
 
-## `navig plugin add`
+## `navig plugin`
 **Status:** `stable` · **Since:** 
-Install a plugin (validated through the host before it lands).
+Run navig plugin
 **Examples:**
 ```sh
-navig plugin add
-```
-
-## `navig plugin disable`
-**Status:** `stable` · **Since:** 
-Disable a plugin without uninstalling it.
-**Examples:**
-```sh
-navig plugin disable
-```
-
-## `navig plugin enable`
-**Status:** `stable` · **Since:** 
-Enable a disabled plugin (all formats).
-**Examples:**
-```sh
-navig plugin enable
+navig plugin
 ```
 
 ## `navig plugin inspect`
@@ -8619,116 +11667,12 @@ Scaffold a new plugin skeleton into ~/.navig/plugins/<name>/.
 navig plugin new
 ```
 
-## `navig plugin remove`
-**Status:** `stable` · **Since:** 
-Remove an installed plugin directory (pip plugins: use pip uninstall).
-**Examples:**
-```sh
-navig plugin remove
-```
-
 ## `navig plugin show`
 **Status:** `stable` · **Since:** 
 Show detailed information about an installed plugin.
 **Examples:**
 ```sh
 navig plugin show
-```
-
-## `navig plugins add`
-**Status:** `stable` · **Since:** 
-Install a plugin (validated through the host before it lands).
-**Examples:**
-```sh
-navig plugins add
-```
-
-## `navig plugins disable`
-**Status:** `stable` · **Since:** 
-Disable a plugin without uninstalling it.
-**Examples:**
-```sh
-navig plugins disable
-```
-
-## `navig plugins enable`
-**Status:** `stable` · **Since:** 
-Enable a disabled plugin (all formats).
-**Examples:**
-```sh
-navig plugins enable
-```
-
-## `navig plugins inspect`
-**Status:** `stable` · **Since:** 
-Inspect a plugin/package (CC bundle + NAVIG personas/formations/spaces).
-**Examples:**
-```sh
-navig plugins inspect
-```
-
-## `navig plugins list`
-**Status:** `stable` · **Since:** 
-List installed plugins across every format (package, pip, legacy).
-**Examples:**
-```sh
-navig plugins list
-```
-
-## `navig plugins marketplace add`
-**Status:** `stable` · **Since:** 
-Register a marketplace (validates its marketplace.json first).
-**Examples:**
-```sh
-navig plugins marketplace add
-```
-
-## `navig plugins marketplace list`
-**Status:** `stable` · **Since:** 
-List registered marketplaces and the plugins they advertise.
-**Examples:**
-```sh
-navig plugins marketplace list
-```
-
-## `navig plugins marketplace refresh`
-**Status:** `stable` · **Since:** 
-Re-fetch live catalogs so the Store's AVAILABLE rows aren't stale.
-**Examples:**
-```sh
-navig plugins marketplace refresh
-```
-
-## `navig plugins marketplace remove`
-**Status:** `stable` · **Since:** 
-Unregister a marketplace.
-**Examples:**
-```sh
-navig plugins marketplace remove
-```
-
-## `navig plugins new`
-**Status:** `stable` · **Since:** 
-Scaffold a new plugin skeleton into ~/.navig/plugins/<name>/.
-**Examples:**
-```sh
-navig plugins new
-```
-
-## `navig plugins remove`
-**Status:** `stable` · **Since:** 
-Remove an installed plugin directory (pip plugins: use pip uninstall).
-**Examples:**
-```sh
-navig plugins remove
-```
-
-## `navig plugins show`
-**Status:** `stable` · **Since:** 
-Show detailed information about an installed plugin.
-**Examples:**
-```sh
-navig plugins show
 ```
 
 ## `navig portable create`
@@ -8745,6 +11689,230 @@ Validate a portable NAVIG bundle.
 **Examples:**
 ```sh
 navig portable validate
+```
+
+## `navig preset default`
+**Status:** `stable` · **Since:** 
+Show or set the preset a tool starts with.
+**Examples:**
+```sh
+navig preset default
+```
+
+## `navig preset duplicate`
+**Status:** `stable` · **Since:** 
+Copy a preset into a new one you own.
+**Examples:**
+```sh
+navig preset duplicate
+```
+
+## `navig preset edit`
+**Status:** `stable` · **Since:** 
+Edit a preset. Editing a builtin saves your own override (undo with `reset`).
+**Examples:**
+```sh
+navig preset edit
+```
+
+## `navig preset export`
+**Status:** `stable` · **Since:** 
+Export a preset to share. Secrets and local paths are removed; files are not included.
+**Examples:**
+```sh
+navig preset export
+```
+
+## `navig preset fav`
+**Status:** `stable` · **Since:** 
+Star (or --off unstar) a preset.
+**Examples:**
+```sh
+navig preset fav
+```
+
+## `navig preset import`
+**Status:** `stable` · **Since:** 
+Import a shared preset. It stays marked unreviewed until you run `navig presets trust`.
+**Examples:**
+```sh
+navig preset import
+```
+
+## `navig preset list`
+**Status:** `stable` · **Since:** 
+List presets (favorites first).
+**Examples:**
+```sh
+navig preset list
+```
+
+## `navig preset new`
+**Status:** `stable` · **Since:** 
+Create a preset (from flags or a file).
+**Examples:**
+```sh
+navig preset new
+```
+
+## `navig preset rename`
+**Status:** `stable` · **Since:** 
+Rename a preset (the id stays stable).
+**Examples:**
+```sh
+navig preset rename
+```
+
+## `navig preset reset`
+**Status:** `stable` · **Since:** 
+Discard your edits to a builtin preset.
+**Examples:**
+```sh
+navig preset reset
+```
+
+## `navig preset resolve`
+**Status:** `stable` · **Since:** 
+Show exactly what a combination of presets sends to a tool — nothing is generated.
+**Examples:**
+```sh
+navig preset resolve
+```
+
+## `navig preset rm`
+**Status:** `stable` · **Since:** 
+Delete a preset you created (builtins can be reset, not deleted).
+**Examples:**
+```sh
+navig preset rm
+```
+
+## `navig preset show`
+**Status:** `stable` · **Since:** 
+Show one preset in full.
+**Examples:**
+```sh
+navig preset show
+```
+
+## `navig preset trust`
+**Status:** `stable` · **Since:** 
+Mark an imported preset as reviewed, so its instructions apply unquoted.
+**Examples:**
+```sh
+navig preset trust
+```
+
+## `navig presets default`
+**Status:** `stable` · **Since:** 
+Show or set the preset a tool starts with.
+**Examples:**
+```sh
+navig presets default
+```
+
+## `navig presets duplicate`
+**Status:** `stable` · **Since:** 
+Copy a preset into a new one you own.
+**Examples:**
+```sh
+navig presets duplicate
+```
+
+## `navig presets edit`
+**Status:** `stable` · **Since:** 
+Edit a preset. Editing a builtin saves your own override (undo with `reset`).
+**Examples:**
+```sh
+navig presets edit
+```
+
+## `navig presets export`
+**Status:** `stable` · **Since:** 
+Export a preset to share. Secrets and local paths are removed; files are not included.
+**Examples:**
+```sh
+navig presets export
+```
+
+## `navig presets fav`
+**Status:** `stable` · **Since:** 
+Star (or --off unstar) a preset.
+**Examples:**
+```sh
+navig presets fav
+```
+
+## `navig presets import`
+**Status:** `stable` · **Since:** 
+Import a shared preset. It stays marked unreviewed until you run `navig presets trust`.
+**Examples:**
+```sh
+navig presets import
+```
+
+## `navig presets list`
+**Status:** `stable` · **Since:** 
+List presets (favorites first).
+**Examples:**
+```sh
+navig presets list
+```
+
+## `navig presets new`
+**Status:** `stable` · **Since:** 
+Create a preset (from flags or a file).
+**Examples:**
+```sh
+navig presets new
+```
+
+## `navig presets rename`
+**Status:** `stable` · **Since:** 
+Rename a preset (the id stays stable).
+**Examples:**
+```sh
+navig presets rename
+```
+
+## `navig presets reset`
+**Status:** `stable` · **Since:** 
+Discard your edits to a builtin preset.
+**Examples:**
+```sh
+navig presets reset
+```
+
+## `navig presets resolve`
+**Status:** `stable` · **Since:** 
+Show exactly what a combination of presets sends to a tool — nothing is generated.
+**Examples:**
+```sh
+navig presets resolve
+```
+
+## `navig presets rm`
+**Status:** `stable` · **Since:** 
+Delete a preset you created (builtins can be reset, not deleted).
+**Examples:**
+```sh
+navig presets rm
+```
+
+## `navig presets show`
+**Status:** `stable` · **Since:** 
+Show one preset in full.
+**Examples:**
+```sh
+navig presets show
+```
+
+## `navig presets trust`
+**Status:** `stable` · **Since:** 
+Mark an imported preset as reviewed, so its instructions apply unquoted.
+**Examples:**
+```sh
+navig presets trust
 ```
 
 ## `navig proactive setup`
@@ -8777,6 +11945,14 @@ Test configured proactive sources.
 **Examples:**
 ```sh
 navig proactive test
+```
+
+## `navig procs`
+**Status:** `stable` · **Since:** 
+Show which project each process belongs to, with memory and owner (read-only).
+**Examples:**
+```sh
+navig procs
 ```
 
 ## `navig profile list`
@@ -8819,9 +11995,137 @@ Show the current operating profile and all its settings.
 navig profile show
 ```
 
+## `navig project add`
+**Status:** `stable` · **Since:** 
+Register a folder as a project (reads its .navig/ immediately).
+**Examples:**
+```sh
+navig project add
+```
+
+## `navig project analyze`
+**Status:** `stable` · **Since:** 
+Re-analyse a project with AI — a brief, a doc update, or new todos. Proposes; you accept.
+**Examples:**
+```sh
+navig project analyze
+```
+
+## `navig project context`
+**Status:** `stable` · **Since:** 
+The project's context pack — what an agent is told about it.
+**Examples:**
+```sh
+navig project context
+```
+
+## `navig project fabric`
+**Status:** `stable` · **Since:** 
+The Idea Fabric: run an AI pattern over the project — brainstorm, harvest, expand, critique, plan.
+**Examples:**
+```sh
+navig project fabric
+```
+
+## `navig project ideas`
+**Status:** `stable` · **Since:** 
+Ideas not planned yet — by stage (IDEAS.md). Capture one with --add.
+**Examples:**
+```sh
+navig project ideas
+```
+
+## `navig project list`
+**Status:** `stable` · **Since:** 
+Every project, pinned first, then most recently active.
+**Examples:**
+```sh
+navig project list
+```
+
+## `navig project logs`
+**Status:** `stable` · **Since:** 
+Show a run's output.
+**Examples:**
+```sh
+navig project logs
+```
+
+## `navig project ps`
+**Status:** `stable` · **Since:** 
+Project scripts running now (on this machine).
+**Examples:**
+```sh
+navig project ps
+```
+
+## `navig project run`
+**Status:** `stable` · **Since:** 
+Start a project script in the background (it keeps running if navig restarts).
+**Examples:**
+```sh
+navig project run
+```
+
+## `navig project scan`
+**Status:** `stable` · **Since:** 
+Find projects one level inside a folder.
+**Examples:**
+```sh
+navig project scan
+```
+
+## `navig project scripts`
+**Status:** `stable` · **Since:** 
+Every runnable script — root and workspace packages.
+**Examples:**
+```sh
+navig project scripts
+```
+
+## `navig project show`
+**Status:** `stable` · **Since:** 
+One project: phase, next action, todos, scripts, git.
+**Examples:**
+```sh
+navig project show
+```
+
+## `navig project stop`
+**Status:** `stable` · **Since:** 
+Stop a run and every process it started.
+**Examples:**
+```sh
+navig project stop
+```
+
+## `navig project todos`
+**Status:** `stable` · **Since:** 
+The checkboxes across the project's docs, as one list.
+**Examples:**
+```sh
+navig project todos
+```
+
+## `navig prompts backup`
+**Status:** `stable` · **Since:** 
+Write the whole library out as Markdown files (re-importable).
+**Examples:**
+```sh
+navig prompts backup
+```
+
+## `navig prompts categories`
+**Status:** `stable` · **Since:** 
+Domains, categories, workflows and tags in the library, with counts.
+**Examples:**
+```sh
+navig prompts categories
+```
+
 ## `navig prompts edit`
 **Status:** `stable` · **Since:** 
-Open a prompt in the system editor.
+Edit a library prompt's text in your editor (or open a prompt file).
 **Examples:**
 ```sh
 navig prompts edit
@@ -8835,28 +12139,84 @@ Export a prompt as a Claude slash command (``.claude/commands/<id>.md``).
 navig prompts export
 ```
 
+## `navig prompts fav`
+**Status:** `stable` · **Since:** 
+Star a prompt (favourites show first in NAVIG OS and Telegram /prompt).
+**Examples:**
+```sh
+navig prompts fav
+```
+
+## `navig prompts import`
+**Status:** `stable` · **Since:** 
+Import (or re-sync) a folder of prompts. Safe to run again — your edits are kept.
+**Examples:**
+```sh
+navig prompts import
+```
+
 ## `navig prompts list`
 **Status:** `stable` · **Since:** 
-List discovered prompts across all roots (user · package · space · claude).
+List your prompt library, then file prompts from every root.
 **Examples:**
 ```sh
 navig prompts list
 ```
 
+## `navig prompts new`
+**Status:** `stable` · **Since:** 
+Add a prompt to the library.
+**Examples:**
+```sh
+navig prompts new
+```
+
 ## `navig prompts remove`
 **Status:** `stable` · **Since:** 
-Delete a prompt.
+Delete a prompt (library prompts are archived unless --purge).
 **Examples:**
 ```sh
 navig prompts remove
 ```
 
+## `navig prompts restore`
+**Status:** `stable` · **Since:** 
+Bring back an archived library prompt.
+**Examples:**
+```sh
+navig prompts restore
+```
+
+## `navig prompts search`
+**Status:** `stable` · **Since:** 
+Full-text search of the prompt library.
+**Examples:**
+```sh
+navig prompts search
+```
+
 ## `navig prompts show`
 **Status:** `stable` · **Since:** 
-Show a saved prompt.
+Show a prompt from the library (or a saved prompt file).
 **Examples:**
 ```sh
 navig prompts show
+```
+
+## `navig prompts use`
+**Status:** `stable` · **Since:** 
+Fill a prompt's placeholders, copy it, and print it.
+**Examples:**
+```sh
+navig prompts use
+```
+
+## `navig queue`
+**Status:** `stable` · **Since:** 
+Task queue - run without subcommand to list tasks.
+**Examples:**
+```sh
+navig queue
 ```
 
 ## `navig queue add`
@@ -8897,6 +12257,14 @@ Show queue statistics.
 **Examples:**
 ```sh
 navig queue stats
+```
+
+## `navig quick`
+**Status:** `stable` · **Since:** 
+Quick actions - shortcuts for frequent operations.
+**Examples:**
+```sh
+navig quick
 ```
 
 ## `navig quick add`
@@ -8955,6 +12323,238 @@ List active radar watches.
 navig radar list
 ```
 
+## `navig recall ask`
+**Status:** `stable` · **Since:** 
+Have I asked this before? Earlier questions, the answers that followed, and decisions.
+**Examples:**
+```sh
+navig recall ask
+```
+
+## `navig recall decisions`
+**Status:** `stable` · **Since:** 
+Decisions — your answers to structured questions, and audited decisions with reversals.
+**Examples:**
+```sh
+navig recall decisions
+```
+
+## `navig recall disable`
+**Status:** `stable` · **Since:** 
+Stop Recall from reading transcripts (the existing bank is kept).
+**Examples:**
+```sh
+navig recall disable
+```
+
+## `navig recall enable`
+**Status:** `stable` · **Since:** 
+Allow Recall to read local transcripts (Claude Code, Codex, session audits).
+**Examples:**
+```sh
+navig recall enable
+```
+
+## `navig recall eval`
+**Status:** `stable` · **Since:** 
+Measure extraction against the session audit: recall of the audit's features/ideas per
+**Examples:**
+```sh
+navig recall eval
+```
+
+## `navig recall excerpt`
+**Status:** `stable` · **Since:** 
+The original conversation around one turn — the citation behind a record.
+**Examples:**
+```sh
+navig recall excerpt
+```
+
+## `navig recall extract`
+**Status:** `stable` · **Since:** 
+Extract ideas, decisions, terms, plans, questions, findings and risks with the model —
+**Examples:**
+```sh
+navig recall extract
+```
+
+## `navig recall features`
+**Status:** `stable` · **Since:** 
+Features from the session audit, with their verified implementation state.
+**Examples:**
+```sh
+navig recall features
+```
+
+## `navig recall findings`
+**Status:** `stable` · **Since:** 
+Research reports produced by agents during your sessions.
+**Examples:**
+```sh
+navig recall findings
+```
+
+## `navig recall forgotten`
+**Status:** `stable` · **Since:** 
+Forgotten ideas — not rejected, no implementation found, oldest first.
+**Examples:**
+```sh
+navig recall forgotten
+```
+
+## `navig recall ideas`
+**Status:** `stable` · **Since:** 
+Ideas — including the audit's recovered, never-built ones.
+**Examples:**
+```sh
+navig recall ideas
+```
+
+## `navig recall ingest`
+**Status:** `stable` · **Since:** 
+Read new or changed conversations into the bank (incremental; safe to re-run).
+**Examples:**
+```sh
+navig recall ingest
+```
+
+## `navig recall link`
+**Status:** `stable` · **Since:** 
+Link a session to a file, plan or commit by hand (kept across reindex).
+**Examples:**
+```sh
+navig recall link
+```
+
+## `navig recall plans`
+**Status:** `stable` · **Since:** 
+Plans proposed in sessions, with the verdict you gave each one.
+**Examples:**
+```sh
+navig recall plans
+```
+
+## `navig recall questions`
+**Status:** `stable` · **Since:** 
+Open questions and recorded conflicts.
+**Examples:**
+```sh
+navig recall questions
+```
+
+## `navig recall reindex`
+**Status:** `stable` · **Since:** 
+Rebuild the search index from the archive and the vault (both are left untouched).
+**Examples:**
+```sh
+navig recall reindex
+```
+
+## `navig recall review`
+**Status:** `stable` · **Since:** 
+Items that need a human: possible duplicates and model items without a verifiable quote.
+**Examples:**
+```sh
+navig recall review
+```
+
+## `navig recall search`
+**Status:** `stable` · **Since:** 
+Find records (and, with --raw, the conversation turns) that match.
+**Examples:**
+```sh
+navig recall search
+```
+
+## `navig recall sessions`
+**Status:** `stable` · **Since:** 
+Claude Code sessions linked to a file, a plan or a commit — or every session of a project.
+**Examples:**
+```sh
+navig recall sessions
+```
+
+## `navig recall show`
+**Status:** `stable` · **Since:** 
+One record: status, summary, body, evidence with citations, timeline, links.
+**Examples:**
+```sh
+navig recall show
+```
+
+## `navig recall sources`
+**Status:** `stable` · **Since:** 
+Conversation sources Recall has read, newest first.
+**Examples:**
+```sh
+navig recall sources
+```
+
+## `navig recall status`
+**Status:** `stable` · **Since:** 
+What is in the bank, where it lives, and whether reading is enabled.
+**Examples:**
+```sh
+navig recall status
+```
+
+## `navig recall tables`
+**Status:** `stable` · **Since:** 
+Tables from past conversations, kept verbatim (show one to copy it).
+**Examples:**
+```sh
+navig recall tables
+```
+
+## `navig recall terms`
+**Status:** `stable` · **Since:** 
+Vocabulary — names and terms coined, adopted or rejected (with the reason).
+**Examples:**
+```sh
+navig recall terms
+```
+
+## `navig recall unlink`
+**Status:** `stable` · **Since:** 
+Remove every link between a session and a target (recorded, so reindex keeps it removed).
+**Examples:**
+```sh
+navig recall unlink
+```
+
+## `navig recall verify`
+**Status:** `stable` · **Since:** 
+Check ideas/plans against the project's code: likely · partial · not_found · unknown.
+**Examples:**
+```sh
+navig recall verify
+```
+
+## `navig receipt list`
+**Status:** `stable` · **Since:** 
+List stored receipts, newest first.
+**Examples:**
+```sh
+navig receipt list
+```
+
+## `navig receipt record`
+**Status:** `stable` · **Since:** 
+Record a signed receipt — refuses to persist one whose signature failed.
+**Examples:**
+```sh
+navig receipt record
+```
+
+## `navig receipt verify`
+**Status:** `stable` · **Since:** 
+Verify a stored receipt's device signature — the verdict's tamper check.
+**Examples:**
+```sh
+navig receipt verify
+```
+
 ## `navig replay list`
 **Status:** `stable` · **Since:** 
 List recorded sessions available for replay.
@@ -8977,6 +12577,14 @@ Simulate merges between every pair of worktrees; list conflicting files.
 **Examples:**
 ```sh
 navig repo conflicts
+```
+
+## `navig repo gates`
+**Status:** `stable` · **Since:** 
+Show every CI gate on this machine: lanes, runners, bottleneck, spend — or PR checks with --prs.
+**Examples:**
+```sh
+navig repo gates
 ```
 
 ## `navig repo guard install`
@@ -9009,6 +12617,14 @@ Finish a MERGED branch completely: delete it locally, on origin, and its worktre
 **Examples:**
 ```sh
 navig repo land
+```
+
+## `navig repo lock check`
+**Status:** `stable` · **Since:** 
+Exit 1 when ANOTHER live session holds the main checkout. Built for the pre-commit hook.
+**Examples:**
+```sh
+navig repo lock check
 ```
 
 ## `navig repo lock release`
@@ -9083,6 +12699,14 @@ Execute arbitrary shell command on remote server.
 navig run
 ```
 
+## `navig scaffold`
+**Status:** `stable` · **Since:** 
+Scaffold management - run without subcommand for help.
+**Examples:**
+```sh
+navig scaffold
+```
+
 ## `navig scaffold apply`
 **Status:** `stable` · **Since:** 
 Generate files/directories from a template.
@@ -9139,6 +12763,30 @@ Search the web for information.
 navig search
 ```
 
+## `navig security`
+**Status:** `stable` · **Since:** 
+Local security operations — run without a subcommand for the help.
+**Examples:**
+```sh
+navig security
+```
+
+## `navig security migrate-host-secrets`
+**Status:** `stable` · **Since:** 
+Move plaintext host passwords into the vault (dry run unless --apply).
+**Examples:**
+```sh
+navig security migrate-host-secrets
+```
+
+## `navig server`
+**Status:** `stable` · **Since:** 
+Server management - DEPRECATED, use 'navig host'.
+**Examples:**
+```sh
+navig server
+```
+
 ## `navig server list`
 **Status:** `stable` · **Since:** 
 List server resources (vhosts, containers, etc.).
@@ -9169,6 +12817,14 @@ Test server configuration.
 **Examples:**
 ```sh
 navig server test
+```
+
+## `navig server-template`
+**Status:** `stable` · **Since:** 
+Per-server template configuration.
+**Examples:**
+```sh
+navig server-template
 ```
 
 ## `navig server-template disable`
@@ -9307,60 +12963,28 @@ View or edit layered NAVIG settings (VSCode-style, 5 layers).
 navig settings
 ```
 
-## `navig signal add`
-**Status:** `stable` · **Since:** 
-Create a signed ingest source. Prints the secret ONCE — store it now.
-**Examples:**
-```sh
-navig signal add
-```
-
-## `navig signal list`
-**Status:** `stable` · **Since:** 
-List signal sources (secrets masked) with hit counts.
-**Examples:**
-```sh
-navig signal list
-```
-
-## `navig signal presets`
-**Status:** `stable` · **Since:** 
-List the built-in event presets (polished title/body shapes).
-**Examples:**
-```sh
-navig signal presets
-```
-
-## `navig signal remove`
-**Status:** `stable` · **Since:** 
-Delete a signal source.
-**Examples:**
-```sh
-navig signal remove
-```
-
-## `navig signal rotate`
-**Status:** `stable` · **Since:** 
-Issue a new secret (old one stops working immediately). Shown once.
-**Examples:**
-```sh
-navig signal rotate
-```
-
-## `navig signal test`
-**Status:** `stable` · **Since:** 
-Sign a sample payload and POST it to the local gateway to prove the round-trip.
-**Examples:**
-```sh
-navig signal test
-```
-
 ## `navig signals add`
 **Status:** `stable` · **Since:** 
-Create a signed ingest source. Prints the secret ONCE — store it now.
+Create a signed ingest source.
 **Examples:**
 ```sh
 navig signals add
+```
+
+## `navig signals connect`
+**Status:** `stable` · **Since:** 
+Create the Stripe webhook endpoint for a project and store its secret — one step.
+**Examples:**
+```sh
+navig signals connect
+```
+
+## `navig signals edit`
+**Status:** `stable` · **Since:** 
+Change where a source routes, its priority, or its templates (URL and secret stay).
+**Examples:**
+```sh
+navig signals edit
 ```
 
 ## `navig signals list`
@@ -9381,7 +13005,7 @@ navig signals presets
 
 ## `navig signals remove`
 **Status:** `stable` · **Since:** 
-Delete a signal source.
+Delete a signal source (its URL stops accepting events immediately).
 **Examples:**
 ```sh
 navig signals remove
@@ -9389,7 +13013,7 @@ navig signals remove
 
 ## `navig signals rotate`
 **Status:** `stable` · **Since:** 
-Issue a new secret (old one stops working immediately). Shown once.
+Replace a source's secret (the old one stops working immediately).
 **Examples:**
 ```sh
 navig signals rotate
@@ -9397,10 +13021,18 @@ navig signals rotate
 
 ## `navig signals test`
 **Status:** `stable` · **Since:** 
-Sign a sample payload and POST it to the local gateway to prove the round-trip.
+Sign a sample event and POST it to the local gateway to prove the round-trip.
 **Examples:**
 ```sh
 navig signals test
+```
+
+## `navig skill`
+**Status:** `stable` · **Since:** 
+Skills management - run without subcommand for help.
+**Examples:**
+```sh
+navig skill
 ```
 
 ## `navig skill auto`
@@ -9531,164 +13163,20 @@ Validate a SKILL.md against the NAVIG authoring standard (docs/authoring-guide.m
 navig skill validate
 ```
 
-## `navig skills auto`
+## `navig social approve`
 **Status:** `stable` · **Since:** 
-Scan the project, detect its stack, and auto-install matching agent skills.
+Bind an operator approval to a post's EXACT content version (G1).
 **Examples:**
 ```sh
-navig skills auto
+navig social approve
 ```
 
-## `navig skills benchmark`
+## `navig social card`
 **Status:** `stable` · **Since:** 
-Run the behavioral eval N times across a skill library and gate on mean(with) ≥ mean(without).
+Send a post for review to your Telegram: the real image + text, ✅ Publish / ⏭ Skip.
 **Examples:**
 ```sh
-navig skills benchmark
-```
-
-## `navig skills create`
-**Status:** `stable` · **Since:** 
-Scaffold a new Claude-compatible SKILL.md skill.
-**Examples:**
-```sh
-navig skills create
-```
-
-## `navig skills distill`
-**Status:** `stable` · **Since:** 
-Distill a slice of the operations ledger into a draft SKILL.md.
-**Examples:**
-```sh
-navig skills distill
-```
-
-## `navig skills eval`
-**Status:** `stable` · **Since:** 
-Evaluate a skill against its ``evals.json`` (the guide's 'planned standard').
-**Examples:**
-```sh
-navig skills eval
-```
-
-## `navig skills export`
-**Status:** `stable` · **Since:** 
-Export a NAVIG skill in another agent's format so it can consume it.
-**Examples:**
-```sh
-navig skills export
-```
-
-## `navig skills install`
-**Status:** `stable` · **Since:** 
-Install a skill — from another agent (Claude/Hermes/Codex/local) or the community registry.
-**Examples:**
-```sh
-navig skills install
-```
-
-## `navig skills lint`
-**Status:** `stable` · **Since:** 
-Validate a SKILL.md against the NAVIG authoring standard (docs/authoring-guide.md).
-**Examples:**
-```sh
-navig skills lint
-```
-
-## `navig skills list`
-**Status:** `stable` · **Since:** 
-List available AI skills.
-**Examples:**
-```sh
-navig skills list
-```
-
-## `navig skills new`
-**Status:** `stable` · **Since:** 
-Scaffold a new Claude-compatible SKILL.md skill.
-**Examples:**
-```sh
-navig skills new
-```
-
-## `navig skills run`
-**Status:** `stable` · **Since:** 
-Run a skill command.
-**Examples:**
-```sh
-navig skills run
-```
-
-## `navig skills show`
-**Status:** `stable` · **Since:** 
-Show detailed skill information (commands, examples, metadata).
-**Examples:**
-```sh
-navig skills show
-```
-
-## `navig skills suggest`
-**Status:** `stable` · **Since:** 
-Detect this project's stack + active space and recommend community skills.
-**Examples:**
-```sh
-navig skills suggest
-```
-
-## `navig skills synthesize`
-**Status:** `stable` · **Since:** 
-Synthesize new skill YAML files from repeated command patterns.
-**Examples:**
-```sh
-navig skills synthesize
-```
-
-## `navig skills tree`
-**Status:** `stable` · **Since:** 
-Show skills grouped by category.
-**Examples:**
-```sh
-navig skills tree
-```
-
-## `navig skills validate`
-**Status:** `stable` · **Since:** 
-Validate a SKILL.md against the NAVIG authoring standard (docs/authoring-guide.md).
-**Examples:**
-```sh
-navig skills validate
-```
-
-## `navig snapshot create`
-**Status:** `stable` · **Since:** 
-Create a named snapshot of the current NAVIG config and state.
-**Examples:**
-```sh
-navig snapshot create
-```
-
-## `navig snapshot diff`
-**Status:** `stable` · **Since:** 
-Show a unified diff between two stored versions of a file.
-**Examples:**
-```sh
-navig snapshot diff
-```
-
-## `navig snapshot restore`
-**Status:** `stable` · **Since:** 
-Roll back a file to a previously stored version.
-**Examples:**
-```sh
-navig snapshot restore
-```
-
-## `navig snapshot versions`
-**Status:** `stable` · **Since:** 
-List all stored versions of a file.
-**Examples:**
-```sh
-navig snapshot versions
+navig social card
 ```
 
 ## `navig social connect`
@@ -9701,10 +13189,18 @@ navig social connect
 
 ## `navig social disconnect`
 **Status:** `stable` · **Since:** 
-Remove a provider's stored access token (app credentials are kept).
+Remove one account's stored access token (app credentials are kept).
 **Examples:**
 ```sh
 navig social disconnect
+```
+
+## `navig social discord channels`
+**Status:** `stable` · **Since:** 
+Text channels the stored bot token can post to (read-only listing).
+**Examples:**
+```sh
+navig social discord channels
 ```
 
 ## `navig social engagement`
@@ -9729,6 +13225,14 @@ Crawl every account in a space's registry and record what moved.
 **Examples:**
 ```sh
 navig social presence crawl
+```
+
+## `navig social presence plan`
+**Status:** `stable` · **Since:** 
+Every account in the registry — can NAVIG publish to it, and what's the next step?
+**Examples:**
+```sh
+navig social presence plan
 ```
 
 ## `navig social presence trend`
@@ -9763,6 +13267,54 @@ Renew an expiring access token in place (uses stored refresh/app creds).
 navig social refresh
 ```
 
+## `navig social reject`
+**Status:** `stable` · **Since:** 
+Record an operator rejection — the post will not pass the approval gate (G1).
+**Examples:**
+```sh
+navig social reject
+```
+
+## `navig social relay cancel`
+**Status:** `stable` · **Since:** 
+Cancel a still-pending post. A sent post can't be un-sent from here.
+**Examples:**
+```sh
+navig social relay cancel
+```
+
+## `navig social relay drain`
+**Status:** `stable` · **Since:** 
+Send everything that is due now, without waiting for the next cron tick.
+**Examples:**
+```sh
+navig social relay drain
+```
+
+## `navig social relay post`
+**Status:** `stable` · **Since:** 
+Queue one post. Running the same command again does not queue it twice.
+**Examples:**
+```sh
+navig social relay post
+```
+
+## `navig social relay queue`
+**Status:** `stable` · **Since:** 
+What is scheduled — the relay's stand-in for Telegram's Scheduled tab.
+**Examples:**
+```sh
+navig social relay queue
+```
+
+## `navig social relay status`
+**Status:** `stable` · **Since:** 
+Is the relay up, which channels may it post to, and does anything need a human?
+**Examples:**
+```sh
+navig social relay status
+```
+
 ## `navig social report`
 **Status:** `stable` · **Since:** 
 Campaign scorecard — how did it do? Joins what you published (receipts) with
@@ -9795,6 +13347,30 @@ Pull live view/like counts from each network → the report's CTR goes real.
 navig social sync
 ```
 
+## `navig social track`
+**Status:** `stable` · **Since:** 
+Follow ONE content id end-to-end: post, approval, per-network receipts (G4).
+**Examples:**
+```sh
+navig social track
+```
+
+## `navig social upload`
+**Status:** `stable` · **Since:** 
+Upload a video to YouTube; select a connected channel with --account.
+**Examples:**
+```sh
+navig social upload
+```
+
+## `navig software`
+**Status:** `stable` · **Since:** 
+Software management - run without subcommand to list packages.
+**Examples:**
+```sh
+navig software
+```
+
 ## `navig software list`
 **Status:** `stable` · **Since:** 
 List installed software packages.
@@ -9809,6 +13385,14 @@ Search installed packages by name.
 **Examples:**
 ```sh
 navig software search
+```
+
+## `navig space`
+**Status:** `stable` · **Since:** 
+Run navig space
+**Examples:**
+```sh
+navig space
 ```
 
 ## `navig space audit`
@@ -9833,6 +13417,14 @@ Check a space and report what's present vs missing — then let you pick the nex
 **Examples:**
 ```sh
 navig space check
+```
+
+## `navig space context`
+**Status:** `stable` · **Since:** 
+Show exactly what an agent may read from this Space's relations — with provenance.
+**Examples:**
+```sh
+navig space context
 ```
 
 ## `navig space create`
@@ -9915,6 +13507,14 @@ Install a space bundle from the community registry (GitHub-backed).
 navig space install
 ```
 
+## `navig space link`
+**Status:** `stable` · **Since:** 
+Authorize another Space's knowledge into this one (logical edge only).
+**Examples:**
+```sh
+navig space link
+```
+
 ## `navig space lint`
 **Status:** `stable` · **Since:** 
 Audit the whole spaces collection for structural drift.
@@ -9987,12 +13587,28 @@ Create/initialize a space.
 navig space new
 ```
 
+## `navig space parent`
+**Status:** `stable` · **Since:** 
+Set (or --clear) this Space's logical parent — hierarchy without moving folders.
+**Examples:**
+```sh
+navig space parent
+```
+
 ## `navig space register`
 **Status:** `stable` · **Since:** 
 Register an external `.navig/` folder so it shows in the deck (enabled).
 **Examples:**
 ```sh
 navig space register
+```
+
+## `navig space related`
+**Status:** `stable` · **Since:** 
+Show this Space's parent, links, children and inbound links — one table.
+**Examples:**
+```sh
+navig space related
 ```
 
 ## `navig space rename`
@@ -10019,6 +13635,14 @@ Undo `space fold` — the folder becomes a discoverable space again.
 navig space unfold
 ```
 
+## `navig space unlink`
+**Status:** `stable` · **Since:** 
+Remove a read link recorded by ``space link`` (idempotent).
+**Examples:**
+```sh
+navig space unlink
+```
+
 ## `navig space use`
 **Status:** `stable` · **Since:** 
 Compatibility alias for `navig space switch <name>`.
@@ -10033,230 +13657,6 @@ Wire this folder into the agent ecosystem (alias of `navig wire`).
 **Examples:**
 ```sh
 navig space wire
-```
-
-## `navig spaces audit`
-**Status:** `stable` · **Since:** 
-Audit the whole spaces collection for structural drift.
-**Examples:**
-```sh
-navig spaces audit
-```
-
-## `navig spaces books`
-**Status:** `stable` · **Since:** 
-Show or set the finance BOOK a space keeps its ledger in.
-**Examples:**
-```sh
-navig spaces books
-```
-
-## `navig spaces check`
-**Status:** `stable` · **Since:** 
-Check a space and report what's present vs missing — then let you pick the next step.
-**Examples:**
-```sh
-navig spaces check
-```
-
-## `navig spaces create`
-**Status:** `stable` · **Since:** 
-Create/initialize a space.
-**Examples:**
-```sh
-navig spaces create
-```
-
-## `navig spaces current`
-**Status:** `stable` · **Since:** 
-Show the active space (NAVIG_SPACE override respected).
-**Examples:**
-```sh
-navig spaces current
-```
-
-## `navig spaces delete`
-**Status:** `stable` · **Since:** 
-Delete a space and all its contents.
-**Examples:**
-```sh
-navig spaces delete
-```
-
-## `navig spaces disable`
-**Status:** `stable` · **Since:** 
-Hide a space from the deck/switcher (the folder still works when you're in it).
-**Examples:**
-```sh
-navig spaces disable
-```
-
-## `navig spaces doctor`
-**Status:** `stable` · **Since:** 
-Check a space and report what's present vs missing — then let you pick the next step.
-**Examples:**
-```sh
-navig spaces doctor
-```
-
-## `navig spaces enable`
-**Status:** `stable` · **Since:** 
-Make a space visible in the deck/switcher and available to activate.
-**Examples:**
-```sh
-navig spaces enable
-```
-
-## `navig spaces fold`
-**Status:** `stable` · **Since:** 
-Demote a sub-space: keep it working, hide it from discovery and the registry.
-**Examples:**
-```sh
-navig spaces fold
-```
-
-## `navig spaces forget`
-**Status:** `stable` · **Since:** 
-Remove a space from the registry (does not delete the folder).
-**Examples:**
-```sh
-navig spaces forget
-```
-
-## `navig spaces init`
-**Status:** `stable` · **Since:** 
-Create/initialize a space.
-**Examples:**
-```sh
-navig spaces init
-```
-
-## `navig spaces install`
-**Status:** `stable` · **Since:** 
-Install a space bundle from the community registry (GitHub-backed).
-**Examples:**
-```sh
-navig spaces install
-```
-
-## `navig spaces lint`
-**Status:** `stable` · **Since:** 
-Audit the whole spaces collection for structural drift.
-**Examples:**
-```sh
-navig spaces lint
-```
-
-## `navig spaces list`
-**Status:** `stable` · **Since:** 
-List spaces across every root (with scope + enabled/active indicators).
-**Examples:**
-```sh
-navig spaces list
-```
-
-## `navig spaces media config`
-**Status:** `stable` · **Since:** 
-Show the media layout, or write it with ``--init``.
-**Examples:**
-```sh
-navig spaces media config
-```
-
-## `navig spaces media fix`
-**Status:** `stable` · **Since:** 
-Repair what can be repaired without a judgement call.
-**Examples:**
-```sh
-navig spaces media fix
-```
-
-## `navig spaces media link`
-**Status:** `stable` · **Since:** 
-Attach one project to its media folder, creating the folder if needed.
-**Examples:**
-```sh
-navig spaces media link
-```
-
-## `navig spaces media list`
-**Status:** `stable` · **Since:** 
-Show every media link and its target, healthy ones included.
-**Examples:**
-```sh
-navig spaces media list
-```
-
-## `navig spaces media relink`
-**Status:** `stable` · **Since:** 
-Repoint one media link. Removes the link only — never the media.
-**Examples:**
-```sh
-navig spaces media relink
-```
-
-## `navig spaces media verify`
-**Status:** `stable` · **Since:** 
-Check every media link across the configured trees.
-**Examples:**
-```sh
-navig spaces media verify
-```
-
-## `navig spaces new`
-**Status:** `stable` · **Since:** 
-Create/initialize a space.
-**Examples:**
-```sh
-navig spaces new
-```
-
-## `navig spaces register`
-**Status:** `stable` · **Since:** 
-Register an external `.navig/` folder so it shows in the deck (enabled).
-**Examples:**
-```sh
-navig spaces register
-```
-
-## `navig spaces rename`
-**Status:** `stable` · **Since:** 
-Give a space a new id — manifest, registry and the active-space pointer together.
-**Examples:**
-```sh
-navig spaces rename
-```
-
-## `navig spaces switch`
-**Status:** `stable` · **Since:** 
-Activate a space — binds the agent's working directory to the workshop.
-**Examples:**
-```sh
-navig spaces switch
-```
-
-## `navig spaces unfold`
-**Status:** `stable` · **Since:** 
-Undo `space fold` — the folder becomes a discoverable space again.
-**Examples:**
-```sh
-navig spaces unfold
-```
-
-## `navig spaces use`
-**Status:** `stable` · **Since:** 
-Compatibility alias for `navig space switch <name>`.
-**Examples:**
-```sh
-navig spaces use
-```
-
-## `navig spaces wire`
-**Status:** `stable` · **Since:** 
-Wire this folder into the agent ecosystem (alias of `navig wire`).
-**Examples:**
-```sh
-navig spaces wire
 ```
 
 ## `navig stack down`
@@ -10315,12 +13715,28 @@ Quick launcher - start NAVIG services with sensible defaults.
 navig start
 ```
 
+## `navig stats`
+**Status:** `stable` · **Since:** 
+Display anonymous NAVIG install statistics.
+**Examples:**
+```sh
+navig stats
+```
+
 ## `navig status`
 **Status:** `stable` · **Since:** 
 Show current NAVIG status (active host/app, tunnel, gateway).
 **Examples:**
 ```sh
 navig status
+```
+
+## `navig store`
+**Status:** `stable` · **Since:** 
+Run navig store
+**Examples:**
+```sh
+navig store
 ```
 
 ## `navig store disable`
@@ -10411,6 +13827,14 @@ Show sync status.
 navig sync status
 ```
 
+## `navig system`
+**Status:** `stable` · **Since:** 
+Show system overview.
+**Examples:**
+```sh
+navig system
+```
+
 ## `navig system clean`
 **Status:** `stable` · **Since:** 
 Clean NAVIG caches and temporary files.
@@ -10449,6 +13873,14 @@ Show Tailscale status and peer list.
 **Examples:**
 ```sh
 navig tailscale status
+```
+
+## `navig task`
+**Status:** `stable` · **Since:** 
+Task management - run without subcommand to list tasks.
+**Examples:**
+```sh
+navig task
 ```
 
 ## `navig task add`
@@ -10515,6 +13947,14 @@ Validate task syntax (retired — redirects to `navig block verify`).
 navig task test
 ```
 
+## `navig telegram briefings`
+**Status:** `stable` · **Since:** 
+The morning and evening briefing cards: on/off, time, days.
+**Examples:**
+```sh
+navig telegram briefings
+```
+
 ## `navig telegram business alerts`
 **Status:** `stable` · **Since:** 
 Turn deletion alerts on or off (on = digest, unless you chose instant).
@@ -10553,6 +13993,14 @@ Stop announcing deletions from ONE chat (still recorded).
 **Examples:**
 ```sh
 navig telegram business deletions mute
+```
+
+## `navig telegram business deletions quiet`
+**Status:** `stable` · **Since:** 
+Keep timer expiries and whole-chat wipes out of the alerts (still recorded).
+**Examples:**
+```sh
+navig telegram business deletions quiet
 ```
 
 ## `navig telegram business deletions record`
@@ -10649,6 +14097,14 @@ List your saved Telegram contacts (optionally only tagged ones).
 **Examples:**
 ```sh
 navig telegram contacts list
+```
+
+## `navig telegram contacts missing`
+**Status:** `stable` · **Since:** 
+Who you filed that has since left your contact list — and why.
+**Examples:**
+```sh
+navig telegram contacts missing
 ```
 
 ## `navig telegram contacts prune`
@@ -10939,6 +14395,14 @@ Show Telegram bot status.
 navig telegram status
 ```
 
+## `navig telegram tidy`
+**Status:** `stable` · **Since:** 
+Clear yesterday's routine messages from the bot's chat, every night.
+**Examples:**
+```sh
+navig telegram tidy
+```
+
 ## `navig telegram topics`
 **Status:** `stable` · **Since:** 
 List forum topics in a forum supergroup (pages through all of them).
@@ -10971,6 +14435,94 @@ Pair loose downloaded files back to the source chat by original name (+ exact si
 navig telegram-exports match
 ```
 
+## `navig telegram-exports notebook build`
+**Status:** `stable` · **Since:** 
+Copy EXPORT into OUT/_export/<date> (sha256-verified) and (re)generate the Markdown.
+**Examples:**
+```sh
+navig telegram-exports notebook build
+```
+
+## `navig telegram-exports notebook faces`
+**Status:** `stable` · **Since:** 
+Group the faces in the People photos (locally) and draw a sheet to name them from.
+**Examples:**
+```sh
+navig telegram-exports notebook faces
+```
+
+## `navig telegram-exports notebook name`
+**Status:** `stable` · **Since:** 
+Give a face group a name; its photos are regrouped (and moved) under it.
+**Examples:**
+```sh
+navig telegram-exports notebook name
+```
+
+## `navig telegram-exports notebook ocr`
+**Status:** `stable` · **Since:** 
+Read the text inside every image (local Tesseract) so screenshots become searchable.
+**Examples:**
+```sh
+navig telegram-exports notebook ocr
+```
+
+## `navig telegram-exports notebook photos`
+**Status:** `stable` · **Since:** 
+Sort images by what they show (people, places, screenshots, documents…) with a local model.
+**Examples:**
+```sh
+navig telegram-exports notebook photos
+```
+
+## `navig telegram-exports notebook place`
+**Status:** `stable` · **Since:** 
+Move every media file out of _export/ into real folders under Media/ (logged, reversible).
+**Examples:**
+```sh
+navig telegram-exports notebook place
+```
+
+## `navig telegram-exports notebook quarantine`
+**Status:** `stable` · **Since:** 
+Move extra byte-identical media copies from _export/ to _duplicates/ (logged, restorable).
+**Examples:**
+```sh
+navig telegram-exports notebook quarantine
+```
+
+## `navig telegram-exports notebook restore`
+**Status:** `stable` · **Since:** 
+Put every quarantined duplicate back where the export had it.
+**Examples:**
+```sh
+navig telegram-exports notebook restore
+```
+
+## `navig telegram-exports notebook search`
+**Status:** `stable` · **Since:** 
+Find a message or screenshot by any word in it — its text, the text in its image,
+**Examples:**
+```sh
+navig telegram-exports notebook search
+```
+
+## `navig telegram-exports notebook unplace`
+**Status:** `stable` · **Since:** 
+Move every placed file back into _export/ exactly where the export had it.
+**Examples:**
+```sh
+navig telegram-exports notebook unplace
+```
+
+## `navig telegram-exports notebook verify`
+**Status:** `stable` · **Since:** 
+Coverage gate: prove every message, link and file made it into the library.
+**Examples:**
+```sh
+navig telegram-exports notebook verify
+```
+
 ## `navig telegram-exports organize`
 **Status:** `stable` · **Since:** 
 File loose ``ChatExport_*`` folders at ROOT into ``Category/Chat/Date``.
@@ -10985,6 +14537,14 @@ Re-classify filed exports and report any that no longer match their category.
 **Examples:**
 ```sh
 navig telegram-exports verify
+```
+
+## `navig telemetry`
+**Status:** `stable` · **Since:** 
+Show telemetry status.
+**Examples:**
+```sh
+navig telemetry
 ```
 
 ## `navig telemetry disable`
@@ -11003,6 +14563,46 @@ Enable telemetry.
 navig telemetry enable
 ```
 
+## `navig test`
+**Status:** `stable` · **Since:** 
+Run navig test
+**Examples:**
+```sh
+navig test
+```
+
+## `navig text channel data`
+**Status:** `stable` · **Since:** 
+The live numbers the cards quote — loud fetch, disk cache, never silently stale.
+**Examples:**
+```sh
+navig text channel data
+```
+
+## `navig text channel lint`
+**Status:** `stable` · **Since:** 
+Check the master against the rules its own header declares.
+**Examples:**
+```sh
+navig text channel lint
+```
+
+## `navig text channel sweep`
+**Status:** `stable` · **Since:** 
+Terminology sweep (cities → Zones): literal replacements, reported before written.
+**Examples:**
+```sh
+navig text channel sweep
+```
+
+## `navig text channel sync`
+**Status:** `stable` · **Since:** 
+Push the master's values into the channel's scripts, positional by structure.
+**Examples:**
+```sh
+navig text channel sync
+```
+
 ## `navig text check`
 **Status:** `stable` · **Since:** 
 Show whether AI text generation is ready (a provider is configured).
@@ -11019,89 +14619,57 @@ Generate Markdown text from a prompt and save it locally.
 navig text gen
 ```
 
-## `navig tiktok analyse`
+## `navig text lyrics fit`
 **Status:** `stable` · **Since:** 
-AI markdown briefing of a post (description + best comments combined).
+📏 Does a lyric sit on the beat? Syllables per line against the time one bar gives.
 **Examples:**
 ```sh
-navig tiktok analyse
+navig text lyrics fit
 ```
 
-## `navig tiktok batch`
+## `navig text lyrics rhyme`
 **Status:** `stable` · **Since:** 
-Download every URL in a links file (videos via yt-dlp, /photo/ posts via the browser).
+🎯 Rhymes for a word from the words you already use — spelling-based, strong first.
 **Examples:**
 ```sh
-navig tiktok batch
+navig text lyrics rhyme
 ```
 
-## `navig tiktok comments`
+## `navig text lyrics scaffold`
 **Status:** `stable` · **Since:** 
-List the top comments, ranked by likes.
+🧱 An empty lyric cut to the beat's measured bar map — one slot per line.
 **Examples:**
 ```sh
-navig tiktok comments
+navig text lyrics scaffold
 ```
 
-## `navig tiktok download`
+## `navig text lyrics sheet`
 **Status:** `stable` · **Since:** 
-Download TikTok posts (organized <out>/<creator>/<id>) — concurrent, resumable.
+🗒 A text's hook + its voices table → a sheet for `navig audio beat demo`.
 **Examples:**
 ```sh
-navig tiktok download
+navig text lyrics sheet
 ```
 
-## `navig tiktok info`
+## `navig text lyrics words`
 **Status:** `stable` · **Since:** 
-Show metadata: creator, description, stats (and image URLs for /photo/ posts).
+🔎 Word-bank entries that mention a term — title hits first.
 **Examples:**
 ```sh
-navig tiktok info
+navig text lyrics words
 ```
 
-## `navig tiktok login`
+## `navig todo`
 **Status:** `stable` · **Since:** 
-Log into TikTok once and vault the session; afterwards every command uses it automatically.
+`navig todo` with no verb shows the list — the thing you want 90% of the time.
 **Examples:**
 ```sh
-navig tiktok login
-```
-
-## `navig tiktok logout`
-**Status:** `stable` · **Since:** 
-Forget the vaulted TikTok session (go back to anonymous browsing).
-**Examples:**
-```sh
-navig tiktok logout
-```
-
-## `navig tiktok music-links`
-**Status:** `stable` · **Since:** 
-Resolve a music link to the same track on every other platform (via song.link).
-**Examples:**
-```sh
-navig tiktok music-links
-```
-
-## `navig tiktok post`
-**Status:** `stable` · **Since:** 
-Read a whole post via the browser in ONE pass — description + stats + comments.
-**Examples:**
-```sh
-navig tiktok post
-```
-
-## `navig tiktok profile`
-**Status:** `stable` · **Since:** 
-Download a creator's whole profile — videos, slideshows images, audio, or just metadata.
-**Examples:**
-```sh
-navig tiktok profile
+navig todo
 ```
 
 ## `navig todo add`
 **Status:** `stable` · **Since:** 
-Capture a task. The date can be part of the sentence.
+Capture a task. The date can be part of the sentence, or exact with --at.
 **Examples:**
 ```sh
 navig todo add
@@ -11121,6 +14689,14 @@ Tick a task off. A recurring one rolls forward instead.
 **Examples:**
 ```sh
 navig todo done
+```
+
+## `navig todo import-legacy`
+**Status:** `stable` · **Since:** 
+Fold the old ~/.navig/tasks.json into this list — once.
+**Examples:**
+```sh
+navig todo import-legacy
 ```
 
 ## `navig todo list`
@@ -11219,6 +14795,14 @@ Remove NAVIG Tray auto-start and desktop shortcut.
 navig tray uninstall
 ```
 
+## `navig trigger`
+**Status:** `stable` · **Since:** 
+Event-driven automation triggers - run without subcommand for list.
+**Examples:**
+```sh
+navig trigger
+```
+
 ## `navig trigger add`
 **Status:** `stable` · **Since:** 
 Create a new trigger.
@@ -11307,84 +14891,12 @@ Test a trigger (dry run).
 navig trigger test
 ```
 
-## `navig tt analyse`
+## `navig tunnel`
 **Status:** `stable` · **Since:** 
-AI markdown briefing of a post (description + best comments combined).
+Tunnel management - run without subcommand for help.
 **Examples:**
 ```sh
-navig tt analyse
-```
-
-## `navig tt batch`
-**Status:** `stable` · **Since:** 
-Download every URL in a links file (videos via yt-dlp, /photo/ posts via the browser).
-**Examples:**
-```sh
-navig tt batch
-```
-
-## `navig tt comments`
-**Status:** `stable` · **Since:** 
-List the top comments, ranked by likes.
-**Examples:**
-```sh
-navig tt comments
-```
-
-## `navig tt download`
-**Status:** `stable` · **Since:** 
-Download TikTok posts (organized <out>/<creator>/<id>) — concurrent, resumable.
-**Examples:**
-```sh
-navig tt download
-```
-
-## `navig tt info`
-**Status:** `stable` · **Since:** 
-Show metadata: creator, description, stats (and image URLs for /photo/ posts).
-**Examples:**
-```sh
-navig tt info
-```
-
-## `navig tt login`
-**Status:** `stable` · **Since:** 
-Log into TikTok once and vault the session; afterwards every command uses it automatically.
-**Examples:**
-```sh
-navig tt login
-```
-
-## `navig tt logout`
-**Status:** `stable` · **Since:** 
-Forget the vaulted TikTok session (go back to anonymous browsing).
-**Examples:**
-```sh
-navig tt logout
-```
-
-## `navig tt music-links`
-**Status:** `stable` · **Since:** 
-Resolve a music link to the same track on every other platform (via song.link).
-**Examples:**
-```sh
-navig tt music-links
-```
-
-## `navig tt post`
-**Status:** `stable` · **Since:** 
-Read a whole post via the browser in ONE pass — description + stats + comments.
-**Examples:**
-```sh
-navig tt post
-```
-
-## `navig tt profile`
-**Status:** `stable` · **Since:** 
-Download a creator's whole profile — videos, slideshows images, audio, or just metadata.
-**Examples:**
-```sh
-navig tt profile
+navig tunnel
 ```
 
 ## `navig tunnel auto`
@@ -11433,6 +14945,54 @@ Undo the last green (undoable) operation — confirm-gated.
 **Examples:**
 ```sh
 navig undo
+```
+
+## `navig unpack doctor`
+**Status:** `stable` · **Since:** 
+Show which external tools and optional Python packages are available.
+**Examples:**
+```sh
+navig unpack doctor
+```
+
+## `navig unpack game`
+**Status:** `stable` · **Since:** 
+Extract and export exactly one game (re-runs it even if done).
+**Examples:**
+```sh
+navig unpack game
+```
+
+## `navig unpack ingest`
+**Status:** `stable` · **Since:** 
+Classify every archive (volume sets joined, duplicates detected) into _manifest.json.
+**Examples:**
+```sh
+navig unpack ingest
+```
+
+## `navig unpack report`
+**Status:** `stable` · **Since:** 
+Batch status: every game, its state, method and languages.
+**Examples:**
+```sh
+navig unpack report
+```
+
+## `navig unpack run`
+**Status:** `stable` · **Since:** 
+Extract and export every pending game, one by one (resumable: re-run skips done games).
+**Examples:**
+```sh
+navig unpack run
+```
+
+## `navig update`
+**Status:** `stable` · **Since:** 
+Upgrade NAVIG.
+**Examples:**
+```sh
+navig update
 ```
 
 ## `navig update check`
@@ -11539,12 +15099,52 @@ Show audit log for credentials.
 navig vault audit
 ```
 
+## `navig vault backup`
+**Status:** `stable` · **Since:** 
+Write an encrypted backup only the offline recovery key can open.
+**Examples:**
+```sh
+navig vault backup
+```
+
+## `navig vault breach check`
+**Status:** `stable` · **Since:** 
+Scan emails against leak dumps now and store the findings.
+**Examples:**
+```sh
+navig vault breach check
+```
+
+## `navig vault breach list`
+**Status:** `stable` · **Since:** 
+Show stored breach findings (passwords masked unless --reveal).
+**Examples:**
+```sh
+navig vault breach list
+```
+
+## `navig vault breach status`
+**Status:** `stable` · **Since:** 
+Show connector config, monitor state and the last scan cycle.
+**Examples:**
+```sh
+navig vault breach status
+```
+
 ## `navig vault check-all`
 **Status:** `stable` · **Since:** 
 Validate every stored credential and print a status table.
 **Examples:**
 ```sh
 navig vault check-all
+```
+
+## `navig vault classify`
+**Status:** `stable` · **Since:** 
+Organise the vault: name, category, issuer, website and tags for every item.
+**Examples:**
+```sh
+navig vault classify
 ```
 
 ## `navig vault clone`
@@ -11563,6 +15163,30 @@ Delete a vault credential by provider name or credential ID.
 navig vault delete
 ```
 
+## `navig vault devices enroll`
+**Status:** `stable` · **Since:** 
+Mint a one-time code (10 min) the new machine redeems with `navig vault join`.
+**Examples:**
+```sh
+navig vault devices enroll
+```
+
+## `navig vault devices list`
+**Status:** `stable` · **Since:** 
+Every enrolled machine, its state and its grants.
+**Examples:**
+```sh
+navig vault devices list
+```
+
+## `navig vault devices revoke`
+**Status:** `stable` · **Since:** 
+Revoke a machine now: its next request is refused and its key is destroyed.
+**Examples:**
+```sh
+navig vault devices revoke
+```
+
 ## `navig vault disable`
 **Status:** `stable` · **Since:** 
 Disable a credential.
@@ -11573,7 +15197,7 @@ navig vault disable
 
 ## `navig vault edit`
 **Status:** `stable` · **Since:** 
-Edit an existing credential.
+Edit an existing credential — its value, or its name / organisation only.
 **Examples:**
 ```sh
 navig vault edit
@@ -11587,12 +15211,36 @@ Enable a credential.
 navig vault enable
 ```
 
+## `navig vault export`
+**Status:** `stable` · **Since:** 
+Seal secrets into an SVG image — a portable backup, or a password to hand to someone.
+**Examples:**
+```sh
+navig vault export
+```
+
 ## `navig vault get`
 **Status:** `stable` · **Since:** 
-Get a credential value from the vault.
+Get a credential value from the vault (masked unless --reveal / --raw).
 **Examples:**
 ```sh
 navig vault get
+```
+
+## `navig vault grant`
+**Status:** `stable` · **Since:** 
+Let one device read the secrets matching PATTERN (default: denied everything).
+**Examples:**
+```sh
+navig vault grant
+```
+
+## `navig vault import`
+**Status:** `stable` · **Since:** 
+Add the secrets from a vault SVG to this vault — never overwrites one you already have.
+**Examples:**
+```sh
+navig vault import
 ```
 
 ## `navig vault info`
@@ -11603,9 +15251,25 @@ Show a full information panel for a credential.
 navig vault info
 ```
 
+## `navig vault join`
+**Status:** `stable` · **Since:** 
+Enroll THIS machine with a vault authority using a one-time code.
+**Examples:**
+```sh
+navig vault join
+```
+
+## `navig vault leave`
+**Status:** `stable` · **Since:** 
+Forget this machine's authority credentials and wipe its offline cache.
+**Examples:**
+```sh
+navig vault leave
+```
+
 ## `navig vault list`
 **Status:** `stable` · **Since:** 
-List credentials in the vault.
+List credentials in the vault (organise them with `navig vault classify`).
 **Examples:**
 ```sh
 navig vault list
@@ -11617,6 +15281,14 @@ Store a website login for AI auto-login. The password is never echoed.
 **Examples:**
 ```sh
 navig vault login add
+```
+
+## `navig vault login capture`
+**Status:** `stable` · **Since:** 
+Sign in ONCE in a visible browser (Google/GitHub buttons OK) — session saved to the vault.
+**Examples:**
+```sh
+navig vault login capture
 ```
 
 ## `navig vault login get`
@@ -11643,6 +15315,22 @@ Delete a stored website login.
 navig vault login remove
 ```
 
+## `navig vault open`
+**Status:** `stable` · **Since:** 
+Show what a vault SVG holds — writes nothing to your vault.
+**Examples:**
+```sh
+navig vault open
+```
+
+## `navig vault opener`
+**Status:** `stable` · **Since:** 
+Write the offline page that opens a vault SVG in any browser (for people without navig).
+**Examples:**
+```sh
+navig vault opener
+```
+
 ## `navig vault profile list`
 **Status:** `stable` · **Since:** 
 List all credential profiles.
@@ -11667,12 +15355,60 @@ List supported providers with built-in validation.
 navig vault providers
 ```
 
+## `navig vault recovery init`
+**Status:** `stable` · **Since:** 
+Create the offline recovery key (shown once). Migrates a legacy vault first.
+**Examples:**
+```sh
+navig vault recovery init
+```
+
+## `navig vault recovery verify`
+**Status:** `stable` · **Since:** 
+Prove a recovery key opens this vault (reads it from a hidden prompt or stdin).
+**Examples:**
+```sh
+navig vault recovery verify
+```
+
 ## `navig vault remove`
 **Status:** `stable` · **Since:** 
 Delete a credential by provider path (`provider` or `provider/data_key`).
 **Examples:**
 ```sh
 navig vault remove
+```
+
+## `navig vault restore`
+**Status:** `stable` · **Since:** 
+Restore a backup into an empty directory (reads the recovery key from a prompt/stdin).
+**Examples:**
+```sh
+navig vault restore
+```
+
+## `navig vault revoke`
+**Status:** `stable` · **Since:** 
+Remove grants from a device (the device stays enrolled; see `devices revoke`).
+**Examples:**
+```sh
+navig vault revoke
+```
+
+## `navig vault rotate`
+**Status:** `stable` · **Since:** 
+Replace the vault master key (all items + keyslots re-wrapped atomically).
+**Examples:**
+```sh
+navig vault rotate
+```
+
+## `navig vault run`
+**Status:** `stable` · **Since:** 
+Run a command with secrets injected — never on its command line.
+**Examples:**
+```sh
+navig vault run
 ```
 
 ## `navig vault set`
@@ -11689,6 +15425,22 @@ Show details of a credential (legacy — prefer `vault info` for the rich view).
 **Examples:**
 ```sh
 navig vault show
+```
+
+## `navig vault status`
+**Status:** `stable` · **Since:** 
+Key custody at a glance: keyslots, recovery, item count, federation role.
+**Examples:**
+```sh
+navig vault status
+```
+
+## `navig vault sync`
+**Status:** `stable` · **Since:** 
+Refresh the offline cache: drop expired and no-longer-granted values.
+**Examples:**
+```sh
+navig vault sync
 ```
 
 ## `navig vault test`
@@ -11715,12 +15467,228 @@ Show NAVIG version and system info.
 navig version
 ```
 
+## `navig video cut`
+**Status:** `stable` · **Since:** 
+🎬 Render an EDL — the editable timeline — into its outputs.
+**Examples:**
+```sh
+navig video cut
+```
+
+## `navig video doctor`
+**Status:** `stable` · **Since:** 
+Deep check: workspace layout, engines, ffmpeg, fonts. Exit 1 if a requirement fails.
+**Examples:**
+```sh
+navig video doctor
+```
+
+## `navig video kinetic plan`
+**Status:** `stable` · **Since:** 
+🗓 The timeline without rendering — beat times, words, plates, cuts.
+**Examples:**
+```sh
+navig video kinetic plan
+```
+
+## `navig video kinetic render`
+**Status:** `stable` · **Since:** 
+🎬 Render kinetic episodes — voice timing drives every cut.
+**Examples:**
+```sh
+navig video kinetic render
+```
+
+## `navig video parity`
+**Status:** `stable` · **Since:** 
+⚖ Do two renders match? Container, pixels, audio — the porting contract.
+**Examples:**
+```sh
+navig video parity
+```
+
+## `navig video status`
+**Status:** `stable` · **Since:** 
+Workspace, engines and render verbs — one glance at what is wired.
+**Examples:**
+```sh
+navig video status
+```
+
+## `navig vm console`
+**Status:** `stable` · **Since:** 
+The VM's serial console: kernel, systemd and cloud-init output, as text.
+**Examples:**
+```sh
+navig vm console
+```
+
+## `navig vm create`
+**Status:** `stable` · **Since:** 
+Build a VM from a cloud image: disk, first-boot seed, its own SSH key.
+**Examples:**
+```sh
+navig vm create
+```
+
+## `navig vm destroy`
+**Status:** `stable` · **Since:** 
+Delete a VM and its folder. Only ever a folder navig created under the VM root.
+**Examples:**
+```sh
+navig vm destroy
+```
+
+## `navig vm exec`
+**Status:** `stable` · **Since:** 
+Run one command in the VM; its exit status is this command's.
+**Examples:**
+```sh
+navig vm exec
+```
+
+## `navig vm ip`
+**Status:** `stable` · **Since:** 
+The VM's IP address (reported by VMware Tools in the guest).
+**Examples:**
+```sh
+navig vm ip
+```
+
+## `navig vm list`
+**Status:** `stable` · **Since:** 
+Every VM navig built, and whether it is running.
+**Examples:**
+```sh
+navig vm list
+```
+
+## `navig vm password`
+**Status:** `stable` · **Since:** 
+The guest owner's password (for the login screen and sudo).
+**Examples:**
+```sh
+navig vm password
+```
+
+## `navig vm push`
+**Status:** `stable` · **Since:** 
+Copy local files into the VM (scp, as its owner); its exit status is this command's.
+**Examples:**
+```sh
+navig vm push
+```
+
+## `navig vm revert`
+**Status:** `stable` · **Since:** 
+Go back to a snapshot (the VM is powered off afterwards; start it again).
+**Examples:**
+```sh
+navig vm revert
+```
+
+## `navig vm screenshot`
+**Status:** `stable` · **Since:** 
+Save a PNG of the VM's screen (needs VMware Tools running in the guest).
+**Examples:**
+```sh
+navig vm screenshot
+```
+
+## `navig vm snapshot`
+**Status:** `stable` · **Since:** 
+Save the VM's current state under a name.
+**Examples:**
+```sh
+navig vm snapshot
+```
+
+## `navig vm snapshots`
+**Status:** `stable` · **Since:** 
+The VM's snapshots.
+**Examples:**
+```sh
+navig vm snapshots
+```
+
+## `navig vm ssh`
+**Status:** `stable` · **Since:** 
+Open a shell in the VM as its owner (extra arguments run as a command).
+**Examples:**
+```sh
+navig vm ssh
+```
+
+## `navig vm start`
+**Status:** `stable` · **Since:** 
+Power a VM on.
+**Examples:**
+```sh
+navig vm start
+```
+
+## `navig vm stop`
+**Status:** `stable` · **Since:** 
+Shut a VM down (cleanly, through the guest, unless --hard).
+**Examples:**
+```sh
+navig vm stop
+```
+
+## `navig vm wait`
+**Status:** `stable` · **Since:** 
+Wait until first-boot provisioning has finished (and, for navig-os, the reboot).
+**Examples:**
+```sh
+navig vm wait
+```
+
+## `navig voice budget`
+**Status:** `stable` · **Since:** 
+Show or set the daily budget for paid read-aloud voices.
+**Examples:**
+```sh
+navig voice budget
+```
+
 ## `navig voice list-voices`
 **Status:** `stable` · **Since:** 
 List available voices for a provider.
 **Examples:**
 ```sh
 navig voice list-voices
+```
+
+## `navig voice packs install`
+**Status:** `stable` · **Since:** 
+Download, checksum-verify and install one offline voice pack.
+**Examples:**
+```sh
+navig voice packs install
+```
+
+## `navig voice packs list`
+**Status:** `stable` · **Since:** 
+Installed and available offline packs — engine state, size, license, status.
+**Examples:**
+```sh
+navig voice packs list
+```
+
+## `navig voice packs remove`
+**Status:** `stable` · **Since:** 
+Delete one installed pack from disk (re-install downloads it again).
+**Examples:**
+```sh
+navig voice packs remove
+```
+
+## `navig voice policy`
+**Status:** `stable` · **Since:** 
+Show or set which voices read-aloud may use.
+**Examples:**
+```sh
+navig voice policy
 ```
 
 ## `navig voice speak`
@@ -11739,6 +15707,14 @@ Transcribe audio file to text.
 navig voice transcribe
 ```
 
+## `navig voice usage`
+**Status:** `stable` · **Since:** 
+Paid read-aloud characters per day, against the daily budget.
+**Examples:**
+```sh
+navig voice usage
+```
+
 ## `navig watch list`
 **Status:** `stable` · **Since:** 
 List active watches.
@@ -11753,6 +15729,14 @@ Start watching a path for changes.
 **Examples:**
 ```sh
 navig watch start
+```
+
+## `navig web`
+**Status:** `stable` · **Since:** 
+Web server management - run without subcommand for help.
+**Examples:**
+```sh
+navig web
 ```
 
 ## `navig web disable`
@@ -11843,108 +15827,20 @@ List virtual hosts (enabled and available).
 navig web vhosts
 ```
 
-## `navig webhook add-inbound`
-**Status:** `stable` · **Since:** 
-Create an inbound webhook endpoint.
-**Examples:**
-```sh
-navig webhook add-inbound
-```
-
-## `navig webhook add-outbound`
-**Status:** `stable` · **Since:** 
-Register an outbound webhook. NAVIG will POST to this URL when events occur.
-**Examples:**
-```sh
-navig webhook add-outbound
-```
-
-## `navig webhook delete`
-**Status:** `stable` · **Since:** 
-Permanently delete a webhook.
-**Examples:**
-```sh
-navig webhook delete
-```
-
-## `navig webhook disable`
-**Status:** `stable` · **Since:** 
-Disable a webhook (inbound or outbound).
-**Examples:**
-```sh
-navig webhook disable
-```
-
-## `navig webhook list`
-**Status:** `stable` · **Since:** 
-List all registered inbound and outbound webhooks.
-**Examples:**
-```sh
-navig webhook list
-```
-
-## `navig webhook test`
-**Status:** `stable` · **Since:** 
-Send a test event payload to an outbound webhook.
-**Examples:**
-```sh
-navig webhook test
-```
-
-## `navig webhooks add-inbound`
-**Status:** `stable` · **Since:** 
-Create an inbound webhook endpoint.
-**Examples:**
-```sh
-navig webhooks add-inbound
-```
-
-## `navig webhooks add-outbound`
-**Status:** `stable` · **Since:** 
-Register an outbound webhook. NAVIG will POST to this URL when events occur.
-**Examples:**
-```sh
-navig webhooks add-outbound
-```
-
-## `navig webhooks delete`
-**Status:** `stable` · **Since:** 
-Permanently delete a webhook.
-**Examples:**
-```sh
-navig webhooks delete
-```
-
-## `navig webhooks disable`
-**Status:** `stable` · **Since:** 
-Disable a webhook (inbound or outbound).
-**Examples:**
-```sh
-navig webhooks disable
-```
-
-## `navig webhooks list`
-**Status:** `stable` · **Since:** 
-List all registered inbound and outbound webhooks.
-**Examples:**
-```sh
-navig webhooks list
-```
-
-## `navig webhooks test`
-**Status:** `stable` · **Since:** 
-Send a test event payload to an outbound webhook.
-**Examples:**
-```sh
-navig webhooks test
-```
-
 ## `navig whoami`
 **Status:** `stable` · **Since:** 
 Show your NAVIG node identity sigil card.
 **Examples:**
 ```sh
 navig whoami
+```
+
+## `navig wiki`
+**Status:** `stable` · **Since:** 
+Run navig wiki
+**Examples:**
+```sh
+navig wiki
 ```
 
 ## `navig wiki add`
@@ -12129,4 +16025,12 @@ Update fields on a work item.
 **Examples:**
 ```sh
 navig work update
+```
+
+## `navig wut`
+**Status:** `stable` · **Since:** 
+Print a concise context snapshot.
+**Examples:**
+```sh
+navig wut
 ```

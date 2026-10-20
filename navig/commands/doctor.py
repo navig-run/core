@@ -248,6 +248,46 @@ def check_config() -> list[tuple[str, bool, str]]:
     return results
 
 
+def check_install_profile() -> list[tuple[str, bool, str]]:
+    """Which installation profile (`navig init --profile`) this install recorded.
+
+    The row reports what is WRITTEN in the config, verified against the profile
+    names the installer actually accepts — a stale or hand-edited name is a
+    warning, not a green tick. "None recorded" is a verified answer (interactive
+    installs and every pre-profile install legitimately have no key), so it is
+    the one green row here; a config that cannot be read is COULD NOT VERIFY.
+    """
+    try:
+        from navig.config import ConfigManager
+
+        raw = ConfigManager(config_dir=config_dir()).get("install.profile")
+    except Exception as exc:  # noqa: BLE001 — a health check must never crash the doctor
+        return [_check("Install profile", False, f"COULD NOT VERIFY ({exc})", warn=True)]
+
+    if raw is None or raw == "":
+        return [
+            _check(
+                "Install profile",
+                True,
+                "none recorded (interactive or pre-profile install)",
+            )
+        ]
+
+    from navig.installer.profiles import VALID_PROFILES  # noqa: PLC0415 — lazy
+
+    name = str(raw)
+    if name in set(VALID_PROFILES) | {"quickstart"}:
+        return [_check("Install profile", True, name)]
+    return [
+        _check(
+            "Install profile",
+            False,
+            f"{name!r} is not a known profile — fix install.profile",
+            warn=True,
+        )
+    ]
+
+
 def check_logs() -> list[tuple[str, bool, str]]:
     """Report where the daemon is ACTUALLY writing, not where logs are meant to be.
 
@@ -690,11 +730,177 @@ def check_hard_dependencies() -> list[tuple[str, bool, str]]:
     if missing:
         return [_check(
             "declared engines", False,
-            f"declared but not importable: {', '.join(missing)} — re-run "
-            f"`pip install -e core` (an editable install does not pick up "
-            f"dependencies added after it was made)")]
+            f"declared but not importable: {', '.join(missing)} — an editable "
+            f"install does not pick up dependencies added after it was made. "
+            f"Install them from plugins/ (see the Plugin Sources row for the exact "
+            f"command); `pip install -e core` would fetch them from PyPI instead")]
     return [_check("declared engines", True,
                    f"{len(declared)} declared in {source}, all importable")]
+
+
+def _editable_mappings() -> list[tuple[str, str]]:
+    """(module, target-path) from every editable finder visible on ``sys.path``.
+
+    The finder files hold a plain ``MAPPING = {'name': 'path'}`` literal; it is
+    read with ``ast.literal_eval`` (never executed) so doubled backslashes in
+    Windows paths decode exactly as the finder would see them.
+    """
+    import ast
+
+    out: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for entry in sys.path:
+        d = Path(entry)
+        if not d.is_dir():
+            continue
+        try:
+            finders = sorted(d.glob("__editable___*_finder.py"))
+        except OSError:  # unreadable sys.path entry — skip, it cannot host imports either
+            continue
+        for f in finders:
+            try:
+                txt = f.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            at = txt.find("MAPPING")
+            open_at = txt.find("{", at) if at >= 0 else -1
+            if open_at < 0:
+                continue
+            depth, i = 0, open_at
+            while i < len(txt):
+                if txt[i] == "{":
+                    depth += 1
+                elif txt[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                i += 1
+            else:
+                continue
+            try:
+                mapping = ast.literal_eval(txt[open_at:i + 1])
+            except (ValueError, SyntaxError):
+                continue
+            for name, path in mapping.items():
+                key = (name, path)
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(key)
+    return out
+
+
+def _editable_findings() -> list[tuple[str, str]]:
+    """(module, detail) for every mapping that no longer resolves.
+
+    Path existence alone is not enough: a package mid-extraction (its directory
+    present, ``__init__.py`` not yet written) maps fine and imports dead — that is
+    exactly how a first-party plugin can print "entry-point command unavailable"
+    while a path check reports it healthy. ``find_spec`` resolves through the LIVE
+    import system (the editable finder registered at site startup) and executes
+    nothing, so it answers the real question cheaply.
+    """
+    import importlib.util
+
+    findings: list[tuple[str, str]] = []
+    for name, path in _editable_mappings():
+        target = Path(path)
+        if not target.exists():
+            findings.append((
+                name,
+                f"target gone (was under {Path(path).parent.name}) — reinstall from "
+                f"its checkout with pip install -e, or pip uninstall {name}",
+            ))
+            continue
+        if not name.startswith("navig"):
+            continue  # foreign editables: checked for existence only, never imported
+        try:
+            spec = importlib.util.find_spec(name)
+        except Exception as exc:  # noqa: BLE001 — a broken finder raises its own shapes
+            spec = None
+            why = f" ({type(exc).__name__})"
+        else:
+            why = ""
+        if spec is None:
+            findings.append((
+                name,
+                f"no module resolves though {Path(path).parent.name} exists "
+                f"(partial or moved package){why} — reinstall with pip install -e",
+            ))
+    return findings
+
+
+def check_editable_installs() -> list[tuple[str, bool, str]]:
+    """Editable installs whose mapping no longer resolves — the silent-stale class.
+
+    An editable finder pins a module name to a directory; when that directory is
+    deleted (a finished worktree) or half-written (a package mid-extraction), the
+    mapping stays registered and the failure surfaces FAR away: ``navig <verb>``
+    says "entry-point command unavailable", ``export_registry`` silently drops the
+    plugin's commands from the manifest — a shrink that a ``--check`` against its
+    own last run then calls fresh — or a stale checkout keeps serving code that no
+    longer exists. Observed three times in one day (2026-10-14). Rows are ✗, not ⚠:
+    a command surface that does not load is broken the way a missing declared
+    engine is (see check_hard_dependencies).
+    """
+    findings = _editable_findings()
+    if findings:
+        return [
+            _check(f"editable {name}", False, detail) for name, detail in findings
+        ]
+    total = len(_editable_mappings())
+    if not total:
+        return [_check("editable installs", True, "none — every package is a regular install")]
+    return [_check("editable installs", True, f"{total} mapped, all resolve")]
+
+
+def _vault_custody_row(vault) -> CheckResult:
+    """Can this vault survive the loss of this machine? Read-only (keyslot rows only).
+
+    ✓ only with a recovery keyslot — that is the one way back after a dead disk or
+    a reinstall. Legacy (fingerprint-only) and keyslots-without-recovery are ⚠.
+    """
+    try:
+        kinds = {s.kind for s in vault.keyring.slots()}
+    except Exception as exc:  # noqa: BLE001 — could not verify ⇒ never green
+        return _check("Vault keys", False, f"cannot read keyslots ({type(exc).__name__})", warn=True)
+    if not kinds:
+        return _check(
+            "Vault keys", False,
+            "fingerprint-only, no recovery key — navig vault recovery init", warn=True,
+        )
+    if "recovery" not in kinds:
+        return _check(
+            "Vault keys", False,
+            f"{', '.join(sorted(kinds))}; no recovery key — navig vault recovery init", warn=True,
+        )
+    return _check("Vault keys", True, f"{', '.join(sorted(kinds))}")
+
+
+def _plaintext_host_secrets_row() -> CheckResult:
+    """How many host passwords still sit in plaintext YAML (counts only, never values)."""
+    try:
+        from navig.config import ConfigManager
+        from navig.core.host_secrets import scan_plaintext_host_secrets
+
+        rows: list = []
+        seen: set = set()
+        for cd in ConfigManager().get_config_directories():
+            for sub in ("hosts", "apps"):
+                d = cd / sub
+                if d not in seen:
+                    seen.add(d)
+                    rows.extend(scan_plaintext_host_secrets(d))
+    except Exception as exc:  # noqa: BLE001 — could not verify ⇒ never green
+        return _check("Host credentials", False, f"could not scan ({type(exc).__name__})", warn=True)
+    if rows:
+        hosts = len({r["host"] for r in rows})
+        return _check(
+            "Host credentials", False,
+            f"{len(rows)} plaintext password(s) in {hosts} host file(s) — navig security migrate-host-secrets",
+            warn=True,
+        )
+    return _check("Host credentials", True, "no plaintext passwords in host files")
 
 
 def check_vault() -> list[tuple[str, bool, str]]:
@@ -733,19 +939,25 @@ def check_vault() -> list[tuple[str, bool, str]]:
                 n = vault.count()
                 detail = f"{n} item(s)"
                 if n:
-                    if not (vdir / CryptoEngine.SALT_FILE).exists():
-                        # derive_key() would CREATE a fresh salt — a mutation, and
-                        # one that can never decrypt the existing items.
+                    if vault.is_legacy() and not (vdir / CryptoEngine.SALT_FILE).exists():
+                        # A legacy vault's key IS derived from the salt: derive_key()
+                        # would CREATE a fresh one — a mutation, and one that can never
+                        # decrypt the existing items. (A keyslot vault does not need it.)
                         raise CryptoError("salt file missing")
                     probe = next((i for i in vault.store().list() if i.encrypted_dek), None)
                     if probe is not None:
-                        # Open one item's DEK *wrapper* only — never the payload.
-                        CryptoEngine.open(vault.engine().derive_key(None), probe.encrypted_dek)
+                        # Open one item's DEK *wrapper* only — never the payload —
+                        # under the key the vault itself uses: a keyslot vault's VMK
+                        # is NOT the fingerprint key, so probing with derive_key(None)
+                        # would report a healthy vault as broken.
+                        CryptoEngine.open(vault._master_key(), probe.encrypted_dek)
                         detail += " · encryption OK"
                 results.append(_check("Vault", True, detail))
+                results.append(_vault_custody_row(vault))
             except Exception as exc:  # noqa: BLE001
                 # Exception CLASS only: messages can embed paths or item labels.
                 results.append(_check("Vault", False, f"cannot open vault ({type(exc).__name__})"))
+        results.append(_plaintext_host_secrets_row())
 
         if check_legacy_exists():
             if legacy_migration_done(vdir):
@@ -1381,7 +1593,12 @@ def check_plugin_sources() -> list[tuple[str, bool, str]]:
     The detection itself lives in ``navig.plugins.sources`` so that this row and
     ``navig plugin list``'s per-row state cannot drift apart.
     """
-    from navig.plugins.sources import audit_plugin_sources  # noqa: PLC0415
+    from navig.plugins.sources import (  # noqa: PLC0415
+        audit_plugin_sources,
+        editable_install_command,
+        uninstall_command,
+        with_local_dependencies,
+    )
 
     audit = audit_plugin_sources()
     if audit is None:
@@ -1395,8 +1612,8 @@ def check_plugin_sources() -> list[tuple[str, bool, str]]:
                 False,
                 f"{len(audit.shadowed)} of {audit.declared} resolve to an installed copy, "
                 f"not your source: {', '.join(audit.shadowed)} — the CLI runs the stale "
-                f"code while tests read the repo. Fix: pip install -e "
-                f"{' '.join(audit.fix_paths)}",
+                f"code while tests read the repo. Fix: "
+                f"{editable_install_command(with_local_dependencies(audit.fix_paths))}",
                 warn=True,
             )
         )
@@ -1408,6 +1625,49 @@ def check_plugin_sources() -> list[tuple[str, bool, str]]:
                 f"{len(audit.verified)} of {audit.declared} resolve to your source",
             )
         )
+    if audit.stale:
+        # Pointing at the source is not the same as being current. pip records the
+        # version at install time; a later bump of the plugin and of core's floor on it
+        # leaves that record behind, and the next `pip install -e core` then replaces
+        # the plugin with the PyPI wheel. One command for all of them — see
+        # audit_plugin_sources for why a piecemeal repair re-opens the trap.
+        drift = ", ".join(f"{d} {have}→{want}" for d, have, want in audit.stale)
+        fix = editable_install_command(audit.stale_fix_paths)
+        if audit.below_floor:
+            results.append(
+                _check(
+                    "stale installs",
+                    False,
+                    f"{', '.join(audit.below_floor)} recorded below core's own floor — "
+                    f"the next `pip install -e core` replaces them with the PyPI copy. "
+                    f"{len(audit.stale)} stale in all ({drift}). Fix, in one call: {fix}",
+                )
+            )
+        else:
+            results.append(
+                _check(
+                    "stale installs",
+                    False,
+                    f"{len(audit.stale)} carry the version pip recorded at install time "
+                    f"({drift}); commands added since may not register, and the next "
+                    f"floor bump in core pulls them from PyPI. Fix, in one call: {fix}",
+                    warn=True,
+                )
+            )
+    if audit.dead:
+        # Editable from a folder that is gone: it still registers its commands, and
+        # every one of them fails to import. Uninstalling removes only the record —
+        # the code it pointed at no longer exists.
+        results.append(
+            _check(
+                "dead installs",
+                False,
+                "installed from a folder that no longer exists: "
+                + ", ".join(f"{d} ({where})" for d, where in audit.dead)
+                + f" — its commands cannot load. Fix: "
+                f"{uninstall_command([d for d, _ in audit.dead])}",
+            )
+        )
     if audit.unresolved:
         # Not installed is not a failure — an optional extra may simply be absent —
         # but it IS unverified, so it never renders as a tick.
@@ -1417,6 +1677,98 @@ def check_plugin_sources() -> list[tuple[str, bool, str]]:
                 False,
                 ", ".join(f"{dist} ({why})" for dist, why in audit.unresolved),
                 warn=True,
+            )
+        )
+    return results
+
+
+def check_command_ownership() -> list[tuple[str, bool, str]]:
+    """One owner per plugin command — two plugins declaring one verb is reported, not hidden.
+
+    ✓ only when discovery ran and found no collision; a discovery failure warns (it could
+    not verify), it never renders green.
+    """
+    try:
+        from navig.cli.registration import command_ownership_report
+
+        rep = command_ownership_report()
+    except Exception as exc:  # noqa: BLE001 — a doctor row must not crash the report
+        return [_check("Command ownership", False, f"discovery failed: {exc}", warn=True)]
+    if rep.get("error"):
+        return [_check("Command ownership", False, f"discovery failed: {rep['error']}", warn=True)]
+    rows: list[tuple[str, bool, str]] = []
+    for name, owners in sorted(rep["collisions"].items()):
+        rows.append(_check(
+            f"navig {name}", False,
+            f"declared by {', '.join(owners)} — {owners[0]} owns it; uninstall or rename the other",
+            warn=True,
+        ))
+    for name, owner in sorted(rep["shadowed"].items()):
+        rows.append(_check(
+            f"navig {name}", False,
+            f"{owner} declares a core command; core keeps it — the plugin's verb never runs",
+            warn=True,
+        ))
+    if not rows:
+        rows.append(_check("Command ownership", True, f"{rep['commands']} plugin command(s), one owner each"))
+    return rows
+
+
+def check_other_interpreters() -> list[tuple[str, bool, str]]:
+    """navig in the OTHER Pythons on this machine, each judged against the source tree.
+
+    The rows above describe only the interpreter doctor runs in. Measured 2026-10-03:
+    ``navig.exe`` and the daemon ran on 3.13, the repo guard's hooks imported navig
+    under the PATH ``python`` (3.14), and 3.14 kept three records below core's floor
+    after 3.13 was repaired — invisible, because nothing looked past its own Python.
+    Neither copy can be removed (each serves a different caller), so each gets a row
+    and a repair command spelled with its own executable.
+    """
+    from navig.plugins.interpreters import audit_other_interpreters  # noqa: PLC0415
+    from navig.plugins.sources import (  # noqa: PLC0415
+        editable_install_command,
+        uninstall_command,
+    )
+
+    audits = audit_other_interpreters()
+    if not audits:
+        return []
+    results: list[tuple[str, bool, str]] = []
+    for a in audits:
+        label = f"other Python ({a.executable})"
+        if a.ok:
+            results.append(_check(label, True, "every first-party record matches your source"))
+            continue
+        fixes = []
+        if a.fix_paths:
+            fixes.append(editable_install_command(a.fix_paths, executable=a.executable))
+        if a.dead:
+            fixes.append(uninstall_command([d for d, _ in a.dead], executable=a.executable))
+        fix = " && ".join(fixes)
+        problems = []
+        if a.dead:
+            problems.append(
+                "installed from a folder that no longer exists: "
+                + ", ".join(f"{d} ({where})" for d, where in a.dead)
+            )
+        if a.shadowed:
+            problems.append(f"installed as a plain copy, not your source: {', '.join(a.shadowed)}")
+        if a.below_floor:
+            problems.append(
+                f"below core's floor (its next core install swaps them for PyPI): "
+                f"{', '.join(a.below_floor)}"
+            )
+        if a.stale:
+            problems.append(
+                f"{len(a.stale)} stale: "
+                + ", ".join(f"{d} {have}→{want}" for d, have, want in a.stale)
+            )
+        results.append(
+            _check(
+                label,
+                False,
+                "; ".join(problems) + f". Fix: {fix}",
+                warn=not (a.shadowed or a.below_floor or a.dead),
             )
         )
     return results
@@ -1621,9 +1973,34 @@ def _pending_changelog(core_dir: Path) -> tuple[int, int]:
     return entries, fragments
 
 
+def _invocation_checkout_root() -> Path | None:
+    """The checkout the operator is STANDING in — a linked worktree's own root, not main's.
+
+    ``_invocation_repo_root`` deliberately resolves a worktree to the MAIN tree (right for
+    the repo-guard rows, which key on main's ``.dev/``). A release row's subject is the
+    tree's own ``pyproject.toml``/``latest.json``/``CHANGELOG.md``: measured 2026-09-29,
+    doctor run from a worktree on current main described the main checkout 8 commits
+    behind (two hard deps instead of four).
+    """
+    import subprocess  # noqa: PLC0415
+
+    from navig.platform.paths import invocation_cwd  # noqa: PLC0415
+
+    try:
+        res = subprocess.run(
+            ["git", "-C", str(invocation_cwd()), "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return _invocation_repo_root()
+    if res.returncode != 0 or not res.stdout.strip():
+        return _invocation_repo_root()
+    return Path(res.stdout.strip())
+
+
 def check_release() -> list[tuple[str, bool, str]]:
     """Tree · tag · PyPI agreement for the core package, inside a development checkout only."""
-    root = _invocation_repo_root()
+    root = _invocation_checkout_root()
     if root is None:
         return []
     core_dir = root / "core" if (root / "core" / "pyproject.toml").is_file() else root
@@ -1946,7 +2323,167 @@ def _miniapp_button_row() -> list[tuple[str, bool, str]]:
 
 def check_reachability() -> list[tuple[str, bool, str]]:
     """Reachability rows: can the bot HEAR, and is the deck people open the current one?"""
-    return _webhook_tenant_rows() + _miniapp_button_row()
+    return _webhook_tenant_rows() + _miniapp_button_row() + _os_remote_row()
+
+
+def check_payments() -> list[tuple[str, bool, str]]:
+    """Payments rows — its own section, because this one makes an OUTBOUND network call
+    and `check_reachability()` is a tested contract (its consumers assert the exact rows,
+    and none of them should inherit a live HTTPS request)."""
+    return _stripe_webhook_row()
+
+
+#: The payments/API host — the same default `_BROKER_DEFAULT` uses, and the host every
+#: checkout redirect comes from.
+_API_BASE = "https://api.navig.run"
+
+#: The Stripe account that sells NAVIG (an identifier, not a secret). An organization key
+#: reaches several accounts, so every request names this one in `Stripe-Context`.
+_NAVIG_STRIPE_ACCOUNT = "acct_1TfjeOGk0ZWNfvDo"
+
+#: How far back a failed delivery still counts. Stripe retries a failed delivery for up to
+#: three days, so a week covers every retry of anything that has failed recently.
+_DELIVERY_WINDOW_DAYS = 7
+
+
+def _navig_billing_key() -> str | None:
+    """The vault's ``stripe/master`` key — present ONLY on the install that runs NAVIG's own
+    billing. ``None`` means "this install does not sell NAVIG", which is every user's install.
+
+    Deliberately not wrapped in a try: a vault that RAISES must surface as a warning in the
+    row, not as a silently missing row (``test_no_check_hides_its_own_failure_...``).
+    """
+    from navig.vault import get_vault  # noqa: PLC0415
+
+    cred = get_vault().get("stripe", profile_id="master", caller="navig doctor")
+    if cred is None:
+        return None
+    key = str(cred.get_secret("api_key") or "").strip()
+    return key or None
+
+
+def _stripe_webhook_row() -> list[tuple[str, bool, str]]:
+    """Is Stripe delivering NAVIG's payments events? Shown only where NAVIG's billing runs.
+
+    The failure this catches is silent by construction: a rotated webhook secret, a moved
+    endpoint, or a Worker answering 500 stops `checkout.session.completed` — and every
+    renewal — while every other light stays green (the bot-deaf shape: nothing errors, the
+    channel is simply gone).
+
+    It asks STRIPE, not the silence. The first version of this row inferred failure from how
+    long ago a webhook last arrived, and that cannot work: the endpoint subscribes to five
+    SALE-driven events only, so a week with no sales and a dead channel look identical. Stripe
+    knows the difference — an endpoint it has given up on is ``status: disabled``, and every
+    event it could not deliver is listed by ``GET /v1/events?delivery_success=false`` — and
+    both answer with or without traffic.
+
+    Owner-only: this row is about navig.run's own billing, so it appears only on the install
+    whose vault holds the ``stripe/master`` key. A customer's doctor shows nothing here.
+
+    Could-not-verify is a warning, never a tick; a disabled endpoint is a verified failure.
+    """
+    try:
+        key = _navig_billing_key()
+    except Exception as exc:  # noqa: BLE001 - doctor must never crash on a check
+        return [_check("Stripe webhook", False, f"COULD NOT VERIFY (vault: {exc})", warn=True)]
+    if not key:
+        return []  # not the install that sells NAVIG — there is nothing of ours to report
+
+    endpoint_url = f"{_API_BASE}/api/webhooks/stripe"
+    headers = {"Authorization": f"Bearer {key}", "Stripe-Version": "2025-03-31.basil"}
+    if key.startswith("sk_org_"):
+        headers["Stripe-Context"] = _NAVIG_STRIPE_ACCOUNT  # an org key must name its account
+    since = int(time.time()) - _DELIVERY_WINDOW_DAYS * 86400
+
+    try:
+        import requests  # noqa: PLC0415
+
+        eps = requests.get("https://api.stripe.com/v1/webhook_endpoints", params={"limit": 100},
+                           headers=headers, timeout=4.0)
+        if eps.status_code != 200:
+            return [_check("Stripe webhook", False,
+                           f"COULD NOT VERIFY (Stripe answered HTTP {eps.status_code})", warn=True)]
+        failed = requests.get(
+            "https://api.stripe.com/v1/events",
+            params={"delivery_success": "false", "created[gte]": since, "limit": 100},
+            headers=headers,
+            timeout=4.0,
+        )
+        if failed.status_code != 200:
+            return [_check("Stripe webhook", False,
+                           f"COULD NOT VERIFY (Stripe answered HTTP {failed.status_code})", warn=True)]
+        endpoints = eps.json().get("data") or []
+        undelivered = failed.json().get("data") or []
+    except Exception as exc:  # noqa: BLE001 - doctor must never crash on a check
+        return [_check("Stripe webhook", False, f"COULD NOT VERIFY ({exc})", warn=True)]
+
+    ours = [e for e in endpoints if str(e.get("url") or "").rstrip("/") == endpoint_url]
+    if not ours:
+        return [_check("Stripe webhook", False,
+                       f"no Stripe endpoint points at {endpoint_url} — no sale can mint a licence",
+                       warn=True)]
+    disabled = [e for e in ours if e.get("status") != "enabled"]
+    if disabled:
+        # Verified, not inferred: Stripe has stopped trying. An ✗, not a ⚠.
+        return [_check("Stripe webhook", False,
+                       f"Stripe has DISABLED {disabled[0].get('id')} — no sale reaches us; "
+                       "re-enable it in Stripe → Developers → Webhooks, then fix what it failed on")]
+    if undelivered:
+        n = f"{len(undelivered)}+" if len(undelivered) >= 100 else str(len(undelivered))
+        kinds = ", ".join(sorted({str(e.get("type")) for e in undelivered})[:3])
+        return [_check("Stripe webhook", False,
+                       f"{n} event(s) not delivered in {_DELIVERY_WINDOW_DAYS}d ({kinds}) — "
+                       "Stripe is retrying; check the endpoint's failures in the Dashboard",
+                       warn=True)]
+    return [_check("Stripe webhook", True,
+                   f"endpoint enabled · every delivery succeeded ({_DELIVERY_WINDOW_DAYS}d)")]
+
+
+def _os_remote_row() -> list[tuple[str, bool, str]]:
+    """Can a paired phone reach NAVIG OS here? Only asked once remote access is in play.
+
+    The failure this catches is silent by construction: an edge older than 1.3.0 answers
+    every phone with "update NAVIG" or a dead socket, while the desktop, the bot and every
+    other light here stay green. Could-not-verify is a warning, never a tick.
+    """
+    try:
+        from navig.config import get_config_manager
+        from navig.core.coerce import coerce_bool
+        from navig.store.os_devices import get_os_device_store
+
+        cm = get_config_manager()
+        mode = str(cm.get("cloud.mode") or "").strip().lower()
+        edge = str(cm.get("cloud.lighthouse_url") or "").strip().rstrip("/")
+        devices = get_os_device_store().list_devices()
+    except Exception as exc:  # noqa: BLE001 — doctor must never crash on a check
+        return [_check("Remote NAVIG OS", False, f"COULD NOT VERIFY ({exc})", warn=True)]
+
+    if not devices and mode != "lighthouse":
+        return []  # no relay and nothing paired — the question does not apply
+    n = len(devices)
+    paired = f"{n} paired device{'s' if n != 1 else ''}"
+    if not coerce_bool(cm.get("os.remote.enabled"), default=True):
+        return [_check("Remote NAVIG OS", True, f"turned off ({paired})")]
+    if mode != "lighthouse" or not edge:
+        return [_check(
+            "Remote NAVIG OS", False,
+            f"{paired}, but no Lighthouse relay is configured — set one up: navig lighthouse login",
+            warn=True,
+        )]
+
+    from navig.cloud.os_relay import edge_supports_os
+    from navig.commands.lighthouse import _deployed_worker_version
+
+    version = _deployed_worker_version(edge)
+    if not version:
+        return [_check("Remote NAVIG OS", False, f"COULD NOT VERIFY (relay at {edge} did not answer)", warn=True)]
+    if not edge_supports_os(version):
+        return [_check(
+            "Remote NAVIG OS", False,
+            f"relay v{version} predates remote NAVIG OS — update it: navig lighthouse redeploy",
+            warn=True,
+        )]
+    return [_check("Remote NAVIG OS", True, f"relay v{version} · {paired}")]
 
 
 def _gateway_has_ever_run() -> bool:
@@ -2043,10 +2580,11 @@ def check_pending_approvals() -> list[tuple[str, bool, str]]:
 def check_gateway_auth() -> list[tuple[str, bool, str]]:
     """Is anything actually authenticating requests to the local gateway?
 
-    ``require_bearer_auth`` opens with ``if not token: return None`` — **no token means
-    open access** — and seventeen route modules sit behind it, including
-    ``POST /approval/{id}/respond``. An unauthenticated gateway lets any local process
-    list the agent's pending approvals and answer them.
+    With no token, ``require_bearer_auth`` now **fails closed** (503 on every guarded
+    route, except explicit ``allow_anonymous`` ones) — so a missing token means the
+    seventeen route modules behind it, including ``POST /approval/{id}/respond``, REFUSE
+    every request: the gateway is unusable rather than unauthenticated. The row's job is
+    to say which of the two worlds the operator is in, and how to get the token back.
 
     The gateway therefore **mints and persists a token on its first start**. That makes
     "no token" mean something quite different from what it used to, and the two cases
@@ -2092,13 +2630,14 @@ def check_gateway_auth() -> list[tuple[str, bool, str]]:
         local_only = str(host).strip() in {"127.0.0.1", "localhost", "::1"}
         detail = (
             f"this gateway has run but has NO token, so its admin routes — including "
-            f"approval responses — accept every request. The startup mint could not "
-            f"write to your config. Bound to {host}"
+            f"approval responses — REFUSE every request with 503 (fail-closed; the "
+            f"startup mint could not write to your config). Bound to {host}"
             + (
-                " (local processes only). Set one now: navig config set "
-                "gateway.auth.token <secret>"
+                " (local processes only — the CLI and deck are locked out). Set one "
+                "now: navig config set gateway.auth.token <secret>"
                 if local_only
-                else " — this is reachable off this machine. Set one NOW: "
+                else " — this is reachable off this machine, so every client is "
+                "locked out until it is fixed. Set one NOW: "
                 "navig config set gateway.auth.token <secret>"
             )
         )
@@ -2106,6 +2645,58 @@ def check_gateway_auth() -> list[tuple[str, bool, str]]:
         return [_check("Gateway auth", False, detail, warn=local_only)]
     except Exception as exc:  # noqa: BLE001 — could-not-look is a warning, never a ✓
         return [_check("Gateway auth", False, str(exc)[:120], warn=True)]
+
+
+def check_policy_default() -> list[tuple[str, bool, str]]:
+    """What PolicyGate does with actions no rule matches — posture, not health.
+
+    ``allow`` is a legitimate operator choice (it is the shipped default), so the
+    row reports it green with the fail-closed endpoint spelled out; a TYPO'd value
+    is a fault because Gate 0 made PolicyGate treat it as ``deny`` — the config and
+    the running behavior must not silently disagree. An unreadable config is a
+    warning, never a ✓ (doctor-honesty rule).
+    """
+    try:
+        from navig.config import ConfigManager
+
+        gw = ConfigManager().get("gateway", {}) or {}
+        policy = gw.get("policy") if isinstance(gw, dict) else None
+        if not isinstance(policy, dict):
+            policy = {}
+        default = str(policy.get("default", "allow")).strip().lower()
+        rules = policy.get("rules") or []
+        rule_n = len(rules) if isinstance(rules, list) else 0
+        if default in ("deny", "require_approval"):
+            return [
+                _check(
+                    "Gateway policy",
+                    True,
+                    f"default: {default} · {rule_n} rule(s) — unlisted actions are "
+                    "refused or approval-gated (fail-closed)",
+                )
+            ]
+        if default == "allow":
+            return [
+                _check(
+                    "Gateway policy",
+                    True,
+                    f"default: allow · {rule_n} rule(s) — unlisted actions pass; "
+                    "fail-closed endpoint: "
+                    "navig config set gateway.policy.default deny",
+                )
+            ]
+        return [
+            _check(
+                "Gateway policy",
+                False,
+                f"unknown default {default!r} — PolicyGate fails CLOSED (denies) "
+                "until gateway.policy.default is fixed "
+                "(allow | require_approval | deny)",
+                warn=True,
+            )
+        ]
+    except Exception as exc:  # noqa: BLE001 — could-not-look is a warning, never a ✓
+        return [_check("Gateway policy", False, str(exc)[:120], warn=True)]
 
 
 def check_mcp_trust() -> list[tuple[str, bool, str]]:
@@ -2508,6 +3099,268 @@ def _judge_anchor_login(command: str, installed: Path) -> CheckResult:
     return _check("Anchor at login", True, "on — points at the installed binary, quoted")
 
 
+# git's own merge strategies — `merge=<name>` with one of these needs no git config entry.
+_BUILTIN_MERGE_DRIVERS = frozenset({"text", "binary", "union"})
+
+
+def _merge_drivers_row(root: Path) -> tuple[str, bool, str] | None:
+    """A row for the custom merge drivers ``.gitattributes`` routes files to, or None.
+
+    A driver named in ``.gitattributes`` lives in per-clone git CONFIG, which is never
+    committed. When a clone lacks it, git does not error — it silently falls back to a
+    line merge, so the file conflicts exactly as if the driver did not exist (navig's
+    generated command list conflicted on 36 of 39 replayed concurrent pairs without one).
+    Silent when the repo declares no custom driver. Reads the root ``.gitattributes`` only.
+    """
+    import re
+    import subprocess
+
+    try:
+        text = (root / ".gitattributes").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    declared: set[str] = set()
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        for name in re.findall(r"(?:^|\s)merge=([^\s]+)", line):
+            if name not in _BUILTIN_MERGE_DRIVERS:
+                declared.add(name)
+    if not declared:
+        return None
+
+    missing: list[str] = []
+    for name in sorted(declared):
+        try:
+            got = subprocess.run(
+                ["git", "-C", str(root), "config", "--get", f"merge.{name}.driver"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return _check("Merge drivers", False, f"COULD NOT VERIFY ({exc})", warn=True)
+        if got.returncode != 0 or not got.stdout.strip():
+            missing.append(name)
+
+    if not missing:
+        return _check("Merge drivers", True, f"registered: {', '.join(sorted(declared))}")
+    # navig's own repo registers its drivers from scripts/ci-local.mjs (run by `npm install`'s
+    # prepare hook); any other repo gets git's own command, since we cannot know its setup.
+    hint = (
+        "register it: npm install"
+        if (root / "scripts" / "ci-local.mjs").is_file()
+        else f'register it: git config merge.{missing[0]}.driver "<command> %O %A %B %P"'
+    )
+    return _check(
+        "Merge drivers",
+        False,
+        f"{', '.join(missing)} named in .gitattributes but not registered in this clone — "
+        f"git falls back to a line merge; {hint}",
+        warn=True,
+    )
+
+
+
+_TWIN_TEST = "scripts/test/heavy-slot.test.mjs"
+_TWIN_FILES_RE = re.compile(r"const\s+TWIN_FILES\s*=\s*\[([^\]]*)\]", re.S)
+_TWIN_PIN_RE = re.compile(r"const\s+PROTOCOL_SHA256\s*=\s*'([0-9a-f]{64})'")
+_TWIN_REPO_RE = re.compile(r"const\s+TWIN_REPO\s*=\s*'([^']+)'")
+_TWIN_NAME_RE = re.compile(r"'([^']+)'")
+
+def _twin_spec(test: Path) -> tuple[str, str, tuple[str, ...]] | None:
+    """``(twin repo name, pinned sha, files)`` from the repo's own twin test.
+
+    None when the file cannot be read or does not declare all three: no verdict is
+    the only honest answer when the single source of truth is unavailable.
+    """
+    try:
+        text = test.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    files_m = _TWIN_FILES_RE.search(text)
+    pin_m = _TWIN_PIN_RE.search(text)
+    repo_m = _TWIN_REPO_RE.search(text)
+    if not (files_m and pin_m and repo_m):
+        return None
+    files = tuple(_TWIN_NAME_RE.findall(files_m.group(1)))
+    if not files:
+        return None
+    return repo_m.group(1), pin_m.group(1), files
+
+
+def _twin_checkout(root: Path, repo_name: str) -> Path | None:
+    """Where the twin repo lives on this machine, exactly as the test resolves it.
+
+    The twin is a sibling of the MAIN checkout, not of the running worktree, and
+    ``HEAVY_SLOT_TWIN_REPO`` overrides it in both places.
+    """
+    import subprocess  # noqa: PLC0415
+
+    env = os.environ.get("HEAVY_SLOT_TWIN_REPO")
+    if env:
+        return Path(env) if (Path(env) / ".git").exists() else None
+    try:
+        common = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--path-format=absolute",
+             "--git-common-dir"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            check=False,
+        ).stdout.strip()
+    except OSError:
+        return None
+    if not common:
+        return None
+    # git-common-dir is <main>/.git; the twin sits beside <main>.
+    twin = Path(common).parent.parent / repo_name
+    return twin if (twin / ".git").exists() else None
+
+
+def _protocol_sha(parts: Any) -> str:
+    """sha256 of the parts joined with a NUL, each CRLF-normalised.
+
+    The construction the twin test uses: ``TWIN_FILES`` joined with ``\\0`` after
+    stripping CRLF from each file. Normalising HERE rather than in one caller
+    matters — the two checkouts have historically differed in line endings, so
+    hashing the twin's raw bytes reported drift that did not exist.
+    """
+    import hashlib  # noqa: PLC0415
+
+    return hashlib.sha256(
+        b"\0".join(part.replace(b"\r\n", b"\n") for part in parts)
+    ).hexdigest()
+
+
+def _twin_protocol_sha(twin: Path, files: tuple[str, ...]) -> str | None:
+    """What the twin's ``origin/main`` hashes to, or None when git cannot read it.
+
+    A failed ``git show`` must never become a hash of nothing: the digest of an
+    empty string looks exactly like a real pin, so "could not read" would be
+    reported as "in step". Absence of an answer is not an answer.
+    """
+    import subprocess  # noqa: PLC0415
+
+    chunks = []
+    for rel in files:
+        try:
+            res = subprocess.run(
+                ["git", "-C", str(twin), "show", f"origin/main:{rel}"],
+                capture_output=True, check=False,
+            )
+        except OSError:
+            return None
+        if res.returncode != 0 or not res.stdout:
+            return None
+        chunks.append(res.stdout)
+    return _protocol_sha(chunks)
+
+
+def check_ci_runners() -> list[CheckResult]:
+    """Self-hosted runner host health (services, shared lane dir, disk, repo ACL).
+
+    Empty when no runner service exists on this machine. The rules live in
+    ``repo_ci.ci_runner_rows`` so they are testable without a doctor run."""
+    try:
+        from navig.commands.repo_ci import ci_runner_rows  # noqa: PLC0415
+    except ImportError:
+        return []
+    root = _invocation_checkout_root()
+    try:
+        rows = ci_runner_rows(checkout=root)
+    except Exception as exc:  # noqa: BLE001 — a probe failure is an unknown verdict, never a green row
+        return [_check("CI runners", False, f"COULD NOT VERIFY — {exc.__class__.__name__}: {exc}", warn=True)]
+    return [_check(label, ok, detail, warn=warn) for label, ok, detail, warn in rows]
+
+
+def check_shared_protocol() -> list[tuple[str, bool, str]]:
+    """Do navig and Schema still carry the SAME push-queue protocol?
+
+    ``scripts/heavy-slot*.mjs`` is a two-repo protocol: both copies must be
+    byte-identical and both tests pin the same sha256. When Schema changes them
+    first, navig's pin no longer matches its ``origin/main`` and **every push
+    fails** with "the twins drifted" — measured 2026-10-09, which blocked a push
+    for hours with no signal short of running the gate.
+
+    The test is the single source: this row reads ``TWIN_FILES``, ``PROTOCOL_SHA256``
+    and ``TWIN_REPO`` from it, so doctor can never check a different protocol than
+    the gate enforces. Empty outside a development checkout, or when the twin
+    checkout is absent — the test skips in that case, and a skip is not a failure.
+    """
+    # The CHECKOUT ROOT, not the main tree: the gate hashes the files of whatever
+    # tree is being pushed, and a worktree's copy is what its twin test reads.
+    root = _invocation_checkout_root()
+    if root is None:
+        return []
+    test = root / _TWIN_TEST
+    if not test.is_file():
+        return []
+    spec = _twin_spec(test)
+    if spec is None:
+        return []
+    repo_name, pin, files = spec
+
+    try:
+        ours = _protocol_sha((root / rel).read_bytes() for rel in files)
+    except OSError as exc:
+        # Never an empty row: "could not read my own copy" is an unknown verdict, not
+        # "nothing to report", and doctor's honesty check fails on exactly that shape.
+        return [_check(
+            "Shared protocol", False,
+            f"COULD NOT VERIFY — could not read the push-queue files ({exc})",
+            warn=True,
+        )]
+
+    if ours != pin:
+        return [_check(
+            "Shared protocol",
+            False,
+            f"the {len(files)} push-queue files changed in this checkout but "
+            f"PROTOCOL_SHA256 in {_TWIN_TEST} was not updated, so the twin test will "
+            f"fail here — update the pin (and the same constant in {repo_name}'s test)",
+        )]
+
+    twin = _twin_checkout(root, repo_name)
+    if twin is None:
+        return []  # the test skips when the twin is not on this machine
+    theirs = _twin_protocol_sha(twin, files)
+    if theirs is None:
+        return [_check(
+            "Shared protocol", False,
+            f"could not read {repo_name}'s origin/main — unverified, not in step",
+            warn=True,
+        )]
+    if theirs == pin:
+        return [_check("Shared protocol", True,
+                       f"identical to {repo_name} origin/main — the twin test agrees")]
+    return [_check(
+        "Shared protocol",
+        False,
+        f"{repo_name} origin/main has moved off our pin ({theirs[:12]}…): every push "
+        f"fails with 'the twins drifted'. Copy each of {', '.join(files)} from "
+        f"{repo_name}'s origin/main, then update PROTOCOL_SHA256 in BOTH tests",
+    )]
+
+
+def check_running_code() -> list[tuple[str, bool, str]]:
+    """Which code the daemon runs: an installed package, or a checkout on which branch.
+
+    The daemon runs the editable install of the main checkout, so a feature branch or
+    uncommitted edits left there ARE the live bot. ✓ only when it is a clean ``main``
+    (or an installed package); anything else — including "could not tell" — warns.
+    """
+    try:
+        from navig.core.code_source import describe, summary  # noqa: PLC0415
+
+        src = describe()
+    except Exception as exc:  # noqa: BLE001
+        return [_check("Code the daemon runs", False, f"could not check: {exc}", warn=True)]
+    return [_check("Code the daemon runs", src.ok, summary(src), warn=not src.ok)]
+
+
 def check_repo_guard() -> list[tuple[str, bool, str]]:
     """Multi-agent repo guard state for the CURRENT repo.
 
@@ -2611,6 +3464,10 @@ def check_repo_guard() -> list[tuple[str, bool, str]]:
                     warn=True,
                 )
             )
+
+        drivers_row = _merge_drivers_row(root)
+        if drivers_row is not None:
+            results.append(drivers_row)
     except Exception as exc:  # noqa: BLE001 — a doctor check must never crash doctor
         # Not "outside a git repo" — that case returns [] explicitly inside the try above.
         # Reaching here means the guard state could not be read, and a hidden section reads
@@ -2931,8 +3788,8 @@ def _collect_sections(
     can monkeypatch individual ``check_*`` functions on this module.
     """
     secs: list[tuple[str, list[tuple[str, bool, str]]]] = [
-        ("Config", check_config()),
-        ("Runtime", check_runtime() + check_path_health() + check_hard_dependencies()),
+        ("Config", check_config() + check_install_profile()),
+        ("Runtime", check_runtime() + check_path_health() + check_hard_dependencies() + check_editable_installs()),
         ("Storage", check_storage() + check_databases() + check_vault()),
         ("Filesystem", check_cache_dir() + check_logs()),
         ("Network Sockets", check_sockets(port)),
@@ -2942,9 +3799,10 @@ def _collect_sections(
             "Gateway",
             check_gateway(port=port)
             + check_event_processor(port=port)
-            + check_gateway_auth(),
+            + check_gateway_auth()
+            + check_policy_default(),
         ),
-        ("AI Providers", check_ai_providers()),
+        ("AI Providers", check_ai_providers() + check_model_fallback() + check_decider()),
         ("Identity", check_identity()),
         ("Media Tools", check_media_tools()),
         ("Wiring", check_wiring()),
@@ -2975,6 +3833,10 @@ def _collect_sections(
     if reachability_results:  # webhook rows are lighthouse-only; the button row is not
         secs.append(("Reachability", reachability_results))
 
+    payments_results = check_payments()
+    if payments_results:  # one row, but the one that catches a silently dead revenue channel
+        secs.append(("Payments", payments_results))
+
     ledger_results = check_ledger()
     if ledger_results:  # only when there are in-flight / interrupted operations
         secs.append(("Operations Ledger", ledger_results))
@@ -2983,13 +3845,25 @@ def _collect_sections(
     if repo_guard_results:  # only inside a git repo
         secs.append(("Repo Guard", repo_guard_results))
 
+    protocol_results = check_shared_protocol()
+    if protocol_results:  # only inside a navig development checkout with its twin
+        secs.append(("Shared Protocol", protocol_results))
+
+    ci_runner_results = check_ci_runners()
+    if ci_runner_results:  # only on a machine that hosts self-hosted CI runners
+        secs.append(("CI Runners", ci_runner_results))
+
+    secs.append(("Running Code", check_running_code()))
+
     desktop_results = check_desktop_apps()
     if desktop_results:  # Windows only; the Anchor rows
         secs.append(("Desktop Apps", desktop_results))
 
-    plugin_source_results = check_plugin_sources()
+    plugin_source_results = check_plugin_sources() + check_other_interpreters()
     if plugin_source_results:  # only inside a navig development checkout
         secs.append(("Plugin Sources", plugin_source_results))
+
+    secs.append(("Command Ownership", check_command_ownership()))
 
     release_results = check_release()
     if release_results:  # only inside a navig development checkout
@@ -3073,6 +3947,103 @@ def collect_report(
 # ──────────────────────────────────────────────────────────────────────────────
 # Main command
 # ──────────────────────────────────────────────────────────────────────────────
+
+
+def check_model_fallback() -> list[tuple[str, bool, str]]:
+    """Is any primary model being stood in for by a fallback right now?
+
+    Reads the fallback policy's degraded state (navig.llm.model_fallback). A
+    degraded primary is a ⚠ — replies still work, but on a different model than
+    the operator chose. An unreadable state is ⚠ too, never ✓ (the doctor rule:
+    a green light over an unknown is worse than a red one).
+    """
+    try:
+        from navig.llm import model_fallback
+
+        deg = model_fallback.degraded()
+        state_path = model_fallback._state_path()
+        if state_path.exists():
+            import json as _json
+
+            raw = _json.loads(state_path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict) or not isinstance(raw.get("degraded"), dict):
+                raise ValueError("malformed fallback state file")
+    except Exception as exc:  # noqa: BLE001
+        return [_check("Model fallback", False,
+                       f"state unreadable ({type(exc).__name__}) — run `navig ai fallback`",
+                       warn=True)]
+    if not deg:
+        return [_check("Model fallback", True, "no primary model is being stood in for (fallback state clean)")]
+    parts = []
+    for primary, entry in sorted(deg.items()):
+        modes = ",".join(entry.get("modes") or []) or "?"
+        parts.append(
+            f"{primary} → {entry.get('fallback') or '?'} [{modes}] "
+            f"({model_fallback.reason_text(entry.get('reason'))})"
+        )
+    return [_check("Model fallback", False,
+                   f"{len(deg)} primary model(s) degraded: " + "; ".join(parts)
+                   + " — details: navig ai fallback",
+                   warn=True)]
+
+
+def check_decider() -> list[tuple[str, bool, str]]:
+    """The decision model (Cloudflare Clef, ``navig decider``) — optional, off by default.
+
+    Never makes a call: a ✓ is only shown when the LAST real call succeeded, because the
+    one thing this row must not do is report a working model it never saw answer.
+    """
+    label = "Decision model (Clef)"
+    try:
+        from navig.agent import decide
+
+        st = decide.status()
+    except Exception as exc:  # noqa: BLE001
+        return [_check(label, False, f"could not read its status: {exc}", warn=True)]
+    if not st["enabled"]:
+        return [_check(label, True, "off (optional) — try it: navig decider test \"…\", then navig decider on")]
+    on_uses = [u["id"] for u in st["uses"] if u["on"]]
+    shadow = " · shadow mode (logged, not applied)" if st["shadow"] else ""
+    if not st["credential"]:
+        return [
+            _check(
+                label,
+                False,
+                "on, but no Cloudflare credential — every decision uses the previous method. "
+                "Connect: navig lighthouse login",
+                warn=True,
+            )
+        ]
+    if not on_uses:
+        return [_check(label, True, "on, but every use is switched off — navig decider on --use <id>")]
+    last = st["last_call"]
+    if last is None:
+        return [
+            _check(
+                label,
+                False,
+                f"on ({', '.join(on_uses)}){shadow}, but no call has succeeded yet — verify: navig decider test \"…\"",
+                warn=True,
+            )
+        ]
+    if not last["ok"]:
+        hint = decide.grant_hint() if last["kind"] == "auth" else "decisions fell back to the previous method"
+        return [
+            _check(
+                label,
+                False,
+                f"last call FAILED ({last['kind']}) at {last['at']} — {hint}",
+                warn=True,
+            )
+        ]
+    return [
+        _check(
+            label,
+            True,
+            f"on ({', '.join(on_uses)}) · {last['model']} · last call {last['at']} "
+            f"{last['latency_ms']} ms · {st['calls_today']} calls today{shadow}",
+        )
+    ]
 
 
 def check_identity() -> list[tuple[str, bool, str]]:

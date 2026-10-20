@@ -94,3 +94,36 @@ def test_system_disk_path_needs_no_enumeration(monkeypatch):
     rows = monitor.get_system_disk()
     assert len(rows) == 1
     assert rows[0]["is_system"] is True
+
+
+# ── top processes are cached (the System app's list; ~280 ms per walk) ────────
+
+
+def test_top_processes_walk_is_cached(monkeypatch):
+    from navig.commands import monitor as m
+
+    calls = []
+
+    class _P:
+        def __init__(self, pid):
+            self.info = {"pid": pid, "name": f"p{pid}", "cpu_percent": float(pid)}
+
+    def walk(attrs):
+        calls.append(1)
+        return [_P(i) for i in range(10)]
+
+    monkeypatch.setattr(m.psutil, "process_iter", walk)
+    monkeypatch.setattr(m, "_top_cache", None)
+    first = m._top_processes(5)
+    second = m._top_processes(5)
+    assert [p["pid"] for p in first] == [9, 8, 7, 6, 5]
+    assert second == first and len(calls) == 1, "a second read within the TTL must not walk again"
+
+    second[0]["name"] = "mutated"
+    assert m._top_processes(5)[0]["name"] == "p9", "callers get copies, not the cache"
+
+    assert len(m._top_processes(8)) == 8 and len(calls) == 2, "asking for MORE rows re-walks"
+
+    monkeypatch.setattr(m, "_top_cache", (m.time.monotonic() - m._TOP_TTL_S - 1, 8, []))
+    m._top_processes(5)
+    assert len(calls) == 3, "an expired entry re-walks"

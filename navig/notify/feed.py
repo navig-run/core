@@ -92,6 +92,34 @@ def list_items(limit: int = 50, unread_only: bool = False) -> list[dict[str, Any
     return [_row(r) for r in store.conn().execute(sql, (min(int(limit), 200),)).fetchall()]
 
 
+def stats(days: int = 7, limit: int = 8) -> dict[str, Any]:
+    """How much NAVIG has been sending: ``{days, total, by_type: [{type, count, first, last}]}``.
+
+    Powers the noise report ("do I get too many?"). The feed is what the in-app
+    channel records, and nearly every type routes through it, so it is the
+    honest count of what the daemon produced — not of what was read.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    store.init_db()
+    days = max(1, int(days))
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+    rows = store.conn().execute(
+        "SELECT type, COUNT(*) AS n, MIN(created_at) AS first, MAX(created_at) AS last "
+        "FROM notify_feed WHERE created_at >= ? GROUP BY type ORDER BY n DESC",
+        (cutoff,),
+    ).fetchall()
+    by_type = [
+        {"type": r["type"], "count": int(r["n"]), "first": r["first"], "last": r["last"]}
+        for r in rows
+    ]
+    return {
+        "days": days,
+        "total": sum(r["count"] for r in by_type),
+        "by_type": by_type[:limit],
+    }
+
+
 def unread_count() -> int:
     store.init_db()
     r = store.conn().execute("SELECT COUNT(*) AS n FROM notify_feed WHERE read = 0").fetchone()

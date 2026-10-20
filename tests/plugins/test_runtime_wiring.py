@@ -153,6 +153,9 @@ def test_entry_point_plugin_skills_discovered(tmp_path, monkeypatch):
         ),
     )
 
+    # The package scan is memoised per process — drop it so the patched
+    # entry points are what gets scanned; teardown restores the prior memo.
+    monkeypatch.setattr(pkg_mod, "_EP_PACKAGE_ROOTS", None)
     assert (pkgdir / "skills") in pkg_mod.entry_point_plugin_capability_dirs("skills")
     # a kind the plugin doesn't ship contributes nothing
     assert pkg_mod.entry_point_plugin_capability_dirs("nonexistent-kind") == []

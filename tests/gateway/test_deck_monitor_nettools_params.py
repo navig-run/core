@@ -194,3 +194,83 @@ async def test_dns_resolver_becomes_nslookup_server_arg(monkeypatch):
         assert captured == [("nslookup", "-type=A", "example.com", "1.1.1.1")]
     finally:
         await client.close()
+
+
+# ── stale-while-refresh: no poll waits on a cold collection ─────────────────
+
+
+async def test_monitor_serves_a_stale_snapshot_at_once_and_refreshes_behind(monkeypatch):
+    """Regression: the cache TTL (8 s) was shorter than the dashboard's poll, so every poll
+    re-collected. In the daemon that took 6–11 s, and over a link it timed out as 'No brain'."""
+    import asyncio
+    import threading
+
+    release = threading.Event()
+    calls: list[int] = []
+
+    def slow_all(all_services: bool = False):
+        calls.append(1)
+        release.wait(5)
+        return {"n": len(calls)}
+
+    monkeypatch.setattr(monitor_routes.monitor, "get_all_monitoring", slow_all)
+    monkeypatch.setattr(monitor_routes, "_cache", {"all": (-1e9 + 0.0, {"n": 0})})
+    monkeypatch.setattr(monitor_routes, "_locks", {})
+    monkeypatch.setattr(monitor_routes, "_refreshing", set())
+    monkeypatch.setattr(monitor_routes, "_STALE_SERVE_SECONDS", float("inf"))
+
+    client = TestClient(TestServer(_monitor_app()))
+    await client.start_server()
+    try:
+        r = await asyncio.wait_for(client.get("/api/deck/monitor"), timeout=2)
+        assert (await r.json())["data"] == {"n": 0}, "the old snapshot is served without waiting"
+        # A second poll during the refresh neither waits nor starts another collection.
+        r = await asyncio.wait_for(client.get("/api/deck/monitor"), timeout=2)
+        assert (await r.json())["data"] == {"n": 0}
+        release.set()
+        for _ in range(100):
+            if monitor_routes._cache["all"][1] == {"n": 1}:
+                break
+            await asyncio.sleep(0.02)
+        assert monitor_routes._cache["all"][1] == {"n": 1}
+        assert calls == [1]
+    finally:
+        release.set()
+        await client.close()
+
+
+async def test_monitor_without_any_snapshot_still_waits_for_one(monkeypatch):
+    monkeypatch.setattr(monitor_routes.monitor, "get_all_monitoring", lambda all_services=False: {"n": 1})
+    monkeypatch.setattr(monitor_routes, "_cache", {})
+    monkeypatch.setattr(monitor_routes, "_locks", {})
+    monkeypatch.setattr(monitor_routes, "_refreshing", set())
+
+    client = TestClient(TestServer(_monitor_app()))
+    await client.start_server()
+    try:
+        r = await client.get("/api/deck/monitor")
+        assert (await r.json())["data"] == {"n": 1}
+    finally:
+        await client.close()
+
+
+async def test_monitor_warm_up_runs_on_startup(monkeypatch):
+    import asyncio
+
+    monkeypatch.setattr(monitor_routes.monitor, "get_all_monitoring", lambda all_services=False: {"warm": True})
+    monkeypatch.setattr(monitor_routes, "_cache", {})
+    monkeypatch.setattr(monitor_routes, "_locks", {})
+    monkeypatch.setattr(monitor_routes, "_refreshing", set())
+
+    app = _monitor_app()
+    app.on_startup.append(monitor_routes.warm_monitor_cache)
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        for _ in range(100):
+            if "all" in monitor_routes._cache:
+                break
+            await asyncio.sleep(0.02)
+        assert monitor_routes._cache["all"][1] == {"warm": True}
+    finally:
+        await client.close()

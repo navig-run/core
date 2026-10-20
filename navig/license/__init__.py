@@ -143,14 +143,24 @@ def _dev_overrides_allowed() -> bool:
     SECURITY: the override synthesizes an arbitrary entitlement WITHOUT any
     signature check, so it must never be honored on a shipped install — else any
     user could write ``{"tier":"enterprise"}`` and bypass the Ed25519 license.
-    It is allowed ONLY when:
-      - ``NAVIG_DEV_LICENSE`` is an explicit truthy opt-in, OR
-      - the writer tool ``core/tools/dev_license.py`` is present on disk, which
-        is true for a source/editable checkout but NOT the wheel (``tools/`` is
-        excluded from packaging), so it doubles as source-install detection.
+    It is allowed ONLY from a source/editable checkout.
+
+    There used to be a second door: ``NAVIG_DEV_LICENSE=1`` enabled it on ANY
+    install. An environment variable is not a credential — on a shipped wheel
+    it plus one JSON file granted Enterprise with no signature at all. Nothing
+    in the tree relied on it (the dev switcher only ever runs from a checkout),
+    so it is gone rather than narrowed.
     """
-    if _coerce_bool(os.environ.get("NAVIG_DEV_LICENSE"), False):
-        return True
+    return _is_source_checkout()
+
+
+def _is_source_checkout() -> bool:
+    """True when running from a source/editable checkout, not an installed wheel.
+
+    Detected by the writer tool ``core/tools/dev_license.py`` being on disk:
+    present in a checkout, absent from the wheel (``tools/`` is excluded from
+    packaging).
+    """
     try:
         # this module: <root>/navig/license/__init__.py → parents[2] == <root>
         # source checkout: <root> == core/ (so core/tools/dev_license.py exists);
@@ -175,8 +185,8 @@ def _read_dev_override_raw() -> str | None:
             if not _WARNED_OVERRIDE_IGNORED:
                 _WARNED_OVERRIDE_IGNORED = True
                 logger.warning(
-                    "Ignoring dev license override at %s on a non-dev install "
-                    "(set NAVIG_DEV_LICENSE=1 to opt in). The signed license is authoritative.",
+                    "Ignoring dev license override at %s: overrides only apply to a "
+                    "source checkout. The signed license is authoritative.",
                     p,
                 )
             return None

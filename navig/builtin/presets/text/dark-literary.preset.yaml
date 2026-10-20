@@ -1,0 +1,24 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: text/style/dark-literary
+name: Dark Literary
+tool: text
+layer: style
+category: Writing style
+tags:
+- fiction
+- literary
+- dark
+description: Restrained, atmospheric literary prose with a dark tone.
+params:
+  genre: dark literary fiction
+  voice: close third person, past tense
+instructions: 'Write restrained, atmospheric literary prose. Favour concrete sensory detail over adjectives,
+  subtext over exposition, and short declarative sentences at moments of tension.
+
+  Let silence and implication carry dread; never explain the mood.'
+avoid:
+- clichés and stock phrases
+- purple prose
+- explaining characters' feelings outright

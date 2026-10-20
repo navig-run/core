@@ -17,7 +17,7 @@ import logging
 import sys
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from weakref import WeakKeyDictionary
 
 if TYPE_CHECKING:
@@ -41,6 +41,20 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     # todo: the PIM. Same rows the /todo Telegram card reads and writes -- one list,
     # not a terminal-only second one.
     "todo": ("navig.commands.todo", "todo_app"),
+    # card: the board's task cards for agents — same BoardStore rows as the Deck
+    # lanes, plus the role-gated lifecycle/claims the HTTP surface doesn't do.
+    "card": ("navig.commands.card", "card_app"),
+    # receipt: sign/list/verify ExecutionReceipts directly (reviews, audits) —
+    # the same signed artifacts missions and block runs already leave behind.
+    "receipt": ("navig.commands.receipt", "receipt_app"),
+    # project: the Projects hub on the command line — every folder with .navig/, its
+    # docs, todos, scripts and context pack (same data as the OS Projects app).
+    "project": ("navig.commands.project", "project_app"),
+    # recall: the knowledge bank built from past AI conversations (decisions, plans, tables,
+    # findings, audited features) — `navig knowledge` stays the kg alias it always was.
+    "recall": ("navig.commands.recall", "recall_app"),
+    # dock: the NAVIG Dock extension's pairing + browser-control status (agents use dock_* MCP tools).
+    "dock": ("navig.commands.dock", "dock_app"),
     "bb": ("navig.commands.blackbox", "blackbox_app"),
     "copilot": ("navig.commands.ask", "copilot_app"),
     # contribute / tools / tailscale: three command groups that defined a Typer app,
@@ -58,6 +72,9 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "generate": ("navig.commands.media", "media_app"),
     "media": ("navig.commands.media", "media_app"),
     "inbox": ("navig.commands.inbox", "inbox_app"),
+    # instructions: what a session actually loads (global + root + .claude/CLAUDE.md +
+    # @imports) — budgets, duplicated paragraphs and broken links, gated before push.
+    "instructions": ("navig.commands.instructions", "instructions_app"),
     "sync": ("navig.commands.sync", "sync_app"),
     "agent": ("navig.commands.agent", "agent_app"),
     "continuation": ("navig.commands.agent", "continuation_app"),
@@ -80,6 +97,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "crash": ("navig.commands.crash", "crash_app"),
     "telegram": ("navig.commands.telegram", "telegram_app"),
     "tg": ("navig.commands.telegram", "telegram_app"),        # hidden alias
+    "discord": ("navig.commands.discord", "discord_app"),
     "matrix": ("navig.commands.matrix", "matrix_app"),
     "mx": ("navig.commands.matrix", "matrix_app"),            # hidden alias
     # `store` = the hub for everything connectable ("doctor of wiring").
@@ -121,11 +139,19 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "task": ("navig.commands.workflow", "task_app"),
     "install": ("navig.commands.install", "install_app"),
     "block": ("navig.commands.block", "block_app"),
+    # lens: Tampermonkey-compatible site augmentations, one store for every browser host.
+    "lens": ("navig.commands.lens", "lens_app"),
+    "lenses": ("navig.commands.lens", "lens_app"),             # hidden alias
     "quick": ("navig.commands.suggest", "quick_app"),
     "q": ("navig.commands.suggest", "quick_app"),             # hidden alias
     "hosts": ("navig.commands.local", "hosts_app"),
     "cortex": ("navig.commands.cortex", "cortex_app"),
     "desktop": ("navig.commands.desktop", "desktop_app"),
+    "guard": ("navig.commands.guard", "guard_app"),
+    # security: the local security surface (host-secret migration today). The remote
+    # audits stay under `navig host security …` (host.py) — this group never required
+    # an active server.
+    "security": ("navig.commands.security", "security_app"),
     "net": ("navig.commands.net", "net_app"),
     "host": ("navig.commands.host", "host_app"),
     "h": ("navig.commands.host", "host_app"),                 # hidden alias
@@ -170,7 +196,9 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "action": ("navig.commands.action", "action_app"),
     "cost": ("navig.commands.cost", "cost_app"),
     "output-style": ("navig.commands.output_style", "output_style_app"),
-    "links": ("navig.commands.links", "links_app"),
+    # links: DEPRECATED alias of `navig bookmarks` (the navig-bookmarks plugin, mounted by its
+    # `navig.commands` entry point). Forwards there, or prints the install hint and exits 1.
+    "links": ("navig.commands.links_alias", "links_app"),
     "kg": ("navig.commands.kg", "kg_app"),
     "knowledge": ("navig.commands.kg", "kg_app"),
     "webhook": ("navig.commands.webhook", "webhook_app"),
@@ -181,14 +209,25 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "cron": ("navig.commands.cron", "cron_app"),
     "habit": ("navig.commands.habit", "habit_app"),
     "habits": ("navig.commands.habit", "habit_app"),             # alias
+    # Standing goals (worked on a schedule until met). NOT `navig agent goal`, the
+    # standalone agent's one-shot task planner — see commands/goal.py.
+    "goal": ("navig.commands.goal", "goal_app"),
+    "goals": ("navig.commands.goal", "goal_app"),               # alias
     # `body`, not `health`: "health" is already an alias for `stack` (cross-service
     # SYSTEM health checks). Two meanings of the word under one verb is a trap.
     "body": ("navig.commands.body", "body_app"),
+    # Scheduled check-ins (weigh-in, pills, water). Not part of `habit`: a habit is
+    # done-or-not, a check-in is a measurement or a dose (navig.checkins).
+    "checkin": ("navig.commands.checkin", "checkin_app"),
+    "checkins": ("navig.commands.checkin", "checkin_app"),      # alias
     "day": ("navig.commands.life_dashboard", "life_dashboard_app"),
     "life": ("navig.commands.life_dashboard", "life_dashboard_app"),
     "doctor": ("navig.commands.doctor", "doctor_app"),
     "docker": ("navig.commands.docker", "docker_app"),
     "prompts": ("navig.commands.prompts", "prompts_app"),
+    # Universal presets (Text/Image/Audio/Video) — same database as the prompt library.
+    "presets": ("navig.commands.presets", "presets_app"),
+    "preset": ("navig.commands.presets", "presets_app"),                # alias
     "browser": ("navig.commands.browser", "browser_app"),
     # cdp/do/gmail (auto-login browser surfaces) are registered once above, near "auto".
     "import": ("navig.commands.import_cmd", "import_app"),
@@ -213,6 +252,8 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "cloud": ("navig.commands.cloud", "app"),
     "repo": ("navig.commands.repo", "repo_app"),
     "lighthouse": ("navig.commands.lighthouse", "app"),
+    # The decision model (Cloudflare Clef) on the user's own account — see agent/decide.py.
+    "decider": ("navig.commands.decider", "decider_app"),
     "license": ("navig.commands.license", "app"),
     "miniapp": ("navig.commands.miniapp", "app"),
     "benchmark": ("navig.commands.benchmark", "app"),
@@ -229,6 +270,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "deck": ("navig.commands.deck", "deck_app"),
     "os": ("navig.commands.os_cmd", "app"),
     "portable": ("navig.commands.portable", "portable_app"),
+    "move": ("navig.commands.move", "move_app"),
     "migrate": ("navig.commands.migrate", "migrate_app"),
     "system": ("navig.commands.system_cmd", "system_app"),
     "mount": ("navig.commands.mount", "mount_app"),
@@ -281,10 +323,44 @@ _ALIAS_COMMANDS: frozenset[str] = frozenset({
     "env",          # → config
     "job",          # → flow
     "habits",       # → habit
+    "goals",        # → goal
     "day",          # → life
+    "lenses",       # → lens
+    "links",        # → bookmarks (navig-bookmarks plugin; deprecated). Its own wrapper Typer —
+                    #   it adds the deprecation notice — around the plugin's command objects.
     # Deprecated, replaced by a SUBcommand (so no visible top-level group serves it).
     "cred-profile",  # → navig vault profile
+    # Twin groups (2026-10 command-surface cleanup): one canonical, visible name each.
+    "skills",       # → skill
+    "spaces",       # → space
+    "plugins",      # → plugin
+    "signal",       # → signals
+    "checkins",     # → checkin
+    "bb",           # → blackbox
+    "knowledge",    # → kg
+    "media",        # → generate (the app callback warns when run as `media`)
+    # Plugin-provided twins (navig.commands entry points; _try_register_ep honours this).
+    "dl", "tiktok", "tt",  # → download (navig-download: one app under four names)
+    "fb",           # → facebook (navig-social)
 })
+
+# Groups SUPERSEDED by another surface. Still registered (no CLI break) — each answers
+# with a hint or a `moved to …` line from `navig.cli.superseded` — but hidden from
+# `--help` and never published: the replacement documents the capability.
+_RETIRED_COMMANDS: frozenset[str] = frozenset({
+    "module", "modules",       # → navig store
+    "browser",                 # → navig cdp
+    "council",                 # → navig formation council
+    "agents",                  # → navig formation agents / navig agent run
+    "webdash",                 # → navig deck open
+    "snapshot",                # → navig history files / navig backup export
+    "webhook", "webhooks",     # → navig trigger
+    "boot",                    # → navig service
+    "finance",                 # → the OS Finance app (navig store info module:finance)
+})
+
+# Never published in the manifest: a duplicate name, or a superseded group.
+_NOT_PUBLISHED: frozenset[str] = _ALIAS_COMMANDS | _RETIRED_COMMANDS
 
 # Real, unique capabilities. Nothing else serves them, so they are PUBLIC API and must
 # stay in the manifest — they are merely unlisted from `--help` to keep the top-level
@@ -295,8 +371,22 @@ _UNLISTED_COMMANDS: frozenset[str] = frozenset({
     "habit", "life",
 })
 
-# What `--help` hides. Derived, so the two sets above cannot drift out of sync with it.
-_HIDDEN_COMMANDS: frozenset[str] = _ALIAS_COMMANDS | _UNLISTED_COMMANDS
+# What `--help` hides. Derived, so the sets above cannot drift out of sync with it.
+_HIDDEN_COMMANDS: frozenset[str] = _ALIAS_COMMANDS | _RETIRED_COMMANDS | _UNLISTED_COMMANDS
+
+# Plugin verb → the plugin verb that superseded it, hidden ONLY while the replacement is
+# itself registered (an EP name → EP name). Deliberately not in `_ALIAS_COMMANDS`: that
+# set hides unconditionally, and `navig-pipeline` installs older than the `content` entry
+# point would lose their only content verb — showing it to them is the point.
+# The pair is listed in `navig.cli.superseded.SUPERSEDED` (ADR-0002).
+_SUPERSEDED_BY: dict[str, str] = {"pipeline": "content"}
+
+
+def _ep_hidden(cmd_name: str, registered: "dict[str, object]") -> bool:
+    """Hide an entry-point verb: in the hidden sets, or superseded by one just registered."""
+    if cmd_name in _HIDDEN_COMMANDS:
+        return True
+    return _SUPERSEDED_BY.get(cmd_name) in registered
 
 # =============================================================================
 # Global-flag stripping
@@ -561,21 +651,129 @@ def _entry_point_commands() -> dict[str, object]:
             eps = entry_points(group="navig.commands")
         except TypeError:  # Python <3.10 API shape
             eps = entry_points().get("navig.commands", [])  # type: ignore[attr-defined]
-        for ep in eps:
-            out[ep.name] = ep
+        out = _resolve_command_owners(list(eps))
     except Exception as exc:  # noqa: BLE001 — discovery must never break the CLI
         logger.debug("[navig] entry-point command discovery skipped: %s", exc)
+        _COMMAND_OWNERSHIP["error"] = str(exc)
     if out:
         for cmd, plugin_id in _disabled_command_map().items():
             if cmd in out:
                 del out[cmd]
                 _DISABLED_EP_CMDS[cmd] = plugin_id
+        # Per-space gate: a module turned OFF in the active space drops its
+        # entry-point command here too, so a space scopes CLI verbs — not just
+        # tiles. Matched by name (command == module id, the first-party
+        # convention); a verb owned by a differently-named module needs the
+        # precise command→module map (a PluginHost follow-up), not this cheap
+        # read. Deliberately NOT the module registry: that would import every
+        # plugin on the CLI path and break the <50ms budget (lazy-imports law).
+        for cmd in _space_disabled_module_ids():
+            if cmd in out:
+                del out[cmd]
+                _DISABLED_EP_CMDS[cmd] = f"space:{cmd}"
     _ENTRY_POINT_CMDS = out
     return out
 
 
+def _space_disabled_module_ids() -> set[str]:
+    """Module ids force-OFF by the active space's manifest (``modules_disabled``).
+
+    One lightweight manifest read via the canonical active-space resolver — NO
+    plugin import, NO registry load — so it stays on the right side of the fast
+    path. Empty on any failure: an unreadable space must never silently remove a
+    CLI verb the operator expects.
+    """
+    try:
+        from navig.spaces.active import get_active_working_dir
+        from navig.spaces.space_manifest import load_space_manifest
+
+        return {
+            mid
+            for mid, on in load_space_manifest(get_active_working_dir()).module_overrides.items()
+            if on is False
+        }
+    except Exception as exc:  # noqa: BLE001 — never break the CLI over a state file
+        logger.debug("[navig] per-space CLI gate skipped: %s", exc)
+        return set()
+
+
 # command name → providing (disabled) plugin id; filled by _entry_point_commands()
 _DISABLED_EP_CMDS: dict[str, str] = {}
+
+# What discovery found about who owns each plugin command (filled by
+# _entry_point_commands(); read by `navig doctor` via command_ownership_report()):
+#   "collisions": {name: [dist, ...]} — two plugins declared one command; the first listed won
+#   "shadowed":   {name: dist}       — a plugin declared a core built-in name; core won
+#   "error":      str | None         — discovery itself failed (ownership unverified)
+_COMMAND_OWNERSHIP: dict[str, Any] = {"collisions": {}, "shadowed": {}, "error": None}
+
+# Core-owned top-level verbs that are not in _EXTERNAL_CMD_MAP (registered by name above).
+_CORE_FLAT_COMMANDS = frozenset({"wire", "apply", "undo", "ahk"})
+
+
+def _ep_owner(ep: Any) -> str:
+    """The distribution that declared *ep* (falls back to its module's top package)."""
+    dist = getattr(ep, "dist", None)
+    name = getattr(dist, "name", None) if dist is not None else None
+    if name:
+        return str(name)
+    value = str(getattr(ep, "value", "") or "")
+    return value.split(":", 1)[0].split(".", 1)[0] or "unknown"
+
+
+def _resolve_command_owners(eps: list[Any]) -> dict[str, Any]:
+    """One owner per `navig.commands` name — deterministic, and never silent.
+
+    Discovery used to do ``out[ep.name] = ep``: whichever distribution importlib happened
+    to list LAST took the verb, with no trace. Now an identical declaration seen twice (an
+    editable install listed twice) is one owner; two DIFFERENT targets for one name are a
+    collision — the owner whose distribution sorts first keeps the verb on every machine,
+    and the loser is logged and reported by `navig doctor`. A plugin naming a core
+    built-in is recorded as shadowed (core always wins that race; see register_external).
+    """
+    by_name: dict[str, list[Any]] = {}
+    for ep in eps:
+        by_name.setdefault(ep.name, []).append(ep)
+    out: dict[str, Any] = {}
+    collisions: dict[str, list[str]] = {}
+    for name, group in by_name.items():
+        distinct: dict[str, Any] = {}
+        for ep in group:
+            distinct.setdefault(str(getattr(ep, "value", "")), ep)
+        candidates = list(distinct.values())
+        if len(candidates) > 1:
+            candidates.sort(key=lambda e: (_ep_owner(e).lower(), str(getattr(e, "value", ""))))
+            owners = [_ep_owner(e) for e in candidates]
+            collisions[name] = owners
+            logger.warning(
+                "[navig] command '%s' is declared by several plugins (%s); %s owns it",
+                name, ", ".join(owners), owners[0],
+            )
+        out[name] = candidates[0]
+    shadowed = {
+        name: _ep_owner(ep) for name, ep in out.items()
+        if name in _EXTERNAL_CMD_MAP or name in _CORE_FLAT_COMMANDS
+    }
+    for name, owner in shadowed.items():
+        # Documented (docs/plugin-spec.md: built-ins win the registration race), so not a
+        # warning on every CLI call — `navig doctor` reports it.
+        logger.debug("[navig] plugin %s declares core command '%s'; core keeps it", owner, name)
+    _COMMAND_OWNERSHIP.update({"collisions": collisions, "shadowed": shadowed, "error": None})
+    return out
+
+
+def command_ownership_report() -> dict[str, Any]:
+    """Who owns each plugin command: ``{commands, collisions, shadowed, error}``.
+
+    Runs discovery if this process has not yet (cached either way).
+    """
+    cmds = _entry_point_commands()
+    return {
+        "commands": len(cmds),
+        "collisions": dict(_COMMAND_OWNERSHIP["collisions"]),
+        "shadowed": dict(_COMMAND_OWNERSHIP["shadowed"]),
+        "error": _COMMAND_OWNERSHIP["error"],
+    }
 
 
 def _disabled_command_map() -> dict[str, str]:
@@ -637,7 +835,8 @@ def _try_register_ep(
     """
     if cmd_name in already:
         return
-    ep = _entry_point_commands().get(cmd_name)
+    registered = _entry_point_commands()
+    ep = registered.get(cmd_name)
     if ep is None:
         return
     try:
@@ -645,7 +844,7 @@ def _try_register_ep(
         target_app.add_typer(
             sub,
             name=cmd_name,
-            hidden=(cmd_name in _HIDDEN_COMMANDS),
+            hidden=_ep_hidden(cmd_name, registered),
         )
         already.add(cmd_name)
     except Exception as exc:

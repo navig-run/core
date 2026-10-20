@@ -139,3 +139,38 @@ def test_the_static_set_has_no_stale_mcp_entries() -> None:
         f"dangerous by their MCP bundle — reconcile the two:\n"
         + "\n".join(f"  {s} (now {levels[s]!r})" for s in stale)
     )
+
+
+def test_the_remote_execution_tools_are_gated_on_both_registries() -> None:
+    """Gate 0E: the remote executor used to be a zero-approval SSH bypass.
+
+    `remote_execute` / `remote_multi_host` were in neither `DESTRUCTIVE_TOOLS` nor
+    self-declared `safety = "dangerous"`, so `needs_approval` said False on the agent
+    path while the executor's `--yes` skipped the CLI confirm on the subprocess path —
+    both layers open at once. All three must hold: the static set (what the agent loop
+    reads), the class declaration (what registration pushes into the gate), and the
+    predicate itself.
+    """
+    from navig.agent.tools.remote_tools import RemoteExecuteTool, RemoteMultiHostTool
+
+    for tool_name, tool_cls in (
+        ("remote_execute", RemoteExecuteTool),
+        ("remote_multi_host", RemoteMultiHostTool),
+    ):
+        assert tool_name in DESTRUCTIVE_TOOLS, (
+            f"{tool_name} must be in DESTRUCTIVE_TOOLS — the agent gate would let an "
+            "ungated session run arbitrary SSH on every call"
+        )
+        assert getattr(tool_cls, "safety", None) == "dangerous", (
+            f"{tool_name} must declare safety = 'dangerous' so registration pushes it "
+            "into the gate even if the static set is ever refactored away"
+        )
+        assert is_destructive_tool(tool_name) is True, tool_name
+        assert needs_approval(tool_name) is True, tool_name
+
+    # The reverse drift: the read-only and context-switch tools must NOT start
+    # prompting — gating a read trains the operator to click through real prompts.
+    for tool_name in ("remote_file_read", "remote_host_switch"):
+        assert tool_name not in DESTRUCTIVE_TOOLS, tool_name
+        assert is_destructive_tool(tool_name) is False, tool_name
+        assert needs_approval(tool_name) is False, tool_name

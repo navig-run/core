@@ -13,6 +13,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, time
 from enum import Enum
@@ -28,6 +29,40 @@ class NotificationPriority(Enum):
     NORMAL = 2  # Send within reasonable time
     HIGH = 3  # Send soon
     CRITICAL = 4  # Send immediately
+
+
+def routine_emoji(hour: int) -> str:
+    """The header emoji for a routine notification, by the hour it was made.
+
+    Routine covers greetings, check-ins and nudges, which fire at any hour — and
+    it was always ☀️, so an evening greeting arrived under a sun ("🟡 ☀️ NAVIG —
+    Приветствие" at 19:33). Day is 06:00–17:59; anything else is evening/night.
+    """
+    return "☀️" if 6 <= hour < 18 else "🌙"
+
+
+#: Types that are a problem to act on: never recorded for the overnight sweep. The
+#: notifier's own DNS/system check is "heartbeat", and it was being swept — a
+#: health alert deleted before the operator had read it.
+_NEVER_ROUTINE = frozenset({"alert", "heartbeat"})
+
+#: Engagement action → the tidy kind its message is recorded as, so the operator can
+#: keep (say) greetings while tips are swept.
+_ENGAGEMENT_TIDY_KINDS = {
+    "greeting": "greeting", "checkin": "greeting", "celebration": "greeting",
+    "capability_promo": "tip", "contextual_tip": "tip", "idle_nudge": "tip",
+    "feedback_ask": "tip", "evening_wrapup": "briefing",
+}
+
+
+def _tidy_kind(n: "Notification") -> str:
+    """The tidy kind for a notifier message (see ``navig.telegram.chat_tidy.KINDS``)."""
+    kind = (n.metadata or {}).get("tidy_kind")
+    if isinstance(kind, str) and kind:
+        return kind
+    if n.type == "briefing" or n.title == "Morning Briefing":
+        return "briefing"
+    return "reminder" if n.type == "reminder" else "notice"
 
 
 @dataclass
@@ -87,6 +122,8 @@ class Notification:
         }
 
         emoji = emoji_map.get(self.type, "📢")
+        if self.type == "routine":
+            emoji = routine_emoji(self.created_at.hour)
         prefix = priority_prefix.get(self.priority, "")
 
         header = (
@@ -147,8 +184,12 @@ class ChannelNotifier(ABC):
         title: str,
         message: str,
         priority: NotificationPriority = NotificationPriority.HIGH,
+        keyboard: list[list[dict]] | None = None,
     ) -> bool:
-        """Convenience: send an alert-type notification. Returns like send()."""
+        """Convenience: send an alert-type notification. Returns like send().
+
+        ``keyboard`` is inline-button rows; a channel without buttons ignores it.
+        """
 
 
 class TelegramNotifier(ChannelNotifier):
@@ -354,6 +395,12 @@ class TelegramNotifier(ChannelNotifier):
                             )
                         continue
 
+                    # The briefing cards answer to their own switches and schedule
+                    # (`navig.telegram.briefing_cards`): the `briefings` extension
+                    # promised to stop them and this loop never asked it.
+                    if not self._briefing_due_today(task, now):
+                        continue
+
                     # Time-based tasks
                     if now.weekday() not in task.days:
                         continue
@@ -384,6 +431,24 @@ class TelegramNotifier(ChannelNotifier):
             except Exception as e:
                 logger.error("Scheduler error: %s", e)
                 await asyncio.sleep(60)
+
+    def _briefing_due_today(self, task: ScheduledTask, now: datetime) -> bool:
+        """Refresh a briefing task from config; False when it must not run.
+
+        Re-read every tick (cheap: an in-memory config dict) so a time, day or
+        on/off change applies without a daemon restart. Other tasks pass through."""
+        from navig.telegram import briefing_cards
+
+        kind = next((k for k, n in briefing_cards.TASK_NAMES.items() if n == task.name), None)
+        if kind is None:
+            return True
+        try:
+            task.time = briefing_cards.card_time(kind)
+            task.days = list(briefing_cards.card_days())
+            return briefing_cards.card_enabled(kind)
+        except Exception:  # noqa: BLE001 — a config hiccup keeps the last schedule
+            logger.debug("briefing schedule refresh failed for %s", task.name, exc_info=True)
+            return True
 
     async def _run_task(self, task: ScheduledTask):
         """Run a scheduled task.
@@ -508,11 +573,21 @@ class TelegramNotifier(ChannelNotifier):
                 logger.debug("Suppressed notification (quiet hours/DND): %s", notification.title)
                 return True  # intentionally not sent — not a delivery failure
             message = notification.to_telegram_message()
-            sent = await self.channel.send_message(
-                self.chat_id,
-                message,
-                keyboard=notification.keyboard or None,
+            from navig.telegram import chat_tidy
+
+            # Greetings, briefings, reminders are the day's routine — tidied away
+            # tomorrow. An alert is not: it stays until the operator deals with it.
+            routine = (
+                chat_tidy.routine(_tidy_kind(notification))
+                if notification.type not in _NEVER_ROUTINE
+                else nullcontext()
             )
+            with routine:
+                sent = await self.channel.send_message(
+                    self.chat_id,
+                    message,
+                    keyboard=notification.keyboard or None,
+                )
             # send_message returns None on a REJECTED send WITHOUT raising (rate-limit,
             # API error, timeout) — the `except` below never sees it. A proactive alert
             # that silently fails to deliver is exactly the "healed at 3am, told nobody"
@@ -548,7 +623,16 @@ class TelegramNotifier(ChannelNotifier):
 
         message = "\n".join(lines)
         try:
-            sent = await self.channel.send_message(self.chat_id, message)
+            from navig.telegram import chat_tidy
+
+            # A batch of day-bound items is routine; one carrying an alert is not.
+            routine = (
+                chat_tidy.routine("notice")
+                if all(n.type not in _NEVER_ROUTINE for n in notifications)
+                else nullcontext()
+            )
+            with routine:
+                sent = await self.channel.send_message(self.chat_id, message)
             # None = Telegram rejected the send without raising (see _send_notification).
             if sent is None:
                 logger.warning(
@@ -599,6 +683,7 @@ class TelegramNotifier(ChannelNotifier):
         title: str,
         message: str,
         priority: NotificationPriority = NotificationPriority.HIGH,
+        keyboard: list[list[dict]] | None = None,
     ) -> bool:
         """Send an alert notification. Returns like send()."""
         return await self.send(
@@ -607,6 +692,7 @@ class TelegramNotifier(ChannelNotifier):
                 title=title,
                 message=message,
                 priority=priority,
+                keyboard=keyboard,
             )
         )
 
@@ -677,10 +763,9 @@ class TelegramNotifier(ChannelNotifier):
     # ========================================================================
 
     async def _morning_briefing(self) -> Notification | None:
-        """Generate morning briefing, surfacing last night's anchor if set."""
-        now = datetime.now()
+        """Morning card, surfacing last night's anchor if one was set."""
+        from navig.telegram import briefing_cards
 
-        # Pull yesterday's priority anchor logged via eve:plan_tomorrow
         anchor: str = ""
         try:
             from navig.agent.proactive.eve_log import get_yesterday
@@ -688,86 +773,20 @@ class TelegramNotifier(ChannelNotifier):
         except Exception:
             pass
 
-        lines = [
-            f"☀️ <b>Good morning</b>  ·  <i>{now.strftime('%A, %B %d')}</i>",
-            "",
-        ]
-
-        if anchor:
-            from navig.gateway.channels.telegram_html import html_escape
-
-            lines += [
-                "📌 <b>Your anchor for today:</b>",
-                f"<i>{html_escape(anchor)}</i>",  # user eve_log value → escape for HTML
-                "",
-            ]
-
-        lines += [
-            "<b>First moves:</b>",
-            "• Check your task list",
-            "• Review overnight alerts",
-            "• Lock in your top 3",
-            "",
-            "<i>Ship something worthy. 🚀</i>",
-        ]
-
-        keyboard: list[list[dict]] | None = None
-        if anchor:
-            keyboard = [
-                [
-                    {"text": "✅ Still my anchor", "callback_data": "morn:anchor_ok"},
-                    {"text": "🔄 Set a new one", "callback_data": "eve:plan_tomorrow"},
-                ]
-            ]
-
+        text, keyboard = briefing_cards.build_morning(datetime.now(), anchor)
         return Notification(
             type="routine",
             title="Morning Briefing",
-            message="\n".join(lines),
+            message=text,
             priority=NotificationPriority.NORMAL,
             keyboard=keyboard,
             raw_message=True,
         )
 
     async def _evening_summary(self) -> Notification | None:
-        """Evening summary — single-header, inline action buttons, no duplicate text."""
-        import random
+        """Evening card — reflects what was already logged today."""
+        from navig.telegram import briefing_cards
 
-        now = datetime.now()
-        hour = now.hour
-        weekday = now.weekday()  # 0 = Monday, 6 = Sunday
-        day_name = now.strftime("%A")
-
-        shift_label = (
-            "Evening Shift"
-            if hour < 19
-            else "Graveyard Watch"
-            if hour < 22
-            else "Deep Cycle"
-        )
-
-        day_context: dict[int, str] = {
-            0: "Week 1 of 5 complete. Momentum counts.",
-            1: "Tuesday through. Keep the streak.",
-            2: "Midweek. Servers don't sleep — you can.",
-            3: "Thursday hold. One more push.",
-            4: "Friday wind-down. Let the daemons run.",
-            5: "Saturday ops. Respect the craft.",
-            6: "Sunday. Systems quiet. Mind should be too.",
-        }
-        context_line = day_context.get(weekday, "Another day logged in the graveyard.")
-
-        closings = [
-            "Stack's green. Logs can wait until morning. 📋",
-            "No admin visible. Systems nominal. 🌑",
-            "Daemons running. You're allowed to rest. 🫀",
-            "The watch is handed off. Go dark. 🔦",
-            "Servers alive. Admin invisible. Mission holding. 🕹️",
-            "The graveyard is quiet. Keep it that way. 🪦",
-        ]
-        closing = random.choice(closings)
-
-        # Pull already-logged items so the briefing reflects reality.
         already_shipped: str = ""
         already_priority: str = ""
         try:
@@ -778,50 +797,12 @@ class TelegramNotifier(ChannelNotifier):
         except Exception:
             pass
 
-        from navig.gateway.channels.telegram_html import html_escape
-
-        checklist_lines = ["<b>Close out the day:</b>"]
-        if already_shipped:
-            # user eve_log values → escape for HTML (this message is sent HTML-parsed)
-            checklist_lines.append(f"✅ <i>Shipped: {html_escape(already_shipped)}</i>")
-        else:
-            checklist_lines.append("• Review what shipped")
-        if already_priority:
-            checklist_lines.append(f"📌 <i>Anchor: {html_escape(already_priority)}</i>")
-        else:
-            checklist_lines.append("• Lock in tomorrow's top priority")
-        checklist_lines += [
-            "• Confirm backups ran",
-            "• Close what can be closed",
-        ]
-
-        message = "\n".join([
-            f"🌙 <b>{day_name} Evening</b>  ·  <i>{shift_label}</i>",
-            "",
-            f"<i>{context_line}</i>",
-            "",
-            *checklist_lines,
-            "",
-            f"<i>{closing}</i>",
-        ])
-
-        # Keyboard: only show log/plan buttons when not yet captured
-        row1 = []
-        if not already_shipped:
-            row1.append({"text": "✅ Log what shipped", "callback_data": "eve:log_shipped"})
-        if not already_priority:
-            row1.append({"text": "🎯 Set tomorrow", "callback_data": "eve:plan_tomorrow"})
-
-        row2 = [
-            {"text": "💾 Backup check", "callback_data": "eve:backup_check"},
-            {"text": "🌑 Go dark", "callback_data": "eve:dnd_on"},
-        ]
-
-        keyboard = [r for r in [row1, row2] if r]
+        title, message, keyboard = briefing_cards.build_evening(
+            datetime.now(), shipped=already_shipped, priority=already_priority)
 
         return Notification(
             type="briefing",
-            title=f"{day_name} Evening",
+            title=title,
             message=message,
             priority=NotificationPriority.LOW,
             keyboard=keyboard,
@@ -937,7 +918,8 @@ class TelegramNotifier(ChannelNotifier):
                 title=title,
                 message=result.message,
                 priority=priority,
-                metadata=result.metadata,
+                metadata={**(result.metadata or {}),
+                          "tidy_kind": _ENGAGEMENT_TIDY_KINDS.get(action, "notice")},
                 keyboard=keyboard,
             )
         except Exception as e:

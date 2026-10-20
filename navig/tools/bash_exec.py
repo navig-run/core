@@ -33,6 +33,47 @@ _DEFAULT_TIMEOUT = 30.0
 _MAX_OUTPUT_CHARS = 8_000
 
 
+def split_command(command: str) -> list[str]:
+    """Split *command* into argv the way the operator meant it.
+
+    On Windows ``shlex.split(posix=False)`` keeps backslashes (paths survive) but
+    ALSO keeps the quote characters, so ``python -c "print(42)"`` passed the
+    program the literal ``"print(42)"`` — a string expression that prints nothing —
+    and ``curl -H "Accept: x"`` sent a header with quotes in it. Strip one pair of
+    matching outer quotes from each token.
+    """
+    if os.name != "nt":
+        return shlex.split(command, posix=True)
+    argv = shlex.split(command, posix=False)
+    return [
+        t[1:-1] if len(t) >= 2 and t[0] == t[-1] and t[0] in ('"', "'") else t
+        for t in argv
+    ]
+
+
+def empty_output_note(returncode: int) -> str:
+    """What a command that printed NOTHING reports, instead of an empty string.
+
+    An empty result reads to a model like "no answer came back", and it reported a
+    reachable service as down: ``curl -s https://rdap.org/domain/schema.org`` exits 0
+    with an empty body because rdap.org answers with a redirect (2026-10-16). Saying
+    explicitly that the output was empty — and what that does NOT prove — lets the
+    model retry properly instead of concluding the network is broken.
+    """
+    if returncode == 0:
+        return (
+            "[empty output: the command exited 0 and printed nothing to stdout or "
+            "stderr. This is not evidence of a network or service failure. A silent "
+            "`curl -s` usually means a redirect it did not follow (add -L) — for a web "
+            "page prefer web_fetch, for a domain's expiry/registrar use domain_lookup.]"
+        )
+    return (
+        f"[empty output: the command exited {returncode} and printed nothing. The "
+        "failure has no message — check that the program exists and takes these "
+        "arguments before concluding anything about the network.]"
+    )
+
+
 class ApprovalRequiredError(RuntimeError):
     """Raised when a command is marked ``requires_approval=True`` and approval
     has not been granted by the environment."""
@@ -146,7 +187,7 @@ class BashExecTool(BaseTool):
 
         # --- Split command safely ---
         try:
-            argv = shlex.split(command, posix=(os.name != "nt"))
+            argv = split_command(command)
         except ValueError as exc:
             return ToolResult(
                 name=self.name,
@@ -215,6 +256,9 @@ class BashExecTool(BaseTool):
             success = returncode == 0
 
             await _status(f"exit_code={returncode}")
+
+            if not combined:
+                combined = empty_output_note(returncode)
 
             return ToolResult(
                 name=self.name,

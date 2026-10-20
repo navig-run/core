@@ -24,6 +24,7 @@ import pytest
 from navig.cli.registration import (
     _ALIAS_COMMANDS,
     _HIDDEN_COMMANDS,
+    _RETIRED_COMMANDS,
     _UNLISTED_COMMANDS,
 )
 from navig.registry.manifest import build_public_manifest
@@ -72,14 +73,19 @@ def test_canonical_command_behind_an_alias_is_still_published(public_groups: dic
 
 
 def test_hidden_set_is_the_union_so_help_output_is_unchanged() -> None:
-    """`--help` hides exactly what it hid before: aliases AND unlisted commands."""
-    assert _HIDDEN_COMMANDS == _ALIAS_COMMANDS | _UNLISTED_COMMANDS
+    """`--help` hides aliases, superseded groups AND unlisted commands — nothing else."""
+    assert _HIDDEN_COMMANDS == _ALIAS_COMMANDS | _RETIRED_COMMANDS | _UNLISTED_COMMANDS
 
 
 def test_the_two_sets_are_disjoint() -> None:
-    """A name is either a duplicate or a real command — never both."""
-    overlap = _ALIAS_COMMANDS & _UNLISTED_COMMANDS
-    assert not overlap, f"classified as both alias and real: {sorted(overlap)}"
+    """A name is a duplicate, a superseded group, or a real command — never two of them."""
+    for a, b in (
+        (_ALIAS_COMMANDS, _UNLISTED_COMMANDS),
+        (_RETIRED_COMMANDS, _UNLISTED_COMMANDS),
+        (_ALIAS_COMMANDS, _RETIRED_COMMANDS),
+    ):
+        overlap = a & b
+        assert not overlap, f"classified twice: {sorted(overlap)}"
 
 
 def test_every_unlisted_name_is_actually_registered() -> None:

@@ -42,8 +42,8 @@ def register_assistant_hestia_commands(app: typer.Typer) -> None:
 
     @assistant_app.command("analyze")
     def assistant_analyze(ctx: typer.Context):
-        """[DEPRECATED: Use 'navig ai diagnose']"""
-        deprecation_warning("navig assistant analyze", "navig ai diagnose")
+        """[DEPRECATED: Use 'navig ask']"""
+        deprecation_warning("navig assistant analyze", "navig ask 'diagnose my server'")
         from navig.commands.assistant import analyze_cmd
 
         analyze_cmd(ctx.obj)

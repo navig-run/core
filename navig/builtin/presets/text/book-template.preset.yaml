@@ -1,0 +1,27 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: text/context/book-template
+name: Book — template
+tool: text
+layer: context
+category: Project context
+tags:
+- book
+- template
+description: 'Duplicate this to set up a book: voice, world rules, characters and lore files.'
+variables:
+- key: book_title
+  label: Book title
+  required: false
+  default: the book
+instructions: 'You are helping write {{book_title}}.
+
+  World rules: (replace with the constraints the story must never break)
+
+  Characters: (replace with short character descriptions)
+
+  Vocabulary: (replace with in-world terms and how to use them)
+
+  Continuity: never contradict the approved lore below.'
+references: []

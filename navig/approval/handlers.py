@@ -93,12 +93,17 @@ class TelegramApprovalHandler:
             )
 
             keyboard = self._approval_keyboard(request.id)
-            await self.bot.send_message(
-                chat_id=int(chat_id),
-                text=message,
-                parse_mode="HTML",
-                keyboard=keyboard,
-            )
+            # Tagged `system`: approval cards are day-bound noise once expired or
+            # answered — swept the next morning when telegram.system_cleanup is on.
+            from navig.telegram import chat_tidy
+
+            with chat_tidy.routine("system"):
+                await self.bot.send_message(
+                    chat_id=int(chat_id),
+                    text=message,
+                    parse_mode="HTML",
+                    keyboard=keyboard,
+                )
         except Exception as e:  # noqa: BLE001 - a prompt must never break the request
             logger.error("Failed to send Telegram approval request: %s", e)
 

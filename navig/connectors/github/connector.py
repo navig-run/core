@@ -38,6 +38,7 @@ class GitHubConnector(BaseConnector):
         oauth_scopes=["repo", "read:org", "read:user", "user:email"],
         oauth_provider="github",
         requires_oauth=True,
+        oauth_app=("github", "GITHUB", "GitHub OAuth app"),
         can_search=True,
         can_fetch=True,
         can_act=True,

@@ -8,7 +8,7 @@ pytestmark = pytest.mark.unit
 
 
 class _DummyApp:
-    def __call__(self):
+    def __call__(self, *args, **kwargs):  # Typer.__call__ forwards to click main()
         raise SystemExit(2)
 
 

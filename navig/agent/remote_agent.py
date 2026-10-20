@@ -202,6 +202,25 @@ class RemoteAgentExecutor:
     ) -> RemoteResult:
         """Execute a single command on a remote host.
 
+        **Authorization contract — the CLI confirm is deliberately skipped.**
+        Every command built here (see :func:`_build_navig_command`) carries ``--yes``,
+        so the ``navig run`` subprocess never prompts: a subprocess confirm is a
+        redundant layer that cannot reach an operator anyway. The single
+        authorization decision is therefore made BEFORE this method is called, and
+        **every caller must either be gated by the ApprovalGate beforehand or be an
+        interactive CLI that runs its own confirmation.** Current production callers:
+
+        * :class:`navig.agent.tools.remote_tools.RemoteExecuteTool` (``remote_execute``)
+          — agent-loop tool; gated (``DESTRUCTIVE_TOOLS`` + ``safety = "dangerous"``),
+          so ``gate_agent_tool_call`` asks before dispatch;
+        * :class:`navig.agent.tools.remote_tools.RemoteFileReadTool`
+          (``remote_file_read``) — read-only ``navig file show``; not gated, by design;
+        * :meth:`execute_parallel` → ``remote_multi_host`` — same gate as
+          ``remote_execute`` (it fans the same command out to every host);
+        * :meth:`execute_task` — no production caller today (tests only).
+
+        A new caller of this method without one of those two properties is a bypass.
+
         Args:
             command: Shell command to execute.
             host: Target host (uses active host if None).

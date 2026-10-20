@@ -107,9 +107,9 @@ def test_check_release_is_silent_outside_a_navig_checkout(tmp_path: Path, monkey
     other = tmp_path / "other"
     other.mkdir()
     (other / "pyproject.toml").write_text('[project]\nname = "something-else"\nversion = "1.0.0"\n', encoding="utf-8")
-    monkeypatch.setattr(doctor, "_invocation_repo_root", lambda: other)
+    monkeypatch.setattr(doctor, "_invocation_checkout_root", lambda: other)
     assert doctor.check_release() == []
-    monkeypatch.setattr(doctor, "_invocation_repo_root", lambda: None)
+    monkeypatch.setattr(doctor, "_invocation_checkout_root", lambda: None)
     assert doctor.check_release() == []
 
 
@@ -132,7 +132,7 @@ def test_check_release_reads_the_tree_the_tags_and_the_pending_work(tmp_path: Pa
     _git("tag", "-a", "v3.9.0", "-m", "old", cwd=root)
     _git("tag", "-a", "v3.25.0", "-m", "x", cwd=root)
     _git("tag", "not-a-version", cwd=root)
-    monkeypatch.setattr(doctor, "_invocation_repo_root", lambda: root)
+    monkeypatch.setattr(doctor, "_invocation_checkout_root", lambda: root)
     monkeypatch.setattr(doctor, "_pypi_latest", lambda *a, **k: ("3.25.0", None))
 
     rows = _by_label(doctor.check_release())
@@ -220,7 +220,7 @@ def test_check_release_appends_the_hard_deps_row(tmp_path: Path, monkeypatch) ->
     (root / "core").mkdir(parents=True)
     (root / "core" / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
     (root / "core" / "latest.json").write_text('{"version": "3.25.0"}\n', encoding="utf-8")
-    monkeypatch.setattr(doctor, "_invocation_repo_root", lambda: root)
+    monkeypatch.setattr(doctor, "_invocation_checkout_root", lambda: root)
     monkeypatch.setattr(doctor, "_newest_local_tag", lambda _r: "3.25.0")
     published = {"navig": "3.25.0", "navig-vault": "0.6.2"}
     monkeypatch.setattr(
@@ -229,3 +229,34 @@ def test_check_release_appends_the_hard_deps_row(tmp_path: Path, monkeypatch) ->
     )
     rows = _by_label(doctor.check_release())
     assert "navig-contacts not on PyPI" in rows["Release · hard deps"].detail
+
+
+def test_release_rows_describe_the_worktree_you_stand_in_not_the_main_tree(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """`_invocation_repo_root` resolves a linked worktree to the MAIN tree (by design, for
+    the repo-guard rows). Measured 2026-09-29: run from a worktree on current main, the
+    release rows described the main checkout 8 commits behind. The release subject is the
+    tree's own pyproject, so it must follow the checkout you are in."""
+    main = tmp_path / "main"
+    (main / "core").mkdir(parents=True)
+    (main / "core" / "pyproject.toml").write_text(
+        '[project]\nname = "navig"\nversion = "3.25.0"\n', encoding="utf-8"
+    )
+    _git("init", "-q", "-b", "main", cwd=main)
+    _git("config", "user.email", "t@navig.local", cwd=main)
+    _git("config", "user.name", "navig-test", cwd=main)
+    _git("add", "-A", cwd=main)
+    _git("commit", "-qm", "base", cwd=main)
+    wt = main / ".dev" / "worktrees" / "next"
+    wt.parent.mkdir(parents=True)
+    _git("worktree", "add", "-q", str(wt), "-b", "feat/next", cwd=main)
+    (wt / "core" / "pyproject.toml").write_text(
+        '[project]\nname = "navig"\nversion = "3.26.0"\n', encoding="utf-8"
+    )
+
+    monkeypatch.setenv("NAVIG_INVOCATION_CWD", str(wt / "core"))
+    monkeypatch.setattr(doctor, "_pypi_latest", lambda *a, **k: ("3.25.0", None))
+    assert doctor._invocation_checkout_root().resolve() == wt.resolve()
+    rows = _by_label(doctor.check_release())
+    assert "tree is 3.26.0" in rows["Release · PyPI"].detail or "3.26.0" in rows["Release · tree"].detail

@@ -73,7 +73,7 @@ _DEFAULT_PHASE_MD = """# Current Phase
 
 # ── Canonical space skeleton (init / new / create) ───────────────────────────
 # ONE structure, produced by `navig space init` and mirrored by the
-# navig-community example. Plans live in .navig/plans (root-linked to ./plans);
+# the registry's example spaces mirror this shape. Plans live in .navig/plans (root-linked to ./plans);
 # inbox in .navig/inbox (root-linked to ./.inbox). The .dev/.local/docs hygiene
 # zones follow the repo-cleanup convention. .dev and .local are gitignored; .navig/
 # is COMMITTABLE except its private state (inbox/state/vault/memory/refs/data/logs
@@ -246,7 +246,13 @@ def _task_list_guidance() -> str:
         "- `task_done` — tick one off once it is genuinely finished.\n\n"
         "Anything you add is marked as a SUGGESTION for them to confirm or dismiss — adding\n"
         "is not deciding. Do NOT use `todo_create`/`todo_update` for this: those are your own\n"
-        "scratch checklist for the current conversation and vanish when it ends.\n"
+        "scratch checklist for the current conversation and vanish when it ends.\n\n"
+        "**A one-off reminder is a task with an exact time** — `task_add` with `due_at`\n"
+        "(`'2026-10-12 09:00'`), or `navig todo add \"<text>\" --at \"2026-10-12 09:00\"` from a\n"
+        "shell. It pings Telegram once, shows in `navig todo`, and stops when ticked off. NEVER a\n"
+        "cron job: cron has no year, so `0 11 9 10 *` fires every 9 October, and it shows in no\n"
+        "reminder list. Pass `due_at` rather than a date inside the text — the text is kept word\n"
+        "for word, so a date it mentions cannot be mistaken for the due date.\n"
         f"{_TASKS_MARKER_END}\n"
     )
 
@@ -795,7 +801,7 @@ def _diagnose_space(space_path: Path, name: str) -> dict:
     tools = []
     ff = shutil.which("ffmpeg")
     tools.append(chk(bool(ff), "ffmpeg (frames / audio)",
-                     "" if ff else "not installed — `navig media` video path is blocked", warn=not ff))
+                     "" if ff else "not installed — `navig generate` video path is blocked", warn=not ff))
     wh = shutil.which("whisper") or shutil.which("faster-whisper")
     tools.append(chk(bool(wh), "whisper (transcription)",
                      "" if wh else "not on PATH — may still work via API/python", warn=not wh))
@@ -1103,7 +1109,7 @@ def _space_list(
 def _space_install(
     spec: str = typer.Argument(
         ...,
-        help="github:navig-run/community/spaces/<id>  or  space:owner/repo[@ref]",
+        help="github:navig-run/registry/spaces/<id>  or  space:owner/repo[@ref]",
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite if already installed."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
@@ -1654,6 +1660,372 @@ def space_audit(
         raise typer.Exit(1)
 
 
+# ---------------------------------------------------------------------------
+# Connected Spaces — logical relations (link / unlink / parent / related)
+# ---------------------------------------------------------------------------
+
+
+def _relation_space_dir(ref: str, *, what: str) -> Path:
+    """Resolve a user-typed space reference to a real space folder, or fail loudly."""
+    p = _resolve_space_target(ref)
+    if p is None or not p.is_dir():
+        raise typer.BadParameter(f"no such space: {ref!r} (id, name or path)")
+    from navig.spaces.space_manifest import is_space_dir  # noqa: PLC0415
+
+    if not is_space_dir(p):
+        raise typer.BadParameter(f"{p} is not a space (needs .navig/ or a manifest) — {what}")
+    return p
+
+
+def _relation_id(ref: str) -> str | None:
+    """Map an id/name/path reference to its registered space id (None if unregistered)."""
+    from navig.spaces import registry as _registry  # noqa: PLC0415
+    from navig.spaces import relations as _relations  # noqa: PLC0415
+
+    if ref in _relations.registered_spaces():
+        return ref
+    p = _resolve_space_target(ref)
+    if p is None:
+        return None
+    entry = _registry.entry_for(p)
+    if entry and isinstance(entry.get("id"), str) and entry["id"]:
+        return entry["id"]
+    from navig.spaces.space_manifest import load_space_manifest  # noqa: PLC0415
+
+    mid = load_space_manifest(p).resolved_id
+    return mid if mid and mid in _relations.registered_spaces() else None
+
+
+def _relations_json(rel_dict: dict | None) -> str:
+    import json  # noqa: PLC0415
+
+    return json.dumps(rel_dict or {}, indent=2)
+
+
+def _print_link_edge(space_id: str, other_id: str) -> None:
+    ch.success(f"linked {space_id} → {other_id} (read; metadata only — nothing was copied)")
+    ch.info("View it: navig space related " + space_id)
+
+
+@space_app.command("link")
+def _space_link(
+    target: str = typer.Argument(..., help="Space that gains the link (id, name or path)."),
+    other: str = typer.Argument(..., help="Space to read from (id, name or path)."),
+    include: list[str] | None = typer.Option(
+        None, "--include", help="Glob of what to read from the target (repeatable)."
+    ),
+    exclude: list[str] | None = typer.Option(
+        None, "--exclude", help="Glob of what to deny from the target (repeatable)."
+    ),
+    profile: str | None = typer.Option(None, "--profile", help="Reading profile name for this edge."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable result."),
+) -> None:
+    """Authorize another Space's knowledge into this one (logical edge only).
+
+    Records a read link in this Space's ``.navig/space.json`` — no folder moves,
+    nothing copied. The reader (``navig space context``, the agent surfaces) applies
+    the ``--include`` / ``--exclude`` globs; ``vault``-class paths are always denied
+    regardless of globs. Refuses unknown targets, self-links and bad access.
+    """
+    from navig.spaces import relations as _relations  # noqa: PLC0415
+
+    src = _relation_space_dir(target, what="link source")
+    other_id = _relation_id(other)
+    if other_id is None:
+        raise typer.BadParameter(f"{other!r} is not a registered space")
+    try:
+        updated = _relations.link(
+            src,
+            other_id,
+            include=tuple(include or ()),
+            exclude=tuple(exclude or ()),
+            profile=profile,
+        )
+    except ValueError as exc:
+        ch.error(str(exc))
+        raise typer.Exit(1) from exc
+    from navig.spaces.space_manifest import load_space_manifest  # noqa: PLC0415
+
+    own_id = load_space_manifest(src).resolved_id or src.name
+    if as_json:
+        typer.echo(_relations_json({"ok": True, "space": own_id, "relations": updated.to_dict()}))
+    else:
+        _print_link_edge(own_id, other_id)
+
+
+@space_app.command("unlink")
+def _space_unlink(
+    target: str = typer.Argument(..., help="Space that loses the link (id, name or path)."),
+    other: str = typer.Argument(..., help="Space to detach (id, name or path, or a stale id)."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable result."),
+) -> None:
+    """Remove a read link recorded by ``space link`` (idempotent)."""
+    from navig.spaces import relations as _relations  # noqa: PLC0415
+
+    src = _relation_space_dir(target, what="unlink source")
+    # A stale edge (target since deleted/unregistered) must still come off: fall back
+    # to the raw reference as an id when it is not resolvable and looks like one.
+    other_id = _relation_id(other) or (other if ("/" not in other and "\\" not in other) else None)
+    if not other_id:
+        raise typer.BadParameter(f"{other!r} is not a registered space")
+    from navig.spaces.space_manifest import load_space_manifest  # noqa: PLC0415
+
+    own_id = load_space_manifest(src).resolved_id or src.name
+    before = len(_relations.load_relations(src).links)
+    updated = _relations.unlink(src, other_id)
+    removed = before - len(updated.links)
+    if as_json:
+        typer.echo(
+            _relations_json({"ok": True, "space": own_id, "removed": removed, "relations": updated.to_dict()})
+        )
+    else:
+        if removed:
+            ch.success(f"unlinked {own_id} → {other_id}")
+        else:
+            ch.info(f"no link from {own_id} to {other_id} — nothing to do")
+        ch.info("View it: navig space related " + own_id)
+
+
+@space_app.command("parent")
+def _space_parent(
+    target: str = typer.Argument(..., help="The space to re-parent (id, name or path)."),
+    parent_ref: str | None = typer.Argument(
+        None, help="The new parent space (id, name or path). Omit with --clear."
+    ),
+    clear: bool = typer.Option(False, "--clear", help="Remove the parent relation instead."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable result."),
+) -> None:
+    """Set (or --clear) this Space's logical parent — hierarchy without moving folders.
+
+    The parent must be a registered space; cycles (parent chains that would reach
+    this Space again) are refused with the chain named.
+    """
+    from navig.spaces import relations as _relations  # noqa: PLC0415
+
+    src = _relation_space_dir(target, what="parent target")
+    from navig.spaces.space_manifest import load_space_manifest  # noqa: PLC0415
+
+    own_id = load_space_manifest(src).resolved_id or src.name
+    if clear and parent_ref:
+        ch.error("give either <parent> or --clear, not both")
+        raise typer.Exit(2)
+    if not clear and not parent_ref:
+        ch.error("give a parent space, or --clear to remove the relation")
+        raise typer.Exit(2)
+    try:
+        if clear:
+            updated = _relations.set_parent(src, None)
+            new_parent = None
+        else:
+            new_parent = _relation_id(parent_ref)  # type: ignore[arg-type]
+            if new_parent is None:
+                raise typer.BadParameter(f"{parent_ref!r} is not a registered space")
+            updated = _relations.set_parent(src, new_parent)
+    except ValueError as exc:
+        ch.error(str(exc))
+        raise typer.Exit(1) from exc
+    if as_json:
+        typer.echo(_relations_json({"ok": True, "space": own_id, "relations": updated.to_dict()}))
+    else:
+        if new_parent:
+            ch.success(f"{own_id} now hangs under {new_parent}")
+            ch.info("View it: navig space related " + own_id)
+        else:
+            ch.success(f"{own_id} has no parent now")
+
+
+def _related_rows(src: Path, own_id: str) -> tuple[list[dict], dict]:
+    """The CLI view of the shared graph reader (``relations.related_graph``)."""
+    from navig.spaces import relations as _relations  # noqa: PLC0415
+
+    return _relations.related_graph(src, space_id=own_id)
+
+
+def _phase_title(space_dir: Path) -> str | None:
+    """First heading of CURRENT_PHASE.md — cheap, never raises past OSError."""
+    try:
+        text = (space_dir / ".navig" / "plans" / "CURRENT_PHASE.md").read_text(
+            encoding="utf-8", errors="replace"
+        )
+    except OSError:
+        return None
+    for line in text.splitlines()[:12]:
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            return stripped[2:].strip()[:80] or None
+    return None
+
+
+def _context_brief(space_dir: Path, own_id: str) -> str:
+    """The SessionStart index: header, one line per edge, one count line. ≤10 lines.
+
+    Pure render over the two shared readers (``related_graph`` + ``gather_linked``);
+    raises only if they do — the ``--brief`` caller catches and falls back, because
+    a session start must never fail on a brief.
+    """
+    from navig.spaces import linked_context as _lc  # noqa: PLC0415
+
+    _, payload = _related_rows(space_dir, own_id)
+    ctx = _lc.gather_linked(space_dir, space_id=own_id)
+    counts: dict[str, int] = {}
+    for item in ctx.items:
+        counts[item.space] = counts.get(item.space, 0) + 1
+
+    head = f"Active space: {own_id}"
+    phase = _phase_title(space_dir)
+    if phase:
+        head += f"  ·  {phase}"
+    lines = [head]
+
+    edges: list[dict] = []
+    if payload.get("parent"):
+        edges.append({**payload["parent"], "label": "parent"})
+    edges.extend({**link, "label": "link"} for link in payload.get("links") or [])
+    for edge in edges[:6]:
+        if edge.get("available"):
+            lines.append(f"  {edge['label']:<6} ● {edge['id']}  {counts.get(edge['id'], 0)} file(s)")
+        else:
+            lines.append(f"  {edge['label']:<6} ○ {edge['id']}  ({edge.get('reason') or 'unavailable'})")
+    if len(edges) > 6:
+        lines.append(f"  … +{len(edges) - 6} more edge(s) — navig space related {own_id}")
+    if payload.get("parent_cycle"):
+        lines.append(f"  ⚠ parent chain cycles — fix: navig space parent {own_id} --clear")
+
+    if edges:
+        lines.append(
+            f"  context: {len(ctx.items)} file(s) from {len(counts)} linked space(s)"
+        )
+    else:
+        lines.append(f"  context: no relations yet — navig space link {own_id} <space>")
+    return "\n".join(lines[:10])
+
+
+@space_app.command("related")
+def _space_related(
+    target: str | None = typer.Argument(None, help="Space to inspect (default: the active space)."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable report."),
+) -> None:
+    """Show this Space's parent, links, children and inbound links — one table.
+
+    Unavailable targets (deleted or never registered) are listed with their reason
+    instead of failing; a hand-written parent cycle is flagged, never followed.
+    """
+
+    ref = target or get_active_space()
+    src = _relation_space_dir(ref, what="related")
+    from navig.spaces.space_manifest import load_space_manifest  # noqa: PLC0415
+
+    own_id = load_space_manifest(src).resolved_id or src.name
+    rows, payload = _related_rows(src, own_id)
+    if as_json:
+        typer.echo(_relations_json(payload))
+        if payload["parent_cycle"]:
+            raise typer.Exit(1)
+        return
+    if not rows:
+        ch.info(f"{own_id} has no relations yet — add one: navig space link {own_id} <space>")
+        return
+    table = Table(box=None, show_header=True, padding=(0, 2))
+    table.add_column("Relation", no_wrap=True)
+    table.add_column("Space", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    table.add_column("")  # the one wrappable column
+    for row in rows:
+        status = f"[green]{row['mark']}[/green]" if row["mark"] == "●" else f"[dim]{row['mark']}[/dim]"
+        table.add_row(row["relation"], row["space"], status, row["detail"])
+    _console.print(table)
+    if payload["parent_cycle"]:
+        ch.warning("parent chain cycles back into this space — fix it: navig space parent <this> --clear")
+    if payload["unresolved"]:
+        ch.warning("unavailable targets: " + ", ".join(payload["unresolved"]))
+    ch.info("Next step: navig space context " + own_id)
+
+
+@space_app.command("context")
+def _space_context(
+    target: str | None = typer.Argument(None, help="Space to preview (default: the active space)."),
+    focus: str | None = typer.Option(
+        None, "--for", help="What you are about to ask — echoed in --json so runs are comparable."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable report."),
+    brief: bool = typer.Option(
+        False, "--brief", help="SessionStart index: ~8 lines, no table — and never fails."
+    ),
+) -> None:
+    """Show exactly what an agent may read from this Space's relations — with provenance.
+
+    The cross-Space half of context: parent first, then each linked Space's
+    authorized files (include/exclude globs, deny-list, budgets, dedupe — see
+    ``navig.spaces.linked_context``). The Space's own ``NAVIG.md`` and plan phase
+    are what every session already has and are not repeated here. ``--brief`` is
+    the SessionStart-hook shape: a few lines instead of the table, and any reader
+    failure degrades to the old one-liner rather than breaking the session.
+    """
+    from navig.spaces import linked_context as _lc  # noqa: PLC0415
+
+    if brief and as_json:
+        ch.error("--brief and --json are mutually exclusive")
+        raise typer.Exit(2)
+
+    ref = target or get_active_space()
+    src = _relation_space_dir(ref, what="context")
+    from navig.spaces.space_manifest import load_space_manifest  # noqa: PLC0415
+
+    own_id = load_space_manifest(src).resolved_id or src.name
+    if brief:
+        # SessionStart hook path: a session must start even if relations are
+        # broken — degrade to the one-liner the hook printed before this existed.
+        try:
+            typer.echo(_context_brief(src, own_id))
+        except Exception:  # noqa: BLE001 — hook survival beats diagnosis here
+            typer.echo(f"Active space: {own_id}")
+        return
+    ctx = _lc.gather_linked(src, space_id=own_id)
+
+    if as_json:
+        import json  # noqa: PLC0415
+
+        typer.echo(
+            json.dumps(
+                {
+                    "space": own_id,
+                    "focus": focus,
+                    "parent_cycle": ctx.parent_cycle,
+                    "unavailable": [{"id": i, "reason": r} for i, r in ctx.unavailable],
+                    "chars_total": ctx.chars_total,
+                    "items": [
+                        {**item.provenance, "source": item.source, "size": item.size} for item in ctx.items
+                    ],
+                },
+                indent=2,
+            )
+        )
+        if ctx.parent_cycle:
+            raise typer.Exit(1)
+        return
+
+    if not ctx.items and not ctx.unavailable:
+        ch.info(f"no linked context — authorize a Space: navig space link {own_id} <space>")
+        return
+    table = Table(box=None, show_header=True, padding=(0, 2))
+    table.add_column("Space", no_wrap=True)
+    table.add_column("File")
+    table.add_column("Bytes", no_wrap=True)
+    table.add_column("Via", no_wrap=True)
+    for item in ctx.items:
+        table.add_row(item.space, item.rel, str(item.size), item.source)
+    _console.print(table)
+    spaces_seen = len({i.space for i in ctx.items})
+    ch.info(f"{len(ctx.items)} files · {ctx.chars_total} chars · {spaces_seen} space(s) linked in")
+    if focus:
+        ch.info(f"focus: {focus}")
+    if ctx.unavailable:
+        ch.warning("unavailable: " + ", ".join(f"{i} ({r})" for i, r in ctx.unavailable))
+    if ctx.parent_cycle:
+        ch.warning("parent chain cycles back into this space — fix it: navig space parent <this> --clear")
+    ch.info("Edges: navig space related " + own_id)
+
+
 def _stdin_is_tty() -> bool:
     try:
         return sys.stdin.isatty() and sys.stdout.isatty()
@@ -1836,8 +2208,14 @@ def _agent_status(space_path: Path, name: str) -> list[tuple[str, bool]]:
 
 
 def _wire_agents(space_path: Path, name: str) -> list[str]:
-    """Additively create per-assistant instruction pointers — never overwrites an existing file."""
-    msgs: list[str] = []
+    """Additively create per-assistant instruction pointers — never overwrites an existing file.
+
+    Every pointer (AGENTS.md, GEMINI.md, Copilot, Cursor) says "read NAVIG.md", so the
+    target is made first: run on a space with no NAVIG.md, this used to write four
+    pointers to a file that did not exist and skip CLAUDE.md entirely. The context
+    migration is the same idempotent, additive step `--fix` runs.
+    """
+    msgs: list[str] = _migrate_context(space_path, name)
     for display, rel, content in _agent_integrations(name):
         dest = space_path / rel
         if dest.exists():
@@ -2243,7 +2621,10 @@ def space_forget(name: str = typer.Argument(..., help="Space name or path to for
     from navig.spaces import registry as space_registry  # noqa: PLC0415
 
     if space_registry.forget(name):
-        ch.success(f"Forgot space '{name}' (folder left intact).")
+        ch.success(
+            f"Forgot space '{name}' (folder left intact).",
+            details="Discovery will not re-add it. Bring it back with: navig space register <path>",
+        )
     else:
         ch.warning(f"'{name}' is not registered.")
 
@@ -2618,7 +2999,7 @@ def space_fold(
         ch.error(f"Could not write the fold marker: {exc}", details=str(marker))
         raise typer.Exit(1) from exc
 
-    released = space_registry.forget(str(target))
+    released = space_registry.forget(str(target), remember=False)
     detail = "released its registry entry" if released else "was not registered"
     ch.success(f"Folded '{target.name}' ({detail}).", details=str(target))
 

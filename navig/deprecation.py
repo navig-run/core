@@ -190,8 +190,8 @@ DEPRECATION_MAP = {
     "navig template info": "navig template show",
     # Plugin commands
     "navig plugin info": "navig plugin show",
-    "navig plugin install": "navig plugin add",
-    "navig plugin uninstall": "navig plugin remove",
+    "navig plugin install": "navig store install",
+    "navig plugin uninstall": "navig store remove",
     # Legacy pack systems → plugin format (removal after migrate-packs ships)
     "navig package": "navig plugin",
     "navig pack": "navig plugin",

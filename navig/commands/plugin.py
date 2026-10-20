@@ -19,7 +19,7 @@ from navig import console_helper as ch
 
 plugin_app = typer.Typer(
     name="plugin",
-    help="Manage NAVIG plugins — list, add, enable/disable, inspect, scaffold.",
+    help="NAVIG plugins — list, show, inspect, scaffold, marketplaces (install/enable: navig store).",
     invoke_without_command=True,
     no_args_is_help=False,
 )
@@ -146,7 +146,7 @@ def _plugin_list(
 
     if not plugins:
         ch.info("No plugins installed")
-        ch.dim("Add one: navig plugin add <path|zip|git-url|name>")
+        ch.dim("Add one: navig store install <path|zip|git-url|name>")
         ch.dim("Scaffold one: navig plugin new <name>")
         return
 
@@ -164,7 +164,11 @@ def _plugin_list(
     # `[tool.uv.sources]` declares. Run ONCE for the whole table (it touches the
     # filesystem); empty for anyone outside a development checkout, which is why an
     # end user never sees this state at all.
-    from navig.plugins.sources import audit_plugin_sources  # noqa: PLC0415
+    from navig.plugins.sources import (  # noqa: PLC0415
+        audit_plugin_sources,
+        editable_install_command,
+        with_local_dependencies,
+    )
 
     audit = audit_plugin_sources()
     shadowed = frozenset(audit.shadowed) if audit else frozenset()
@@ -213,14 +217,14 @@ def _plugin_list(
             f"  [yellow]⚠ {len(here)} plugin(s) run an installed copy, not your "
             f"source[/yellow] — the CLI runs stale code while tests read the repo."
         )
-        ch.dim("  fix → pip install -e " + " ".join(remedy))
+        ch.dim("  fix → " + editable_install_command(with_local_dependencies(remedy)))
         if elsewhere:
             ch.dim(
                 f"  {elsewhere} more declared plugin(s) are shadowed but not listed "
                 f"here — navig doctor"
             )
     ch.dim(
-        "\n  enable/disable → navig plugin enable|disable <id>"
+        "\n  enable/disable → navig store enable|disable plugin:<id>"
         "  ·  details → navig plugin show <id>"
     )
 
@@ -277,14 +281,18 @@ def _plugin_show(
     # bound the two, so a state added to `wire_state` would have reached the table and
     # never this view. `list` says `shadowed` while `show` says `wired` is exactly the
     # disagreement this state exists to prevent.
-    from navig.plugins.sources import audit_plugin_sources  # noqa: PLC0415
+    from navig.plugins.sources import (  # noqa: PLC0415
+        audit_plugin_sources,
+        editable_install_command,
+        with_local_dependencies,
+    )
 
     audit = audit_plugin_sources()
     state = _plugin_state(p, frozenset(audit.shadowed) if audit else frozenset())
 
     if state == "disabled":
         ch.warning("Status: disabled")
-        ch.dim(f"Enable with: navig plugin enable {p.id}")
+        ch.dim(f"Enable with: navig store enable plugin:{p.id}")
     elif state == "failed":
         # `error` is the legacy-format load error; a health FAILED carries its detail on
         # the health object instead, so fall through to the health lines below.
@@ -300,7 +308,7 @@ def _plugin_show(
         ch.warning("Status: shadowed — running an installed copy, not your source")
         remedy = dict(zip(audit.shadowed, audit.fix_paths)).get(p.id) if audit else None
         if remedy:
-            ch.dim(f"  fix → pip install -e {remedy}")
+            ch.dim("  fix → " + editable_install_command(with_local_dependencies([remedy])))
     else:
         ch.success("Status: wired")
     if p.missing_deps:
@@ -320,9 +328,20 @@ def _plugin_show(
 # ── enable / disable ──────────────────────────────────────────────────────────
 
 
-@plugin_app.command("enable")
+# The lifecycle verbs (enable/disable/add/remove) are superseded by `navig store`, the
+# one hub for everything connectable — it runs the SAME plugin-host operations
+# (navig.hub.apply_action). They keep working, hidden from --help, and name the store
+# command first. list/show/inspect/new/marketplace stay here: store has no equivalent.
+def _superseded(verb: str, **values: object) -> None:
+    from navig.cli.superseded import hint  # noqa: PLC0415 — lazy
+
+    hint(f"navig plugin {verb}", **values)
+
+
+@plugin_app.command("enable", hidden=True)  # superseded → navig store enable plugin:<id>
 def _plugin_enable(name: str = typer.Argument(..., help="Plugin id to enable")):
     """Enable a disabled plugin (all formats)."""
+    _superseded("enable", name=name)
     try:
         p = _host().enable(name)
     except KeyError as exc:
@@ -333,9 +352,10 @@ def _plugin_enable(name: str = typer.Argument(..., help="Plugin id to enable")):
         ch.dim("Restart NAVIG to load its commands")
 
 
-@plugin_app.command("disable")
+@plugin_app.command("disable", hidden=True)  # superseded → navig store disable plugin:<id>
 def _plugin_disable(name: str = typer.Argument(..., help="Plugin id to disable")):
     """Disable a plugin without uninstalling it."""
+    _superseded("disable", name=name)
     try:
         p = _host().disable(name)
     except KeyError as exc:
@@ -349,12 +369,13 @@ def _plugin_disable(name: str = typer.Argument(..., help="Plugin id to disable")
 # ── add / remove ──────────────────────────────────────────────────────────────
 
 
-@plugin_app.command("add")
+@plugin_app.command("add", hidden=True)  # superseded → navig store install <source>
 @plugin_app.command("install", hidden=True)  # deprecated → add
 def _plugin_add(
     source: str = typer.Argument(..., help="Local dir, .zip, Git URL, or marketplace name"),
 ):
     """Install a plugin (validated through the host before it lands)."""
+    _superseded("add", source=source)
     try:
         dest = _host().install(source)
     except ValueError as exc:
@@ -364,13 +385,14 @@ def _plugin_add(
     ch.dim("Skills/prompts/spaces are live now; legacy CLI commands need a restart.")
 
 
-@plugin_app.command("remove")
+@plugin_app.command("remove", hidden=True)  # superseded → navig store remove <id>
 @plugin_app.command("uninstall", hidden=True)  # deprecated → remove
 def _plugin_remove(
     name: str = typer.Argument(..., help="Plugin id to remove"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ):
     """Remove an installed plugin directory (pip plugins: use pip uninstall)."""
+    _superseded("remove", name=name)
     if not force and not typer.confirm(f"Remove plugin '{name}'?"):
         raise typer.Abort()
     try:
@@ -512,7 +534,7 @@ def _marketplace_add(
         ch.error("Could not add marketplace", str(exc)[:300])
         raise typer.Exit(1) from exc
     ch.success(f"Added marketplace '{mkt.name}' ({len(mkt.entries)} plugins)")
-    ch.dim("Install one with: navig plugin add <name>")
+    ch.dim("Install one with: navig store install <name>")
 
 
 @market_app.command("list")

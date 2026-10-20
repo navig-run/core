@@ -274,3 +274,64 @@ class TestConfirmOperation:
 
         assert result is True
         mock_confirm.assert_called_once()
+
+    @patch("navig.console_helper.confirm_action")
+    @patch("navig.config.get_config_manager")
+    def test_noninteractive_session_denies_without_prompting(
+        self, mock_get_cm, mock_confirm, monkeypatch, capsys
+    ):
+        """NAVIG_NONINTERACTIVE=1 (the deck console's child env) must fail CLOSED:
+        no prompt (nobody can answer it), no auto-approve, the deny signal (False)."""
+        mock_cm = MagicMock()
+        mock_cm.get_execution_mode.return_value = "interactive"
+        mock_cm.get_confirmation_level.return_value = "standard"
+        mock_get_cm.return_value = mock_cm
+        monkeypatch.setenv("NAVIG_NONINTERACTIVE", "1")
+
+        def _explode(*_a, **_k):
+            raise AssertionError("prompt must not fire in a non-interactive session")
+
+        mock_confirm.side_effect = _explode
+
+        result = ch.confirm_operation("DROP DATABASE production", "critical")
+
+        assert result is False
+        mock_confirm.assert_not_called()
+        out = capsys.readouterr().out
+        assert "non-interactive session" in out
+        assert "DROP DATABASE production" in out
+        assert "--yes" in out
+
+    @patch("navig.console_helper.confirm_action")
+    @patch("navig.config.get_config_manager")
+    def test_noninteractive_session_still_honors_yes_flag(self, mock_get_cm, mock_confirm, monkeypatch):
+        """--yes (auto_confirm) is the explicit upstream bypass: it still proceeds
+        under NAVIG_NONINTERACTIVE=1 without reaching the prompt path at all."""
+        mock_cm = MagicMock()
+        mock_cm.get_execution_mode.return_value = "interactive"
+        mock_cm.get_confirmation_level.return_value = "standard"
+        mock_get_cm.return_value = mock_cm
+        monkeypatch.setenv("NAVIG_NONINTERACTIVE", "1")
+
+        result = ch.confirm_operation("DROP DATABASE production", "critical", auto_confirm=True)
+
+        assert result is True
+        mock_confirm.assert_not_called()
+
+    @patch("navig.console_helper.confirm_action")
+    @patch("navig.config.get_config_manager")
+    def test_without_noninteractive_env_behavior_is_unchanged(
+        self, mock_get_cm, mock_confirm, monkeypatch
+    ):
+        """Env var unset → the interactive prompt path behaves exactly as before."""
+        mock_cm = MagicMock()
+        mock_cm.get_execution_mode.return_value = "interactive"
+        mock_cm.get_confirmation_level.return_value = "standard"
+        mock_get_cm.return_value = mock_cm
+        monkeypatch.delenv("NAVIG_NONINTERACTIVE", raising=False)
+        mock_confirm.return_value = True
+
+        result = ch.confirm_operation("Test operation", "standard")
+
+        assert result is True
+        mock_confirm.assert_called_once()

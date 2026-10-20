@@ -171,6 +171,7 @@ class PlanInterceptor:
             # Search / lookup
             "search",
             "web_fetch",
+            "domain_lookup",
             "grep_search",
             "semantic_search",
             "find_definition",

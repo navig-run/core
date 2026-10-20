@@ -72,9 +72,13 @@ class Translator:
             logger.debug("locale placeholder mismatch for %r", key)
             return text
 
-    def pool(self, key: str) -> list[str]:
-        """A localized pool of variants — boot lines, greetings, nudges."""
-        return self._backing().get_list(key, current_language())
+    def pool(self, key: str, *, lang: str | None = None) -> list[str]:
+        """A localized pool of variants — boot lines, greetings, nudges.
+
+        *lang* overrides the global language — for text that must match a reply
+        already written in another language (the follow-up buttons under it).
+        """
+        return self._backing().get_list(key, lang or current_language())
 
     def pick(self, key: str, *, fallback: list[str] | None = None) -> str:
         """One variant at random from *key*'s pool.

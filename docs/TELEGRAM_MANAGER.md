@@ -82,7 +82,7 @@ navig telegram dedupe  <chat> [--confirm]              # safe set only (exact/in
 # Business catcher + AI rights
 navig telegram business enable|disable|status
 navig telegram business rights [<tool> <owner|both|off>]
-navig telegram business alerts on|off                  # deleted-message → DM you
+navig telegram business alerts on|off                  # deletion alerts on (digest) / off
 ```
 
 ---
@@ -97,7 +97,7 @@ navig telegram business alerts on|off                  # deleted-message → DM 
    - 🌍 / 🌐 → translate · 📋 → summarize · 💡 → explain
    - (remap via config `telegram.business.emoji.<emoji> = <tool>`)
 5. When a message is **deleted**, you get ONE Telegram **DM** per deletion event
-   (`business alerts on`). Every line is **who · when · what**: `• you · 21 Sep 17:18 ·
+   (`business alerts on`, shorthand for `deletions mode digest`). Every line is **who · when · what**: `• you · 21 Sep 17:18 ·
    📷 photo — caption`, and a cached photo / voice / sticker / file is **re-sent to you by
    `file_id`**; if that file id no longer resolves, the DM says so rather than quietly
    delivering less than it announced. A message with no text and no file still names
@@ -151,7 +151,7 @@ navig telegram business alerts on|off                  # deleted-message → DM 
 | `telegram.business.deletions.window_sec` | digest batching window (default 900) |
 | `telegram.business.deletions.target` | log chat id, empty = your DM |
 | `telegram.business.deletions.mute_chats` | chat ids never announced |
-| `telegram.boot_greeting.enabled` / `.dedupe_sec` | greet on boot; one greeting per window across processes |
+| `telegram.boot_greeting.enabled` / `.dedupe_sec` | greet on boot; one greeting per window across processes (default 6 h, so a day of restarts stays quiet) |
 | `telegram.business.tools.<tool>.who` | `owner` \| `both` \| `off` |
 | `telegram.business.emoji.<emoji>` | remap a reaction emoji → tool |
 

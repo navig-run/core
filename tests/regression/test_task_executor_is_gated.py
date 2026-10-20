@@ -61,11 +61,24 @@ def dispatched(monkeypatch) -> list[str]:
 
 
 def _task(*actions: str) -> Task:
+    # The command must be MUTATING: since 2026-10-13 a read-only `bash_exec`
+    # (`ls`) auto-approves at the chat-path check before the backend is
+    # consulted (approval.auto_approve_read_only — tested in
+    # tests/approval/test_read_only_auto_approve.py), so these denial tests
+    # would never reach a refusal. What THIS file guards is that a refusal
+    # stops the dispatcher — which needs a command that still refuses.
     return Task(
         id="t1",
         goal="g",
         status=TaskStatus.EXECUTING,
-        plan=[ExecutionStep(action=a, description=a, params={"command": "ls"}) for a in actions],
+        plan=[
+            ExecutionStep(
+                action=a,
+                description=a,
+                params={"command": "navig mode set big_tasks --provider x"},
+            )
+            for a in actions
+        ],
     )
 
 

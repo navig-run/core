@@ -75,6 +75,18 @@ def _is_own_echo(channel, msg: dict) -> bool:
     return sbb.get("id") is not None and str(sbb.get("id")) == own
 
 
+def _is_bot_chat(channel, chat_id) -> bool:
+    """True when *chat_id* is the owner's DM with THIS bot.
+
+    A Business connection covers every private chat of the account — including the
+    one with NAVIG itself. That chat already reaches the bot as ordinary messages, so
+    seeing it again as a business conversation answered `/role` twice (the assistant's
+    reply AND a role card) and made the bot's own chat a place roles could run in.
+    """
+    own = _bot_id(channel)
+    return bool(own) and chat_id is not None and str(chat_id) == own
+
+
 def _extract_media(msg: dict) -> dict | None:
     """Photo/video/voice/… descriptor (with ``file_id``) for a business message,
     via the same extractor the regular catalog ingest uses; None for text-only."""
@@ -281,7 +293,8 @@ def _describe_deleted(
     return f"{head} — (no copy kept: sent before NAVIG stored media, or a message type it cannot re-send)"
 
 
-async def _resend_media(channel, chat_id, media: dict, caption: str) -> bool:
+async def _resend_media(channel, chat_id, media: dict, caption: str,
+                        sent: list[int] | None = None) -> bool:
     """Re-send a cached media by ``file_id`` to the owner's DM. A file_id stays
     valid for the bot after the original message is deleted, so the owner gets
     the actual photo/voice/… back, not a placeholder. Best-effort: False when
@@ -295,14 +308,19 @@ async def _resend_media(channel, chat_id, media: dict, caption: str) -> bool:
     data: dict = {"chat_id": chat_id, field: file_id}
     if takes_caption and caption:
         data["caption"] = caption[:_CAPTION_MAX]
+    from navig.telegram import chat_tidy  # noqa: PLC0415
+
     try:
-        res = await channel._api_call(method, data)
+        # Recorded like the summary it belongs to, so the two share one fate.
+        with chat_tidy.routine("deletion"):
+            res = await channel._api_call(method, data)
     except Exception as exc:  # noqa: BLE001
         logger.warning("deletion alert: could not re-send deleted %s to the owner: %s", kind, exc)
         return False
     if not res:
         logger.warning("deletion alert: Telegram rejected re-sending the deleted %s", kind)
         return False
+    deletions._collect(sent, res)
     return True
 
 
@@ -323,6 +341,66 @@ def forget_connection(connection_id: str) -> None:
     conns.pop(str(connection_id), None)
     cfg.set(CFG_CONNECTIONS, conns, scope="global")
     cfg.save(scope="global")
+
+
+# ── Sending INTO a business chat ──────────────────────────────────────────────
+
+
+class BusinessSender:
+    """A channel proxy that stamps every send with a business connection id.
+
+    Telegram only accepts a message into a business chat when it is sent ON
+    BEHALF OF the business connection (``business_connection_id``); without it
+    the send is treated as the bot DMing a user who never started it and is
+    rejected — "Forbidden: bot can't initiate conversation with a user" — which
+    is exactly how the TikTok enrichment card died silently in live logs
+    (gateway.log 2026-10-18/19: link → offer_card → Forbidden, three times,
+    the counterparty never saw a card).
+
+    The enrichment handlers (``tiktok_actions``) are chat-agnostic: they take
+    *a channel* and call ``send_*`` on it from ~60 sites. Handing them THIS
+    proxy instead of the raw channel carries the bcid through card, cover,
+    video, audio, rich briefing and every error message without touching any of
+    those call sites. Anything that is not a send (``allowed_users``,
+    ``_api_call``, helpers) delegates to the wrapped channel untouched.
+
+    An explicit ``business_connection_id`` passed by a caller always wins
+    (``setdefault``), so a caller that already knows the bcid never gets it
+    overridden.
+    """
+
+    __slots__ = ("_ch", "bcid")
+
+    def __init__(self, channel, bcid: str) -> None:
+        self._ch = channel
+        self.bcid = str(bcid)
+
+    def __getattr__(self, name: str):
+        return getattr(self._ch, name)
+
+    async def send_message(self, chat_id, text, *args, **kw):
+        kw.setdefault("business_connection_id", self.bcid)
+        return await self._ch.send_message(chat_id, text, *args, **kw)
+
+    async def send_photo(self, chat_id, photo_data, *args, **kw):
+        kw.setdefault("business_connection_id", self.bcid)
+        return await self._ch.send_photo(chat_id, photo_data, *args, **kw)
+
+    async def send_video(self, chat_id, video_data, *args, **kw):
+        kw.setdefault("business_connection_id", self.bcid)
+        return await self._ch.send_video(chat_id, video_data, *args, **kw)
+
+    async def send_audio(self, chat_id, audio_data, *args, **kw):
+        kw.setdefault("business_connection_id", self.bcid)
+        return await self._ch.send_audio(chat_id, audio_data, *args, **kw)
+
+    async def send_document(self, chat_id, document_data, *args, **kw):
+        kw.setdefault("business_connection_id", self.bcid)
+        return await self._ch.send_document(chat_id, document_data, *args, **kw)
+
+    async def send_rich_message(self, chat_id, *args, **kw):
+        kw.setdefault("business_connection_id", self.bcid)
+        return await self._ch.send_rich_message(chat_id, *args, **kw)
 
 
 def connection_owner(connection_id: str | None) -> int | None:
@@ -523,6 +601,8 @@ async def handle_business_message(channel, msg: dict, *, edited: bool = False) -
     # the bot itself sent.
     if _is_own_echo(channel, msg):
         return
+    if _is_bot_chat(channel, chat_id):
+        return
     # Any OTHER bot is a counterparty the owner talks to (@some_bot chats). Its
     # messages are DATA worth keeping — the deletion alert reads them back — but
     # never a party we act on: no auto-reply (two bots answering each other never
@@ -616,6 +696,15 @@ async def handle_business_message(channel, msg: dict, *, edited: bool = False) -
             return
     except Exception:  # noqa: BLE001
         logger.debug("business reply-action skipped", exc_info=True)
+    # Owner replies to one of THEIR messages with a role name ("tyler", "tyler fr")
+    # → that message gets one answer in that voice, sent as the owner, threaded
+    # under it. After the reply keywords on purpose: `casual`/`formal` are both a
+    # text op and a built-in role, and the text op is what they have always meant.
+    try:
+        if await autoreply.maybe_role_reply(channel, msg, is_owner=is_owner, owner_id=owner_id):
+            return
+    except Exception:  # noqa: BLE001
+        logger.debug("business role reply skipped", exc_info=True)
     # Business-chat commands (ping/time/timer …) — anyone or owner per command;
     # result posted INTO the chat as the owner, the owner's trigger deleted.
     try:
@@ -623,13 +712,28 @@ async def handle_business_message(channel, msg: dict, *, edited: bool = False) -
             return
     except Exception:  # noqa: BLE001
         logger.debug("business command skipped", exc_info=True)
+    # An appointment the OWNER writes here ("see you Monday 26 Oct at 10:30") is
+    # PROPOSED in their own DM — Accept/Dismiss — never saved silently, never posted
+    # in the chat, and never captured from the contact's messages. Opt-in.
+    if is_owner and owner_id and not edited:
+        try:
+            from navig.telegram import biz_agenda
+
+            await biz_agenda.maybe_propose(channel, msg, owner_id=int(owner_id))
+        except Exception:  # noqa: BLE001
+            logger.debug("business agenda proposal skipped", exc_info=True)
     # A shared TikTok link gets a metadata card + Download/Analyse buttons (gated by
     # the 'download' policy). This is owner-facing DATA enrichment — still never a
-    # command, and a no-op when the message has no TikTok link.
+    # command, and a no-op when the message has no TikTok link. The card is sent
+    # THROUGH BusinessSender: a plain send carries no business_connection_id, and
+    # Telegram rejects it outright ("bot can't initiate conversation with a user"),
+    # so the other person in the chat never saw it.
     try:
         from navig.telegram import tiktok_actions
 
-        await tiktok_actions.offer_card(channel, chat_id, message_id, text, is_owner=is_owner)
+        bcid = msg.get("business_connection_id")
+        sender = BusinessSender(channel, bcid) if bcid else channel
+        await tiktok_actions.offer_card(sender, chat_id, message_id, text, is_owner=is_owner)
     except Exception:  # noqa: BLE001
         logger.debug("tiktok offer_card skipped", exc_info=True)
     # A shared bare music link (Spotify/Apple/Deezer/…) gets the same track on every
@@ -713,11 +817,13 @@ async def render_deletion_detail(
 async def deliver_deletion_detail(
     channel, chat: dict, ids: list, *, owner_id: int | None = None,
     target: str | None = None, check_prefs: bool = True,
+    sent: list[int] | None = None,
 ) -> bool:
     """Render and deliver one chat's deletion detail, then re-send its files.
 
     ``check_prefs`` is False when the operator ASKED for this (the Show button):
-    quiet hours mute the unprompted alert, not an answer to a tap."""
+    quiet hours mute the unprompted alert, not an answer to a tap. ``sent``
+    collects the id of every message posted, so they can be cleared together."""
     body, media_to_resend = await render_deletion_detail(
         channel, chat, ids, owner_id=owner_id)
     if check_prefs:
@@ -731,26 +837,30 @@ async def deliver_deletion_detail(
             return False
     if target is None:
         target = await deletions.resolve_target(owner_id)
-    if not await deletions.send_detail(channel, body, target=target):
+    if not await deletions.send_detail(channel, body, target=target, sent=sent):
         return False
     # The files follow the summary that announced them, into the same chat — so a
     # log chat keeps the evidence together with its report.
     failed = 0
     for media, cap in media_to_resend:
-        if not await _resend_media(channel, target, media, cap):
+        if not await _resend_media(channel, target, media, cap, sent=sent):
             failed += 1
     # The summary PROMISED a photo/voice that then did not arrive. Saying so is the
     # whole doctrine of this file: an alert that silently delivers less than it
     # announced trains the operator to distrust the ones that work.
     if failed and target is not None and channel is not None:
         kinds = ", ".join(sorted({(m.get("kind") or "media") for m, _ in media_to_resend}))
+        from navig.telegram import chat_tidy  # noqa: PLC0415
+
         try:
-            await channel._api_call("sendMessage", {
-                "chat_id": target,
-                "text": (f"⚠️ Couldn't re-send {failed} of {len(media_to_resend)} deleted "
-                         f"file(s) ({kinds}) — Telegram no longer serves that file id. "
-                         f"The summary above is all that survives."),
-            })
+            with chat_tidy.routine("deletion"):
+                note = await channel._api_call("sendMessage", {
+                    "chat_id": target,
+                    "text": (f"⚠️ Couldn't re-send {failed} of {len(media_to_resend)} deleted "
+                             f"file(s) ({kinds}) — Telegram no longer serves that file id. "
+                             f"The summary above is all that survives."),
+                })
+            deletions._collect(sent, note)
         except Exception:  # noqa: BLE001
             logger.debug("deletion alert: resend-failure note not delivered", exc_info=True)
     return True
@@ -777,7 +887,13 @@ async def handle_deleted_business_messages(channel, payload: dict) -> None:
         return
     chat = payload.get("chat") or {}
     chat_id = chat.get("id")
+    if _is_bot_chat(channel, chat_id):
+        return
     ids = [m for m in (payload.get("message_ids") or []) if m is not None]
+    # Deletions NAVIG made itself — the owner's `tyler`/`translate` trigger words —
+    # are not news, and must not reach the record or the digest.
+    bcid = payload.get("business_connection_id")
+    ids = [m for m in ids if not deletions.is_own_deletion(bcid, m)]
     if chat_id is None or not ids:
         return
     if not deletions.record_enabled():
@@ -785,17 +901,25 @@ async def handle_deleted_business_messages(channel, payload: dict) -> None:
     owner_id = resolve_owner(payload.get("business_connection_id"))
 
     store = _store()
+    # Classified BEFORE marking: an expiry is read off the live row's send date,
+    # and a wipe off how much of the chat is still live.
+    reasons = deletions.classify(store, chat_id, ids)
     for mid in ids:
         try:
-            store.mark_message_deleted(chat_id, mid)
+            store.mark_message_deleted(chat_id, mid, reason=reasons.get(mid))
         except Exception:  # noqa: BLE001
             logger.debug("mark_message_deleted failed for %s/%s", chat_id, mid, exc_info=True)
 
+    # Auto-delete timers and whole-chat clears stay in the record and out of the
+    # alerts — on a chat with a timer they were most of every digest.
+    quiet = deletions.quiet_reasons()
+    loud = [m for m in ids if reasons.get(m) not in quiet]
     how = "off" if deletions.is_muted(chat_id) else deletions.mode()
-    logger.info("business deletion: chat=%s ids=%d mode=%s", chat_id, len(ids), how)
-    if how == "off":
+    logger.info("business deletion: chat=%s ids=%d quiet=%d mode=%s",
+                chat_id, len(ids), len(ids) - len(loud), how)
+    if how == "off" or not loud:
         return
     if how == "digest":
         deletions.arm_digest(channel)
         return
-    await deliver_deletion_detail(channel, chat, ids, owner_id=owner_id)
+    await deliver_deletion_detail(channel, chat, loud, owner_id=owner_id)

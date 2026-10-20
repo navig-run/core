@@ -258,11 +258,54 @@ def biz(tmp_path, monkeypatch):
     return fake
 
 
+_ACTION_SPIES: list = []
+
+
 def _no_actions(monkeypatch):
-    """Every action handler raises if reached — the message must stay DATA."""
-    for mod, name in ((b.autoreply, "handle_command"), (b.autoreply, "maybe_autoreply"),
-                      (b.reply_actions, "run_business_reply"), (b.biz_commands, "dispatch")):
-        monkeypatch.setattr(mod, name, AsyncMock(side_effect=AssertionError(f"{name} ran")))
+    """Every action handler becomes a spy that must never be awaited — the message
+    must stay DATA. Checked AFTER the test by `_no_action_ran`.
+
+    These used to be stubs that RAISED AssertionError, which could never fail a
+    test: `handle_business_message` wraps every action in `try/except Exception`,
+    and AssertionError is an Exception — so the raise was logged at debug and the
+    test passed. Measured 2026-09-29: with the `is_other_bot` guard deleted from
+    the product, `test_another_bots_message_is_cataloged_but_never_acted_on`
+    still passed.
+    """
+    for mod, name in (
+        (b.autoreply, "handle_command"),
+        (b.autoreply, "maybe_autoreply"),
+        (b.autoreply, "maybe_role_reply"),
+        (b.reply_actions, "run_business_reply"),
+        (b.biz_commands, "dispatch"),
+    ):
+        spy = AsyncMock(return_value=False)
+        spy.navig_name = name
+        monkeypatch.setattr(mod, name, spy)
+        _ACTION_SPIES.append(spy)
+
+
+def _stub_actions(monkeypatch):
+    """Stub the action handlers out WITHOUT asserting anything about them — for
+    tests about what gets CATALOGUED from an ordinary message, where the actions
+    legitimately run. `_no_actions` is the one that asserts."""
+    for mod, name in (
+        (b.autoreply, "handle_command"),
+        (b.autoreply, "maybe_autoreply"),
+        (b.autoreply, "maybe_role_reply"),
+        (b.reply_actions, "run_business_reply"),
+        (b.biz_commands, "dispatch"),
+    ):
+        monkeypatch.setattr(mod, name, AsyncMock(return_value=False))
+
+
+@pytest.fixture(autouse=True)
+def _no_action_ran():
+    _ACTION_SPIES.clear()
+    yield
+    ran = [s.navig_name for s in _ACTION_SPIES if s.await_count]
+    _ACTION_SPIES.clear()
+    assert not ran, f"an action handler ran on a message that must stay data: {ran}"
 
 
 def _store():
@@ -299,7 +342,7 @@ async def test_own_echo_is_detected_by_sender_business_bot_too(biz, monkeypatch)
 
 
 async def test_media_business_message_keeps_the_file_id(biz, monkeypatch):
-    _no_actions(monkeypatch)
+    _stub_actions(monkeypatch)
     ch = _ch("8490556839:ABC")
     msg = {
         "chat": {"id": 100200300, "first_name": "Sam", "username": "sam_example"},
@@ -344,7 +387,9 @@ def _capture_dispatch(monkeypatch, *, delivered=True):
     the header moved to."""
     calls: list[dict] = []
 
-    async def fake_send(channel, text, *, target=None, owner_id=None):
+    # Mirrors the real signature, `sent` included: the Show button collects the
+    # ids of what it posts so they can be cleared again.
+    async def fake_send(channel, text, *, target=None, owner_id=None, sent=None):
         calls.append({"body": text, "title": text.split("\n", 1)[0], "target": target})
         return delivered
 
@@ -399,6 +444,9 @@ async def test_one_alert_per_deletion_event_lists_every_message(biz, monkeypatch
     _seed(store, 555, 2, sender_id=555, sender_name="Sam", text="ok 👍")
     _seed(store, 555, 3, sender_id=555, sender_name="Sam",
           media={"file_id": "V1", "file_unique_id": "uv1", "kind": "voice"})
+    # A message that survives: deleting EVERY cataloged row at once is a chat wipe,
+    # which is recorded but not announced (test_deletion_quiet_reasons.py).
+    _seed(store, 555, 5, sender_id=555, sender_name="Sam", text="still here")
     ch = _ch("8490556839:ABC")
     payload = {"business_connection_id": "bc1", "message_ids": [1, 2, 3, 4],
                "chat": {"id": 555, "type": "private", "first_name": "Sam"}}
@@ -435,6 +483,8 @@ async def test_media_is_not_resent_when_the_alert_was_not_delivered(biz, monkeyp
 
 
 async def test_a_whole_chat_clear_is_capped_to_a_readable_list(biz, monkeypatch):
+    # Wipes are quiet by default; this is the render for an operator who opted back in.
+    b.deletions.set_quiet(b.deletions.REASON_WIPED, False)
     calls = _capture_dispatch(monkeypatch)
     store = _store()
     for i in range(1, 61):
@@ -598,7 +648,7 @@ async def test_a_successful_resend_sends_no_failure_note(biz, monkeypatch):
 
 
 async def test_a_file_less_message_keeps_its_content_kind(biz, monkeypatch):
-    _no_actions(monkeypatch)
+    _stub_actions(monkeypatch)
     ch = _ch("8490556839:ABC")
     await b.handle_business_message(ch, {
         "chat": {"id": 555}, "message_id": 8, "business_connection_id": "bc1", "date": 1,
@@ -611,7 +661,7 @@ async def test_a_file_less_message_keeps_its_content_kind(biz, monkeypatch):
 async def test_a_media_message_is_not_relabelled_by_a_trailing_field(biz, monkeypatch):
     """`content` is consulted only when there is no file, so a photo forwarded
     from a story stays a photo."""
-    _no_actions(monkeypatch)
+    _stub_actions(monkeypatch)
     ch = _ch("8490556839:ABC")
     await b.handle_business_message(ch, {
         "chat": {"id": 555}, "message_id": 9, "business_connection_id": "bc1", "date": 1,
@@ -624,7 +674,7 @@ async def test_a_media_message_is_not_relabelled_by_a_trailing_field(biz, monkey
 
 
 async def test_a_sender_is_stored_by_name_going_forward(biz, monkeypatch):
-    _no_actions(monkeypatch)
+    _stub_actions(monkeypatch)
     ch = _ch("8490556839:ABC")
     await b.handle_business_message(ch, {
         "chat": {"id": 555}, "message_id": 10, "business_connection_id": "bc1", "date": 1,
@@ -638,7 +688,7 @@ async def test_a_sender_is_stored_by_name_going_forward(biz, monkeypatch):
 async def test_a_later_update_cannot_erase_stored_text(biz, monkeypatch):
     """Telegram re-delivers and edits; an empty string OVERWRITES through the
     upsert's COALESCE, and the deletion alert is the last reader of that text."""
-    _no_actions(monkeypatch)
+    _stub_actions(monkeypatch)
     ch = _ch("8490556839:ABC")
     edited_at_ts = int(datetime.now().timestamp())
     base = {"chat": {"id": 555}, "message_id": 11, "business_connection_id": "bc1",
@@ -673,3 +723,102 @@ def test_media_and_content_labels_are_shared_by_every_surface():
     assert b.content_label("poll") == "📊 poll"
     assert b.content_label("text") is None
     assert b.content_label(None) is None
+
+
+# ── a role name as a reply ────────────────────────────────────────────────────
+
+
+def _owner_reply(text, *, to_text="Сколько стоит доставка?", to_from=555):
+    return {
+        "chat": {"id": 555, "first_name": "Sam"},
+        "message_id": 90,
+        "business_connection_id": "bc1",
+        "date": 1,
+        "from": {"id": 777, "first_name": "owner"},
+        "text": text,
+        "reply_to_message": {
+            "message_id": 80,
+            "text": to_text,
+            "from": {"id": to_from, "first_name": "Sam"},
+        },
+    }
+
+
+async def test_a_role_name_reply_reaches_the_role_reply_handler(biz, monkeypatch):
+    """The pipeline has to CALL it — a handler nothing reaches is not a feature."""
+    spy = AsyncMock(return_value=True)
+    monkeypatch.setattr(b.autoreply, "maybe_role_reply", spy)
+    monkeypatch.setattr(
+        b.reply_actions, "run_business_reply", AsyncMock(return_value=False)
+    )
+
+    await b.handle_business_message(_ch("8490556839:ABC"), _owner_reply("tyler"))
+
+    assert spy.await_count == 1
+    assert spy.await_args.kwargs["is_owner"] is True
+
+
+async def test_a_text_op_keyword_still_wins_over_a_role_of_the_same_name(
+    biz, monkeypatch
+):
+    """`casual` is both a reply keyword (rewrite casually) and a built-in role. It
+    has always meant the text op; the role reply is placed after it so it still does."""
+    spy = AsyncMock(return_value=True)
+    monkeypatch.setattr(b.autoreply, "maybe_role_reply", spy)
+    monkeypatch.setattr(
+        b.reply_actions, "run_business_reply", AsyncMock(return_value=True)
+    )
+
+    await b.handle_business_message(_ch("8490556839:ABC"), _owner_reply("casual"))
+
+    assert spy.await_count == 0
+
+
+# ── the owner's DM with NAVIG itself ─────────────────────────────────────────
+#
+# Reported 2026-09-30: `/role` in the bot's own chat got answered twice — the
+# assistant's reply AND a role card. A Business connection covers every private
+# chat of the account, so the DM with this bot also arrived as a business message.
+
+
+def _bot_chat_msg(text="/role"):
+    return {
+        "chat": {"id": 8490556839, "first_name": "NAVIG"},
+        "message_id": 12,
+        "business_connection_id": "bc1",
+        "date": 1,
+        "from": {"id": 777, "first_name": "owner"},
+        "text": text,
+    }
+
+
+async def test_the_bots_own_chat_is_not_a_business_conversation(biz, monkeypatch):
+    _no_actions(monkeypatch)
+    await b.handle_business_message(_ch("8490556839:ABC"), _bot_chat_msg())
+    assert _store().get_message_by_ref(8490556839, 12) is None
+
+
+async def test_a_role_word_in_the_bots_own_chat_runs_nothing(biz, monkeypatch):
+    _no_actions(monkeypatch)
+    await b.handle_business_message(_ch("8490556839:ABC"), _bot_chat_msg("tyler"))
+
+
+async def test_other_private_chats_still_reach_the_actions(biz, monkeypatch):
+    spy = AsyncMock(return_value=True)
+    _stub_actions(monkeypatch)
+    monkeypatch.setattr(b.autoreply, "handle_command", spy)
+    msg = _bot_chat_msg()
+    msg["chat"] = {"id": 555, "first_name": "Sam"}
+    await b.handle_business_message(_ch("8490556839:ABC"), msg)
+    assert spy.await_count == 1
+
+
+async def test_deletions_in_the_bots_own_chat_are_not_reported(biz, monkeypatch):
+    calls = _capture_dispatch(monkeypatch)
+    payload = {
+        "business_connection_id": "bc1",
+        "message_ids": [12],
+        "chat": {"id": 8490556839, "type": "private"},
+    }
+    await b.handle_deleted_business_messages(_ch("8490556839:ABC"), payload)
+    assert calls == []

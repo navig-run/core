@@ -176,7 +176,7 @@ def continuation_continue(
     store = get_runtime_store()
     state = store.get_ai_state(resolved_user) or {}
     mode = state.get("mode") or "active"
-    chosen_persona = persona or state.get("persona") or "assistant"
+    chosen_persona = persona or state.get("persona")  # None keeps the stored persona
 
     context = merge_policy(
         state.get("context") or {},
@@ -199,6 +199,7 @@ def continuation_continue(
         mode=mode,
         persona=chosen_persona,
         context=context,
+        persona_explicit=True if persona else None,  # --persona is a choice
     )
 
     ch.success(f"Continuation enabled (profile={chosen_profile}).")
@@ -255,7 +256,7 @@ def continuation_pause(
         user_id=resolved_user,
         chat_id=state.get("chat_id") or 0,
         mode=state.get("mode") or "inactive",
-        persona=state.get("persona") or "assistant",
+        persona=state.get("persona"),  # None keeps the stored persona
         context=context,
     )
     ch.success("Continuation paused.")
@@ -277,7 +278,7 @@ def continuation_skip(
         user_id=resolved_user,
         chat_id=state.get("chat_id") or 0,
         mode=state.get("mode") or "inactive",
-        persona=state.get("persona") or "assistant",
+        persona=state.get("persona"),  # None keeps the stored persona
         context=context,
     )
     ch.success("Next continuation trigger will be skipped.")
@@ -1509,7 +1510,7 @@ def agent_service(
         raise typer.Exit(1) from e
 
 
-@agent_app.command("goal")
+@agent_app.command("goal", hidden=True)  # superseded → navig goal (still works)
 def agent_goal(
     action: str = typer.Argument(..., help="Action: add, list, status, cancel"),
     goal_id: str | None = typer.Option(None, "--id", help="Goal ID for status/cancel"),
@@ -1526,7 +1527,12 @@ def agent_goal(
         navig agent goal list                    # List all goals
         navig agent goal status --id abc123      # Check goal progress
         navig agent goal cancel --id abc123      # Cancel a goal
+
+    Superseded by `navig goal` (add · list · show · remove), hidden from --help.
     """
+    from navig.cli.superseded import hint as _superseded_hint  # noqa: PLC0415
+
+    _superseded_hint("navig agent goal")
     try:
         from navig.agent.goals import GoalPlanner, GoalState  # noqa: F401
 

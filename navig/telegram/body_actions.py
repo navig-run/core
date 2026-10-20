@@ -23,6 +23,7 @@ Callback data (Telegram caps it at 64 bytes):
     bm:sl:<hours>:<yyyymmdd>  typical night's sleep
     bm:tx:ok:<yyyymmdd>       treatment: nothing to report
     bm:tx:no:<yyyymmdd>       treatment: ask for a note
+    bm:ed:<yyyymmdd>          reopen a finished card to change an answer
 
 Never diagnoses, never prescribes, never suggests a dose. What the operator
 writes about the treatment is recorded verbatim and not interpreted.
@@ -191,18 +192,129 @@ def _trend_line(summary: dict) -> str:
     )
 
 
-def build_weekly_card(path: Path, day: str) -> tuple[str, dict[str, Any]]:
+#: Prefix on the button that holds the current answer. A tick rather than a
+#: colour: Telegram inline buttons have no selected state of their own, so the
+#: label is the only place a choice can be shown.
+_PICKED = "✓ "
+
+#: The note prefix a treatment answer is stored under, inside the day's notes.
+_TX = "treatment:"
+
+
+def _treatment_of(notes: str) -> str | None:
+    """The LATEST treatment answer in a day's notes: ``"ok"``, ``"note"`` or None.
+
+    Notes accumulate with ``"; "``, so a day can hold both a typed note and a
+    later "all fine" tap. The last one is what the operator meant most recently.
+    """
+    latest = None
+    for part in (notes or "").split(";"):
+        part = part.strip()
+        if part.lower().startswith(_TX):
+            latest = "ok" if part[len(_TX):].strip().lower() == "ok" else "note"
+    return latest
+
+
+def weekly_answers(path: Path, day: str, chat_id: int | None = None) -> dict[str, str | None]:
+    """What has been answered on this week's card, read back from the record.
+
+    ``treatment`` is ``"pending"`` while a note has been asked for and not yet
+    typed, so the card can show that the question is in hand rather than open.
+    """
+    try:
+        _, rows = bm.read_metrics(path)
+    except bm.MetricsReadError:
+        rows = []
+    row = next((r for r in rows if r.get("date") == day), {})
+    treatment = _treatment_of(row.get("notes") or "")
+    if treatment is None and chat_id is not None:
+        pending = bm.pending_prompt(chat_id)
+        if pending and pending[0] == "note" and pending[1] == day:
+            treatment = "pending"
+    return {
+        "mood": (row.get("mood_1_10") or "").strip() or None,
+        "sleep": (row.get("sleep_hours") or "").strip() or None,
+        "treatment": treatment,
+    }
+
+
+def weekly_complete(answers: dict[str, str | None]) -> bool:
+    """All three questions answered. A note still being typed is not an answer."""
+    return bool(
+        answers.get("mood")
+        and answers.get("sleep")
+        and answers.get("treatment") in ("ok", "note")
+    )
+
+
+def _mood_face(value: str | None) -> str | None:
+    for v, face in _MOOD_FACES:
+        if str(v) == str(value):
+            return face
+    return value
+
+
+def _sleep_label(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        number = float(value)
+        shown = f"{number:g}"
+    except ValueError:
+        shown = value
+    return f"{shown}{t('unit.h')}"
+
+
+def _treatment_label(value: str | None) -> str | None:
+    return {
+        "ok": t("week.tx_ok"),
+        "note": t("week.tx_note"),
+        "pending": t("week.tx_pending"),
+    }.get(value or "")
+
+
+def weekly_summary(answers: dict[str, str | None]) -> str:
+    """One line naming every answer — the completion receipt's body."""
+    return t(
+        "week.done_summary",
+        mood=_mood_face(answers.get("mood")) or "—",
+        sleep=_sleep_label(answers.get("sleep")) or "—",
+        treatment=_treatment_label(answers.get("treatment")) or "—",
+    )
+
+
+def build_weekly_card(
+    path: Path,
+    day: str,
+    *,
+    chat_id: int | None = None,
+    expanded: bool = False,
+) -> tuple[str, dict[str, Any]]:
     """``(text, reply_markup)`` for the Sunday check-in.
 
     Leads with the 7-day average rather than the latest reading: day-to-day
     weight is mostly water, and a single pair of readings a week apart cannot
     tell a real change from noise.
+
+    **It shows what has been answered.** Telegram buttons have no selected state,
+    so a tap that only answered "Сохранено" left the card looking untouched —
+    reported as *"when I click it doesn't mark, it just says saved, so I can't see
+    what I selected"*. Each answer is ticked on its button AND written next to its
+    question, read back from the record rather than from the tap, so the card
+    shows what actually landed.
+
+    **A finished card folds.** Once all three are answered the keyboard collapses
+    to a single ✎ button (``expanded=True`` reopens it), so a done check-in stops
+    looking like an open one.
     """
     summary = bm.summarize(path, ending=date.fromisoformat(day))
     compact = _compact(day)
+    answers = weekly_answers(path, day, chat_id)
+    done = weekly_complete(answers)
 
+    title = t("week.done_title") if done else t("week.title")
     lines = [
-        extension_banner() + f"<b>{html.escape(t('week.title'))}</b>",
+        extension_banner() + f"<b>{html.escape(title)}</b>",
         "",
         _trend_line(summary),
     ]
@@ -211,34 +323,65 @@ def build_weekly_card(path: Path, day: str) -> tuple[str, dict[str, Any]]:
     if clinician:
         lines.append(f"\n⚠️ <i>{html.escape(clinician)}</i>")
 
+    def _question(n: int, key: str, shown: str | None) -> str:
+        text = f"{n}. {html.escape(t(key))}"
+        return f"{text} — <b>{html.escape(shown)}</b>" if shown else text
+
     # The three questions, in the same order as the three button rows below —
     # Telegram renders the keyboard under the whole message, so the only thing
     # tying a question to its row is that order.
-    lines += ["", f"1. {html.escape(t('week.mood_q'))}"]
-
-    keyboard = [
-        [
-            {"text": face, "callback_data": f"bm:m:{value}:{compact}"}
-            for value, face in _MOOD_FACES
-        ],
-        [
-            {"text": f"{h}{t('unit.h')}", "callback_data": f"bm:sl:{h}:{compact}"}
-            for h in _SLEEP_HOURS
-        ],
-        [
-            {"text": t("btn.fine"), "callback_data": f"bm:tx:ok:{compact}"},
-            {"text": t("btn.note"), "callback_data": f"bm:tx:no:{compact}"},
-        ],
-    ]
-
     lines += [
-        f"2. {html.escape(t('week.sleep_q'))}",
-        f"3. {html.escape(t('week.treatment_q'))}",
+        "",
+        _question(1, "week.mood_q", _mood_face(answers["mood"])),
+        _question(2, "week.sleep_q", _sleep_label(answers["sleep"])),
+        _question(3, "week.treatment_q", _treatment_label(answers["treatment"])),
         "",
         f"<i>{html.escape(t('week.safety'))}</i>",
     ]
 
+    if done and not expanded:
+        keyboard = [[{"text": t("btn.edit"), "callback_data": f"bm:ed:{compact}"}]]
+        return "\n".join(lines), {"inline_keyboard": keyboard}
+
+    def _mark(label: str, picked: bool) -> str:
+        return f"{_PICKED}{label}" if picked else label
+
+    keyboard = [
+        [
+            {
+                "text": _mark(face, str(value) == str(answers["mood"])),
+                "callback_data": f"bm:m:{value}:{compact}",
+            }
+            for value, face in _MOOD_FACES
+        ],
+        [
+            {
+                "text": _mark(f"{h}{t('unit.h')}", _same_number(h, answers["sleep"])),
+                "callback_data": f"bm:sl:{h}:{compact}",
+            }
+            for h in _SLEEP_HOURS
+        ],
+        [
+            {
+                "text": _mark(t("btn.fine"), answers["treatment"] == "ok"),
+                "callback_data": f"bm:tx:ok:{compact}",
+            },
+            {
+                "text": _mark(t("btn.note"), answers["treatment"] in ("note", "pending")),
+                "callback_data": f"bm:tx:no:{compact}",
+            },
+        ],
+    ]
+
     return "\n".join(lines), {"inline_keyboard": keyboard}
+
+
+def _same_number(a: object, b: object) -> bool:
+    """``7`` and ``"7.0"`` are the same answer; the CSV stores strings."""
+    try:
+        return b is not None and float(a) == float(b)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return False
 
 
 def _clinician_line(trend: float | None) -> str | None:
@@ -275,28 +418,130 @@ async def handle_callback(
     path = bm.resolve_target(chat_id)
 
     try:
-        if action == "m" and len(parts) >= 4:
-            day, value = _expand(parts[3]), parts[2]
-            bm.upsert(path, day, {"mood_1_10": value})
-            return t("week.saved")
+        if action == "ed":
+            # Reopen a folded card so one answer can be changed.
+            day = _expand(parts[2])
+            bm.remember_weekly_card(chat_id, message_id, day)
+            await _redraw_card(channel, chat_id, message_id, path, day, expanded=True)
+            return ""
 
-        if action == "sl" and len(parts) >= 4:
-            day, value = _expand(parts[3]), parts[2]
-            bm.upsert(path, day, {"sleep_hours": value})
-            return t("week.saved")
+        if len(parts) < 4:
+            return "?"
+        day = _expand(parts[3])
+        before = weekly_answers(path, day, chat_id)
+        # Every tap names the card it came from, which is the one reliable way a
+        # typed treatment note arriving later can find the card to redraw.
+        bm.remember_weekly_card(chat_id, message_id, day)
 
-        if action == "tx" and len(parts) >= 4:
-            day, choice = _expand(parts[3]), parts[2]
-            if choice == "ok":
+        if action == "m":
+            bm.upsert(path, day, {"mood_1_10": parts[2]})
+        elif action == "sl":
+            bm.upsert(path, day, {"sleep_hours": parts[2]})
+        elif action == "tx" and parts[2] == "ok":
+            # A second tap on "all fine" used to append a second "treatment: ok".
+            if before["treatment"] != "ok":
                 _append_note(path, day, "treatment: ok")
-                return t("week.saved")
+        elif action == "tx":
             await ask_for_note(channel, chat_id, day)
+            await _redraw_card(channel, chat_id, message_id, path, day)
             return t("week.noted")
+        else:
+            return "?"
+
+        after = weekly_answers(path, day, chat_id)
+        announced = await _announce_if_done(channel, chat_id, day, after)
+        # Redraw when an answer changed — or when this tap is the one that
+        # completes the week, even if it changed nothing. A card answered before
+        # this redraw existed holds all three answers already, so its next tap is
+        # a no-op write; without this it would announce "done" while the card
+        # stayed open and unmarked. The folded card always differs from the open
+        # one, so this cannot be refused as "message is not modified".
+        if after != before or announced:
+            await _redraw_card(channel, chat_id, message_id, path, day)
+        return t("week.saved")
     except bm.MetricsReadError as exc:
         logger.warning("body check-in callback could not write: %s", exc)
         return "⚠️"
 
-    return "?"
+
+async def _redraw_card(
+    channel: Any,
+    chat_id: int,
+    message_id: int,
+    path: Path,
+    day: str,
+    *,
+    expanded: bool = False,
+) -> bool:
+    """Re-render the weekly card in place from the record. True when it landed.
+
+    Never raises — the answer is already on disk, and a card that fails to redraw
+    must not turn a saved tap into an error toast.
+    """
+    text, markup = build_weekly_card(path, day, chat_id=chat_id, expanded=expanded)
+    try:
+        result = await channel._api_call(
+            "editMessageText",
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": text,
+                "parse_mode": "HTML",
+                "reply_markup": markup,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("weekly card %s could not be redrawn: %s", message_id, exc)
+        return False
+    # `_api_call` reports a refused call by returning None. The callers only
+    # redraw when an answer CHANGED, so "message is not modified" cannot be the
+    # reason — this is a real failure and belongs in the log.
+    if result is None:
+        logger.warning("weekly card %s in chat %s was not redrawn", message_id, chat_id)
+        return False
+    return True
+
+
+async def _announce_if_done(
+    channel: Any, chat_id: int, day: str, answers: dict[str, str | None]
+) -> str | None:
+    """Send the one completion message the first time the card is complete.
+
+    An edit raises no notification and does not move to the bottom of the chat —
+    measured on this very feature: a finished card that only redraws looks, from
+    the chat list, exactly like one nobody answered. So completion is a NEW
+    message, once per week (:func:`body_metrics.claim_weekly_done`).
+
+    Returns the text sent, or None when there was nothing to announce.
+    """
+    if not weekly_complete(answers) or not bm.claim_weekly_done(chat_id, day):
+        return None
+    text = f"<b>{html.escape(t('week.done_title'))}</b>\n{html.escape(weekly_summary(answers))}"
+    try:
+        await channel._api_call(
+            "sendMessage", {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("weekly check-in completion could not be sent: %s", exc)
+        return None
+    return text
+
+
+async def after_note(channel: Any, chat_id: int, day: str) -> str | None:
+    """A typed treatment note just landed: redraw the card, announce if done.
+
+    Returns the completion text when this note finished the week, so the caller
+    can send that INSTEAD of its generic "✅ saved" — one receipt per answer.
+    """
+    card = bm.weekly_card(chat_id)
+    if card is None or card[1] != day:
+        return None
+    path = bm.resolve_target(chat_id)
+    await _redraw_card(channel, chat_id, card[0], path, day)
+    answers = weekly_answers(path, day, chat_id)
+    if not weekly_complete(answers) or not bm.claim_weekly_done(chat_id, day):
+        return None
+    return f"{t('week.done_title')}\n{weekly_summary(answers)}"
 
 
 def _append_note(path: Path, day: str, text: str) -> None:
@@ -342,7 +587,13 @@ async def _send_prompt(
     except Exception as exc:  # noqa: BLE001
         logger.warning("body %s prompt failed (chat=%s): %s", kind, chat_id, exc)
         return
-    prompt_id = ((result or {}).get("result") or {}).get("message_id")
+    # `channel._api_call` returns the Message itself (``result["result"]``), not the
+    # whole envelope — so reading ``["result"]["message_id"]`` off it always gave
+    # None, the prompt was recorded with no id, and the typed answer to an
+    # on-demand /weigh could never be matched to it. Accept both shapes.
+    from navig.checkins.state import message_id_of  # noqa: PLC0415
+
+    prompt_id = message_id_of(result)
     bm.set_prompt(chat_id, kind, day, prompt_id)
 
 

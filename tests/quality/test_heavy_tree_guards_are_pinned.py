@@ -32,6 +32,15 @@ that finish in a second and are fine to fan out.
 
 Vacuity floor: the list is non-empty and every listed file exists — a pin over a
 module that moved away pins nothing.
+
+The same modules also carry their OWN ``pytest.mark.timeout``. The gate runs pytest with
+``--timeout=30/60/120 --timeout-method=thread``, and the thread method does not fail a
+slow test — it kills the whole worker process. Measured 2026-10-10: on a busy box
+``test_instance_method_contract`` took 90 s standalone (18 s when this list was written),
+so a push gate's 60 s ceiling killed both xdist workers mid-lane, xdist then crashed on
+its own ``KeyError`` re-scheduling the group, and the step went red on an unmodified tree.
+A marker beats the command line, so each module declares a ceiling sized for a loaded
+box; the global ceiling keeps guarding every other test.
 """
 
 from __future__ import annotations
@@ -55,6 +64,37 @@ HEAVY_TREE_GUARDS: dict[str, int] = {
     "test_instance_method_contract.py": 2,  # 18 s
     "test_docstring_crossrefs_resolve.py": 2,  # 16 s, holds ~1,900 ASTs at once
 }
+
+
+#: The least a whole-tree guard may declare. 90 s was measured standalone on a loaded box
+#: (2026-10-10); the gate's own per-test ceilings are 30 / 60 / 120 s, all of which that
+#: run would have tripped. Above every gate ceiling with ~2x headroom over the measurement.
+MIN_WHOLE_TREE_TIMEOUT_S = 180
+
+
+def _module_level_marks(path: Path, mark: str) -> list[ast.Call]:
+    """``pytest.mark.<mark>(...)`` calls assigned to ``pytestmark`` at module level."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    found: list[ast.Call] = []
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(t, ast.Name) and t.id == "pytestmark" for t in node.targets):
+            continue
+        values = node.value.elts if isinstance(node.value, (ast.List, ast.Tuple)) else [node.value]
+        found += [
+            v for v in values
+            if isinstance(v, ast.Call) and isinstance(v.func, ast.Attribute) and v.func.attr == mark
+        ]
+    return found
+
+
+def _module_level_timeout(path: Path) -> float | None:
+    """The literal seconds of a module-level ``pytest.mark.timeout(N)``, or None."""
+    for call in _module_level_marks(path, "timeout"):
+        if call.args and isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, (int, float)):
+            return float(call.args[0].value)
+    return None
 
 
 def _module_level_xdist_groups(path: Path) -> list[str]:
@@ -97,6 +137,29 @@ def test_heavy_guard_is_pinned_to_its_lane(name: str) -> None:
         f'`pytestmark = pytest.mark.xdist_group("{expected}")` (found: {groups or "none"}); '
         "without it the gate can run it on eight workers at once and OOM-kill one."
     )
+
+
+@pytest.mark.parametrize("name", sorted(HEAVY_TREE_GUARDS))
+def test_heavy_guard_declares_its_own_timeout(name: str) -> None:
+    seconds = _module_level_timeout(HERE / name)
+    assert seconds is not None and seconds >= MIN_WHOLE_TREE_TIMEOUT_S, (
+        f"{name} is a whole-tree AST guard but declares "
+        f"{'no' if seconds is None else f'only a {seconds:g} s'} module-level "
+        f"`pytest.mark.timeout(N)` (need N >= {MIN_WHOLE_TREE_TIMEOUT_S}). Under the gate's "
+        "`--timeout-method=thread` a slow test does not fail — it kills the xdist worker, "
+        "and the whole step goes red on an unmodified tree."
+    )
+
+
+def test_timeout_detector_reads_the_ast_not_the_text(tmp_path: Path) -> None:
+    fake = tmp_path / "test_fake.py"
+    fake.write_text("# pytestmark = pytest.mark.timeout(300)\nimport pytest\n", encoding="utf-8")
+    assert _module_level_timeout(fake) is None
+    fake.write_text(
+        'import pytest\npytestmark = [pytest.mark.xdist_group("g"), pytest.mark.timeout(300)]\n',
+        encoding="utf-8",
+    )
+    assert _module_level_timeout(fake) == 300.0
 
 
 def test_pin_detector_reads_the_ast_not_the_text(tmp_path: Path) -> None:

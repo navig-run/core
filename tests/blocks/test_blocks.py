@@ -1477,3 +1477,16 @@ def test_verify_receipt_json_reports_chain_completeness(space):
     assert after["chain"][0]["resolved"] is False
     # Still exit 0: the parent's signature is sound. Only tampering is exit 1.
     assert res.exit_code == 0
+
+
+def test_registry_and_legacy_community_sources_are_first_party():
+    """The registry repo was `navig-run/community` before 2026-10-16. Blocks pinned
+    under the old name must stay trusted; nothing else gains trust."""
+    from navig.blocks.policy import TrustError, check_install_trust
+
+    assert check_install_trust("navig-run", "registry", dev_untrusted=False) == "first-party"
+    assert check_install_trust("navig-run", "community", dev_untrusted=False) == "first-party"
+    with pytest.raises(TrustError):
+        check_install_trust("someone", "registry", dev_untrusted=False)
+    with pytest.raises(TrustError):
+        check_install_trust("navig-run", "core", dev_untrusted=False)

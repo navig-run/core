@@ -155,6 +155,196 @@ def evolve_fix(
     _report_attempts(result)
 
 
+def _sweep_config(key: str, default: str) -> str:
+    try:
+        from navig.config import get_config_manager
+
+        value = get_config_manager().get(f"evolve.sweep.{key}", default)
+        return str(value) if value else default
+    except Exception:  # noqa: BLE001 — no config is not an error; the default applies
+        return default
+
+
+@evolution_app.command("sweep")
+def evolve_sweep(
+    path: Path | None = typer.Argument(
+        None, help="A folder inside the git repository to sweep (default: current directory)"
+    ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        "-m",
+        help="Local Ollama model (default: evolve.sweep.model or qwen2.5-coder:7b)",
+    ),
+    fallback: str | None = typer.Option(
+        None,
+        "--fallback",
+        help="Bigger model for failing tests the first one cannot fix "
+        "(default: evolve.sweep.fallback_model or qwen2.5-coder:32b)",
+    ),
+    no_fallback: bool = typer.Option(
+        False, "--no-fallback", help="Never escalate to the fallback model"
+    ),
+    lint: bool = typer.Option(True, "--lint/--no-lint", help="Fix ruff lint errors"),
+    tests: bool | None = typer.Option(
+        None,
+        "--tests/--no-tests",
+        help="Fix failing pytest tests (default: when the repo has tests)",
+    ),
+    autofix: bool = typer.Option(
+        True, "--autofix/--no-autofix", help="Apply ruff's safe fixes first"
+    ),
+    select: str | None = typer.Option(
+        None,
+        "--select",
+        help="Extra ruff rules to check, e.g. B,SIM (added to the project's config)",
+    ),
+    python: str | None = typer.Option(
+        None,
+        "--python",
+        help="Interpreter that runs the tests (default: the project's venv, else py -3)",
+    ),
+    retries: int = typer.Option(2, "--retries", "-n", min=1, help="Attempts per model per problem"),
+    limit: int = typer.Option(50, "--limit", min=1, help="Most problems to attempt per phase"),
+    max_minutes: float | None = typer.Option(
+        None, "--max-minutes", help="Stop starting new fixes after this long (for overnight runs)"
+    ),
+    test_timeout: float = typer.Option(
+        900, "--test-timeout", help="Seconds allowed for one test-suite run"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report what would be fixed, keep no branch"
+    ),
+    keep_worktree: bool = typer.Option(
+        False, "--keep-worktree", help="Leave the sweep worktree for inspection"
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Print the report as JSON"),
+):
+    """Check a repo with ruff + pytest and fix what fails, using a local model.
+
+    Works on a new chore/sweep/… branch in its own worktree — your checkout and any
+    uncommitted work are never touched, and nothing is pushed. Every fix is re-checked
+    before it is committed; review the branch and merge what you want.
+    """
+    from navig.core.evolution.sweep import (
+        DEFAULT_FALLBACK_MODEL,
+        DEFAULT_MODEL,
+        SweepError,
+        SweepOptions,
+        run_sweep,
+        save_report,
+    )
+    from navig.platform.paths import invocation_cwd, resolve_user_path
+
+    target = resolve_user_path(path) if path else invocation_cwd()
+    opts = SweepOptions(
+        model=model or _sweep_config("model", DEFAULT_MODEL),
+        fallback_model=None
+        if no_fallback
+        else (fallback or _sweep_config("fallback_model", DEFAULT_FALLBACK_MODEL)),
+        lint=lint,
+        tests=tests,
+        autofix=autofix,
+        retries=retries,
+        limit=limit,
+        lint_select=select,
+        python=python.split() if python else None,
+        test_timeout=test_timeout,
+        max_minutes=max_minutes,
+        keep_worktree=keep_worktree,
+        dry_run=dry_run,
+    )
+    if not json_out:
+        ch.header(
+            "🧹 navig evolve sweep",
+            f"{target}  ·  {opts.model}"
+            + (f" → {opts.fallback_model}" if opts.fallback_model else ""),
+        )
+
+    def progress(msg: str) -> None:
+        from rich.markup import escape
+
+        ch.console.print(f"[dim]{escape(msg)}[/dim]")
+
+    try:
+        report = run_sweep(target, opts, progress=None if json_out else progress)
+    except SweepError as exc:
+        ch.error(f"Sweep could not start: {exc}")
+        raise typer.Exit(1) from exc
+    save_report(report)
+
+    if json_out:
+        import json as _json
+
+        ch.raw_print(_json.dumps(report.to_dict(), indent=2))
+        return
+    _print_sweep(report)
+
+
+def _print_sweep(report) -> None:
+    from rich.markup import escape
+
+    from navig.console_helper import Table
+
+    glyph = {
+        "fixed": "[green]✓ fixed[/green]",
+        "failed": "[yellow]✗ not fixed[/yellow]",
+        "skipped": "[dim]○ skipped[/dim]",
+        "rolled_back": "[red]↺ rolled back[/red]",
+    }
+    if report.outcomes:
+        table = Table(box=None, show_header=True, padding=(0, 2))
+        table.add_column("Kind", no_wrap=True)
+        table.add_column("Where", no_wrap=True)
+        table.add_column("Problem", no_wrap=True, max_width=40)
+        table.add_column("Result", no_wrap=True)
+        table.add_column("Model", no_wrap=True)
+        table.add_column("Tries", no_wrap=True, justify="right")
+        table.add_column("Time", no_wrap=True, justify="right")
+        table.add_column("Why")
+        for o in report.outcomes:
+            d = o.diagnostic
+            problem = d.code if d.kind == "lint" else d.code.rsplit("::", 1)[-1]
+            if d.kind == "test":
+                where = o.target_file or d.file
+            else:
+                where = d.where if d.line else d.file  # line 0 = a whole-repo step (ruff --fix)
+            table.add_row(
+                d.kind,
+                escape(where),
+                escape(problem),
+                glyph.get(o.status, o.status),
+                escape(o.model or "—"),
+                str(o.attempts or "—"),
+                f"{o.seconds:.0f}s" if o.seconds else "—",
+                escape((o.reason or "").splitlines()[0][:140] if o.reason else ""),
+            )
+        ch.console.print(table)
+    for note in report.notes:
+        ch.warning(note)
+
+    fixed, failed = report.count("fixed"), report.count("failed")
+    rolled, skipped = report.count("rolled_back"), report.count("skipped")
+    ch.dim(
+        f"\n{fixed} fixed · {failed} not fixed · {skipped} skipped · {rolled} rolled back"
+        f"  ·  {report.seconds / 60:.1f} min"
+    )
+    if report.baseline_failures:
+        ch.dim(
+            f"tests failing: {len(report.baseline_failures)} before → {len(report.final_failures)} after"
+        )
+    if report.report_path:
+        ch.dim(f"report: {report.report_path}")
+    if report.kept_branch:
+        repo = report.repo
+        ch.success(f"Branch ready for review: {report.branch}")
+        ch.dim(f"  review  git -C {repo} log --stat {report.base[:10]}..{report.branch}")
+        ch.dim(f"  merge   git -C {repo} merge --ff-only {report.branch}")
+        ch.dim(f"  drop    git -C {repo} branch -D {report.branch}")
+    else:
+        ch.dim("Nothing was committed — no branch kept.")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # QUANTUM VELOCITY K6 — Auto-Evolutive Profiler Commands
 # ─────────────────────────────────────────────────────────────────────────────

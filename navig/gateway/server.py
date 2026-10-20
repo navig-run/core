@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import signal
 import sys
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -131,6 +132,64 @@ _task_worker = None
 logger = get_debug_logger()
 
 
+def _is_aiohttp_request_factory_race(context: dict) -> bool:
+    """aiohttp's ``RequestHandler.start`` calling a factory that ``connection_lost`` cleared.
+
+    A client sends a request and hangs up before the handler loop resumes: the
+    request is already queued, ``connection_lost`` sets ``_request_factory = None``,
+    and ``start()`` then calls it. Upstream race (present through aiohttp 3.14.4);
+    only that one dead connection is affected. Matched on the exact shape — the
+    exception type, its message, AND the innermost frame being aiohttp's
+    ``web_protocol.start`` — so a ``TypeError`` from our own handlers still surfaces.
+    """
+    exc = context.get("exception")
+    if not isinstance(exc, TypeError) or str(exc) != "'NoneType' object is not callable":
+        return False
+    tb = exc.__traceback__
+    if tb is None:
+        return False
+    while tb.tb_next is not None:
+        tb = tb.tb_next
+    code = tb.tb_frame.f_code
+    filename = code.co_filename.replace("\\", "/")
+    return code.co_name == "start" and filename.endswith("aiohttp/web_protocol.py")
+
+
+def _is_proactor_reset(context: dict) -> bool:
+    """Windows ProactorEventLoop calling ``shutdown()`` on a socket the peer already reset.
+
+    A remote host (Telegram long-poll, LLM provider) closes a TCP connection while
+    asyncio still holds it half-open; ``_call_connection_lost`` then raises
+    ``ConnectionResetError`` [WinError 10054] for a connection that is going away anyway.
+    """
+    exc = context.get("exception")
+    return isinstance(exc, ConnectionResetError) and getattr(exc, "winerror", None) == 10054
+
+
+def install_loop_noise_filter(loop: asyncio.AbstractEventLoop) -> None:
+    """Drop exactly the known-benign unhandled-exception reports; delegate everything else.
+
+    Installed from ``NavigGateway.start()`` so every entry point gets it — it used to
+    live only in ``run_gateway()``, which neither ``navig gateway start`` nor the
+    telegram worker calls. Any previously installed handler is chained, not replaced.
+    """
+    previous = loop.get_exception_handler()
+    if getattr(previous, "_navig_noise_filter", False):
+        return
+
+    def _handler(loop_: asyncio.AbstractEventLoop, context: dict) -> None:
+        if _is_proactor_reset(context) or _is_aiohttp_request_factory_race(context):
+            logger.debug("suppressed benign loop exception: %s", context.get("exception"))
+            return
+        if previous is not None:
+            previous(loop_, context)
+        else:
+            loop_.default_exception_handler(context)
+
+    _handler._navig_noise_filter = True  # type: ignore[attr-defined]
+    loop.set_exception_handler(_handler)
+
+
 def _bind_candidates(preferred: int, last_bound: int | None) -> list[int]:
     """Ordered ports for the self-healing bind.
 
@@ -227,11 +286,11 @@ def _monitor_enabled_truthy(v: object) -> bool:
 def _ensure_auth_token(gateway_cfg: dict) -> str | None:
     """Mint and persist ``gateway.auth.token`` when the install has none.
 
-    ``require_bearer_auth`` opens with ``if not token: return None`` — **no token means
-    open access** — and this key had no default. Seventeen route modules sit behind it,
-    including ``POST /approval/{id}/respond``: on a default install any local process
-    could answer the agent's pending approvals. An approval endpoint anyone can call is
-    not an approval endpoint, and it silently defeats the whole gate.
+    A missing token used to mean open access; since the Gate 0 hardening it fails
+    CLOSED (503 on every guarded route), which would lock the CLI and deck out entirely.
+    Minting keeps the install usable: seventeen route modules sit behind this key,
+    including ``POST /approval/{id}/respond``, and the mint is what gives them a
+    credential to check instead of refusing everything.
 
     Minting rather than refusing, because refusing breaks the one consumer that exists.
     ``navig gateway approve`` is the only caller of those routes and it reads this same
@@ -511,10 +570,10 @@ class NavigGateway:
             logger.warning("Gateway already running")
             return
 
-        # Before anything becomes reachable: make sure the admin routes are actually
-        # guarded. `require_bearer_auth` treats "no token" as open access, and
-        # `POST /approval/{id}/respond` sits behind it — an unauthenticated gateway lets
-        # any local process answer the agent's pending approvals.
+        # Before anything becomes reachable: make sure the admin routes have a
+        # credential to check. `require_bearer_auth` fails closed with 503 when no
+        # token exists, and `POST /approval/{id}/respond` sits behind it — so a failed
+        # mint locks every client (CLI, deck, gateway approve) out until it is fixed.
         if not self.config.auth_token:
             self.config.auth_token = _ensure_auth_token(
                 self.config.raw_gateway_cfg
@@ -523,6 +582,8 @@ class NavigGateway:
         self.running = True
         self.start_time = datetime.now()
         _t0 = self.start_time.timestamp()
+
+        install_loop_noise_filter(asyncio.get_running_loop())
 
         def _elapsed() -> str:
             import time
@@ -606,6 +667,14 @@ class NavigGateway:
             await self.system_events.start(replay_pending=False)
         except Exception as exc:  # noqa: BLE001 — event delivery must never block boot
             logger.error("System event processor failed to start: %s", exc)
+        # The Planner writes from deck routes (executor threads) AND Telegram handlers;
+        # this gives every write one way to push `planner_update` to open UIs.
+        try:
+            from navig.pim import service as _planner_service
+
+            _planner_service.set_event_sink(asyncio.get_running_loop(), self.system_events)
+        except Exception as exc:  # noqa: BLE001 — a refresh hint must never block boot
+            logger.debug("Planner event sink not registered: %s", exc)
 
         # Initialize config watcher
         self.config_watcher = ConfigWatcher(self)
@@ -718,6 +787,7 @@ class NavigGateway:
         # Start channel adapters (Telegram polling, etc.)
         _ts = _time_mod.monotonic()
         await self._init_channels()
+        await self._init_discord_channel()
         _dt = _time_mod.monotonic() - _ts
         logger.debug("[startup] Channels: %.2fs", _dt)
         _boot_step("channels", _dt, icon="radio")
@@ -750,6 +820,7 @@ class NavigGateway:
         # captured to the log file but kept off the styled boot output — the
         # banner below shows "Ready in" instead. In --debug mode it prints.
         logger.info("Gateway ready in %.2fs", _total)
+        spawn(self._log_code_source())
         # Wrap the entire banner block so a typo or missing attr can't swallow
         # the rest of the output -- the user must always see SOMETHING actionable.
         try:
@@ -778,12 +849,29 @@ class NavigGateway:
         except Exception as _warm_exc:  # noqa: BLE001
             logger.debug("could not schedule conversational warmup: %r", _warm_exc)
 
+        # Proactive calendar/email watcher: starts by itself once a real calendar or
+        # mailbox is configured (it was start-by-hand only, so it never ran for anyone
+        # who did not know about POST /proactive/start). Off: proactive.enabled false.
+        try:
+            self._proactive_task = asyncio.create_task(self._auto_start_proactive())
+        except Exception as _pro_exc:  # noqa: BLE001
+            logger.debug("could not schedule proactive auto-start: %r", _pro_exc)
+
         # Daily Partner Center marketplace sync (best-effort; no-op until the
         # user configures App-Only credentials in the Connectors catalog).
         try:
             self._pc_sync_task = asyncio.create_task(self._partner_center_sync_loop())
         except Exception as _pc_exc:  # noqa: BLE001
             logger.debug("could not schedule partner-center sync: %r", _pc_exc)
+
+        # Licence auto-refresh: pull the buyer's newest signed token twice a
+        # day, so a renewal reaches the daemon without a re-paste (a monthly
+        # subscriber used to drop to Free 31 days after their last paste).
+        # Off: navig config set license.auto_refresh false
+        try:
+            self._license_refresh_task = asyncio.create_task(self._license_refresh_loop())
+        except Exception as _lr_exc:  # noqa: BLE001
+            logger.debug("could not schedule licence refresh: %r", _lr_exc)
 
         # Register started subsystems for per-subsystem health (/health/services).
         # Best-effort and attribute-driven so a missing/disabled subsystem simply
@@ -810,6 +898,54 @@ class NavigGateway:
         finally:
             await self.stop()
 
+    async def _auto_start_proactive(self) -> None:
+        """Run the proactive engine for as long as the gateway runs — when it has work.
+
+        Starts only when ``proactive.enabled`` (default on) AND at least one real
+        calendar or mailbox is configured: with only mock providers every check is
+        skipped, so running would be a 60-second loop that finds nothing. Provider set-up
+        can do network I/O (an OAuth refresh), so it runs off the event loop.
+        """
+        try:
+            from navig.config import get_config_manager
+            from navig.core.coerce import coerce_bool
+
+            if not coerce_bool(get_config_manager().get("proactive.enabled"), default=True):
+                logger.info("proactive watcher off (proactive.enabled is false)")
+                return
+            from navig.agent.proactive.engine import get_proactive_engine
+
+            engine = await asyncio.to_thread(get_proactive_engine)
+            if not engine.has_real_provider():
+                logger.info("proactive watcher idle: no calendar or mailbox configured")
+                return
+            if engine.running:
+                return
+            logger.info("proactive watcher started (calendar/email alerts)")
+            await engine.start()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — a watcher failure must not touch the gateway
+            logger.warning("proactive watcher failed to start: %s", exc)
+
+    async def _log_code_source(self) -> None:
+        """Warn once at boot when the daemon runs a non-main branch or a dirty tree.
+
+        The daemon runs the main checkout's editable install, so whatever a session left
+        checked out there is the live bot. ``git`` runs in a worker thread — never on
+        the loop. Best-effort: a failure here is logged at debug and changes nothing.
+        """
+        try:
+            from navig.core.code_source import describe, summary  # noqa: PLC0415
+
+            src = await asyncio.to_thread(describe)
+            if src.ok:
+                logger.info("Running code: %s", summary(src))
+            else:
+                logger.warning("Running code: %s", summary(src))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("code-source check skipped: %s", exc)
+
     async def stop(self):
         """Stop the gateway and all subsystems."""
         if not self.running:
@@ -826,11 +962,30 @@ class NavigGateway:
         self.running = False
         self._shutdown_t0 = __import__("time").monotonic()
 
+        # The Discord bot holds a websocket; close it so Discord sees it go offline now.
+        # Guarded as a whole: every teardown before the browser's must be, or a raise
+        # here leaves its window on the operator's screen.
+        try:
+            discord_channel = getattr(self, "channels", {}).pop("discord", None)
+            if discord_channel is not None:
+                await discord_channel.stop()
+        except Exception as exc:  # noqa: BLE001 - shutdown continues regardless
+            logger.debug("Discord channel stop raised: %s", exc)
+
         # Stop the system-event processor (symmetric with start()).
         try:
             await self.system_events.stop()
         except Exception:  # noqa: BLE001 — shutdown must not fail on telemetry
             pass
+
+        # Uninstall the event→notify bridge (symmetric with _init_notify_monitors).
+        bridge_handle = getattr(self, "_event_bridge_handle", None)
+        if bridge_handle is not None:
+            try:
+                bridge_handle()
+            except Exception:  # noqa: BLE001 — shutdown must not fail on telemetry
+                pass
+            self._event_bridge_handle = None
 
         # Stop queue processor
         if self._queue_task:
@@ -846,6 +1001,20 @@ class NavigGateway:
                 task.cancel()
             await asyncio.gather(*list(self._background_tasks), return_exceptions=True)
             self._background_tasks.clear()
+
+        # Stop the proactive watcher if this process started it.
+        _pro_task = getattr(self, "_proactive_task", None)
+        if _pro_task is not None:
+            try:
+                from navig.agent.proactive.engine import get_proactive_engine
+
+                engine = get_proactive_engine()
+                if engine.running:
+                    await engine.stop()
+            except Exception:  # noqa: BLE001 — shutdown must not fail on cleanup
+                logger.debug("proactive engine stop raised", exc_info=True)
+            _pro_task.cancel()
+            await asyncio.gather(_pro_task, return_exceptions=True)
 
         # Stop mission scheduler + drain executor tasks
         if self.mission_scheduler:
@@ -1097,6 +1266,10 @@ class NavigGateway:
                 last_bound = disc[0]
         except Exception:  # noqa: BLE001 — stickiness is a convenience only
             pass
+        # One client aborting mid-accept must not close this port for good (Windows).
+        from navig.platform import accept_guard
+
+        accept_guard.install()
         candidates = _bind_candidates(preferred, last_bound)
         site: "web.TCPSite | None" = None
         last_err: Exception | None = None
@@ -1456,6 +1629,8 @@ class NavigGateway:
         Errors are logged but do not block the gateway startup -- local-only
         users must keep working even if the broker is unreachable.
         """
+        if not self.running:
+            return  # stop() already ran mid-boot — don't open a tunnel nobody will close
         raw = self.config_manager.global_config or {}
         cloud_cfg = raw.get("cloud", {}) if isinstance(raw, dict) else {}
         # Default to ON: a fresh install with no cloud: block in user config
@@ -1551,6 +1726,12 @@ class NavigGateway:
             await self.cloud_manager.start()
         except Exception as exc:  # noqa: BLE001
             logger.warning("Cloud manager failed to start: %s", exc)
+            self.cloud_manager = None
+            return
+        # stop() during boot ran BEFORE this manager existed, so it could not stop it:
+        # the cloudflared child would outlive the gateway as an orphaned public tunnel.
+        if not self.running:
+            await self.cloud_manager.stop()
             self.cloud_manager = None
 
     def _make_lighthouse_snapshot_provider(self, api_key: str):
@@ -1739,6 +1920,41 @@ class NavigGateway:
             except asyncio.CancelledError:
                 break
 
+    async def _license_refresh_loop(self) -> None:
+        """Adopt a renewed licence token from api.navig.run every 12 hours.
+
+        ``refresh_once`` never raises and never replaces a working licence with
+        one that fails offline verification; it runs in a thread because it
+        does blocking HTTP and file I/O.
+        """
+        await asyncio.sleep(90)  # let boot settle before the first call
+        while self.running:
+            try:
+                from navig.license.refresh import (
+                    INTERVAL_SECONDS,
+                    auto_refresh_enabled,
+                    refresh_once,
+                )
+
+                if auto_refresh_enabled():
+                    result = await asyncio.to_thread(refresh_once)
+                    if result.outcome == "updated":
+                        logger.info("licence auto-refresh: adopted a renewed token (%s)", result.tier)
+                    elif result.outcome == "rejected":
+                        logger.warning("licence auto-refresh: refused a token: %s", result.detail)
+                    else:
+                        logger.debug("licence auto-refresh: %s %s", result.outcome, result.detail)
+                interval = INTERVAL_SECONDS
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("licence auto-refresh skipped: %s", exc)
+                interval = 12 * 3600
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                break
+
     async def _process_message_queue(self):
         """Process queued messages."""
         while self.running:
@@ -1809,6 +2025,9 @@ class NavigGateway:
         action: str,
         actor: str,
         raw_input: str = "",
+        *,
+        description: str | None = None,
+        on_pending: Callable[[str], None] | None = None,
     ) -> web.Response | None:
         """
         Run PolicyGate + CooldownTracker for a privileged action.
@@ -1820,6 +2039,11 @@ class NavigGateway:
         (deck Inbox / Telegram / /approval routes resolve it) up to the approval
         policy's ``timeout_seconds``; timeout or denial → 403. No approval
         manager wired → fail CLOSED (403), never open.
+
+        *description* is what the approver sees (Inbox / Telegram) — pass the real
+        command, not just the slug. *on_pending* receives the approval request id
+        the moment a request is pending; the decision itself is unchanged (this
+        coroutine still waits for it), so a caller may answer its client early.
 
         Always writes an audit record.
 
@@ -1913,12 +2137,14 @@ class NavigGateway:
                 actor,
             )
             try:
+                extra: dict[str, Any] = {"on_created": on_pending} if on_pending else {}
                 approved = await mgr.request_approval(
                     command=action,
-                    description=f"Policy gate: '{action}' requested by {actor}",
+                    description=description or f"Policy gate: '{action}' requested by {actor}",
                     user_id=actor,
                     channel="policy",
                     session_key=f"policy:{actor}",
+                    **extra,
                 )
             except Exception:  # noqa: BLE001 — an approval-flow crash must fail closed
                 logger.exception(
@@ -2108,35 +2334,22 @@ class NavigGateway:
 
         try:
             # Initialize MCP client manager
-            from navig.mcp import MCPClientManager
-
-            try:
-                from navig.mcp.client import MCPClientConfig
-            except ImportError:
-                MCPClientConfig = None  # type: ignore[assignment]
+            from navig.mcp import MCPClientConfig, MCPClientManager
 
             self.mcp_client_manager = MCPClientManager()
 
-            # Auto-connect to configured MCP servers
-            mcp_servers = self.config_manager.global_config.get("mcp", {}).get("servers", [])
-            for server_cfg in mcp_servers:
+            # Auto-connect to configured MCP servers. `from_server_entry` is the one
+            # mapping the deck's hot-apply uses too: it carries args/env/cwd/headers
+            # (the old inline build dropped all four) and skips disabled entries.
+            mcp_servers = (self.config_manager.global_config.get("mcp") or {}).get("servers") or []
+            for server_cfg in mcp_servers if isinstance(mcp_servers, list) else []:
                 try:
-                    if MCPClientConfig is not None:
-                        cfg = MCPClientConfig(
-                            id=server_cfg["name"],
-                            command=server_cfg.get("command"),
-                            url=server_cfg.get("url"),
-                            transport="sse" if server_cfg.get("url") else "stdio",
-                        )
+                    cfg = MCPClientConfig.from_server_entry(server_cfg)
+                    if cfg.enabled:
                         await self.mcp_client_manager.add_client(cfg)
-                    else:
-                        await self.mcp_client_manager.add_client(
-                            server_cfg["name"],
-                            command=server_cfg.get("command"),
-                            url=server_cfg.get("url"),
-                        )
                 except Exception as e:
-                    logger.warning("Failed to connect MCP server %s: %s", server_cfg.get('name'), e)
+                    name = server_cfg.get("name") if isinstance(server_cfg, dict) else server_cfg
+                    logger.warning("Failed to connect MCP server %s: %s", name, e)
 
             logger.info(
                 "MCP client manager initialized with %d clients",
@@ -2302,6 +2515,26 @@ class NavigGateway:
         except Exception as exc:  # noqa: BLE001 - never block channel startup
             logger.warning("Could not wire Telegram approval prompts: %s", exc)
 
+    async def _init_discord_channel(self) -> None:
+        """Start the NAVIG Discord bot when it is set up (navig discord setup).
+
+        Independent of Telegram: ``_init_channels`` returns early without a Telegram
+        token, so the bot cannot live inside it. All gating (enabled flag, vault token,
+        discord.py present) and the fail-closed owner model live in
+        ``create_discord_channel`` / ``navig.discord.bot_logic``.
+        """
+        try:
+            from navig.gateway.channels.discord import create_discord_channel
+
+            channel = create_discord_channel(self.router.route_message)
+            if channel is None:
+                return
+            self.channels["discord"] = channel
+            await channel.start()
+            logger.info("Discord bot starting")
+        except Exception as exc:  # noqa: BLE001 - a bot problem must never block the gateway
+            logger.error("Failed to start the Discord bot: %s", exc)
+
     async def _init_channels(self):
         """Instantiate and start channel adapters (e.g. Telegram polling loop)."""
         raw_cfg = self.config_manager.global_config or {}
@@ -2408,43 +2641,12 @@ class NavigGateway:
 
     @staticmethod
     def _resolve_adapter_config(cfg: dict) -> dict:
-        """Expand ``vault:KEY`` placeholder strings in an adapter config dict.
+        """Expand ``vault:KEY`` placeholders — see
+        :func:`navig.messaging.adapter_setup.resolve_vault_placeholders`, the one
+        implementation shared with on-demand adapter setup in other processes."""
+        from navig.messaging.adapter_setup import resolve_vault_placeholders
 
-        Walks the dict one level deep and replaces any string value of the form
-        ``"vault:key_name"`` with the secret retrieved from the NAVIG vault.
-        Nested dicts (e.g. ``cfg["twilio"]``) are also expanded one level.
-        Non-vault values are returned unchanged.
-        """
-        try:
-            from navig.vault.core import get_vault
-
-            vault = get_vault()
-            if vault is None:
-                return cfg
-        except Exception:
-            return cfg
-
-        def _expand(d: dict) -> dict:
-            out: dict = {}
-            for k, v in d.items():
-                if isinstance(v, str) and v.startswith("vault:"):
-                    secret_key = v[len("vault:"):]
-                    try:
-                        # get_secret returns a SecretStr (no .strip / masks on str());
-                        # reveal the real value before using it as adapter config.
-                        sec = vault.get_secret(secret_key)
-                        raw = sec.reveal() if hasattr(sec, "reveal") else str(sec or "")
-                        resolved = (raw or "").strip()
-                        out[k] = resolved if resolved else v
-                    except Exception:
-                        out[k] = v
-                elif isinstance(v, dict):
-                    out[k] = _expand(v)
-                else:
-                    out[k] = v
-            return out
-
-        return _expand(cfg)
+        return resolve_vault_placeholders(cfg)
 
     async def _init_messaging_adapters(self):
         """Register multi-network messaging adapters from config.
@@ -2499,43 +2701,33 @@ class NavigGateway:
             # ── SMS adapter ──
             sms_cfg = adapters_cfg.get("sms", {})
             if _section_enabled(sms_cfg, False):
-                try:
-                    from navig.messaging.adapters.sms import SmsAdapter
+                from navig.messaging import adapter_setup
 
-                    adapter = SmsAdapter(config=self._resolve_adapter_config(sms_cfg))
-                    # Ask BEFORE registering. The SDK import is lazy, so an
-                    # adapter with no SDK constructs fine and only fails at send
-                    # time — one ERROR per delivery for a channel that can never
-                    # work. WARNING, not debug: the operator switched this on, so
-                    # "it is off again" has to be visible and actionable.
-                    missing = adapter.missing_dependency()
-                    if missing:
-                        logger.warning(
-                            "SMS is enabled (adapters.sms.enabled) but the %r package "
-                            "is not installed, so every send would fail. Either "
-                            "`pip install %s` or turn the channel off with "
-                            "`navig config set adapters.sms.enabled false`. Not "
-                            "registering it — other channels are unaffected.",
-                            missing,
-                            missing,
-                        )
-                    else:
-                        registry.register(adapter)
-                        logger.debug("Messaging adapter registered: sms")
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug("SMS adapter skipped: %s", exc)
+                adapter, why = adapter_setup.build("sms", adapters_cfg)
+                if adapter is not None:
+                    registry.register(adapter)
+                    logger.debug("Messaging adapter registered: sms")
+                else:
+                    # WARNING, not debug: the operator switched this on, so "it is
+                    # off again" (a missing SDK, a broken section) must be visible.
+                    logger.warning(
+                        "SMS is enabled (adapters.sms.enabled) but cannot send: %s. "
+                        "Not registering it — other channels are unaffected. Turn it "
+                        "off with `navig config set adapters.sms.enabled false`.",
+                        why,
+                    )
 
             # ── WhatsApp Cloud adapter ──
             wa_cfg = adapters_cfg.get("whatsapp", {})
             if _section_enabled(wa_cfg, False):
-                try:
-                    from navig.messaging.adapters.whatsapp_cloud import WhatsAppCloudAdapter
+                from navig.messaging import adapter_setup
 
-                    adapter = WhatsAppCloudAdapter(config=self._resolve_adapter_config(wa_cfg))
+                adapter, why = adapter_setup.build("whatsapp", adapters_cfg)
+                if adapter is not None:
                     registry.register(adapter)
                     logger.debug("Messaging adapter registered: whatsapp")
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug("WhatsApp adapter skipped: %s", exc)
+                else:
+                    logger.debug("WhatsApp adapter skipped: %s", why)
 
             # ── Discord adapter ──
             discord_cfg = adapters_cfg.get("discord", {})
@@ -2545,7 +2737,13 @@ class NavigGateway:
 
                     resolved_discord = self._resolve_adapter_config(discord_cfg)
                     adapter = DiscordMessagingAdapter(config=resolved_discord)
-                    # Client injection happens later when the discord.py bot connects
+                    # The adapter sends through the running bot's discord.Client. Nothing
+                    # ever called set_client() before, so every outbound Discord send
+                    # failed with "Call set_client()". The bot starts in
+                    # _init_discord_channel(), which runs before this.
+                    bot_channel = self.channels.get("discord")
+                    if bot_channel is not None:
+                        adapter.set_client(bot_channel.client)
                     registry.register(adapter)
                     logger.debug("Messaging adapter registered: discord")
                 except Exception as exc:  # noqa: BLE001
@@ -2956,24 +3154,36 @@ class NavigGateway:
 
 
     async def _cors_middleware(self, request, handler):
-        """CORS middleware — handle OPTIONS preflight and add CORS headers."""
+        """CORS for the EMBEDDED gateway app — the same origin allowlist as the daemon.
+
+        This is what the telegram worker mounts on its copy of the gateway
+        (`daemon/telegram_worker.py`), and on an install where the worker owns the port
+        that copy IS the listener the Deck talks to. It used to answer every route with
+        ``Access-Control-Allow-Origin: *`` — harmless-looking while every route carried
+        a Bearer, but the routes that carry NONE (`/api/memory/facts/*`,
+        ``/install/config``, ``/llm/providers``, ``/router/*``) then handed their bodies
+        to any page open in any browser on the machine, because loopback plus a wildcard
+        grant is readable cross-origin.
+
+        ``cors_headers_for`` is the single allowlist the daemon's own middleware uses, so
+        the two listeners cannot drift. Same-origin callers (the Deck served from this
+        port) never needed a grant; the Telegram WebView, the hosted Relay and any
+        localhost dev server stay allowed.
+        """
         from aiohttp import web
 
+        from navig.gateway.middleware import cors_headers_for
+
         if request.method == "OPTIONS":
-            return web.Response(
-                status=200,
-                headers={
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-                    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-                },
-            )
-        result = handler(request)
-        if asyncio.iscoroutine(result):
-            response = await result
+            response: web.Response = web.Response(status=200)
         else:
-            response = result
-        response.headers.setdefault("Access-Control-Allow-Origin", "*")
+            result = handler(request)
+            if asyncio.iscoroutine(result):
+                response = await result
+            else:
+                response = result  # type: ignore[assignment]
+        for key, value in cors_headers_for(request).items():
+            response.headers[key] = value
         return response
 
     async def _handle_message(self, request):
@@ -3036,7 +3246,8 @@ class NavigGateway:
 
     #: Toggleable opt-in producers surfaced in the deck "Monitors" card.
     MONITOR_KEYS = ("webcam", "resources", "self_errors", "connectivity", "config_incidents",
-                    "browser_reaper")
+                    "browser_reaper", "pushover_escalation", "host_checks", "breach",
+                    "site_probes", "lens_updates", "recall_ingest")
 
     #: Monitors that default ON (started at boot unless explicitly disabled). The rest are
     #: opt-in. config_incidents is the one exception because a MISSED config-rescue event —
@@ -3044,7 +3255,11 @@ class NavigGateway:
     #: this whole surface exists to surface; it is noiseless on a healthy install (nothing
     #: records) and only pushes if a channel is configured. Kept in sync with the deck
     #: route's _DEFAULT_ON by test_monitor_defaults_agree.
-    MONITORS_DEFAULT_ON = frozenset({"config_incidents"})
+    #: pushover_escalation is ON for the same reason: it is idle unless an emergency is
+    #: pending, and an unacknowledged emergency that never escalates is a silent miss.
+    #: lens_updates is ON because an update nobody hears about is a fix nobody applies; it
+    #: is idle unless a Lens was installed from a link, and it only STAGES — never applies.
+    MONITORS_DEFAULT_ON = frozenset({"config_incidents", "pushover_escalation", "lens_updates"})
 
     def _init_notify_monitors(self) -> None:
         """Start each enabled monitor at boot (per ``monitors.<name>.enabled``).
@@ -3057,6 +3272,21 @@ class NavigGateway:
         test_monitor_enabled_coercion_matches_the_deck.
         """
         self._monitor_tasks = getattr(self, "_monitor_tasks", {})
+        # The system-event → notification bridge (Gate 1c) must be subscribed at
+        # boot: without it nobody consumes host_down / *_warning / *_ok events, so
+        # an emitted alert would fill the deck event history and stay silent.
+        # Idempotent per queue, so a re-init cannot stack a duplicate subscriber.
+        try:
+            from navig.notify.producers.system_events_bridge import (
+                install_event_notify_bridge,
+            )
+
+            queue = getattr(self, "event_queue", None)
+            if queue is not None:
+                self._event_bridge_handle = install_event_notify_bridge(queue)
+        except Exception as e:  # noqa: BLE001 — never block boot on a subscriber
+            logger.debug("event→notify bridge install skipped: %s", e)
+
         cfg = (self.config_manager.global_config or {}).get("monitors", {}) or {}
         for name in self.MONITOR_KEYS:
             try:
@@ -3083,6 +3313,29 @@ class NavigGateway:
                 "resources", {}
             ) or {}
             self._spawn_monitor_task(name, run_resource_monitor(rcfg))
+        elif name == "host_checks":
+            from navig.notify.monitors.host_health import run_host_check_monitor
+
+            rcfg = ((self.config_manager.global_config or {}).get("monitors", {}) or {}).get(
+                "host_checks", {}
+            ) or {}
+            # The monitor emits system events; the queue is where the 1c bridge
+            # (installed at _init_notify_monitors) turns them into notifications.
+            self._spawn_monitor_task(
+                name, run_host_check_monitor(rcfg, event_queue=self.event_queue)
+            )
+        elif name == "site_probes":
+            from navig.notify.monitors.site_probe import run_site_probe_monitor
+
+            rcfg = ((self.config_manager.global_config or {}).get("monitors", {}) or {}).get(
+                "site_probes", {}
+            ) or {}
+            # Like host_checks: the monitor emits system events, and the queue is
+            # where the 1c bridge (installed at _init_notify_monitors) turns them
+            # into notifications.
+            self._spawn_monitor_task(
+                name, run_site_probe_monitor(rcfg, event_queue=self.event_queue)
+            )
         elif name == "self_errors":
             from navig.notify.producers.self_errors import install_self_error_reporter
 
@@ -3099,6 +3352,25 @@ class NavigGateway:
             from navig.notify.monitors.browser_reaper import run_browser_reaper
 
             self._spawn_monitor_task(name, run_browser_reaper())
+        elif name == "breach":
+            from navig.notify.monitors.breach import run_breach_monitor
+
+            rcfg = ((self.config_manager.global_config or {}).get("monitors", {}) or {}).get(
+                "breach", {}
+            ) or {}
+            self._spawn_monitor_task(name, run_breach_monitor(rcfg))
+        elif name == "pushover_escalation":
+            from navig.notify.pushover import run_escalation_monitor
+
+            self._spawn_monitor_task(name, run_escalation_monitor())
+        elif name == "lens_updates":
+            from navig.notify.monitors.lens_updates import run_lens_update_monitor
+
+            self._spawn_monitor_task(name, run_lens_update_monitor())
+        elif name == "recall_ingest":
+            from navig.notify.monitors.recall_ingest import run_recall_ingest
+
+            self._spawn_monitor_task(name, run_recall_ingest())
         elif name == "connectivity":
             # Driven by the uplink listener + a live config check — nothing to spawn.
             self._monitor_tasks[name] = "live"
@@ -3188,23 +3460,7 @@ def run_gateway():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    # Windows-specific: silence benign ProactorEventLoop cleanup spam.
-    # When a remote host (Telegram long-poll, LLM provider, cloudflared
-    # tunnel) closes a TCP connection while asyncio still has the socket
-    # half-open, _ProactorBasePipeTransport._call_connection_lost calls
-    # socket.shutdown() on a dead FD and raises ConnectionResetError
-    # [WinError 10054]. Python's default exception handler logs the full
-    # traceback even though the connection is going away anyway. We swallow
-    # exactly this case; every other unhandled exception still surfaces.
-    import sys as _sys
-    if _sys.platform == "win32":
-        def _silence_proactor_resets(loop_, context):
-            exc = context.get("exception")
-            if isinstance(exc, ConnectionResetError) and getattr(exc, "winerror", None) == 10054:
-                return
-            # Default behaviour for everything else.
-            loop_.default_exception_handler(context)
-        loop.set_exception_handler(_silence_proactor_resets)
+    install_loop_noise_filter(loop)
 
     def signal_handler():
         spawn(gateway.stop())

@@ -22,6 +22,10 @@ Signing scheme (Stripe-style, replay-resistant):
     X-Navig-Signature: sha256=<hex(hmac_sha256(secret, signed))>
     X-Navig-Timestamp: <unix seconds>
 The timestamp is part of the MAC and must be within ``tolerance`` seconds of now.
+
+A source may instead have ``provider="stripe"``: it is pasted into the Stripe
+dashboard as a webhook endpoint and verified with Stripe's own ``whsec_`` scheme
+(``navig.notify.stripe_events``) — zero code in the project that takes payments.
 """
 
 from __future__ import annotations
@@ -36,7 +40,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from navig.notify import prefs, store
+from navig.notify import prefs, store, stripe_events
 from navig.notify.signal_presets import DEFAULT_CHANNELS, get_preset, preset_emoji
 from navig.notify.types import PRIORITIES, TYPE_KEYS
 
@@ -48,6 +52,11 @@ _SECRET_PREFIX = "sk_sig_"
 DEFAULT_TOLERANCE_S = 300
 SIG_HEADER = "X-Navig-Signature"
 TS_HEADER = "X-Navig-Timestamp"
+PROVIDERS = ("stripe",)  # None = NAVIG HMAC signing
+# Provider events that are not sales (refunds, disputes, failed payments) land
+# here, so a source's own row stays "the ring for money coming in".
+PROVIDER_ALERT_TYPE = "finance_alert"
+_SEEN_RETENTION_DAYS = 7
 
 
 # ── Pure core (no NAVIG imports beyond constants — safe to extract) ───────────
@@ -66,6 +75,10 @@ class IngestResult:
     priority: str = "normal"
     data: dict[str, Any] = field(default_factory=dict)
     signature: str = ""  # surfaced so the route can dedupe replays
+    # Provider sources: a verified event we deliberately don't notify on (200).
+    ignored: bool = False
+    # Provider sources: the provider's own event id — the durable dedupe key.
+    event_id: str = ""
 
 
 class _SafeDict(dict):
@@ -133,8 +146,11 @@ def verify_and_render(
 
     Returns an ``IngestResult`` — ``ok=False`` carries an HTTP status + reason. The
     caller is responsible for the unknown-source 404 and for replay-dedupe using
-    ``result.signature``.
+    ``result.signature`` (or ``result.event_id`` for a provider source).
     """
+    if source.get("provider") == "stripe":
+        return _verify_stripe(source, headers, body, now=now, tolerance=tolerance)
+
     secret = source.get("secret") or ""
     if not secret:
         return IngestResult(False, 500, "source misconfigured: no secret")
@@ -186,20 +202,83 @@ def verify_and_render(
     )
 
 
+def render_provider_event(
+    source: dict[str, Any], event: dict[str, Any]
+) -> tuple[str, str, str, str, dict[str, Any]] | None:
+    """Render a provider event the way ``render_event`` renders a payload; None = ignore."""
+    rendered = stripe_events.render(event)
+    if rendered is None:
+        return None
+    if rendered.kind == "sale":
+        notify_type = source.get("notify_type") or "sale"
+        # The source's priority governs its sales (e.g. "high" to always ring)…
+        priority = source.get("priority") or rendered.priority
+    else:
+        # …but never an alert: a dispute stays high whatever the sales row says.
+        notify_type = PROVIDER_ALERT_TYPE
+        priority = rendered.priority
+    data = {"source": source.get("name", "stripe"), **rendered.data}
+    return notify_type, rendered.title, rendered.body, priority, data
+
+
+def _verify_stripe(
+    source: dict[str, Any],
+    headers: dict[str, str],
+    body: bytes,
+    *,
+    now: float | None,
+    tolerance: int,
+) -> IngestResult:
+    verdict = stripe_events.verify(
+        headers, body, source.get("secret") or "", now=now, tolerance=tolerance
+    )
+    if not verdict.ok:
+        return IngestResult(False, verdict.http_status, verdict.error)
+    event = verdict.event
+    event_id = str(event.get("id") or "")
+    rendered = render_provider_event(source, event)
+    if rendered is None:
+        return IngestResult(
+            ok=True, ignored=True, event_id=event_id, data={"event_type": event.get("type")}
+        )
+    notify_type, title, text, priority, data = rendered
+    return IngestResult(
+        ok=True,
+        notify_type=notify_type,
+        title=title,
+        body=text,
+        priority=priority,
+        data=data,
+        event_id=event_id,
+    )
+
+
+def render_test(source: dict[str, Any]) -> tuple[str, str, str, str, dict[str, Any]]:
+    """What a "Test" button sends: a sample shaped like the source's real events."""
+    if source.get("provider") == "stripe":
+        rendered = render_provider_event(source, stripe_events.sample_event())
+        assert rendered is not None  # noqa: S101 — the sample is a paid checkout
+        return rendered
+    return render_event(source, SAMPLE_PAYLOAD)
+
+
 # ── Store (NAVIG-specific) ────────────────────────────────────────────────────
 
 
 def _row_to_dict(r: Any, *, mask: bool) -> dict[str, Any]:
-    preset = r["preset"] if "preset" in r.keys() else None
+    keys = r.keys()
+    preset = r["preset"] if "preset" in keys else None
+    provider = (r["provider"] if "provider" in keys else None) or None
     out = {
         "name": r["name"],
+        "provider": provider,
         "enabled": bool(r["enabled"]),
         "notify_type": r["notify_type"],
         "priority": r["priority"],
         "title_tmpl": r["title_tmpl"],
         "body_tmpl": r["body_tmpl"],
         "preset": preset,
-        "emoji": preset_emoji(preset),
+        "emoji": "💳" if provider == "stripe" else preset_emoji(preset),
         "created_at": r["created_at"],
         "last_event_at": r["last_event_at"],
         "hit_count": r["hit_count"],
@@ -211,11 +290,25 @@ def _row_to_dict(r: Any, *, mask: bool) -> dict[str, Any]:
 def mask_secret(secret: str) -> str:
     if not secret:
         return ""
-    return f"{secret[:10]}…{secret[-4:]}" if len(secret) > 16 else "sk_sig_…"
+    return f"{secret[:10]}…{secret[-4:]}" if len(secret) > 16 else f"{secret[:7]}…"
 
 
 def _gen_secret() -> str:
     return _SECRET_PREFIX + _secrets.token_urlsafe(32)
+
+
+def normalize_name(name: str) -> str:
+    """The stored form of a source name; ``ValueError`` if it can't be one.
+
+    Public so a caller that must act BEFORE creating the source (``signals
+    connect`` creates a Stripe endpoint first) rejects a bad name up front.
+    """
+    name = (name or "").strip().lower()
+    if not _NAME_RE.match(name):
+        raise ValueError(
+            "name must be 2-64 chars, lowercase letters/digits/_/- (start alnum)"
+        )
+    return name
 
 
 def add_source(
@@ -226,19 +319,33 @@ def add_source(
     priority: str | None = None,
     title_tmpl: str | None = None,
     body_tmpl: str | None = None,
+    provider: str | None = None,
+    secret: str | None = None,
 ) -> dict[str, Any]:
     """Create a source. Returns the row WITH the full secret (shown once).
+
+    ``provider="stripe"`` makes a Stripe webhook endpoint: *secret* is the
+    ``whsec_…`` signing secret Stripe shows for that endpoint (Stripe mints it,
+    not us), and sales route to the shared ``sale`` type unless *notify_type*
+    says otherwise — so they ring exactly like Microsoft Store sales.
 
     A *preset* pre-fills priority + title/body templates (the caller can still
     override any of them). By default the source routes to its OWN matrix row
     ``signal:<name>`` (seeded under the Signals category) so it can be muted
     independently; pass ``notify_type`` to route into an existing category instead.
     """
-    name = (name or "").strip().lower()
-    if not _NAME_RE.match(name):
-        raise ValueError(
-            "name must be 2-64 chars, lowercase letters/digits/_/- (start alnum)"
-        )
+    name = normalize_name(name)
+
+    provider = (provider or "").strip().lower() or None
+    if provider is not None and provider not in PROVIDERS:
+        raise ValueError(f"unknown provider: {provider} (supported: {', '.join(PROVIDERS)})")
+    if provider is not None:
+        secret = _validate_provider_secret(provider, secret)
+        if preset:
+            raise ValueError("presets apply to NAVIG-signed sources, not provider endpoints")
+        notify_type = notify_type or "sale"
+    elif secret:
+        raise ValueError("a secret can only be supplied for a provider source")
 
     p = get_preset(preset)
     if preset and p is None:
@@ -263,14 +370,17 @@ def add_source(
     store.init_db()
     if get_source(name) is not None:
         raise ValueError(f"signal source already exists: {name}")
-    secret = _gen_secret()
+    secret = secret or _gen_secret()
     c = store.conn()
     with c:
         c.execute(
             "INSERT INTO notify_signal_sources "
-            "(name, secret, enabled, notify_type, priority, title_tmpl, body_tmpl, preset, created_at) "
-            "VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)",
-            (name, secret, routing_type, priority, title_tmpl, body_tmpl, preset, store.now_iso()),
+            "(name, secret, enabled, notify_type, priority, title_tmpl, body_tmpl, preset, "
+            "provider, created_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                name, secret, routing_type, priority, title_tmpl, body_tmpl, preset,
+                provider, store.now_iso(),
+            ),
         )
     # Seed the per-source matrix row so the deck shows a mutable toggle for it.
     if routing_type.startswith("signal:"):
@@ -321,6 +431,7 @@ def remove_source(name: str) -> bool:
     c = store.conn()
     with c:
         cur = c.execute("DELETE FROM notify_signal_sources WHERE name = ?", (name,))
+        c.execute("DELETE FROM notify_signal_seen WHERE source = ?", (name,))
     # Drop the per-source matrix row too so it stops cluttering the matrix.
     if existing and str(existing.get("notify_type", "")).startswith("signal:"):
         prefs.delete_type(existing["notify_type"])
@@ -338,10 +449,119 @@ def set_enabled(name: str, enabled: bool) -> bool:
     return cur.rowcount > 0
 
 
-def rotate_secret(name: str) -> str:
-    """Generate a new secret for *name*; returns the full secret (shown once)."""
+def _validate_provider_secret(provider: str, secret: str | None) -> str:
+    value = (secret or "").strip()
+    if provider == "stripe" and not value.startswith(stripe_events.SECRET_PREFIX):
+        raise ValueError(
+            "a Stripe endpoint needs its signing secret (whsec_…) — Stripe Dashboard → "
+            "Developers → Webhooks → your endpoint → Signing secret"
+        )
+    return value
+
+
+def update_source(
+    name: str,
+    *,
+    notify_type: str | None = None,
+    priority: str | None = None,
+    title_tmpl: str | None = None,
+    body_tmpl: str | None = None,
+) -> dict[str, Any]:
+    """Edit a source in place. ``None`` leaves a field alone; ``""`` clears it.
+
+    The name, provider and secret are not editable here: the name IS the URL
+    (renaming would orphan every sender) and secrets change through
+    ``rotate_secret``. ``notify_type=""`` routes back to the source's own row.
+    Returns the masked row.
+    """
+    existing = get_source(name)
+    if existing is None:
+        raise ValueError(f"unknown signal source: {name}")
+    fields: dict[str, Any] = {}
+    if priority is not None:
+        if priority not in PRIORITIES:
+            raise ValueError(f"unknown priority: {priority}")
+        fields["priority"] = priority
+    if title_tmpl is not None:
+        fields["title_tmpl"] = title_tmpl or None
+    if body_tmpl is not None:
+        fields["body_tmpl"] = body_tmpl or None
+    old_type = str(existing.get("notify_type") or "")
+    new_type = old_type
+    if notify_type is not None:
+        own_row = f"signal:{name}"
+        new_type = notify_type or own_row
+        if not (new_type in TYPE_KEYS or new_type == own_row):
+            raise ValueError(f"unknown notification type: {new_type}")
+        fields["notify_type"] = new_type
+    if fields:
+        assignments = ", ".join(f"{k} = ?" for k in fields)  # keys are the fixed set above
+        c = store.conn()
+        with c:
+            c.execute(
+                f"UPDATE notify_signal_sources SET {assignments} WHERE name = ?",  # noqa: S608
+                (*fields.values(), name),
+            )
+    # Keep the per-source matrix row in step with where the source now routes.
+    if new_type != old_type:
+        if old_type.startswith("signal:"):
+            prefs.delete_type(old_type)
+        if new_type.startswith("signal:"):
+            prefs.seed_type(new_type, DEFAULT_CHANNELS)
+    return next(s for s in list_sources() if s["name"] == name)
+
+
+def claim_event(source: str, event_id: str) -> bool:
+    """Record a provider event as delivered; False = already seen (a redelivery).
+
+    Durable (notify.db): a Stripe retry days later, or after a daemon restart,
+    is still recognised. Pair with ``release_event`` when delivery then fails,
+    so the provider's retry is let through instead of swallowed as a duplicate.
+    """
     store.init_db()
-    secret = _gen_secret()
+    c = store.conn()
+    with c:
+        c.execute(
+            "DELETE FROM notify_signal_seen WHERE seen_at < datetime('now', ?)",
+            (f"-{_SEEN_RETENTION_DAYS} days",),
+        )
+        cur = c.execute(
+            "INSERT OR IGNORE INTO notify_signal_seen (source, event_id, seen_at) "
+            "VALUES (?, ?, datetime('now'))",
+            (source, event_id),
+        )
+    return cur.rowcount > 0
+
+
+def release_event(source: str, event_id: str) -> None:
+    """Undo ``claim_event`` after a failed delivery. Best-effort — never raises."""
+    try:
+        c = store.conn()
+        with c:
+            c.execute(
+                "DELETE FROM notify_signal_seen WHERE source = ? AND event_id = ?",
+                (source, event_id),
+            )
+    except Exception:  # noqa: BLE001 — worst case the retry is acked as a duplicate
+        logger.warning("could not release signal event %s/%s", source, event_id, exc_info=True)
+
+
+def rotate_secret(name: str, new_secret: str | None = None) -> str:
+    """Replace *name*'s secret; returns the full secret (shown once).
+
+    A NAVIG-signed source gets a freshly generated secret. A provider source
+    cannot — its provider mints the secret — so the caller passes the new one.
+    """
+    existing = get_source(name)
+    if existing is None:
+        raise ValueError(f"unknown signal source: {name}")
+    provider = existing.get("provider")
+    if provider:
+        secret = _validate_provider_secret(provider, new_secret)
+    elif new_secret:
+        raise ValueError("a NAVIG-signed source gets a generated secret; don't pass one")
+    else:
+        secret = _gen_secret()
     c = store.conn()
     with c:
         cur = c.execute(

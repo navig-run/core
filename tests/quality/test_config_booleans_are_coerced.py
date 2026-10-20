@@ -38,6 +38,7 @@ can fork a fourth truth table while every read is wrapped. Keep both wired.
 from __future__ import annotations
 
 import ast
+import functools
 import re
 from pathlib import Path
 
@@ -156,23 +157,36 @@ def _raw_reads_in(tree: ast.AST) -> list[tuple[ast.Call, str, int]]:
 
 
 def _uncoerced_reads() -> tuple[list[str], int]:
+    offenders, toggle_count, _ = _scan_both_rules()
+    return list(offenders), toggle_count
+
+
+def _toggle_offenders_in(tree: ast.AST, path: Path, toggles: set[str], leaves: set[str]) -> list[str]:
+    return [
+        f"{_rel(path)}:{lineno}  {ast.unparse(node.func.value)}.get({key!r}, ...)"
+        for node, key, lineno in _raw_reads_in(tree)
+        if key in toggles or key in leaves
+    ]
+
+
+# ONE parse of the tree for BOTH rules: each used to walk and parse ~1,600 files on its own
+# (~6 s a pass). Cached as plain strings — no ASTs outlive the loop.
+@functools.lru_cache(maxsize=1)
+def _scan_both_rules() -> tuple[tuple[str, ...], int, tuple[str, ...]]:
     toggles = _documented_toggles()
     # A section sub-dict is read with the LEAF key (`cloud_cfg.get("enabled")`) while the
     # doc names the full path (`cloud.enabled`), so both spellings have to be recognised.
     leaves = {t.rsplit(".", 1)[-1] for t in toggles}
-    offenders: list[str] = []
+    toggle_offenders: list[str] = []
+    security_offenders: list[str] = []
     for path in _scanned_files():
         try:
             tree = ast.parse(path.read_text(encoding="utf-8-sig"))
         except (SyntaxError, UnicodeDecodeError):
             continue
-        for node, key, lineno in _raw_reads_in(tree):
-            if key in toggles or key in leaves:
-                offenders.append(
-                    f"{_rel(path)}:{lineno}  "
-                    f"{ast.unparse(node.func.value)}.get({key!r}, ...)"
-                )
-    return offenders, len(toggles)
+        toggle_offenders += _toggle_offenders_in(tree, path, toggles, leaves)
+        security_offenders += _security_offenders_in(tree, path)
+    return tuple(toggle_offenders), len(toggles), tuple(security_offenders)
 
 
 def test_the_scan_actually_reaches_core_and_the_plugins() -> None:
@@ -228,35 +242,33 @@ SECURITY_KEYS = {
 
 
 def _uncoerced_security_reads() -> list[str]:
+    return list(_scan_both_rules()[2])
+
+
+def _security_offenders_in(tree: ast.AST, path: Path) -> list[str]:
     offenders: list[str] = []
-    for path in _scanned_files():
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8-sig"))
-        except (SyntaxError, UnicodeDecodeError):
+    wrapped: set[int] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "coerce_bool"
+            and node.args
+        ):
+            wrapped.add(id(node.args[0]))
+
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
             continue
-
-        wrapped: set[int] = set()
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id == "coerce_bool"
-                and node.args
-            ):
-                wrapped.add(id(node.args[0]))
-
-        for node in ast.walk(tree):
-            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
-                continue
-            if node.func.attr != "get" or not node.args or id(node) in wrapped:
-                continue
-            key = node.args[0]
-            if not (isinstance(key, ast.Constant) and key.value in SECURITY_KEYS):
-                continue
-            offenders.append(
-                f"{_rel(path)}:{node.lineno}  "
-                f"{ast.unparse(node)}  [{SECURITY_KEYS[key.value]}]"
-            )
+        if node.func.attr != "get" or not node.args or id(node) in wrapped:
+            continue
+        key = node.args[0]
+        if not (isinstance(key, ast.Constant) and key.value in SECURITY_KEYS):
+            continue
+        offenders.append(
+            f"{_rel(path)}:{node.lineno}  "
+            f"{ast.unparse(node)}  [{SECURITY_KEYS[key.value]}]"
+        )
     return offenders
 
 

@@ -95,3 +95,25 @@ async def test_cancel_uses_runtime_store(runtime):
     )
     assert resp.status == 200
     assert runtime.cancelled == [(77, 10)]
+
+
+async def test_create_reads_a_free_text_when(runtime):
+    """The deck form can send "demain 10h" — the same reader as /remindme and /todo."""
+    resp = await schedule.handle_deck_reminders_create(
+        _FakeReq({"message": "call mom", "when": "demain 10h", "user_id": "1", "chat_id": "2"})
+    )
+    assert resp.status == 201
+    _, _, _, remind_at = runtime.created[0]
+    assert remind_at.utcoffset().total_seconds() == 0  # stored as UTC
+    from navig.pim.clock import to_local
+
+    local = to_local(remind_at)
+    assert (local.hour, local.minute) == (10, 0)
+
+
+async def test_an_unreadable_when_is_a_400(runtime):
+    resp = await schedule.handle_deck_reminders_create(
+        _FakeReq({"message": "x", "when": "whenever", "user_id": "1", "chat_id": "2"})
+    )
+    assert resp.status == 400
+    assert runtime.created == []

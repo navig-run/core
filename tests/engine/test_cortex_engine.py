@@ -237,10 +237,15 @@ class TestA11yRefParsing:
 # SECTION 5 — TemplateRunner (no browser, no Playwright)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-EXAMPLE_APP_YAML = (
-    Path(__file__).parent.parent.parent / "navig" / "browser" / "templates" / "example-app.yaml"
-)
-GENERIC_YAML = Path(__file__).parent.parent.parent / "navig" / "browser" / "templates" / "generic.yaml"
+# The templates ship with the engine (navig-browser); the runner reads them from there.
+def _templates_dir() -> Path:
+    from navig.browser import template_runner
+
+    return Path(template_runner.TemplateRunner.TEMPLATES_DIR)
+
+
+EXAMPLE_APP_YAML = _templates_dir() / "example-app.yaml"
+GENERIC_YAML = _templates_dir() / "generic.yaml"
 
 
 class TestTemplateRunner:

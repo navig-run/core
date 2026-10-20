@@ -17,6 +17,14 @@ import pytest
 
 from navig.spaces import habit_tracker, journal, weekly_review
 
+
+@pytest.fixture(autouse=True)
+def _english_copy(monkeypatch):
+    """This file asserts the English copy. The wording is localized off the one
+    global language, so the operator's own `user.language` (or a test that set it
+    first in this worker) changes every string here. Pin it."""
+    monkeypatch.setattr("navig.core.language.resolve_language", lambda *a, **k: "en")
+
 MON = date(2026, 8, 17)
 SUN = date(2026, 8, 23)
 CHAT = -555

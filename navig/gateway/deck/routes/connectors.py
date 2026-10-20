@@ -6,6 +6,7 @@ OAuth-based integrations from the UI.
 
 Endpoints:
   GET  /api/deck/connectors              — list all connectors with live status
+  GET  /api/deck/connectors/catalog      — the connector catalog (filter + page)
   POST /api/deck/connectors/{id}/connect — get OAuth auth URL
   POST /api/deck/connectors/{id}/connect/callback — exchange code for token
   DELETE /api/deck/connectors/{id}       — disconnect (revoke vault entry)
@@ -20,6 +21,7 @@ MCP server management (Tier 3 — custom servers):
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 try:
     from aiohttp import web
@@ -58,6 +60,11 @@ def _build_connector_list(registry, auth_mgr) -> list[dict]:
 
         connected = cid in accounts
         account = accounts.get(cid) or None
+        if manifest is not None and getattr(manifest, "auth_mode", "") == "api_key":
+            # A key connector has no vault OAuth token; it is connected when its key resolves.
+            from navig.gateway.deck.routes.services import key_fields_connected
+
+            connected = key_fields_connected(manifest)
 
         items.append({
             "id": cid,
@@ -236,25 +243,33 @@ async def handle_deck_connectors_oauth_callback(request: "web.Request") -> "web.
 
 
 async def handle_deck_connectors_disconnect(request: "web.Request") -> "web.Response":
-    """DELETE /api/deck/connectors/{connector_id} — revoke + disconnect."""
+    """DELETE /api/deck/connectors/{connector_id}[?account=<email>] — remove one linked
+    account (the default one when none is given)."""
     connector_id = request.match_info.get("connector_id", "")
     if not connector_id:
         return web.json_response({"ok": False, "error": "connector_id required"}, status=400)
 
     try:
         from navig.connectors.auth_manager import ConnectorAuthManager
+        from navig.connectors.errors import ConnectorAuthError
         from navig.connectors.registry import get_connector_registry
 
-        await ConnectorAuthManager().revoke(connector_id)
+        auth = ConnectorAuthManager()
+        account = (request.query.get("account") or "").strip() or None
+        try:
+            removed = await auth.revoke(connector_id, account)
+        except ConnectorAuthError as exc:  # no such linked account
+            return web.json_response({"ok": False, "error": str(exc)}, status=404)
 
-        # Also mark instance as disconnected if one has been instantiated
+        # Mark the instance disconnected only when no account is left (removing the
+        # default promotes the next linked account).
         registry = get_connector_registry()
         inst = registry.peek_instance(connector_id)
-        if inst:
+        if inst and not auth.list_accounts(connector_id):
             from navig.connectors.types import ConnectorStatus
             inst.status = ConnectorStatus.DISCONNECTED
 
-        return web.json_response({"ok": True, "connector_id": connector_id})
+        return web.json_response({"ok": True, "connector_id": connector_id, "removed": removed})
     except Exception as exc:
         logger.error("Disconnect error for %s: %s", connector_id, exc)
         return web.json_response({"ok": False, "error": str(exc)}, status=500)
@@ -285,6 +300,13 @@ async def handle_deck_connectors_health(request: "web.Request") -> "web.Response
         injected = await ConnectorAuthManager().inject_token(connector)
         if not injected and getattr(connector.manifest, "requires_oauth", True):
             return web.json_response({"ok": False, "latency_ms": 0, "message": "Not connected"})
+        if not getattr(connector.manifest, "requires_oauth", True):
+            # Key connectors load their key in connect(); without it health_check() can
+            # only ever answer "Not connected".
+            try:
+                await connector.connect()
+            except Exception as exc:  # noqa: BLE001 — the reason IS the health answer
+                return web.json_response({"ok": False, "latency_ms": 0, "message": str(exc)})
 
         # Return health fields at the top level. NB: HealthStatus.to_dict()
         # carries its own `ok` (the probe result) — that IS the body's `ok`.
@@ -316,7 +338,80 @@ async def _resolve_connector(connector_id: str):
     if getattr(connector.manifest, "requires_oauth", True):
         if not await ConnectorAuthManager().inject_token(connector):
             return None, web.json_response({"ok": False, "error": "Not connected"}, status=402)
+    else:
+        try:
+            await connector.connect()  # key connectors load their key here
+        except Exception as exc:  # noqa: BLE001
+            return None, web.json_response({"ok": False, "error": str(exc)}, status=402)
     return connector, None
+
+
+_CATALOG_MAX_LIMIT = 500
+
+
+async def handle_deck_connectors_catalog(request: "web.Request") -> "web.Response":
+    """``GET /api/deck/connectors/catalog`` — the connector catalog, filtered and paged.
+
+    Query: ``category`` ``country`` ``region`` ``tier`` ``status`` ``integration`` ``batch``
+    ``q`` (name/vendor substring), ``limit`` (default 100, max 500), ``offset``.
+    NAVIG OS asks ``integration=remote_mcp`` for the services it can add in one click.
+    Answers ``{ok, data: {total, offset, limit, entries, categories, summary}}`` —
+    ``summary`` covers the WHOLE catalog, so a filtered view can still show the totals.
+    """
+    import asyncio
+
+    from navig.connectors import catalog
+
+    q = request.query
+    try:
+        batch = int(q["batch"]) if q.get("batch") else None
+        limit = min(max(int(q.get("limit", 100)), 1), _CATALOG_MAX_LIMIT)
+        offset = max(int(q.get("offset", 0)), 0)
+    except ValueError:
+        return web.json_response(
+            {"ok": False, "error": "batch, limit and offset must be integers"}, status=400
+        )
+    for key, allowed in (
+        ("category", catalog.CATEGORY_IDS),
+        ("tier", catalog.TIERS),
+        ("status", catalog.STATUSES),
+        ("region", catalog.REGION_IDS),
+        ("integration", catalog.INTEGRATIONS),
+    ):
+        if q.get(key) and q[key] not in allowed:
+            return web.json_response(
+                {"ok": False, "error": f"unknown {key} {q[key]!r}", "allowed": sorted(allowed)},
+                status=400,
+            )
+    try:
+        # First load parses ~5k rows (~0.2 s): keep it off the event loop.
+        await asyncio.to_thread(catalog.load_catalog)
+        rows = catalog.query(
+            category=q.get("category") or None,
+            country=q.get("country") or None,
+            region=q.get("region") or None,
+            tier=q.get("tier") or None,
+            status=q.get("status") or None,
+            batch=batch,
+            text=q.get("q") or None,
+            integration=q.get("integration") or None,
+        )
+    except catalog.CatalogError as exc:
+        logger.error("connector catalog is malformed: %s", exc)
+        return web.json_response({"ok": False, "error": f"catalog is malformed: {exc}"}, status=500)
+    return web.json_response({
+        "ok": True,
+        "data": {
+            "total": len(rows),
+            "offset": offset,
+            "limit": limit,
+            "entries": [e.to_dict() for e in rows[offset:offset + limit]],
+            "categories": [
+                {"id": c.id, "label": c.label, "icon": c.icon} for c in catalog.CATEGORIES
+            ],
+            "summary": catalog.summary(),
+        },
+    })
 
 
 async def handle_deck_connectors_search(request: "web.Request") -> "web.Response":
@@ -403,6 +498,44 @@ def _get_config_manager(request=None):
         return None
 
 
+def live_mcp_manager(request) -> Any:
+    """The running gateway's ``MCPClientManager``, or ``None`` (CLI, tests, boot race)."""
+    try:
+        gateway = request.app.get("gateway") if hasattr(request, "app") else None
+    except Exception:  # noqa: BLE001 — a request without an app is simply "no gateway"
+        gateway = None
+    return getattr(gateway, "mcp_client_manager", None) if gateway is not None else None
+
+
+async def apply_mcp_entry_live(request, name: str, entry: dict | None) -> str:
+    """Make the running gateway match one ``mcp.servers`` entry, without a restart.
+
+    Add/replace/delete used to touch config.yaml only: a new server did nothing until
+    the next restart, and a DELETED one kept running (and kept serving tools) until
+    then too. ``entry=None`` means removed. Returns what happened, for the response —
+    ``"applied"`` · ``"removed"`` · ``"disabled"`` · ``"no_gateway"`` (config saved; it
+    applies at next boot) · ``"error: …"``. Never raises: the config write already
+    succeeded, and a live-apply failure must not report the save as failed.
+    """
+    mgr = live_mcp_manager(request)
+    if mgr is None:
+        return "no_gateway"
+    try:
+        await mgr.remove_client(name)
+        if entry is None:
+            return "removed"
+        from navig.mcp import MCPClientConfig
+
+        cfg = MCPClientConfig.from_server_entry(entry)
+        if not cfg.enabled:
+            return "disabled"
+        await mgr.add_client(cfg)
+        return "applied"
+    except Exception as exc:  # noqa: BLE001 — reported in the response, see docstring
+        logger.warning("MCP live apply failed for %s: %s", name, exc)
+        return f"error: {exc}"
+
+
 def _load_mcp_servers(request=None) -> list[dict]:
     """Load custom MCP server configs from navig config."""
     try:
@@ -433,8 +566,19 @@ async def handle_deck_mcp_add(request: "web.Request") -> "web.Response":
     except Exception:
         return web.json_response({"ok": False, "error": "invalid JSON"}, status=400)
 
-    name = body.get("name", "").strip()
-    server_type = body.get("type", "").strip()
+    if not isinstance(body, dict):
+        return web.json_response({"ok": False, "error": "body must be a JSON object"}, status=400)
+    raw_name, raw_type = body.get("name", ""), body.get("type", "")
+    if not isinstance(raw_name, str) or not isinstance(raw_type, str):
+        # `.strip()` on a non-string raised outside any handler — a 500 for bad input.
+        return web.json_response({"ok": False, "error": "name and type must be strings"}, status=400)
+    name = raw_name.strip()
+    server_type = raw_type.strip()
+    for key, kind in (("args", list), ("env", dict), ("headers", dict)):
+        if body.get(key) is not None and not isinstance(body.get(key), kind):
+            return web.json_response(
+                {"ok": False, "error": f"{key} must be a {kind.__name__}"}, status=400
+            )
 
     if not name:
         return web.json_response({"ok": False, "error": "name is required"}, status=400)
@@ -493,7 +637,8 @@ async def handle_deck_mcp_add(request: "web.Request") -> "web.Response":
         servers.append(server_config)
         cfg.set_global("mcp.servers", servers)
 
-        return web.json_response({"ok": True, "server": server_config})
+        live = await apply_mcp_entry_live(request, name, server_config)
+        return web.json_response({"ok": True, "server": server_config, "live": live})
     except Exception as exc:
         logger.error("MCP server add error: %s", exc)
         return web.json_response({"ok": False, "error": str(exc)}, status=500)
@@ -514,7 +659,8 @@ async def handle_deck_mcp_remove(request: "web.Request") -> "web.Response":
         cfg.set_global(
             "mcp.servers", [s for s in current if s.get("name") != name]
         )
-        return web.json_response({"ok": True, "removed": name})
+        live = await apply_mcp_entry_live(request, name, None)
+        return web.json_response({"ok": True, "removed": name, "live": live})
     except Exception as exc:
         logger.error("MCP server remove error: %s", exc)
         return web.json_response({"ok": False, "error": str(exc)}, status=500)

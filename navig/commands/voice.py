@@ -1,160 +1,47 @@
-from pathlib import Path
+"""`navig voice` — speak text and transcribe audio, from the navig-audio plugin.
+
+The commands and the TTS/STT engines live in navig-audio (``navig_audio.commands.voice``), so
+``navig-audio voice …`` runs the same code without navig. When the plugin is not installed, each
+command still exists and prints the one install line (exit 2) instead of "No such command".
+"""
+
+from __future__ import annotations
 
 import typer
 
-from navig.lazy_loader import lazy_import
+try:
+    from navig_audio.commands.voice import voice_app
+except ImportError:
+    voice_app = typer.Typer(
+        name="voice", help="Voice synthesis and recognition commands", no_args_is_help=True
+    )
 
-ch = lazy_import("navig.console_helper")
+    def _needs_plugin(ctx: typer.Context) -> None:
+        import importlib.util
 
-voice_app = typer.Typer(
-    name="voice",
-    help="Voice synthesis and recognition commands",
-    no_args_is_help=True,
-)
+        from navig import console_helper as ch
+        from navig.plugins.require import install_hint
 
-
-@voice_app.callback()
-def _voice_root(ctx: typer.Context) -> None:
-    # The voice engines (TTS/STT) live in the navig-audio plugin; core keeps thin
-    # navig.voice.* shims. Fail fast HERE — before a subcommand does any work — and
-    # source the install line from navig.plugins.require so there is exactly one.
-    from navig.plugins.require import install_hint
-
-    try:
-        import navig_audio.voice  # noqa: F401
-    except ImportError:
-        ch.error(
-            "Voice needs the navig-audio plugin (TTS/STT engines).",
-            f"Install it:  {install_hint('navig-audio')}",
-        )
-        raise typer.Exit(2) from None
-
-
-@voice_app.command("speak")
-def speak_command(
-    text: str = typer.Argument(..., help="Text to speak"),
-    provider: str = typer.Option(
-        None, "--provider", "-p", help="TTS Provider (openai, elevenlabs, edge)"
-    ),
-    voice: str = typer.Option(None, "--voice", "-v", help="Voice ID/Name"),
-    output: Path | None = typer.Option(None, "--output", "-o", help="Output file path (.mp3)"),
-    play: bool = typer.Option(True, "--play/--no-play", help="Play audio immediately"),
-):
-    """Synthesize speech from text."""
-    import asyncio
-
-    from navig.voice.tts import TTSProvider, get_tts
-
-    async def _run():
-        tts = get_tts()
-
-        # Resolve provider
-        prov_enum = None
-        if provider:
-            try:
-                prov_enum = TTSProvider(provider.lower())
-            except ValueError:
-                ch.warning(f"Unknown provider '{provider}', using default")
-
-        ch.info(f"Synthesizing: '{text}'...")
-
-        result = await tts.synthesize(text, provider=prov_enum, voice=voice, output_path=output)
-
-        if result.success:
-            ch.success(f"Audio saved to: {result.audio_path}")
-            if result.provider:
-                ch.info(f"Provider: {result.provider.value}, Voice: {result.voice}")
-
-            if play and result.audio_path:
-                try:
-                    from navig.voice.playback import play_sound
-
-                    success = await play_sound(result.audio_path)
-                    if not success:
-                        ch.warning(
-                            "Playback failed (check audio device or ffmpeg/mpv installation)"
-                        )
-                except Exception as e:
-                    ch.warning(f"Playback error: {e}")
+        if importlib.util.find_spec("navig_audio") is not None:
+            # navig-audio < 0.2 has the engines but not these commands yet.
+            ch.error(
+                "Voice needs navig-audio 0.2 or newer.",
+                "Update it:  pip install -U navig-audio",
+            )
         else:
-            # `navig voice speak "x" -o out.mp3 && upload out.mp3` used to upload a
-            # file that was never written. typer.Exit propagates out of asyncio.run.
-            ch.error(f"TTS Failed: {result.error}")
-            raise typer.Exit(1)
+            ch.error(
+                "Voice needs the navig-audio plugin (TTS/STT engines).",
+                f"Install it:  {install_hint('navig-audio')}",
+            )
+        raise typer.Exit(2)
 
-    asyncio.run(_run())
-
-
-@voice_app.command("transcribe")
-def transcribe_command(
-    file: Path = typer.Argument(..., help="Audio file path"),
-    provider: str = typer.Option(None, "--provider", "-p", help="STT Provider"),
-):
-    """Transcribe audio file to text."""
-    import asyncio
-
-    from navig.voice.stt import STTProvider, get_stt
-
-    async def _run():
-        stt = get_stt()
-
-        prov_enum = None
-        if provider:
-            try:
-                prov_enum = STTProvider(provider.lower())
-            except ValueError as exc:
-                ch.error(f"Unknown provider: {provider}")
-                raise typer.Exit(2) from exc  # bad input, per this module's callback
-
-        ch.info(f"Transcribing {file}...")
-        result = await stt.transcribe(file, provider=prov_enum)
-
-        if result.success:
-            ch.success("Transcription complete:")
-            ch.console.print(f"[bold]{result.text}[/bold]")
-            if result.confidence:
-                ch.dim(f"Confidence: {result.confidence:.2f}")
-        else:
-            ch.error(f"Transcription failed: {result.error}")
-            raise typer.Exit(1)
-
-    asyncio.run(_run())
-
-
-@voice_app.command("list-voices")
-def list_voices(
-    provider: str = typer.Argument("openai", help="TTS Provider (openai, elevenlabs, edge)"),
-):
-    """List available voices for a provider."""
-    import asyncio
-
-    from navig.voice.tts import TTSProvider, get_tts
-
-    async def _run():
-        tts = get_tts()
-        try:
-            prov_enum = TTSProvider(provider.lower())
-        except ValueError as exc:
-            ch.error(f"Unknown provider: {provider}")
-            raise typer.Exit(2) from exc
-
-        voices = await tts.list_voices(prov_enum)
-
-        if not voices:
-            ch.warning(f"No voices returned for '{provider}'.")
-            ch.info(f"  If that is unexpected, check its credential: navig vault list")
-            return
-
-        from rich.table import Table
-
-        table = Table(title=f"Voices for {provider}")
-        table.add_column("ID", style="cyan")
-        table.add_column("Name", style="green")
-        table.add_column("Language", style="yellow")
-
-        for v in voices:
-            table.add_row(v["id"], v["name"], v["language"])
-
-        ch.console.print(table)
-
-    asyncio.run(_run())
+    for _name, _help in (
+        ("speak", "Synthesize speech from text."),
+        ("transcribe", "Transcribe audio file to text."),
+        ("list-voices", "List available voices for a provider."),
+    ):
+        voice_app.command(
+            _name,
+            help=f"{_help} (needs navig-audio)",
+            context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+        )(_needs_plugin)

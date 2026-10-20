@@ -21,7 +21,6 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
 import time
 import urllib.parse
 import urllib.request
@@ -29,6 +28,7 @@ from typing import Any
 
 from navig.connectors.base import BaseConnector, ConnectorManifest
 from navig.connectors.errors import ConnectorAuthError, ConnectorRateLimitError
+from navig.connectors.secrets import KeyField, resolve
 from navig.connectors.types import (
     Action,
     ActionResult,
@@ -86,6 +86,15 @@ def _payload_result(label: str, payload: dict, *, success: bool = True) -> Actio
     )
 
 
+YOUTUBE_API_KEY = KeyField(
+    name="api_key",
+    label="YouTube Data API key",
+    vault_label="youtube/api_key",
+    env=("YOUTUBE_API_KEY", "YT_API_KEY"),
+    placeholder="AIza…",
+)
+
+
 class YouTubeConnector(BaseConnector):
     """Connector for YouTube Data API v3 — video/channel search and details.
 
@@ -111,6 +120,8 @@ class YouTubeConnector(BaseConnector):
         oauth_scopes=[],
         oauth_provider="",
         requires_oauth=False,
+        auth_mode="api_key",
+        key_fields=(YOUTUBE_API_KEY,),
         can_search=True,
         can_fetch=True,
         can_act=False,
@@ -124,10 +135,7 @@ class YouTubeConnector(BaseConnector):
 
     async def connect(self) -> None:
         """Load API key from env or vault label ``youtube/api_key``."""
-        key = (
-            os.environ.get("YOUTUBE_API_KEY", "").strip()
-            or os.environ.get("YT_API_KEY", "").strip()
-        )
+        key = resolve(YOUTUBE_API_KEY)
         if not key:
             self._status = ConnectorStatus.ERROR
             raise ConnectorAuthError(

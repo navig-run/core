@@ -243,14 +243,18 @@ def _build_auto_evolve_app(mgr: ApprovalManager):
 
     gw = MagicMock()
     gw.approval_manager = mgr
-    # No auth token → require_bearer_auth passes through
+    # A configured token: require_bearer_auth fails CLOSED (503) when no token is
+    # configured, so the fixture sets one and callers send it.
     from types import SimpleNamespace
 
-    gw.config = SimpleNamespace(auth_token=None)
+    gw.config = SimpleNamespace(auth_token="test-token")
 
     app = web.Application()
     register(app, gw)
     return app
+
+
+_AUTH = {"Authorization": "Bearer test-token"}
 
 
 class TestAutoEvolveRoutes:
@@ -263,7 +267,7 @@ class TestAutoEvolveRoutes:
             mgr = ApprovalManager(audit_log=audit)
             app = _build_auto_evolve_app(mgr)
             async with TestClient(TestServer(app)) as client:
-                resp = await client.get("/approval/auto-evolve")
+                resp = await client.get("/approval/auto-evolve", headers=_AUTH)
                 assert resp.status == 200
                 body = await resp.json()
                 data = body["data"]
@@ -280,7 +284,9 @@ class TestAutoEvolveRoutes:
             mgr = ApprovalManager(audit_log=audit)
             app = _build_auto_evolve_app(mgr)
             async with TestClient(TestServer(app)) as client:
-                resp = await client.post("/approval/auto-evolve", json={"enabled": True})
+                resp = await client.post(
+                    "/approval/auto-evolve", json={"enabled": True}, headers=_AUTH
+                )
                 assert resp.status == 200
                 body = await resp.json()
                 data = body["data"]
@@ -294,7 +300,9 @@ class TestAutoEvolveRoutes:
         mgr = ApprovalManager()  # no audit log
         app = _build_auto_evolve_app(mgr)
         async with TestClient(TestServer(app)) as client:
-            resp = await client.post("/approval/auto-evolve", json={"enabled": True})
+            resp = await client.post(
+                "/approval/auto-evolve", json={"enabled": True}, headers=_AUTH
+            )
             assert resp.status == 409
             body = await resp.json()
             assert body["error_code"] == "audit_log_required"
@@ -306,7 +314,9 @@ class TestAutoEvolveRoutes:
         mgr = ApprovalManager()  # no audit log — disabling should always work
         app = _build_auto_evolve_app(mgr)
         async with TestClient(TestServer(app)) as client:
-            resp = await client.post("/approval/auto-evolve", json={"enabled": False})
+            resp = await client.post(
+                "/approval/auto-evolve", json={"enabled": False}, headers=_AUTH
+            )
             assert resp.status == 200
             body = await resp.json()
             data = body["data"]

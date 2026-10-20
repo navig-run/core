@@ -167,3 +167,25 @@ async def test_poll_updates_keeps_backing_off_when_it_cannot_ask(monkeypatch):
         f"an unanswerable probe was treated as a registered webhook: {sleeps}"
     )
     assert ch.probes >= 1
+
+
+async def test_parked_flag_is_raised_during_the_park_and_cleared_after(monkeypatch):
+    """The health monitor reads `_parked_on_webhook` to leave a parked poller alone —
+    it is quiet BY DESIGN while the edge delivers through the webhook. Without the
+    flag the monitor restarted it every 10 min. It must be True only while parked:
+    a flag stuck True would hide a genuinely wedged poller from the monitor."""
+    ch = _FakeChannel(results=[None, None, [], None], webhook_url="https://edge.example/tg/abc")
+    seen_during_park: list[bool] = []
+
+    async def fake_sleep(secs):
+        seen_during_park.append(getattr(ch, "_parked_on_webhook", False))
+        if len(seen_during_park) == 1:
+            ch.webhook_url = None  # webhook removed → the loop leaves the park
+        if len(seen_during_park) >= 3:
+            ch._running = False
+
+    monkeypatch.setattr("asyncio.sleep", fake_sleep)
+    await asyncio.wait_for(tg.TelegramChannel._poll_updates(ch), timeout=5.0)
+
+    assert seen_during_park[0] is True, "flag not raised while parked"
+    assert ch._parked_on_webhook is False, "flag left raised after the park ended"

@@ -62,6 +62,9 @@ class RetrievalConfig:
 
 DEFAULT_CONFIG = RetrievalConfig()
 
+#: Cap on pinned facts injected per turn — pinning is "always", so it must stay cheap.
+MAX_PINNED = 10
+
 
 # ── Ranked Fact ───────────────────────────────────────────────
 
@@ -277,6 +280,16 @@ class FactRetriever:
             if fact.id not in seen:
                 seen[fact.id] = (0.0, 0.0)
 
+        # Pinned facts ("always keep in mind") join every retrieval, whatever the
+        # query; _rank puts them first and exempts them from min_score.
+        try:
+            for fact in self.store.get_pinned(limit=MAX_PINNED):
+                if category and fact.category != category:
+                    continue
+                seen.setdefault(fact.id, (0.0, 0.0))
+        except Exception as exc:  # noqa: BLE001 — an old store without the column
+            logger.debug("Pinned facts unavailable: %s", exc)
+
         # Reconstruct full fact objects. Curation gate: only APPROVED facts
         # (approved == 1) are eligible for prompt injection. Pending (None) and
         # rejected (0) facts surface only in the review surface, never the prompt —
@@ -320,7 +333,13 @@ class FactRetriever:
             boost = cfg.category_boosts.get(fact.category, 1.0)
             combined *= boost
 
-            if combined >= cfg.min_score:
+            pinned = bool(getattr(fact, "pinned", False))
+            if pinned:
+                # Above any unpinned score (each weight ≤ 1, boosts ≤ 1.3), so pinned
+                # facts lead the block and survive the token budget first.
+                combined += 10.0
+
+            if pinned or combined >= cfg.min_score:
                 ranked.append(
                     RankedFact(
                         fact=fact,

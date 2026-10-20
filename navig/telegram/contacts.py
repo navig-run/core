@@ -583,6 +583,7 @@ async def tag_members(
                 "before_note": row.get("before_note"),
                 "new_first": row["new_first"], "new_last": row["new_last"],
                 "new_note": row.get("new_note"),
+                "access_hash": getattr(user, "access_hash", None),
             }
             # Journalled before the next write is attempted: an abort here still
             # leaves an undo record for everything already written.
@@ -799,7 +800,12 @@ async def tag_handles(
 
             rec = {"run_id": run_id, "kind": "write", "mark": mark,
                    "at": datetime.now(timezone.utc).isoformat(),
-                   "chat": label, "tag": tag, **row}
+                   "chat": label, "tag": tag, **row,
+                   # The session is a StringSession: it caches no entities between
+                   # runs, so without this a later `contacts missing` cannot ask
+                   # about this person by id at all — only by re-resolving the
+                   # handle, which spends the daily lookup budget.
+                   "access_hash": getattr(user, "access_hash", None)}
             _append_journal(rec)
             written.append(rec)
             if progress:
@@ -883,6 +889,147 @@ async def prune_contacts(
 
     return {"run_id": run_id, "status": status, "tag": tag, "todo": todo,
             "removed": removed, "failed": failed, "dry_run": False}
+
+
+def expected_contacts(records: Iterable[dict]) -> dict[int, dict]:
+    """``{user_id: first write record}`` for everyone the journal says should be a contact.
+
+    Replays the journal in order: a write files someone; a prune removes them on
+    purpose; undoing an ``add`` deletes them on purpose; undoing a prune puts them
+    back; undoing an ``update`` only restores a name, so they stay. What is left is
+    the set a later contact list can be compared against — a deliberate removal
+    never shows up as somebody who "left".
+    """
+    expected: dict[int, dict] = {}
+    pruned: dict[int, dict] = {}
+    for rec in records:
+        uid = rec.get("user_id")
+        if uid is None:
+            continue
+        kind = rec.get("kind")
+        if kind == "write":
+            expected.setdefault(uid, rec)
+        elif kind == "prune":
+            gone = expected.pop(uid, None)
+            pruned[uid] = gone or rec
+        elif kind == "undo":
+            action = rec.get("action")
+            if action == "add":
+                expected.pop(uid, None)
+            elif action == "prune" and uid in pruned:
+                expected.setdefault(uid, pruned.pop(uid))
+    return expected
+
+
+MISSING_VERDICTS = {
+    "deleted": "account deleted",
+    "removed": "account exists — the contact was removed (another device, or never stuck)",
+    "handle_gone": "old username no longer exists — account deleted, or renamed",
+    "handle_reused": "old username now belongs to someone else — original account gone or renamed",
+    "unknown": "not checked — filed before access hashes were journalled (--resolve asks by username)",
+}
+
+
+async def missing_contacts(
+    *,
+    tag: str | None = None,
+    resolve: bool = False,
+    resolve_limit: int = 85,
+    resolve_delay: float = 2.5,
+) -> dict:
+    """Who the journal filed that is no longer in the contact list — and why.
+
+    Read-only. A contact cannot be taken off YOUR list by the other person:
+    blocking you leaves them in it. So someone vanishing is one of two things,
+    and Telegram can tell them apart — the account was deleted, or the contact was
+    removed on one of your own devices (or the add never stuck, see
+    :func:`unpersisted_ids`).
+
+    Asked by id, in batches of 100 through ``users.getUsers``, using the access hash
+    the journal recorded at write time. That spends none of the username-lookup
+    budget ``tag-list`` lives within. The session is a StringSession and caches no
+    entities, so rows filed before the hash was journalled cannot be asked by id;
+    ``resolve=True`` falls back to resolving their old username — paced, capped at
+    ``resolve_limit``, and stopped (never misread) by a flood over the ceiling.
+    """
+    from telethon.errors import FloodWaitError, RPCError
+    from telethon.tl.functions.contacts import GetContactsRequest
+    from telethon.tl.functions.users import GetUsersRequest
+    from telethon.tl.types import InputUser
+
+    expected = expected_contacts(read_journal())
+    if tag:
+        expected = {u: r for u, r in expected.items() if r.get("tag") == tag}
+
+    async with UserClient() as c:
+        res = await c(GetContactsRequest(hash=0))
+        present = {int(u.id) for u in getattr(res, "users", [])}
+        gone = {u: r for u, r in expected.items() if u not in present}
+
+        verdict: dict[int, str] = {}
+        inputs = []
+        no_hash: list[int] = []
+        for uid, rec in gone.items():
+            if rec.get("access_hash") is not None:
+                inputs.append(InputUser(user_id=uid, access_hash=int(rec["access_hash"])))
+            else:
+                no_hash.append(uid)
+        for i in range(0, len(inputs), 100):
+            try:
+                users = await c(GetUsersRequest(id=inputs[i:i + 100]))
+            except RPCError:
+                logger.debug("GetUsers batch failed", exc_info=True)
+                continue
+            for u in users:
+                uid = int(getattr(u, "id", 0) or 0)
+                if uid in gone:
+                    deleted = getattr(u, "deleted", False) or u.__class__.__name__ == "UserEmpty"
+                    verdict[uid] = "deleted" if deleted else "removed"
+
+        aborted = None
+        resolved = 0
+        if resolve:
+            for uid in no_hash:
+                handle = gone[uid].get("handle") or gone[uid].get("username")
+                if not handle:
+                    continue
+                if resolved >= resolve_limit:
+                    break
+                if resolved:
+                    await asyncio.sleep(resolve_delay)
+                resolved += 1
+                try:
+                    ent = await c.get_entity(handle)
+                except FloodWaitError as exc:
+                    # Never read as "handle gone": that is how a live person gets
+                    # recorded as dead. Stop and say so.
+                    aborted = (f"FLOOD_WAIT {getattr(exc, 'seconds', '?')}s while resolving "
+                               f"@{handle} — stopped; nothing after this was checked.")
+                    break
+                except (ValueError, RPCError):
+                    verdict[uid] = "handle_gone"
+                    continue
+                if int(getattr(ent, "id", 0) or 0) == uid:
+                    verdict[uid] = "deleted" if getattr(ent, "deleted", False) else "removed"
+                else:
+                    verdict[uid] = "handle_reused"
+
+    rows = []
+    for uid, rec in gone.items():
+        rows.append({
+            "user_id": uid,
+            "handle": rec.get("handle") or rec.get("username"),
+            "tag": rec.get("tag"),
+            "chat": rec.get("chat"),
+            "filed_at": rec.get("at"),
+            "verdict": verdict.get(uid, "unknown"),
+        })
+    rows.sort(key=lambda r: (r["verdict"], str(r.get("chat")), str(r.get("filed_at"))))
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r["verdict"]] = counts.get(r["verdict"], 0) + 1
+    return {"tag": tag, "expected": len(expected), "present": len(expected) - len(rows),
+            "missing": rows, "counts": counts, "resolved": resolved, "aborted": aborted}
 
 
 async def undo_run(run_id: str | None = None, *, confirm: bool = False) -> dict:

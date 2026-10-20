@@ -117,9 +117,11 @@ def _validate_host_data(
             err("port must be an integer between 1 and 65535", ("port",))
 
     ssh_key = data.get("ssh_key")
-    ssh_password = data.get("ssh_password")
+    ssh_password = data.get("ssh_password") or data.get("ssh_password_ref")
     if not ssh_key and not ssh_password:
         # Some test/sample configs omit creds; treat as warning unless strict.
+        # `ssh_password_ref` (Gate 0F vault reference) satisfies the requirement —
+        # a migrated password-auth host carries the ref, never the password.
         (err if strict else warn)(
             "Provide either ssh_key or ssh_password for SSH authentication",
             (),
@@ -895,6 +897,12 @@ def show_settings():
 
     # ── ⚙️ Execution & Context ─────────────────────────────────────────────
     ex = gc.get("execution") or {}
+    # `install` is a new namespace: a hand-typed `navig config set install x`
+    # stores a STRING, and this row must not crash the whole settings view on it.
+    _install_cfg = gc.get("install")
+    install_profile = (
+        _install_cfg.get("profile") if isinstance(_install_cfg, dict) else None
+    )
     console.print(Panel(
         _section_table([
             ("Mode",               execution_settings.get("mode", "interactive"),            "execution.mode"),
@@ -904,6 +912,7 @@ def show_settings():
             ("Active host",        active_host or "[dim]none[/]",                            "active_host"),
             ("Active app",         active_app  or "[dim]none[/]",                            "active_app"),
             ("Default host",       default_host or "[dim]none[/]",                           "default_host"),
+            ("Install profile",    install_profile or "[dim]not set[/]",                     "install.profile"),
             ("Log level",          gc.get("log_level", "INFO"),                             "log_level"),
             ("Config dir",         str(config_manager.base_dir),                            "config_dir"),
             ("Debug mode",         _bool_icon(gc.get("debug_mode", False)),                 "debug_mode"),

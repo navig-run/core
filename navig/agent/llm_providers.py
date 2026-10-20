@@ -921,6 +921,27 @@ class AnthropicProvider(OpenAIProvider):
         return bool(self.api_key)
 
 
+class MiMoProvider(OpenAIProvider):
+    """Xiaomi MiMo official endpoint — OpenAI-shape at the host ROOT.
+
+    Measured live 2026-10-13: ``POST /v1/chat/completions`` answers 200 with
+    the vault ``mimo`` key, while ``/anthropic/v1/chat/completions`` 404s —
+    the ``/anthropic`` prefix is the Anthropic-shape path only (that shape is
+    what ``get_builtin_provider("mimo")`` drives through clients.py; this
+    factory layer is OpenAI-shape, so it takes the root). Prices equal
+    OpenRouter's pass-through (flash $0.14/$0.28, pro $0.435/$0.87 per M).
+    """
+
+    name = "mimo"
+
+    def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
+        super(OpenAIProvider, self).__init__(
+            base_url=base_url or "https://api.xiaomimimo.com/v1",
+            api_key=api_key or os.getenv("MIMO_API_KEY", ""),
+            **kwargs,
+        )
+
+
 class GroqProvider(OpenAIProvider):
     """Groq LPU inference — OpenAI-compatible endpoint."""
 
@@ -1138,6 +1159,7 @@ _PROVIDER_MAP = {
     # Cloud — OpenAI-compatible subclasses
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
+    "mimo": MiMoProvider,
     "google": GoogleProvider,
     "groq": GroqProvider,
     "nvidia": NvidiaProvider,

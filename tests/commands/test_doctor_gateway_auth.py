@@ -1,9 +1,8 @@
 """`navig doctor` must say when nothing is authenticating the local gateway.
 
-`require_bearer_auth` opens with `if not token: return None` — **no token means open
-access** — and seventeen route modules sit behind it, including
-`POST /approval/{id}/respond`. An unauthenticated gateway lets any local process list
-the agent's pending approvals and answer them.
+With no token, `require_bearer_auth` now fails closed (503 on every guarded route), so
+a missing token locks every client out rather than exposing the seventeen route modules
+behind it — including `POST /approval/{id}/respond`. The row must say so honestly.
 
 The gateway now mints and persists a token on its first start, which makes "no token"
 mean two very different things. This row must tell them apart, because the same words
@@ -80,7 +79,7 @@ def test_a_gateway_that_has_run_without_a_token_is_a_fault(gateway) -> None:
 
     assert row[1] is False, "a running unauthenticated gateway must not render as ✓"
     assert "has run but has NO token" in row.detail
-    assert "approval responses" in row.detail, "the row must name what is exposed"
+    assert "approval responses" in row.detail, "the row must name which routes are down"
     assert "navig config set gateway.auth.token" in row.detail, "no remedy given"
 
 

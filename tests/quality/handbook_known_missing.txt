@@ -1,5 +1,4 @@
 agent service install --user
-agent start --background
 ai config
 ai test
 and runs the
@@ -8,9 +7,6 @@ blueprint create
 blueprint create my-loadout
 blueprint show
 blueprint show ops-lead
-boot edit
-boot init
-boot log
 bridge matrix
 bridge matrix bench
 bridge matrix deploy
@@ -23,7 +19,6 @@ bridge matrix vault-set
 check-filesystem
 clean-packages
 cleanup-temp
-dashboard --no-live
 db-containers
 db-databases
 db-dump
@@ -55,20 +50,12 @@ docker run
 docker stop nginx --yes
 fail2ban-status
 fail2ban-unban
-finance accounts
-finance add
-finance check
-finance hledger
-finance import
-finance income
-finance init
 firewall-add
 firewall-disable
 firewall-enable
 firewall-remove
 firewall-status
 health-check
-heartbeat configure --disable
 hello config-demo
 hello greet
 hello info
@@ -90,7 +77,6 @@ node fp
 node init
 node show
 paths --json
-repo conflicts --no-dirty
 restart
 restart all
 restart nginx
@@ -99,16 +85,11 @@ restore
 rotate-logs
 security-scan
 security-updates
-service config --edit
 software list --format
 sql
 sqlfile
 ssh production
 ssh-audit
-stack up --foreground
-start --foreground
-start --no-gateway
-start -f
 system icons
 system init
 system sounds

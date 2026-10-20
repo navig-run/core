@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 
 import typer
@@ -131,7 +132,12 @@ def _run_import(
         ch.info(summary)
 
     if json_output:
-        print(payload)
+        # emit_json is THE approved emitter (test_json_stdout_tripwire reads handler
+        # source for it): `print(payload)` honoured the machine contract at runtime but
+        # was invisible to that guard — it surfaces now that the manifest walk yields
+        # runnable group callbacks and `navig import` bare is schema-checked like any
+        # other --json verb. Same document: indent=2, order preserved.
+        ch.emit_json(json.loads(payload))
         # stdout stays exactly one JSON document (the machine contract), so a failed
         # source is reported on stderr — and the exit code still tells a script that the
         # empty result it just parsed is a failure, not an empty browser.

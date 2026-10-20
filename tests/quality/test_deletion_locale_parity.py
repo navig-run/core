@@ -26,8 +26,11 @@ def test_every_locale_carries_the_digest_copy():
         "deletions.digest.since",
         "deletions.digest.row", "deletions.digest.row_mine_all",
         "deletions.digest.row_mine_some", "deletions.digest.more",
-        "deletions.button.show", "deletions.button.quiet",
+        "deletions.button.show", "deletions.button.quiet", "deletions.button.delete",
         "deletions.toast.off", "deletions.off.note",
+        "deletions.toast.deleted", "deletions.toast.delete_failed",
+        "deletions.button.clear", "deletions.reveal.note", "deletions.toast.cleared",
+        "deletions.toast.cleared_partial", "deletions.toast.clear_gone",
     }
     locales = Path(d.__file__).resolve().parents[1] / "locales"
     files = sorted(locales.glob("*.json"))

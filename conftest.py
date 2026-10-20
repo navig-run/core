@@ -16,6 +16,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 _PROJECT_ROOT = Path(__file__).resolve().parent
 _BUILD_LIB = (_PROJECT_ROOT / "build" / "lib").resolve()
 
@@ -129,3 +131,127 @@ def pytest_runtest_setup(item):  # noqa: ARG001
 def pytest_collectstart(collector):  # noqa: ARG001
     """Keep repo import priority before each collection step/module import."""
     _ensure_repo_import_priority()
+
+
+def _dist_given_explicitly(args: tuple[str, ...] | list[str]) -> bool:
+    return any(a == "--dist" or a.startswith("--dist=") or a == "-d" for a in args)
+
+
+def pytest_configure(config):
+    """Under xdist, honour ``xdist_group`` markers by default (``load`` -> ``loadgroup``).
+
+    ``-n`` alone means ``--dist load``, which IGNORES ``xdist_group``: the e2e gateways
+    (``tests/e2e/test_gateway_api.py``) then boot on several workers at once and fail
+    at random (a 401 from a neighbour's gateway). The gate always passes
+    ``--dist loadgroup``; a hand-typed ``pytest -n auto`` did not. ``loadgroup``
+    schedules ungrouped tests exactly like ``load``, so this changes nothing else.
+
+    Not ``--dist`` in ``pytest.ini`` addopts: xdist is optional (the gate probes for
+    it), and without it ``--dist`` is an unknown option that refuses to start pytest.
+    An explicit ``--dist`` on the command line always wins.
+
+    Two halves, because xdist decides grouping in two places: the CONTROLLER picks the
+    scheduler from ``option.dist`` (promoted here), but each WORKER re-parses the original
+    command line — no ``--dist`` there — and sets ``option.loadgroup`` from that before any
+    conftest runs. Without the worker half the scheduler says LoadGroupScheduling while
+    no test carries its ``@group`` suffix, so nothing is actually grouped (measured).
+    ``pytest_configure_node`` hands the decision to each worker via ``workerinput``.
+    """
+    workerinput = getattr(config, "workerinput", None)
+    if workerinput is not None:
+        if workerinput.get("navig_loadgroup"):
+            config.option.loadgroup = True
+        return
+    option = config.option
+    if getattr(option, "dist", None) != "load":
+        return  # xdist absent, not distributing, or a mode chosen on purpose
+    if _dist_given_explicitly(config.invocation_params.args):
+        return
+    option.dist = "loadgroup"
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_configure_node(node):
+    """xdist controller hook: tell each worker the run is grouped (see pytest_configure)."""
+    if getattr(node.config.option, "dist", None) == "loadgroup":
+        node.workerinput["navig_loadgroup"] = True
+
+
+
+# ── `-n auto` respects the machine's heavy-job slots ──────────────────────────
+#
+# One machine-wide protocol limits heavy jobs: scripts/heavy-slot-lib.mjs (slot files in
+# ~/.navig/slots/heavy, a per-lane CPU share exported as NAVIG_HEAVY_CPUS). The gate takes
+# a slot; a hand-typed `pytest -n auto` did not, and claimed ~20 workers on top of the
+# gates (2026-10-08: a dozen workers crashed, the run died with no summary). This only
+# READS that protocol — it never takes a slot. To queue properly, wrap the run:
+#     node scripts/heavy-slot.mjs --run -- py -3.13 -m pytest -n auto …
+
+_SLOT_MAX_HOLD_S = 3 * 3600  # heavy-slot-lib MAX_HOLD_MS: an older slot is free
+
+
+def _int_env(name: str, default: int, lo: int, hi: int) -> int:
+    try:
+        n = int(os.environ.get(name, ""))
+    except ValueError:
+        return default
+    return n if lo <= n <= hi else default
+
+
+def _heavy_slot_lanes() -> int:
+    """capacity + overflowCapacity, with heavy-slot-lib's defaults and bounds."""
+    return _int_env("NAVIG_HEAVY_SLOTS", 3, 1, 64) + _int_env("NAVIG_HEAVY_OVERFLOW", 1, 0, 8)
+
+
+def _busy_heavy_slots(slot_dir: Path) -> int:
+    """Live holders of slot-*.json / overflow-*.json — heavy-slot-lib's isFree, inverted.
+
+    psutil, never ``os.kill(pid, 0)``: on Windows signal 0 is not a probe — ``os.kill``
+    calls TerminateProcess and would KILL the holder it was asking about.
+    """
+    import json
+    from datetime import datetime, timezone
+
+    try:
+        import psutil
+    except ImportError:
+        return 0
+    try:
+        files = [f for f in slot_dir.iterdir() if f.suffix == ".json" and f.name.startswith(("slot-", "overflow-"))]
+    except OSError:
+        return 0
+    now = datetime.now(timezone.utc)
+    busy = 0
+    for f in files:
+        try:
+            holder = json.loads(f.read_text(encoding="utf-8"))
+            pid = int(holder["pid"])
+            started = datetime.fromisoformat(str(holder["started"]).replace("Z", "+00:00"))
+        except (OSError, ValueError, KeyError, TypeError):
+            continue  # unreadable or mid-write: heavy-slot-lib treats it as free too
+        if (now - started).total_seconds() > _SLOT_MAX_HOLD_S:
+            continue
+        if pid > 0 and psutil.pid_exists(pid):
+            busy += 1
+    return busy
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_xdist_auto_num_workers(config):  # noqa: ARG001
+    """`-n auto` = this lane's share when the machine's heavy slots are in use; else xdist's default."""
+    share = _int_env("NAVIG_HEAVY_CPUS", 0, 1, 1024)
+    if share:
+        return share  # we run inside a slot holder; it already computed our share
+    if os.environ.get("CI") or str(os.environ.get("NAVIG_HEAVY_SLOTS", "")).lower() in ("0", "off"):
+        return None
+    slot_dir = Path(os.environ.get("NAVIG_SLOT_DIR") or Path.home() / ".navig" / "slots" / "heavy")
+    busy = _busy_heavy_slots(slot_dir)
+    if busy == 0:
+        return None
+    n = max(2, (os.cpu_count() or 1) // _heavy_slot_lanes())
+    sys.stderr.write(
+        f"[navig] {busy} heavy-job slot(s) in use on this machine — using {n} xdist workers "
+        "instead of `auto`. Queue for a slot instead: "
+        "node scripts/heavy-slot.mjs --run -- <your pytest command>\n"
+    )
+    return n

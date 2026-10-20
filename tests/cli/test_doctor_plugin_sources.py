@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from navig.commands.doctor import check_plugin_sources
+from navig.commands.doctor import _ERR, _WARN, check_plugin_sources
 
 
 def _make_checkout(tmp_path: Path, *, dist: str = "navig-demo", pkg: str = "navig_demo") -> Path:
@@ -192,3 +192,54 @@ def test_plugin_sources_survives_a_chdir_away_from_the_repo(
     rows = check_plugin_sources()
     assert rows, "the section disappeared because navig chdir'd to the active space"
     assert "navig-demo" in rows[0][2]
+
+
+
+def _audit(**kw):
+    from navig.plugins.sources import PluginSourceAudit
+
+    base = {"declared": 2, "verified": ("navig-a", "navig-b")}
+    base.update(kw)
+    return PluginSourceAudit(**base)
+
+
+def _stale_row(monkeypatch, audit):
+    monkeypatch.setattr("navig.plugins.sources.audit_plugin_sources", lambda: audit)
+    rows = [r for r in check_plugin_sources() if r.label == "stale installs"]
+    assert len(rows) == 1
+    return rows[0]
+
+
+def test_a_stale_install_below_cores_floor_is_an_error(monkeypatch):
+    """Not cosmetic: the next `pip install -e core` swaps in the PyPI copy."""
+    row = _stale_row(monkeypatch, _audit(
+        stale=(("navig-a", "0.1.0", "0.2.0"), ("navig-b", "1.0.0", "1.1.0")),
+        below_floor=("navig-a",),
+        stale_fix_paths=("plugins/navig-a", "plugins/navig-b"),
+    ))
+    assert row[0] == _ERR and row[1] is False
+    assert "navig-a" in row.detail and "PyPI" in row.detail
+    # ONE call covering both — a piecemeal repair lets the other be fetched from PyPI
+    assert "-e plugins/navig-a -e plugins/navig-b" in row.detail
+
+
+def test_stale_within_the_floor_is_a_warning(monkeypatch):
+    row = _stale_row(monkeypatch, _audit(
+        stale=(("navig-b", "1.0.0", "1.1.0"),),
+        stale_fix_paths=("plugins/navig-b",),
+    ))
+    assert row[0] == _WARN and row[1] is False
+    assert "navig-b 1.0.0→1.1.0" in row.detail
+
+
+def test_current_installs_render_no_stale_row(monkeypatch):
+    monkeypatch.setattr("navig.plugins.sources.audit_plugin_sources", lambda: _audit())
+    assert not [r for r in check_plugin_sources() if r.label == "stale installs"]
+
+
+def test_a_dead_install_here_is_an_error_with_an_uninstall_fix(monkeypatch):
+    monkeypatch.setattr("navig.plugins.sources.audit_plugin_sources",
+                        lambda: _audit(dead=(("navig-paperwork", r"E:\gone"),)))
+    (row,) = [r for r in check_plugin_sources() if r.label == "dead installs"]
+    assert row[0] == _ERR
+    assert "-m pip uninstall -y navig-paperwork" in row.detail

@@ -237,7 +237,7 @@ telegram:
 
     Write-Nav "Starting NAVIG daemon services..." "STEP"
     try {
-        & $CmdShim service install --bot --gateway --scheduler --no-start 2>&1 | Out-Null
+        & $CmdShim service install --bot --gateway --no-start 2>&1 | Out-Null
         & $CmdShim service start 2>&1 | Out-Null
         Write-Nav "Telegram bot configured and daemon started" "SUCCESS"
     } catch {

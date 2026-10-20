@@ -34,6 +34,54 @@ class MCPClientConfig:
     cwd: str | None = None
     auto_connect: bool = True
     enabled: bool = True
+    #: Extra HTTP headers for url transports (e.g. ``Authorization``). Ignored by stdio.
+    headers: dict[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def from_server_entry(cls, entry: dict[str, Any]) -> MCPClientConfig:
+        """Build a config from one ``mcp.servers`` list entry (the deck's format).
+
+        The entry is Claude Code ``.mcp.json``-shaped: ``{"name", "type", "url" |
+        "command", "args", "env", "cwd", "headers", "enabled"}``. The gateway boot used to
+        hand-build this from ``name``/``command``/``url`` only — so a stdio server saved
+        with ``args``/``env`` started WITHOUT them after every restart, and ``headers``
+        (an API key, typically) never reached the transport. One mapping, used by boot
+        and by the deck's hot-apply, so the two cannot drift again.
+
+        ``type`` → transport: ``stdio``; ``websocket`` (or a ``ws(s)://`` url); and
+        ``http``/``sse`` → the SSE transport, the only HTTP transport this client has.
+        Raises ``ValueError`` for an entry with no usable name.
+        """
+        from navig.core.coerce import coerce_bool
+
+        name = entry.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("MCP server entry needs a non-empty string 'name'")
+        url = entry.get("url") if isinstance(entry.get("url"), str) else None
+        kind = str(entry.get("type") or entry.get("transport") or "").strip().lower()
+        if kind == "stdio" or (not kind and not url):
+            transport = "stdio"
+        elif kind in ("websocket", "ws") or (url or "").lower().startswith(("ws://", "wss://")):
+            transport = "websocket"
+        else:
+            transport = "sse"
+        args = entry.get("args")
+        env = entry.get("env")
+        headers = entry.get("headers")
+        return cls(
+            id=name.strip(),
+            command=entry.get("command") if isinstance(entry.get("command"), str) else None,
+            args=[str(a) for a in args] if isinstance(args, list) else [],
+            env={str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else {},
+            transport=transport,
+            url=url,
+            cwd=entry.get("cwd") if isinstance(entry.get("cwd"), str) else None,
+            auto_connect=coerce_bool(entry.get("auto_connect"), default=True),
+            enabled=coerce_bool(entry.get("enabled"), default=True),
+            headers=(
+                {str(k): str(v) for k, v in headers.items()} if isinstance(headers, dict) else {}
+            ),
+        )
 
     @classmethod
     def from_dict(cls, id: str, data: dict[str, Any]) -> MCPClientConfig:
@@ -52,6 +100,7 @@ class MCPClientConfig:
             cwd=data.get("cwd"),
             auto_connect=coerce_bool(data.get("auto_connect"), default=True),
             enabled=coerce_bool(data.get("enabled"), default=True),
+            headers=dict(data["headers"]) if isinstance(data.get("headers"), dict) else {},
         )
 
 
@@ -306,14 +355,14 @@ class MCPClient:
                 raise ValueError(
                     f"SSE transport requires 'url' for client {self.id!r}"
                 )
-            return SSETransport(self.config.url)
+            return SSETransport(self.config.url, headers=self.config.headers)
 
         if transport_type == "websocket":
             if not self.config.url:
                 raise ValueError(
                     f"WebSocket transport requires 'url' for client {self.id!r}"
                 )
-            return WebSocketTransport(self.config.url)
+            return WebSocketTransport(self.config.url, headers=self.config.headers)
 
         # Default: stdio
         if not self.config.command:

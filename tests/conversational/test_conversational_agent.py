@@ -150,6 +150,13 @@ async def test_plan_context_loaded_log_emitted() -> None:
         patch("navig.plans.context.PlanContext.gather") as gather_mock,
         patch("navig.llm.routing.router.get_router") as get_router_mock,
         patch("navig.agent.conv.agent.logger.info") as info_mock,
+        # chat() takes the ReAct path whenever tool registration succeeds, and that path
+        # builds a REAL provider client from the machine's config: this test made three
+        # live LLM calls (40-117 s each, ~3.5 min, real spend) and, under the gate's
+        # 60 s per-test timeout, killed an xdist worker and deadlocked the step. Failing
+        # registration sends chat() down the single-shot path the fake client serves —
+        # the path this test was written for; both paths load the plan context.
+        patch("navig.agent.tools.register_all_tools", side_effect=RuntimeError("no tools in this test")),
     ):
         gather_mock.return_value = {
             "current_phase": "---\ntitle: Auth refactor\n---\n",

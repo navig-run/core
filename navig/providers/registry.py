@@ -185,10 +185,38 @@ ALL_PROVIDERS: list[ProviderManifest] = [
             # Qwen
             "qwen/qwen3-235b-a22b",
             "qwen/qwen-2.5-72b-instruct",
+            # Xiaomi MiMo — audited live 2026-10-13: each answered a 1-token
+            # call on the operator's key (flash 3.9s, pro 2.1s, ultraspeed
+            # 11.3s). 1050k context; flash $0.14/$0.28 per M, pro $0.435/$0.87,
+            # ultraspeed $4.35/$8.70 — flash/pro read the prompt cache at ~2%.
+            "xiaomi/mimo-v2.6-flash",
+            "xiaomi/mimo-v2.6-pro",
+            "xiaomi/mimo-v2.6-pro-ultraspeed",
             # Misc
             "microsoft/phi-4",
         ],
         emoji="🌐",
+    ),
+    # ── Cloud: Xiaomi MiMo (official endpoint) ────────────────────────────────
+    ProviderManifest(
+        id="mimo",
+        display_name="Xiaomi MiMo",
+        description="Official Xiaomi endpoint — MiMo V2.6 Flash/Pro, 1M context.",
+        tier="cloud",
+        env_vars=["MIMO_API_KEY"],
+        vault_keys=["mimo/api-key", "mimo/api_key"],
+        # Audited live 2026-10-13 through api.xiaomimimo.com (Anthropic-shape
+        # /anthropic path) on the operator's key: flash 5.9/4.1/5.4s, pro
+        # 10.4/2.2/6.6s. Official prices EQUAL OpenRouter's pass-through
+        # (flash $0.14/$0.28, pro $0.435/$0.87 per M — the Xiaomi native route
+        # in OpenRouter's endpoint pricing charges the same), so direct buys
+        # stability (one fleet, no load-balancing swings) not discount.
+        models=[
+            "mimo-v2.6-flash",
+            "mimo-v2.6-pro",
+            "mimo-v2.6-pro-ultraspeed",
+        ],
+        emoji="🟠",
     ),
     # ── Cloud: Groq ───────────────────────────────────────────────────────────
     ProviderManifest(

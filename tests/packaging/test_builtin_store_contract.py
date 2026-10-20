@@ -79,6 +79,13 @@ def _discover_output_styles() -> int:
     return len([s for s in load_output_styles() if s.source == "builtin"])
 
 
+def _discover_presets() -> int:
+    from navig.presets.catalog import _file_presets
+
+    # Only the builtin tier counts (a user or plugin preset would mask an empty shipped dir).
+    return len([p for p in _file_presets().values() if p.source == "builtin"])
+
+
 # subdir -> (what actually loads it, how). A `None` loader means the directory is resolved
 # as a plain path by a named consumer rather than by a discovery function; the asset that
 # consumer resolves is named so the guard proves the exact file it depends on is shipped.
@@ -89,6 +96,7 @@ LOADER_BACKED = {
     "prompts": _discover_prompts,        # prompts/loader.load_prompt
     "actions": _discover_actions,        # commands/action (absorbs builtin into the store)
     "output-styles": _discover_output_styles,  # ui/output_styles.load_output_styles
+    "presets": _discover_presets,        # presets/catalog.preset_roots (the "builtin" tier)
 }
 
 PATH_BACKED = {

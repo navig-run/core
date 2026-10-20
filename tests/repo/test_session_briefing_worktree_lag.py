@@ -63,9 +63,31 @@ def _add_worktree(repo: Path, slug: str) -> Path:
 
 
 def _advance_main(repo: Path, n: int) -> None:
-    """n commits on local main, pushed, tracking ref updated — the worktree's base stays put."""
+    """n commits on local main, pushed, tracking ref updated — the worktree's base stays put.
+
+    Built by ONE `git fast-import`, not 2n `git add`/`git commit` spawns. The threshold is
+    50, so the old loop cost 100+ process spawns per test: 36-70 s each on a loaded
+    Windows box, past the gate's 60 s per-test timeout — whose thread method ends the
+    WHOLE xdist worker with os._exit. Every worker that drew one of these tests died
+    ("node down: Not properly terminated"), the tests beside it were reported failed,
+    and xdist crashed with INTERNALERROR KeyError (2026-10-10, three gate runs).
+    """
+    head = _git("rev-parse", "HEAD", cwd=repo)
+    stream = []
     for i in range(n):
-        _commit(repo, f"main{i}.txt")
+        msg = f"add main{i}.txt\n".encode()
+        stream += [
+            b"commit refs/heads/main\n",
+            b"committer t <t@navig.local> 1700000000 +0000\n",
+            b"data %d\n" % len(msg) + msg,
+            *([f"from {head}\n".encode()] if i == 0 else []),
+            f"M 644 inline main{i}.txt\n".encode(),
+            b"data 2\nx\n",
+        ]
+    subprocess.run(
+        ["git", "fast-import", "--quiet"], cwd=str(repo), input=b"".join(stream), check=True
+    )
+    _git("reset", "-q", "--hard", "main", cwd=repo)  # the working tree follows the new tip
     _git("push", "-q", "origin", "main", cwd=repo)
 
 

@@ -90,21 +90,35 @@ class TestPolicyGateFromConfig(unittest.TestCase):
         self.assertTrue(result.is_denied)
         self.assertIsNone(result.matched_rule)
 
-    def test_unknown_default_falls_back_to_allow(self):
+    def test_unknown_default_fails_closed_to_deny(self):
+        """A typo in gateway.policy.default must not silently claim 'allow'."""
         gate = PolicyGate.from_config({"policy": {"default": "bogus"}})
         result = gate.check("foo.bar")
-        self.assertTrue(result.is_allowed)
+        self.assertTrue(result.is_denied)
 
-    def test_skips_rule_with_bad_action(self):
+    def test_unknown_rule_action_denies_that_pattern(self):
+        """A gating rule with a typo'd action denies its pattern instead of vanishing."""
         gate = self._make_gate(
             [
                 {"pattern": "db.*", "action": "UNKNOWN_ACTION"},
-                {"pattern": "db.*", "action": "deny"},
             ]
         )
-        # First rule is skipped; second matches
         result = gate.check("db.query")
         self.assertTrue(result.is_denied)
+        # Actions outside the typo'd pattern are unaffected (still the default).
+        other = gate.check("unrelated.thing")
+        self.assertTrue(other.is_allowed)
+
+    def test_bad_action_rule_still_loses_to_a_later_explicit_match_order(self):
+        """First-match-wins is unchanged: a later rule for another pattern is untouched."""
+        gate = self._make_gate(
+            [
+                {"pattern": "db.*", "action": "UNKNOWN_ACTION"},
+                {"pattern": "run.*", "action": "require_approval"},
+            ]
+        )
+        self.assertTrue(gate.check("db.query").is_denied)
+        self.assertTrue(gate.check("run.restart").needs_approval)
 
     def test_skips_rule_with_empty_pattern(self):
         gate = self._make_gate(
@@ -260,3 +274,53 @@ class TestAuditLog(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGate0Baseline(unittest.TestCase):
+    """The Gate 0 baseline covers only slugs with no pre-existing call sites."""
+
+    def _gate(self, rules=None, default="allow"):
+        return PolicyGate.from_config({"policy": {"default": default, "rules": rules or []}})
+
+    def test_dangerous_remote_slug_requires_approval_even_under_default_allow(self):
+        result = self._gate().check("remote.exec.dangerous")
+        self.assertTrue(result.needs_approval)
+        self.assertEqual(result.matched_rule, "baseline")
+
+    def test_baseline_require_approval_slugs(self):
+        gate = self._gate()
+        for slug in (
+            "remote.exec.dangerous",
+            "remote.docker.mutate",
+            "remote.host.select",
+            "remote.deploy",
+            "cli.exec.dangerous",
+        ):
+            self.assertTrue(gate.check(slug).needs_approval, slug)
+
+    def test_baseline_allow_slugs_stay_allowed(self):
+        gate = self._gate()
+        for slug in ("remote.exec", "remote.read", "remote.docker.read", "cli.exec"):
+            self.assertTrue(gate.check(slug).is_allowed, slug)
+
+    def test_user_rule_beats_the_baseline(self):
+        gate = self._gate([{"pattern": "remote.exec.dangerous", "action": "allow"}])
+        self.assertTrue(gate.check("remote.exec.dangerous").is_allowed)
+
+    def test_user_deny_rule_beats_the_baseline_allow(self):
+        gate = self._gate([{"pattern": "remote.read", "action": "deny"}])
+        self.assertTrue(gate.check("remote.read").is_denied)
+
+    def test_baseline_does_not_touch_unrelated_slugs(self):
+        """Regression pin: the baseline must not change any pre-Gate-0 decision."""
+        gate = self._gate()
+        self.assertTrue(gate.check("mission.create").is_allowed)
+        self.assertTrue(gate.check("db.query").is_allowed)
+        self.assertTrue(gate.check("system.restart").is_allowed)
+
+    def test_never_slugs_are_hard_denied_and_not_overridable(self):
+        gate = self._gate([{"pattern": "remote.exec.never", "action": "allow"}])
+        for slug in ("remote.exec.never", "cli.exec.never"):
+            result = gate.check(slug)
+            self.assertTrue(result.is_denied, slug)
+            self.assertTrue(str(result.matched_rule).startswith("hard:"), slug)

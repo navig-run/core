@@ -19,7 +19,16 @@ Resilience model (Phase 1):
 
 Self-asked questions answered here:
   Q: What auth does the forwarded request carry?
-  A: A per-mesh shared secret (mesh_token), NOT the user's bearer token.
+  A: The fleet-shared mesh_token, NOT the user's admin bearer token. Every
+     install mints one (`gateway/server.py:_ensure_mesh_token`) and the
+     install one-liner writes the SOURCE install's token onto each joiner
+     (`gateway/routes/install.py`), so a provisioned fleet shares ONE mesh
+     secret — the peer's /llm/chat accepts it explicitly
+     (`routes/llm.py`, via `routes/common.require_bearer_auth(extra_tokens=)`)
+     while every other guarded route stays admin-bearer-only. Two installs
+     that were never provisioned together hold different mesh tokens: that
+     hop is rejected (401) and the caller falls back to local processing —
+     never open access.
 
   Q: What if the target node times out?
   A: Falls back to local processing. The caller never sees a proxy error.

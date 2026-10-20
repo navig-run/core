@@ -22,10 +22,8 @@ Helper script
 from __future__ import annotations
 
 import json
-import os
 import platform
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -34,6 +32,7 @@ import typer
 
 from navig.core.json_io import JsonReadError, load_json_for_update, load_json_safe
 from navig.core.proc_text import console_encoding
+from navig.core.yaml_io import atomic_write_text
 from navig.platform.paths import config_dir, resolve_user_path, scripts_dir
 
 mount_app = typer.Typer(
@@ -100,19 +99,29 @@ def _load_registry_for_update() -> dict[str, Any]:
 
 
 def _save_registry(data: dict[str, Any]) -> None:
-    path = _registry_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    _tmp_path: Path | None = None
+    """Persist the registry, retrying the Windows transient lock.
+
+    The replace goes through :func:`atomic_write_text`, which retries ``PermissionError``
+    with back-off. The hand-rolled ``os.replace`` this used raised
+    ``[WinError 5] Access is denied`` straight out of the command as a traceback whenever
+    an antivirus or backup agent held ``drives.json`` for a few milliseconds — measured in
+    the full core suite on 2026-09-27 (``test_verify_all_dead``) and reproduced by holding
+    a single read handle on the destination. The READ side of this same registry already
+    treats a transient lock as its own case (:func:`_load_registry_for_update`); the write
+    half is the one where records are lost.
+
+    A lock that outlasts the retries still fails — in words, with exit 1, never a
+    traceback and never silently: the caller's read-modify-write did not land.
+    ``ensure_ascii=False`` keeps a non-ASCII path in the file readable, as before.
+    """
     try:
-        _fd, _tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-        _tmp_path = Path(_tmp)
-        with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
-            _fh.write(json.dumps(data, indent=2, ensure_ascii=False))
-        os.replace(_tmp_path, path)
-        _tmp_path = None
-    finally:
-        if _tmp_path is not None:
-            _tmp_path.unlink(missing_ok=True)
+        atomic_write_text(_registry_path(), json.dumps(data, indent=2, ensure_ascii=False))
+    except OSError as exc:
+        typer.echo(
+            f"✗ Could not write the drives registry ({exc}) — it is held by another "
+            "process (antivirus or backup agent). Nothing was changed; retry in a moment."
+        )
+        raise typer.Exit(1) from exc
 
 
 # ── Junction helpers ──────────────────────────────────────────
@@ -407,8 +416,6 @@ def cmd_sync(
         return
 
     script_path.parent.mkdir(parents=True, exist_ok=True)
-    from navig.core.yaml_io import atomic_write_text
-
     atomic_write_text(script_path, script_content)
     typer.secho(f"\n✓ Script written: {script_path}", fg=typer.colors.GREEN)
 
@@ -462,9 +469,18 @@ def _generate_ps1(drives: dict[str, Any]) -> str:
 
 def verify_on_startup() -> list[str]:
     """
-    Called by the daemon on startup to verify all registered junctions.
+    Verify all registered junctions and report the dead ones.
 
     Returns a list of dead labels (empty if all healthy).
+
+    NOT WIRED, and the docstring used to say otherwise: this opened with "Called by the
+    daemon on startup", which was a claim — `verify_on_startup` appears nowhere outside
+    this module and its tests. Wiring it is a product decision; keeping it daemon-SAFE is
+    not. The write-back is therefore contained here, because the `alive` flags are a CACHE
+    (`_junction_alive` recomputes every one of them above), so a registry held by an
+    antivirus agent costs the refresh and never the answer — and because `_save_registry`
+    reports a persistent lock with `typer.Exit`, which belongs to a CLI verb and has no
+    meaning inside a daemon.
     """
     data = _load_registry()
     drives = data.get("drives", {})
@@ -480,6 +496,16 @@ def verify_on_startup() -> list[str]:
             dead.append(label)
 
     if changed:
-        _save_registry(data)
+        try:
+            _save_registry(data)
+        except (OSError, typer.Exit) as exc:
+            # Best-effort, but never silent: a discarded write with no trace is how
+            # "the registry never updates" becomes unexplainable. typer.Exit is a
+            # RuntimeError, not an OSError, so it needs naming separately.
+            from navig.core.logging import get_logger  # noqa: PLC0415
+
+            get_logger("mount").warning(
+                f"could not refresh junction health in the drives registry: {exc}"
+            )
 
     return dead

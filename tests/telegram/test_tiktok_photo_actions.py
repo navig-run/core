@@ -1344,7 +1344,7 @@ class TestLoginGatedPost:
 
         assert "logged-in" in ch.text, ch.text
         assert "NAVIG_TIKTOK_COOKIES_FROM_BROWSER" not in ch.text
-        assert "navig tt login" in ch.text
+        assert "navig download login" in ch.text
 
     async def test_the_transcript_names_the_remedy(self, real_ytdlp_shape, monkeypatch):
         exc = self._gated(monkeypatch)
@@ -1360,7 +1360,7 @@ class TestLoginGatedPost:
 
         await tiktok_actions._do_transcript(ch, 1, _VIDEO)
 
-        assert "navig tt login" in ch.text, ch.text
+        assert "navig download login" in ch.text, ch.text
         assert "Couldn't read that video" not in ch.text
 
     async def test_it_is_not_reported_as_a_bot_wall(self, real_ytdlp_shape, monkeypatch):
@@ -1376,7 +1376,7 @@ class TestLoginGatedPost:
 
         await tiktok_actions._do_analyse(ch, 1, _SHORT)
 
-        assert "navig tt login" in ch.text
+        assert "navig download login" in ch.text
         assert "bot-wall" not in ch.text
         assert "Try again shortly" not in ch.text
 

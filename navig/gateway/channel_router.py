@@ -22,6 +22,9 @@ if TYPE_CHECKING:
 
 logger = get_debug_logger()
 
+#: Appended to a session key for its incognito twin (see ``route_message``).
+INCOGNITO_SUFFIX = ":incognito"
+
 
 def _format_account_rotation_notice(fb: dict[str, Any]) -> str:
     """One plain-text line telling the chat user NAVIG answered on a different
@@ -33,6 +36,8 @@ def _format_account_rotation_notice(fb: dict[str, Any]) -> str:
 
     to = str(fb.get("to") or "another account").strip()
     why = describe_category(fb.get("reason"))
+    if fb.get("kind") == "model":  # a different MODEL answered (fallback policy)
+        return f"↻ Primary model was {why} — answered with {to}."
     return f"↻ Primary account was {why} — answered with {to}."
 
 
@@ -148,6 +153,7 @@ class ChannelRouter:
         metadata: dict[str, Any] | None = None,
         *,
         on_partial=None,
+        allow_cli: bool = True,
     ) -> str:
         """
         Route a message to the appropriate agent.
@@ -157,6 +163,14 @@ class ChannelRouter:
             user_id: User identifier
             message: Message content
             metadata: Optional additional data (group_id, etc.)
+            allow_cli: Whether text starting with ``navig `` may run the CLI as a
+                subprocess (and the quick commands that shell out). That path has
+                NO approval gate, so it is only safe for a channel whose sender is
+                already authenticated as the operator (Telegram's ``allowed_users``,
+                the bearer-gated HTTP routes). A channel whose sender identity is
+                weaker — an SMS From number, a Slack/Discord member — must pass
+                ``False``: the text then goes to the conversational agent, whose
+                tools DO go through the approval gate.
 
         Returns:
             Agent response
@@ -185,6 +199,16 @@ class ChannelRouter:
                 base_key=session_key, host_name=metadata["host"]
             )
 
+        # Incognito: a separate, memory-less conversation beside the normal one. Its
+        # agent recalls nothing, saves nothing and keeps history in RAM only; leaving
+        # incognito (a normal message on the same key) discards it.
+        from navig.core.coerce import coerce_bool
+
+        if coerce_bool(metadata.get("incognito"), default=False):
+            session_key = f"{session_key}{INCOGNITO_SUFFIX}"
+        else:
+            self._drop_conv_agent(f"{session_key}{INCOGNITO_SUFFIX}")
+
         logger.debug(
             "Routing message",
             extra={
@@ -202,6 +226,7 @@ class ChannelRouter:
             message=message,
             metadata=metadata,
             on_partial=on_partial,
+            allow_cli=allow_cli,
         )
 
         return response
@@ -214,26 +239,43 @@ class ChannelRouter:
         metadata: dict[str, Any],
         *,
         on_partial=None,
+        allow_cli: bool = True,
     ) -> str:
         """Handle message with NAVIG-aware processing and natural language understanding."""
         msg_lower = message.lower().strip()
 
-        # Check for direct NAVIG commands
-        if message.strip().startswith("navig ") or message.strip().startswith("/navig "):
+        # Check for direct NAVIG commands (ungated subprocess — see route_message)
+        if allow_cli and (
+            message.strip().startswith("navig ") or message.strip().startswith("/navig ")
+        ):
             return await self._execute_navig_command(message, metadata)
 
         # Check for quick commands
-        quick_response = await self._check_quick_commands(message, metadata)
+        quick_response = await self._check_quick_commands(message, metadata, allow_cli=allow_cli)
         if quick_response:
             return quick_response
 
+        _yes = ("yes", "go", "proceed", "do it", "ok", "sure", "yep", "yeah")
+        _no = ("no", "cancel", "stop", "nevermind", "nope", "nah")
+        _pending_task = self._get_conversational_agent(session_key).current_task
+        if _pending_task:
+            # Decision-model judge (shadow-only): the two tuples below are exact English;
+            # Clef reads the same reply in any language. Background, never blocks.
+            from navig.agent import judges
+
+            judges.confirm_reply(
+                message,
+                str(getattr(_pending_task, "goal", "") or _pending_task),
+                "confirm" if msg_lower in _yes else "cancel" if msg_lower in _no else "other",
+            )
+
         # Check for confirmation responses
-        if msg_lower in ("yes", "go", "proceed", "do it", "ok", "sure", "yep", "yeah"):
+        if msg_lower in _yes:
             agent = self._get_conversational_agent(session_key)
             if agent.current_task:
                 return await agent.confirm(True)
 
-        if msg_lower in ("no", "cancel", "stop", "nevermind", "nope", "nah"):
+        if msg_lower in _no:
             agent = self._get_conversational_agent(session_key)
             if agent.current_task:
                 return await agent.confirm(False)
@@ -328,6 +370,11 @@ class ChannelRouter:
         except Exception as e:
             logger.error("Conversational agent error: %s", e)
 
+        if session_key.endswith(INCOGNITO_SUFFIX):
+            # The fallback path has no incognito mode; answering through it could
+            # write the very history this chat promised not to keep.
+            return "Sorry — I couldn't answer that in this incognito chat. Please try again."
+
         # Fallback to full AI processing
         return await self.gateway.run_agent_turn(
             agent_id=agent_id,
@@ -368,22 +415,34 @@ class ChannelRouter:
             # cache hid it (each session kept its own object), but any cold construction
             # re-read the shared file. session_key is sanitised into a filename by
             # ConversationHistory itself, so "telegram:user:123" → telegram_user_123.jsonl.
+            incognito = session_key.endswith(INCOGNITO_SUFFIX)
             history = None
             try:
                 from navig.agent.conv.history import ConversationHistory
 
-                history = ConversationHistory(user_id=session_key or "default")
+                history = ConversationHistory(
+                    user_id=session_key or "default", persist=not incognito
+                )
             except Exception as exc:  # noqa: BLE001
                 # Never block a reply on history construction; the agent's own
                 # fallback still applies (shared file) but the turn survives.
                 logger.warning("Per-session history unavailable for %s: %s", session_key, exc)
+                if incognito:
+                    # The fallback history PERSISTS; an incognito chat must not.
+                    raise
 
-            self._conv_agents[session_key] = ConversationalAgent(
-                ai_client=ai_client,
-                history=history,
-            )
+            agent = ConversationalAgent(ai_client=ai_client, history=history)
+            if incognito:
+                agent.set_incognito(True)
+            self._conv_agents[session_key] = agent
 
         return self._conv_agents[session_key]
+
+    def _drop_conv_agent(self, session_key: str) -> None:
+        """Forget one cached conversational agent (no-op when absent)."""
+        agents = getattr(self, "_conv_agents", None)
+        if agents and agents.pop(session_key, None) is not None:
+            logger.debug("Discarded conversational agent %s", session_key)
 
     def flush_conv_agents(self) -> None:
         """Flush the cached ConversationalAgent instances.
@@ -437,6 +496,30 @@ class ChannelRouter:
                     self._conv_agents.pop("__warmup__", None)
                 except Exception:  # noqa: BLE001
                     pass
+            try:
+                # Pre-pay the ~5s plan-context gather (wiki search + disk reads)
+                # into the shared process cache, with exactly the defaults the
+                # agent's own _get_plan_context_block uses, so the FIRST
+                # substantive turn of the first real session reads it instantly
+                # instead of blocking before the LLM call. Best-effort.
+                from navig.plans.context import PlanContext
+                from navig.spaces.resolver import get_default_space
+
+                PlanContext().gather(get_default_space())
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("warmup: plan-context prime skipped: %s", exc)
+            try:
+                # Every agent turn lists AI connections to pick an account, which
+                # reads the vault. The first vault read in a process derives the
+                # machine master key (Argon2id, ~0.35 s plus one-time imports);
+                # pay that here, off the reply path, so the first turn after boot
+                # is as fast as the rest. It only lists: no OAuth token refresh,
+                # no connection writes (vault reads log their usual audit rows).
+                from navig.providers.connect import list_connections
+
+                list_connections()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("warmup: connection-list prime skipped: %s", exc)
 
         try:
             # Off the event loop — the imports/inits are blocking and must not
@@ -613,8 +696,15 @@ class ChannelRouter:
             body = body[:3360].rstrip() + "\n…(truncated)"
         return f"✅ Done\n{body}"
 
-    async def _check_quick_commands(self, message: str, metadata: dict[str, Any]) -> str | None:
-        """Check for quick commands that don't need full AI."""
+    async def _check_quick_commands(
+        self, message: str, metadata: dict[str, Any], *, allow_cli: bool = True
+    ) -> str | None:
+        """Check for quick commands that don't need full AI.
+
+        The ones below the ping check shell out to the CLI (one of them reads the
+        operator's clipboard), so a channel without ``allow_cli`` gets only the
+        in-process ones.
+        """
         msg_lower = message.lower().strip()
 
         # Status check
@@ -628,6 +718,9 @@ class ChannelRouter:
         # Ping
         if msg_lower in ("ping", "/ping"):
             return "🏓 Pong! Gateway is running."
+
+        if not allow_cli:
+            return None
 
         # Automation status
         if msg_lower in ("auto", "/auto", "automation", "/automation"):

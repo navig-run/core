@@ -49,7 +49,7 @@ def test_notify_returns_false_without_chat(monkeypatch):
 
 
 def test_notify_sends_and_reports_true(monkeypatch):
-    import navig.commands.telegram as tg
+    import navig.telegram.api as tg
 
     sent = {}
 
@@ -63,7 +63,7 @@ def test_notify_sends_and_reports_true(monkeypatch):
 
 
 def test_notify_swallows_send_errors(monkeypatch):
-    import navig.commands.telegram as tg
+    import navig.telegram.api as tg
 
     def boom(**kw):
         raise RuntimeError("no network")

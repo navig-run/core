@@ -39,6 +39,7 @@ class NotionConnector(BaseConnector):
         oauth_scopes=[],
         oauth_provider="notion",
         requires_oauth=True,
+        oauth_app=("notion", "NOTION", "Notion integration"),
         can_search=True,
         can_fetch=True,
         can_act=True,

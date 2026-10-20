@@ -1,36 +1,24 @@
-"""Shared helpers for browser accessibility snapshots."""
+"""Compat shim -- this module now lives in ``navig_browser.a11y`` (navig-browser).
 
+The browser engine moved into navig-browser so it runs without navig. Aliases itself to the
+implementation rather than re-exporting it, so the module object is IDENTICAL: tests patch
+``navig.browser.a11y.<name>`` by dotted path and module state (the CDP loop, the session manager, the
+launch records) stays single. Same shape as ``navig.vault.core``.
+"""
 from __future__ import annotations
 
-import re
+import sys as _sys
+from typing import TYPE_CHECKING
 
-_A11Y_ROLE_RE = re.compile(r'(\w[\w\s]*)\s*(?:"([^"]*)"|\[([^\]]*)\])?')
+if TYPE_CHECKING:  # pragma: no cover - static analysis only
+    from navig_browser.a11y import *  # noqa: F401,F403
 
+try:
+    import navig_browser.a11y as _impl
+except ImportError as exc:  # pragma: no cover - exercised only on a broken install
+    raise ImportError(
+        "NAVIG's browser engine requires the navig-browser package. "
+        "Install it with: pip install navig-browser"
+    ) from exc
 
-def annotate_a11y_snapshot(raw: str) -> tuple[str, dict[int, dict[str, str]]]:
-    """Annotate an ARIA snapshot with stable numeric refs."""
-    if not raw:
-        return "", {}
-
-    ref_map: dict[int, dict[str, str]] = {}
-    annotated_lines: list[str] = []
-    ref_id = 0
-
-    for line in raw.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith("- /"):
-            annotated_lines.append(line)
-            continue
-        if stripped.startswith("- "):
-            rest = stripped[2:]
-            match = _A11Y_ROLE_RE.match(rest)
-            role = match.group(1).strip() if match else rest.split()[0] if rest.split() else ""
-            name = (match.group(2) or match.group(3) or "").strip() if match else ""
-            ref_map[ref_id] = {"role": role, "name": name, "raw_line": line}
-            indent = line[: len(line) - len(stripped)]
-            annotated_lines.append(f"{indent}- [{ref_id}] {rest}")
-            ref_id += 1
-            continue
-        annotated_lines.append(line)
-
-    return "\n".join(annotated_lines), ref_map
+_sys.modules[__name__] = _impl

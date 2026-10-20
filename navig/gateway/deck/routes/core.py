@@ -178,15 +178,19 @@ async def handle_deck_mode(request: "web.Request") -> "web.Response":
     except Exception:
         return web.json_response({"error": "invalid json"}, status=400)
 
+    from navig.gateway.channels.focus_modes import FOCUS_MODES
+
     mode = body.get("mode")
-    valid_modes = ("work", "deep-focus", "planning", "creative", "relax", "sleep")
-    if mode not in valid_modes:
+    # The one vocabulary /mode and the preference store share — a local copy could drift.
+    if mode not in FOCUS_MODES:
         return web.json_response(
-            {"error": f"invalid mode. valid: {', '.join(valid_modes)}"}, status=400
+            {"error": f"invalid mode. valid: {', '.join(FOCUS_MODES)}"}, status=400
         )
 
     tracker = _get_tracker()
-    if tracker:
-        tracker.set_preference("chat_mode", mode)
+    if not tracker:
+        return web.json_response({"error": "state tracker unavailable"}, status=500)
+    if tracker.set_preference("chat_mode", mode) is False:
+        return web.json_response({"error": f"mode '{mode}' was not saved"}, status=500)
 
     return web.json_response({"mode": mode})

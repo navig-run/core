@@ -120,3 +120,46 @@ def test_no_orphan_row_when_clean(repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(repo)
     results = check_repo_guard()
     assert not any("orphaned dir" in line for _i, _o, line in results)  # silent when clean
+
+
+def _driver_rows(results):
+    return [(ok, line) for _i, ok, line in results if "registered" in line or "merge" in line.lower()]
+
+
+def test_no_merge_driver_row_when_none_is_declared(repo: Path, monkeypatch) -> None:
+    (repo / ".gitattributes").write_text("*.sh text eol=lf\nCHANGELOG.md merge=union\n", encoding="utf-8")
+    monkeypatch.chdir(repo)
+    assert _driver_rows(check_repo_guard()) == []  # builtin strategies need no config
+
+
+def test_an_unregistered_merge_driver_warns(repo: Path, monkeypatch) -> None:
+    """A driver lives in per-clone git config, never committed; without it git silently
+    line-merges, so the generated command list conflicts as if the driver did not exist."""
+    (repo / ".gitattributes").write_text("gen/commands.json merge=navig-manifest\n", encoding="utf-8")
+    monkeypatch.chdir(repo)
+    rows = _driver_rows(check_repo_guard())
+    assert len(rows) == 1
+    ok, line = rows[0]
+    assert ok is False, "an unregistered driver must not render as a green tick"
+    assert "navig-manifest" in line and "not registered" in line
+    assert "git config merge.navig-manifest.driver" in line  # a repo that is not navig's
+
+
+def test_navig_repo_is_told_npm_install(repo: Path, monkeypatch) -> None:
+    (repo / ".gitattributes").write_text("gen/commands.json merge=navig-manifest\n", encoding="utf-8")
+    (repo / "scripts").mkdir()
+    (repo / "scripts" / "ci-local.mjs").write_text("// registers drivers\n", encoding="utf-8")
+    monkeypatch.chdir(repo)
+    _ok, line = _driver_rows(check_repo_guard())[0]
+    assert "npm install" in line
+
+
+def test_a_registered_merge_driver_is_green(repo: Path, monkeypatch) -> None:
+    (repo / ".gitattributes").write_text(
+        "# routed\ngen/a.json merge=navig-manifest\ngen/b.json  merge=navig-manifest\n", encoding="utf-8"
+    )
+    _git("config", "merge.navig-manifest.driver", "py -3 x.py %O %A %B %P", cwd=repo)
+    monkeypatch.chdir(repo)
+    rows = _driver_rows(check_repo_guard())
+    assert rows == [(True, rows[0][1])]
+    assert "registered: navig-manifest" in rows[0][1]

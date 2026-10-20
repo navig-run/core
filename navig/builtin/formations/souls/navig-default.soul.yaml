@@ -2,7 +2,7 @@ schema_version: "1.0"
 slug: navig-default
 name: NAVIG — Default
 version: "1.0.0"
-author: navig-community
+author: navig-registry
 archetype: architect
 description: >
   The standard NAVIG identity. Senior Systems Architect persona — direct, technical,

@@ -72,6 +72,22 @@ def test_handle_resources_list(mcp_handler):
     assert len(res["resources"]) > 0
 
 
+def test_handle_resources_templates_list(mcp_handler):
+    """The templates method must ANSWER, even though NAVIG parameterises nothing.
+
+    ``initialize`` advertises the ``resources`` capability and
+    ``resources/templates/list`` carries no capability flag of its own, so a
+    spec-following client calls it as part of Resources. Without the handler it got
+    ``-32601 Method not found`` on a connection the server had just declared healthy
+    (Glama's Inspector, against a 3.27.3 server).
+    """
+    res = mcp_handler.handle_message(
+        {"jsonrpc": "2.0", "id": 11, "method": "resources/templates/list", "params": {}}
+    )
+    assert "error" not in res
+    assert res["result"] == {"resourceTemplates": []}
+
+
 def test_handle_resources_read_success(mcp_handler):
     res = mcp_handler._handle_resources_read({"uri": "navig://config/hosts"})
     assert "contents" in res

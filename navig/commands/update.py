@@ -279,6 +279,24 @@ def _step_doctor(skip_sections: frozenset[str] | set[str] = frozenset()):
 
 
 def _step_plugins():
+    """List installed user plugins — this step does NOT upgrade any of them.
+
+    `_step_pypi` above runs `pip/uv install --upgrade navig` for the CORE package
+    only, and nothing in this command upgrades a plugin. The note used to read
+    "N user plugin(s)" under a step called "Plugins", in a command whose other steps
+    really do update things — close enough to a claim that they had been.
+
+    Actually upgrading them here is not a safe swap: first-party plugins in a dev
+    install are EDITABLE local checkouts, and a blanket `--upgrade` would replace an
+    operator's working copy with whatever PyPI has. Detecting editable vs published
+    (`direct_url.json` → `dir_info.editable`) before choosing a source is its own
+    piece of work, so the note says what happened instead of implying more.
+
+    The failure path changed too: an exception returned `ok=True, "up to date"`,
+    i.e. it could not list plugins and reported the strongest possible success. It
+    now reports failure with the reason. This does not change `navig update`'s exit
+    code — only `r1` (git/pypi) is checked for that — only the icon this step draws.
+    """
     t0 = time.monotonic()
     try:
         from navig.plugins import get_plugin_manager
@@ -287,10 +305,19 @@ def _step_plugins():
         user_plugins = [
             p for p in (mgr.list_plugins() or {}).values() if getattr(p, "source", "") == "user"
         ]
-        note = f"{len(user_plugins)} user plugin(s)" if user_plugins else "up to date"
+        note = (
+            f"{len(user_plugins)} installed — not upgraded by this step"
+            if user_plugins
+            else "no user plugins"
+        )
         return _Result("Plugins", ok=True, note=note, elapsed=time.monotonic() - t0)
-    except Exception:
-        return _Result("Plugins", ok=True, note="up to date", elapsed=time.monotonic() - t0)
+    except Exception as exc:  # noqa: BLE001 — a listing failure is not "up to date"
+        return _Result(
+            "Plugins",
+            ok=False,
+            note=f"could not list plugins: {type(exc).__name__}",
+            elapsed=time.monotonic() - t0,
+        )
 
 
 def _reload_version():

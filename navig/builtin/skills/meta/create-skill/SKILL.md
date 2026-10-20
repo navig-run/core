@@ -2,7 +2,7 @@
 name: create-skill
 description: Help the user design and write new NAVIG SKILL.md files with safe, well-structured instructions
 compatibility: any
-metadata: "invocable=true; commands=navig skills list|navig skills tree; examples=How do I create a new skill?|Help me add a skill for monitoring my servers|What's the SKILL.md format?|Generate a SKILL.md for checking disk space|Draft a skill that restarts Docker safely"
+metadata: "invocable=true; commands=navig skill list|navig skill tree; examples=How do I create a new skill?|Help me add a skill for monitoring my servers|What's the SKILL.md format?|Generate a SKILL.md for checking disk space|Draft a skill that restarts Docker safely"
 ---
 
 # Meta Skill: Create Skill

@@ -1,7 +1,8 @@
 # Service — Persistent Daemon Management
 
 Run NAVIG as a persistent background service. The daemon supervisor keeps the
-Telegram bot (and optionally gateway, scheduler) alive with auto-restart.
+Telegram bot (and optionally gateway) alive with auto-restart. Cron runs inside
+the gateway, not as a supervised child.
 
 ## Quick Start
 
@@ -38,7 +39,6 @@ navig service stop             # Graceful shutdown
 navig service install --method task     # No admin needed
 navig service install --method nssm     # Requires admin + NSSM
 navig service install --gateway         # Include gateway server
-navig service install --scheduler       # Include cron scheduler
 ```
 
 ## Configuration
@@ -49,10 +49,12 @@ Config: `~/.navig/daemon/config.json`
 {
   "telegram_bot": true,
   "gateway": false,
-  "scheduler": false,
   "health_port": 0
 }
 ```
+
+Cron runs inside the gateway (not a daemon child); the legacy `scheduler`
+key and `--scheduler` flag are deprecated no-ops, kept for compatibility.
 
 ## Tips
 

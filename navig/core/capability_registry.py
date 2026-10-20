@@ -204,8 +204,10 @@ REGISTRY: dict[str, CapabilityEntry] = {
         cli_commands=["proactive"],
         notes=(
             "user_state.py + engagement.py: kept active via try-import guards in Telegram. "
-            "External providers (google_calendar, ics_calendar, imap_email): MVP2+ only. "
-            "Config default: proactive.enabled: false (providers off by default)."
+            "External providers (google_calendar, ics_calendar, imap_email). "
+            "The gateway starts the calendar/email watcher by itself once a real calendar "
+            "or mailbox is configured; proactive.enabled: false keeps it off (read with "
+            "coerce_bool, default on — configuring a provider is the opt-in)."
         ),
     ),
     # ── LABS — not in default runtime; excluded from default help ──────────

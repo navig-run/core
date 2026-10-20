@@ -6,11 +6,11 @@ The relay gate decides whether the hosted broker / cloudflared path
 Direct mode (cloud.public_url set) is gated separately by the caller, NOT
 here -- the gate only governs the broker-using path.
 
-The decision logic is the commercial heart of the split between
-"perpetual = local app forever, 1 host, no hosted relay" and
-"subscription = host scale + hosted convenience". A bug here either
-gives away the hosted relay for free (cost to us) or punishes paying
-perpetual customers (PR disaster). So we cover all six cases explicitly.
+The rule: an active subscription has the relay; a lapsed one keeps it for a
+30-day grace and then loses it; everyone else (free users, content buyers,
+perpetual paid tiers) has it. A bug here either gives away the relay past a
+lapse (cost to us) or makes a purchase COST a free feature (PR disaster), so
+every case is covered explicitly.
 """
 
 from __future__ import annotations
@@ -115,43 +115,55 @@ def test_lapsed_past_grace_denied(days_past_grace: int):
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Case 4 — perpetual-only buyer (one_time billing): DENIED.
+# Case 4 — perpetual buyers (one_time billing): ALLOWED.
 #
-# This is the case the gate exists for. A user who paid $749 for Pro
-# perpetual gets their local Deck forever, but the hosted relay is a
-# subscription product. They must self-host with Tailscale or subscribe.
+# A perpetual PAID tier holds its tier, relay included. A free user who
+# bought content (a Bay item, a legacy module) is still a free user: the
+# purchase must never take away the relay a never-paid user keeps.
 # ──────────────────────────────────────────────────────────────────────
 
 
-def test_perpetual_tier_buyer_denied():
+def test_perpetual_tier_holder_allowed():
+    """A perpetual PAID tier holds the tier — relay included.
+
+    This used to be DENIED ("perpetual = local only"). In practice that refused
+    the relay to contract/comp Enterprise licences, which are issued one_time,
+    while a never-paid free user kept it.
+    """
     status = FakeStatus(
         valid=True,
         subscription_active=False,
         subscription_until=None,  # one_time has no expiry
         billing_period="one_time",
         perpetual_modules=[],
-        effective_tier="pro",
+        effective_tier="enterprise",
     )
     decision = evaluate_relay_access(status, now=NOW)
-    assert not decision.allowed
-    assert decision.reason == "requires_subscription"
-    assert decision.banner is not None
-    assert "perpetual" in decision.banner.lower()
+    assert decision.allowed
+    assert decision.reason == "perpetual_tier"
 
 
-def test_perpetual_modules_only_buyer_denied():
-    """Solo user who bought AI Operator one-time: still no hosted relay."""
+@pytest.mark.parametrize(
+    "grants",
+    [["item:homelab-space"], ["ai_operator"], ["item:devops-space", "security_ops"]],
+)
+def test_buying_content_never_costs_the_free_relay(grants):
+    """A free user who bought a $5 space must keep what a never-paid user has.
+
+    Regression: any perpetual grant used to deny the relay, so the purchase
+    itself removed a free feature.
+    """
     status = FakeStatus(
         valid=True,
         subscription_active=False,
         subscription_until=None,
-        billing_period=None,  # rare edge: no billing_period set
-        perpetual_modules=["ai_operator"],
-        effective_tier="solo",
+        billing_period="one_time",
+        perpetual_modules=grants,
+        effective_tier="free",
     )
     decision = evaluate_relay_access(status, now=NOW)
-    assert not decision.allowed
-    assert decision.reason == "requires_subscription"
+    assert decision.allowed
+    assert decision.reason == "solo_free"
 
 
 # ──────────────────────────────────────────────────────────────────────

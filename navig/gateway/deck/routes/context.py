@@ -14,6 +14,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -91,6 +93,81 @@ def _file_count_in(path: Path, max_walk: int = 5000) -> int:
     except Exception:
         pass
     return n
+
+
+# ─── Space file counts: cached, and bounded per request ─────────────────────
+#
+# Counting is the expensive part of /spaces. Measured on a real install with 42 spaces:
+# the walks take 9.5 s warm, one project alone 4.9 s, and the cold request took 15.7 s.
+# That cold time crosses the 15 s ceiling a linked NAVIG OS puts on every proxied deck call,
+# so a linked machine's Spaces view just reported "the brain did not answer". Counts are
+# a hint, not a contract. A count is reused for _COUNT_TTL_S. After that, the old value is
+# served while it is refreshed. A space never counted before is counted only while the
+# request is still inside _COUNT_BUDGET_S. Any space left over comes back as ``None`` with
+# ``counts_pending`` set, and a background thread fills it in for the next request.
+
+_COUNT_MAX_WALK = 5000
+_COUNT_TTL_S = 300.0
+_COUNT_BUDGET_S = 2.0
+_count_cache: dict[str, tuple[float, int]] = {}
+_count_lock = threading.Lock()
+_count_refreshing: set[str] = set()
+
+
+def _store_count(key: str, path: Path) -> int:
+    n = _file_count_in(path, max_walk=_COUNT_MAX_WALK)
+    with _count_lock:
+        _count_cache[key] = (time.monotonic(), n)
+    return n
+
+
+def _refresh_counts_in_background(paths: list[Path]) -> None:
+    """Count *paths* on one daemon thread, skipping any a previous refresh already owns."""
+    with _count_lock:
+        todo = [p for p in paths if str(p) not in _count_refreshing]
+        _count_refreshing.update(str(p) for p in todo)
+    if not todo:
+        return
+
+    def _run() -> None:
+        for path in todo:
+            try:
+                _store_count(str(path), path)
+            except Exception as exc:  # noqa: BLE001 — a hint must never take the thread down
+                logger.debug("space count refresh failed for %s: %s", path, exc)
+            finally:
+                with _count_lock:
+                    _count_refreshing.discard(str(path))
+
+    threading.Thread(target=_run, name="navig-space-counts", daemon=True).start()
+
+
+def _space_counts(paths: list[Path], budget_s: float | None = None) -> tuple[dict[str, int | None], bool]:
+    """File counts for *paths* within a time budget → ``(counts by path, pending)``.
+
+    ``pending`` is True when at least one count is missing or stale and a background
+    refresh was started for it. Blocking — call off the event loop.
+    """
+    budget = _COUNT_BUDGET_S if budget_s is None else budget_s
+    deadline = time.monotonic() + budget
+    out: dict[str, int | None] = {}
+    refresh: list[Path] = []
+    for path in paths:
+        key = str(path)
+        with _count_lock:
+            hit = _count_cache.get(key)
+        if hit is not None:
+            out[key] = hit[1]
+            if time.monotonic() - hit[0] > _COUNT_TTL_S:
+                refresh.append(path)  # serve the old value, refresh behind it
+        elif time.monotonic() < deadline:
+            out[key] = _store_count(key, path)
+        else:
+            out[key] = None
+            refresh.append(path)
+    if refresh:
+        _refresh_counts_in_background(refresh)
+    return out, bool(refresh)
 
 
 def _format_file(f: dict[str, Any]) -> dict[str, Any]:
@@ -237,25 +314,34 @@ async def handle_deck_spaces(request: "web.Request") -> "web.Response":
         except Exception:
             pass
 
-        spaces_out: list[dict[str, Any]] = []
+        rows: list[tuple[str, Any, Path, bool]] = []
         for name, cfg in discovered.items():
             try:
                 path = Path(str(getattr(cfg, "path", "")))
-                exists = path.exists()
-                spaces_out.append({
-                    "name": name,
-                    "canonical_name": getattr(cfg, "canonical_name", name),
-                    "scope": getattr(cfg, "scope", "global"),
-                    "path": str(path),
-                    "exists": exists,
-                    "file_count": _file_count_in(path) if exists else 0,
-                    "active": name == active_name,
-                })
+                rows.append((name, cfg, path, path.exists()))
             except Exception as exc:
                 logger.debug("skip space %s: %s", name, exc)
 
+        # Only the counts are slow, so the time budget applies to them alone (see _space_counts).
+        counts, pending = _space_counts([path for _n, _c, path, exists in rows if exists])
+
+        spaces_out: list[dict[str, Any]] = []
+        for name, cfg, path, exists in rows:
+            count = counts.get(str(path)) if exists else 0
+            spaces_out.append({
+                "name": name,
+                "canonical_name": getattr(cfg, "canonical_name", name),
+                "scope": getattr(cfg, "scope", "global"),
+                "path": str(path),
+                "exists": exists,
+                # None = not counted yet (counts_pending); a capped walk is a floor, not a total.
+                "file_count": count,
+                "file_count_capped": count is not None and count >= _COUNT_MAX_WALK,
+                "active": name == active_name,
+            })
+
         spaces_out.sort(key=lambda s: (s["scope"] != "project", s["name"]))
-        return {"spaces": spaces_out, "active": active_name}
+        return {"spaces": spaces_out, "active": active_name, "counts_pending": pending}
 
     try:
         return _ok(await asyncio.to_thread(_collect))

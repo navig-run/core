@@ -213,36 +213,51 @@ def test_the_sweep_runs_off_the_event_loop():
     assert offloaded, "the sweep is not handed to a worker at all"
 
 
+import time
+
+
 async def test_the_reaper_loop_yields_while_a_slow_sweep_runs(monkeypatch):
-    """Behavioural twin of the AST pin: while a sweep takes 300ms of REAL blocking time,
-    another coroutine on the same loop must still get scheduled."""
-    import time
+    """Behavioural twin of the AST pin: while a sweep is still running, another
+    coroutine on the same loop must get scheduled.
+
+    Deterministic ordering, not wall-clock: the sweep blocks on an event that only the
+    ticker can set. If the sweep ran ON the loop (frozen loop), the ticker never runs,
+    the event is never set, and both halves fail. A loaded machine can no longer break
+    the test by making 50ms sleeps late — the earlier gap-heuristic version flaked in
+    xdist batches under exactly that load while the code was correct.
+    """
+    import threading
 
     from navig.notify.monitors import browser_reaper as m
 
+    loop_alive_during_sweep = threading.Event()
     ticks: list[float] = []
 
-    def _slow_sweep():
-        time.sleep(0.3)  # a genuinely blocking sweep
+    def _blocking_sweep():
+        # Blocks the calling THREAD (not the loop, when wired correctly) until the
+        # ticker proves the loop is still scheduling coroutines.
+        assert loop_alive_during_sweep.wait(timeout=5.0), (
+            "the ticker never ran while the sweep was pending — the loop was frozen"
+        )
         return {"reaped": [], "errors": []}
 
     async def _ticker():
         for _ in range(6):
             ticks.append(time.monotonic())
+            loop_alive_during_sweep.set()
             await asyncio.sleep(0.05)
 
-    monkeypatch.setattr(m, "sweep_once", _slow_sweep)
+    monkeypatch.setattr(m, "sweep_once", _blocking_sweep)
     reaper = asyncio.create_task(m.run_browser_reaper(poll_s=10))
     try:
-        await asyncio.wait_for(_ticker(), timeout=2.0)
+        await asyncio.wait_for(_ticker(), timeout=10.0)
     finally:
         reaper.cancel()
         try:
             await reaper
         except asyncio.CancelledError:
             pass
-    # Six ticks 50ms apart span ~300ms. If the sweep blocked the loop, the ticker could not
-    # have run until it finished, and the gaps would show one ≥300ms hole.
-    gaps = [b - a for a, b in zip(ticks, ticks[1:])]
     assert len(ticks) == 6
-    assert max(gaps) < 0.25, f"the loop was frozen by the sweep: gaps={[f'{g:.2f}' for g in gaps]}"
+    # The sweep was released by an early tick, so it completed while the ticker was
+    # still mid-run — the loop yielded instead of being blocked by the sweep.
+    assert loop_alive_during_sweep.is_set()

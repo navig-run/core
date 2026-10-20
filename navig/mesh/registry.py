@@ -321,7 +321,16 @@ class NodeRegistry:
             self._save_to_disk()
 
     def upsert_peer(self, record: NodeRecord) -> None:
-        """Add or refresh a remote peer record. Ignores is_self flag from remote."""
+        """Add or refresh a remote peer record. Ignores is_self flag from remote.
+
+        Our OWN node_id is never accepted as a peer: a join ping that sent
+        ``http://localhost:…`` made the gateway bootstrap from itself and file
+        its own record as a remote peer — the joiner never registered, and
+        this node listed itself in ``navig mesh peers`` (and on disk) forever.
+        """
+        if self._self is not None and record.node_id == self._self.node_id:
+            logger.debug("[mesh.registry] Ignored a peer record carrying our own node_id")
+            return
         record.is_self = False
         self._peers[record.node_id] = record
         self._evict_stale()

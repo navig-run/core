@@ -1,10 +1,15 @@
-"""navig snapshot — file version history and NAVIG config snapshots.
+"""File version history — `navig history files versions|diff|restore`.
 
 Sub-commands
 ------------
 versions  List all stored versions of a file for the current (or named) session.
 diff      Show a unified diff between two stored file versions.
 restore   Roll a file back to a specific prior version.
+
+The same three commands are mounted twice: ``files_app`` under ``navig history files``
+(canonical — file history IS history) and ``app`` under ``navig snapshot`` (superseded,
+hidden; each verb names its ``history files`` equivalent first). ``navig snapshot create``
+was a stub ("not yet implemented") and now points at ``navig backup export``.
 """
 from __future__ import annotations
 
@@ -12,8 +17,24 @@ import typer
 
 from navig.console_helper import get_console
 
-app = typer.Typer(help="File version history and NAVIG config snapshots", no_args_is_help=True)
+app = typer.Typer(
+    help="File version history (superseded → navig history files)",
+    no_args_is_help=True,
+)
+files_app = typer.Typer(
+    help="File version history — list, diff and restore the versions navig captured",
+    no_args_is_help=True,
+)
 console = get_console()
+
+
+@app.callback()
+def _snapshot_callback(ctx: typer.Context) -> None:
+    """`navig snapshot` is superseded by `navig history files` (same commands)."""
+    if ctx.invoked_subcommand in ("versions", "diff", "restore"):
+        from navig.cli.superseded import hint  # noqa: PLC0415
+
+        hint(f"navig snapshot {ctx.invoked_subcommand}")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -21,6 +42,7 @@ console = get_console()
 # ──────────────────────────────────────────────────────────────────────
 
 @app.command("versions")
+@files_app.command("versions")
 def snapshot_versions(
     filepath: str = typer.Argument(..., help="File path to inspect"),
     session: str | None = typer.Option(None, "--session", "-s", help="Session ID (default: latest)"),
@@ -78,7 +100,7 @@ def snapshot_versions(
             f"{v.size_bytes:,} B",
         )
     console.print(tbl)
-    ch.dim(f"Restore with: navig snapshot restore {filepath!r} <turn-id>")
+    ch.dim(f"Restore with: navig history files restore {filepath!r} --turn <turn-id>")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -86,6 +108,7 @@ def snapshot_versions(
 # ──────────────────────────────────────────────────────────────────────
 
 @app.command("diff")
+@files_app.command("diff")
 def snapshot_diff(
     filepath: str = typer.Argument(..., help="File path to diff"),
     from_turn: str | None = typer.Option(None, "--from", help="Earlier turn ID (default: second-to-last version)"),
@@ -152,6 +175,7 @@ def snapshot_diff(
 # ──────────────────────────────────────────────────────────────────────
 
 @app.command("restore")
+@files_app.command("restore")
 def snapshot_restore(
     filepath: str = typer.Argument(..., help="File path to restore"),
     turn: str | None = typer.Option(None, "--turn", "-t", help="Turn ID to restore to (default: last version)"),
@@ -205,24 +229,17 @@ def snapshot_restore(
 
 
 # ──────────────────────────────────────────────────────────────────────
-# navig snapshot create  (NAVIG config snapshot — future work)
+# navig snapshot create  (moved → navig backup export)
 # ──────────────────────────────────────────────────────────────────────
 
 @app.command("create")
 def snapshot_create(
-    name: str = typer.Argument("", help="Snapshot name (auto-generated if omitted)"),
+    name: str = typer.Argument("", help="Ignored (kept so old invocations still parse)"),
 ):
-    """Create a named snapshot of the current NAVIG config and state.
+    """Moved to `navig backup export` — a backup export captures the NAVIG config."""
+    from navig.cli.superseded import moved
 
-    [dim]Full config-snapshot support is planned for a future release.[/dim]
-    """
-    from navig import console_helper as ch
-
-    ch.warning(
-        "Config snapshots are not yet implemented. "
-        "To snapshot a specific file, use: [bold]navig snapshot versions <filepath>[/bold]"
-    )
-    raise typer.Exit(1)
+    moved("navig snapshot create")
 
 
 # ──────────────────────────────────────────────────────────────────────

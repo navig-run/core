@@ -118,5 +118,6 @@ class ConnectivityReporter:
                 "Brain back online",
                 "Lighthouse uplink restored — you're reachable again.",
                 priority="normal",
-                data={"state": "online"},
+                # The all-clear is routine; "offline" (high) is never swept.
+                data={"state": "online", "tidy": "status"},
             )

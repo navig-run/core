@@ -89,6 +89,9 @@ class KeyFact:
     # by the agent, awaiting review), 0 = rejected. Defaults to approved so
     # directly-constructed / manual facts work unchanged; proposers set None.
     approved: int | None = 1
+    # Pinned by the user ("always keep in mind"): an approved pinned fact is injected
+    # on every turn, whatever the query (capped — see FactRetriever).
+    pinned: bool = False
 
     @property
     def token_count(self) -> int:
@@ -116,6 +119,7 @@ class KeyFact:
             "embedding": json.dumps(self.embedding) if self.embedding else None,
             "metadata": json.dumps(self.metadata),
             "approved": self.approved,
+            "pinned": int(self.pinned),
         }
 
     @classmethod
@@ -138,6 +142,7 @@ class KeyFact:
             metadata=safe_json_loads(row["metadata"], {}),
             # Guard against a row from a pre-migration db (column absent → approved).
             approved=(row["approved"] if "approved" in row.keys() else 1),
+            pinned=bool(row["pinned"]) if "pinned" in row.keys() else False,
         )
 
     def __repr__(self) -> str:
@@ -175,7 +180,8 @@ class KeyFactStore:
         store.soft_delete(fact_id)
     """
 
-    SCHEMA_VERSION = 1
+    #: 1 = base + approved column · 2 = pinned column.
+    SCHEMA_VERSION = 2
 
     def __init__(
         self,
@@ -219,7 +225,8 @@ class KeyFactStore:
                 last_accessed           TEXT,
                 embedding               TEXT,
                 metadata                TEXT DEFAULT '{}',
-                approved                INTEGER DEFAULT 1
+                approved                INTEGER DEFAULT 1,
+                pinned                  INTEGER DEFAULT 0
             );
 
             CREATE INDEX IF NOT EXISTS idx_kf_category ON key_facts(category);
@@ -245,6 +252,17 @@ class KeyFactStore:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_kf_approved ON key_facts(approved)")
         except sqlite3.OperationalError as exc:
             logger.warning("key_facts approved-column migration skipped: %s", exc)
+
+        # Migration v2: `pinned` (additive, default 0 — nothing is pinned until the user
+        # pins it). Same column-presence guard, so it is idempotent.
+        try:
+            cols = {r["name"] for r in conn.execute("PRAGMA table_info(key_facts)")}
+            if "pinned" not in cols:
+                conn.execute("ALTER TABLE key_facts ADD COLUMN pinned INTEGER DEFAULT 0")
+                logger.info("key_facts: added pinned column")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_kf_pinned ON key_facts(pinned)")
+        except sqlite3.OperationalError as exc:
+            logger.warning("key_facts pinned-column migration skipped: %s", exc)
 
         # FTS5 for full-text keyword search (standalone, not external content)
         self._fts_available = False
@@ -272,14 +290,32 @@ class KeyFactStore:
             )
         """
         )
+        # Record the version the schema was brought up to. This used to be INSERT OR
+        # IGNORE, so a db created at v1 reported v1 forever after any migration.
         conn.execute(
-            "INSERT OR IGNORE INTO kf_meta (key, value) VALUES ('schema_version', ?)",
+            "INSERT INTO kf_meta (key, value) VALUES ('schema_version', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (str(self.SCHEMA_VERSION),),
         )
         conn.commit()
         logger.debug("KeyFactStore schema initialized at %s", self.db_path)
 
     # ── CRUD ──────────────────────────────────────────────────
+
+    @staticmethod
+    def _redact_in_place(fact: KeyFact) -> None:
+        """Replace secret values in *fact.content*; flag it ``metadata.redacted``.
+
+        Raises :class:`~navig.memory.fact_redaction.SensitiveContentError` when the
+        fact is nothing but a secret. The original text is never logged.
+        """
+        from navig.memory.fact_redaction import redact_fact
+
+        text, was_redacted = redact_fact(fact.content)
+        if was_redacted:
+            fact.content = text
+            fact.embedding = None  # any precomputed vector was built from the secret
+            fact.metadata["redacted"] = True
 
     def upsert(self, fact: KeyFact) -> KeyFact:
         """
@@ -289,6 +325,10 @@ class KeyFactStore:
         """
         if fact.category not in VALID_CATEGORIES:
             fact.category = "context"
+
+        # Secrets never reach the store, its FTS index or the embedding provider.
+        # Raises SensitiveContentError when the fact is nothing but a secret.
+        self._redact_in_place(fact)
 
         # Embed if provider available and no embedding yet
         if self.embedding_provider and fact.embedding is None:
@@ -320,12 +360,12 @@ class KeyFactStore:
                 (id, content, category, tags, confidence,
                  source_conversation_id, source_platform,
                  created_at, updated_at, superseded_by, deleted,
-                 access_count, last_accessed, embedding, metadata, approved)
+                 access_count, last_accessed, embedding, metadata, approved, pinned)
                 VALUES
                 (:id, :content, :category, :tags, :confidence,
                  :source_conversation_id, :source_platform,
                  :created_at, :updated_at, :superseded_by, :deleted,
-                 :access_count, :last_accessed, :embedding, :metadata, :approved)
+                 :access_count, :last_accessed, :embedding, :metadata, :approved, :pinned)
             """,
                 d,
             )
@@ -425,6 +465,70 @@ class KeyFactStore:
             )
             conn.commit()
             return cursor.rowcount
+
+    # ── Small key/value side table (kf_meta) ──────────────────
+
+    def get_meta(self, key: str) -> str | None:
+        row = self._conn().execute("SELECT value FROM kf_meta WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        with self._write_lock:
+            conn = self._conn()
+            conn.execute(
+                "INSERT INTO kf_meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
+            conn.commit()
+
+    # ── Saved memories (the user-facing list) ─────────────────
+
+    def list_saved(
+        self, query: str = "", limit: int = 50, offset: int = 0
+    ) -> tuple[list[KeyFact], int]:
+        """Approved, active facts for the memory manager — pinned first, newest next.
+
+        *query* filters by substring (content or tags; LIKE wildcards escaped).
+        Returns ``(page, total_matching)``.
+        """
+        where = "deleted = 0 AND superseded_by IS NULL AND approved = 1"
+        params: list[Any] = []
+        q = (query or "").strip()
+        if q:
+            like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            where += " AND (content LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')"
+            params += [like, like]
+        conn = self._conn()
+        total = conn.execute(f"SELECT COUNT(*) FROM key_facts WHERE {where}", params).fetchone()[0]
+        rows = conn.execute(
+            f"SELECT * FROM key_facts WHERE {where} "
+            "ORDER BY pinned DESC, updated_at DESC LIMIT ? OFFSET ?",
+            [*params, limit, offset],
+        ).fetchall()
+        return [KeyFact.from_row(r) for r in rows], int(total)
+
+    def get_pinned(self, limit: int = 10) -> list[KeyFact]:
+        """Approved, active pinned facts (newest first)."""
+        rows = self._conn().execute(
+            """SELECT * FROM key_facts
+               WHERE pinned = 1 AND approved = 1 AND deleted = 0 AND superseded_by IS NULL
+               ORDER BY updated_at DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [KeyFact.from_row(r) for r in rows]
+
+    def set_pinned(self, fact_id: str, pinned: bool) -> bool:
+        """Pin or unpin an active fact. False when no active fact has *fact_id*."""
+        with self._write_lock:
+            conn = self._conn()
+            cursor = conn.execute(
+                "UPDATE key_facts SET pinned = ?, updated_at = ? "
+                "WHERE id = ? AND deleted = 0 AND superseded_by IS NULL",
+                (int(bool(pinned)), _utcnow(), fact_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
 
     # ── Portable export / import ──────────────────────────────
 
@@ -608,10 +712,12 @@ class KeyFactStore:
         if not fact:
             return None
         fact.content = new_content
+        fact.metadata.pop("redacted", None)
+        self._redact_in_place(fact)
         fact.updated_at = _utcnow()
         if self.embedding_provider:
             try:
-                fact.embedding = self.embedding_provider.embed_text(new_content)
+                fact.embedding = self.embedding_provider.embed_text(fact.content)
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
         with self._write_lock:
@@ -658,6 +764,66 @@ class KeyFactStore:
             self._delete_fts_conn(conn, purged)
             conn.commit()
             return cursor.rowcount
+
+    def scrub_secrets(self, apply: bool = False) -> list[dict[str, Any]]:
+        """Find (and with *apply*, remove) secrets already stored before the write filter.
+
+        Scans EVERY row — pending, deleted and superseded too, since a soft-deleted fact
+        still holds its text. Each finding is ``{id, category, state, action, preview}``:
+        ``action`` is ``"redact"`` (the secret value is replaced, the fact kept) or
+        ``"remove"`` (the fact was only a secret: its text is overwritten and it is
+        deleted). ``preview`` is the REDACTED text — the original is never returned.
+        """
+        from navig.memory.fact_redaction import (
+            PLACEHOLDER,
+            SensitiveContentError,
+            redact_fact,
+        )
+
+        conn = self._conn()
+        findings: list[dict[str, Any]] = []
+        for row in conn.execute("SELECT * FROM key_facts").fetchall():
+            fact = KeyFact.from_row(row)
+            try:
+                text, changed = redact_fact(fact.content)
+                action = "redact"
+            except SensitiveContentError:
+                text, changed, action = PLACEHOLDER, True, "remove"
+            if not changed:
+                continue
+            if fact.deleted:
+                state = "deleted"
+            elif fact.superseded_by:
+                state = "superseded"
+            elif fact.approved == 1:
+                state = "active"
+            else:
+                state = "pending"
+            findings.append(
+                {
+                    "id": fact.id,
+                    "category": fact.category,
+                    "state": state,
+                    "action": action,
+                    "preview": text if action == "redact" else "",
+                }
+            )
+            if not apply:
+                continue
+            fact.content = text
+            fact.embedding = None
+            fact.metadata["redacted"] = True
+            if action == "remove":
+                fact.deleted = True
+            fact.updated_at = _utcnow()
+            with self._write_lock:
+                self._update_row(fact)
+                if action == "remove":
+                    self._delete_fts_conn(conn, [fact.id])
+                else:
+                    self._update_fts_conn(conn, fact)
+                conn.commit()
+        return findings
 
     def get_stats(self) -> dict[str, Any]:
         """Return store statistics."""
@@ -740,7 +906,8 @@ class KeyFactStore:
                 last_accessed = :last_accessed,
                 embedding = :embedding,
                 metadata = :metadata,
-                approved = :approved
+                approved = :approved,
+                pinned = :pinned
             WHERE id = :id
         """,
             d,

@@ -18,13 +18,14 @@ This endpoint is the source of truth for the host-count licence limit.
 When licence enforcement is wired (Phase 3.2), the response includes:
   - `total_hosts`: total rows in the merged inventory
   - `visible_hosts`: how many we return given the tier's host_limit
-  - `host_limit`: the tier's cap (1 for Solo, 5 for Personal, ...)
+  - `host_limit`: the licence's cap (Free 1, Pass 5, Max 200; Team/Enterprise
+    take the signed contract number, else their default)
   - `hidden_hosts_count`: rows above the cap that we kept registered but
     don't return (CLI still operates on them; soft cap)
   - `tier`: effective tier name
 
-Until licence is wired we return total_hosts/host_limit = total/Infinity
-so the Deck shows everything.
+If the licence module cannot be imported, host_limit = total_hosts so the
+Deck shows everything rather than hiding hosts on an internal error.
 """
 
 from __future__ import annotations

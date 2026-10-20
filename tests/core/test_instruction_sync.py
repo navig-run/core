@@ -133,7 +133,8 @@ def test_real_run_writes_all_targets(tmp_path):
     (tmp_path / s.MASTER_REL).write_text("---\nx: 1\n---\n# Hi\nbody\n", encoding="utf-8")
     s.sync_all(tmp_path, dry_run=False)
     assert (tmp_path / ".cursorrules").read_text(encoding="utf-8") == "# Hi\nbody"
-    assert (tmp_path / ".claude" / "CLAUDE.md").is_file()
+    # Claude reads MASTER via the root CLAUDE.md's @-import; a generated copy would load it twice.
+    assert not (tmp_path / ".claude" / "CLAUDE.md").exists()
     vs = json.loads((tmp_path / ".vscode" / "settings.json").read_text(encoding="utf-8"))
     assert vs["github.copilot.chat.codeGeneration.instructions"][0]["text"] == "# Hi\nbody"
 
@@ -283,3 +284,56 @@ def test_explicit_repo_still_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("NAVIG_INVOCATION_CWD", str(tmp_path / "elsewhere"))
 
     assert _resolve_root(str(repo)) == repo
+
+
+# ── the retired .claude/CLAUDE.md mirror ─────────────────────────────────────
+
+def _master_with_marker(tmp_path):
+    (tmp_path / ".github" / "instructions").mkdir(parents=True)
+    (tmp_path / s.MASTER_REL).write_text(f"# Hi\nbody\n\n{s._GENERATED_MARKER}\n", encoding="utf-8")
+
+
+def test_stale_generated_claude_mirror_is_removed(tmp_path):
+    _master_with_marker(tmp_path)
+    stale = tmp_path / ".claude" / "CLAUDE.md"
+    stale.parent.mkdir()
+    stale.write_text(f"# old MASTER copy\n\n{s._GENERATED_MARKER}\n", encoding="utf-8")
+    results = s.sync_all(tmp_path, dry_run=False)
+    assert not stale.exists()
+    assert (s.RETIRED_CLAUDE_MIRROR, "retired", 0) in results
+
+
+def test_dry_run_reports_but_keeps_the_stale_mirror(tmp_path):
+    _master_with_marker(tmp_path)
+    stale = tmp_path / ".claude" / "CLAUDE.md"
+    stale.parent.mkdir()
+    stale.write_text(f"old\n{s._GENERATED_MARKER}", encoding="utf-8")
+    results = s.sync_all(tmp_path, dry_run=True)
+    assert stale.exists()
+    assert (s.RETIRED_CLAUDE_MIRROR, "would-retire", 0) in results
+
+
+def test_hand_written_claude_md_is_never_touched(tmp_path):
+    _master_with_marker(tmp_path)
+    mine = tmp_path / ".claude" / "CLAUDE.md"
+    mine.parent.mkdir()
+    mine.write_text("# my own notes\n", encoding="utf-8")
+    s.sync_all(tmp_path, dry_run=False)
+    assert mine.read_text(encoding="utf-8") == "# my own notes\n"
+
+
+def test_real_master_carries_the_marker_the_retirement_keys_on():
+    # If MASTER's closing line changes, stale copies on other machines stop being recognised.
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[3]
+    master = (repo / s.MASTER_REL).read_text(encoding="utf-8").rstrip()
+    assert master.endswith(s._GENERATED_MARKER)
+
+
+def test_root_claude_md_imports_master():
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[3]
+    claude_md = (repo / "CLAUDE.md").read_text(encoding="utf-8")
+    assert f"@{s.MASTER_REL}" in claude_md.splitlines()

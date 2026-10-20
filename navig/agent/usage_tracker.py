@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -129,6 +130,12 @@ PRICE_TABLE: dict[str, tuple[float, float, float, float]] = {
 #: ⚠ ``.`` is deliberately absent: it CONTINUES a version number, so ``gpt-4``
 #: must not price ``gpt-4.1``.
 _VARIANT_SEPARATORS = ("-", "@", ":")
+#: A CONTEXT CAPACITY appended by some routers to an otherwise-priced id, e.g.
+#: ``z-ai/glm-4.6[1m]`` — the 1M-context variant of a model that IS priced. Stripped
+#: before matching so the base entry prices it. Published to the OS model catalog, which
+#: renders the rule in its price-matching panel, so it must stay a real rule.
+_CAPACITY_SUFFIX = re.compile(r"\[[0-9a-z]{1,6}\]$")
+
 #: A SIZE suffix after a priced key names a different, cheaper model, not a
 #: variant: `gemini-2.5-flash-lite` is $0.10/$0.40 against Flash's $0.30/$2.50,
 #: `gpt-5-nano` is a fraction of `gpt-5`. Inheriting the bigger model's price
@@ -155,6 +162,7 @@ def model_price_key(model: str, keys) -> str | None:
     ``"gpt-4o"``) is gone too — it priced an unspecified model as some specific
     other one.
     """
+    model = _CAPACITY_SUFFIX.sub("", model)
     if model in keys:
         return model
     best: str | None = None

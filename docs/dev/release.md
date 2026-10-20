@@ -32,22 +32,20 @@ This checklist is for NAVIG maintainers preparing an official release.
 ## Before you release: first-party packages core cannot install without
 
 `navig doctor` → **Release · hard deps** checks every `navig-*` package in core's REQUIRED
-`dependencies`. When one is not on PyPI, the next core wheel cannot be installed by anyone,
-and `release.sh`'s install gate refuses to ship it. As of 2026-09-27 that is
-**`navig-contacts`** (a hard dependency since #1306, never uploaded).
+`dependencies` (run it from the checkout you are releasing — it reads that tree's
+`pyproject.toml`). When one is not on PyPI, or PyPI's version is below the floor, the next
+core wheel cannot be installed by anyone, and `release.sh`'s install gate refuses it.
 
-It cannot simply be published first: it imports core names the published 3.25.0 does not
-have (`scripts/check_plugin_core_floor.py` lists them), so its own floor must name the NEW
-core. The order, in one session:
+**Publish such a dependency BEFORE core.** That only works when the dependency does not
+itself need the unreleased core — which is why the hard deps build on `navig-sdk` rather
+than `navig`: `navig-contacts` 0.2.0 was republished that way (#1639) and resolved the
+2026-09-27 blocker. If a hard dep ever imports core names the published core lacks
+(`scripts/check_plugin_core_floor.py` lists them), move those imports onto `navig-sdk`
+first; a hard dep pinned to an unreleased core is a cycle no publish order resolves cleanly.
 
-1. `python tools/version_bump.py bump minor --commit` — core becomes X.Y.Z.
-2. Raise `navig>=` in the hard dep's `pyproject.toml` to X.Y.Z, commit (PR to `main`).
-3. `node scripts/publish-plugins.mjs navig-contacts --publish` — for the minutes until
-   step 4 lands it asks for a core PyPI does not have yet; nothing depends on it standalone.
-4. `bash tools/release.sh X.Y.Z --publish` — the install gate now resolves it.
-
-The same floor rule applies to every plugin `check_plugin_core_floor.py` flags (cabinet,
-email, github, pipeline, audio): raise each floor to X.Y.Z after core ships, then publish.
+Plugins that are EXTRAS follow the opposite order: `check_plugin_core_floor.py` flags any
+whose `navig>=` floor the published core does not satisfy — release core, raise each floor
+to the new version, then publish them.
 
 ## Build, tag, publish, release — one script
 

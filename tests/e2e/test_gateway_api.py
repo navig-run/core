@@ -55,8 +55,17 @@ async def test_gateway():
     # Run gateway in background task
     task = asyncio.create_task(gateway.start())
 
-    # Wait for server to boot
-    await asyncio.sleep(1)
+    # Wait for the server to actually BIND — `config.port` stays 0 until it does.
+    # A fixed `sleep(1)` raced the boot: subsystem init before the bind takes longer
+    # than a second on a loaded machine, and the health test then read port 0.
+    # 120s, not less: under a full `-n auto` run the boot measured 86s. The ceiling only
+    # bounds a hang; a healthy boot returns as soon as the port is bound.
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + 120
+    while not config.port and not task.done() and loop.time() < deadline:
+        await asyncio.sleep(0.1)
+    if task.done():
+        task.result()  # surface a boot crash instead of a confusing port-0 assertion
 
     yield gateway
 
@@ -100,8 +109,9 @@ async def test_status_requires_authentication(test_gateway):
     """`/status` is an authenticated route; `/health` is the anonymous liveness probe.
 
     That split was always the design — `_health` calls no auth helper and `_status`
-    does — but with no token configured `require_bearer_auth` returned "open access",
-    so the distinction never took effect and this suite passed without a credential.
+    does — but with no token configured `require_bearer_auth` used to return "open
+    access", so the distinction never took effect and this suite passed without a
+    credential. (It now fails closed with 503; this suite configures a real token.)
     """
     port = test_gateway.config.port
     async with aiohttp.ClientSession() as session:

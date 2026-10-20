@@ -32,6 +32,7 @@ import hashlib
 import json
 import logging
 import random
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -54,8 +55,25 @@ _BACKOFF_STABLE_S = 10.0
 _CONNECT_TIMEOUT_S = 15.0
 # Keep the loopback dispatch comfortably under the edge's 30s reply timeout.
 _DISPATCH_TIMEOUT_S = 25.0
+
+# Stamped on every request the uplink replays into the gateway. Kept in sync with
+# navig/gateway/deck/auth.py RELAY_VIA_HEADER (pinned by a test) rather than imported,
+# so the uplink does not pull the gateway's auth module in at import time.
+RELAY_VIA_HEADER = "X-Navig-Via"
+# Remote NAVIG OS data waiting to go up the uplink (each item <= 256 KiB, see os_relay).
+_BULK_QUEUE_MAX = 64
 # Hop-by-hop / length headers we must not echo back through the edge.
 _DROP_RESP_HEADERS = {"content-encoding", "content-length", "transfer-encoding", "connection"}
+
+
+def _note_os_budget_exceeded(usage: dict[str, int]) -> None:
+    """Remote NAVIG OS hit its daily message budget: say so where the operator looks."""
+    try:
+        from navig.core import incidents
+
+        incidents.record(incidents.OS_REMOTE_BUDGET, **usage)
+    except Exception:  # noqa: BLE001 — a health note must never break the relay
+        logger.debug("os remote budget incident not recorded", exc_info=True)
 
 
 def api_key_hash(api_key: str) -> str:
@@ -75,6 +93,53 @@ def _rewrite_ingest_path(path: str) -> str:
     if len(parts) != 2 or not parts[1]:
         return path  # malformed — let the gateway 404 it
     return "/api/ingest/" + parts[1]
+
+
+_OS_PAIR_PATH = re.compile(r"^/os/[0-9a-f]{64}/pair(?:\?.*)?$")
+
+
+def _rewrite_os_pair_path(path: str) -> str:
+    """``/os/<tenant>/pair`` → loopback ``/api/os/pair/redeem`` (the public redeem route).
+
+    Like ingest: the tenant only routed the request here; the one-time pairing code in
+    the body is the credential, checked by the gateway route.
+    """
+    return "/api/os/pair/redeem" if _OS_PAIR_PATH.match(path) else path
+
+
+_OS_LINK_PATH = re.compile(r"^/os/[0-9a-f]{64}(/api/deck/[^?#]*(?:\?.*)?)$")
+
+
+def _rewrite_os_path(path: str, headers: dict[str, Any]) -> str:
+    """Public ``/os/<tenant>/…`` paths → their loopback route.
+
+    * ``/os/<tenant>/pair`` → ``/api/os/pair/redeem`` (see :func:`_rewrite_os_pair_path`).
+    * ``/os/<tenant>/api/deck/<rest>`` → ``/api/deck/<rest>`` — a NAVIG OS on another
+      machine using this brain (brain link). Deck auth then checks its Bearer device
+      token. ONLY the deck API, and only with a Bearer: the tenant path is keyless, so
+      it must never reach the routes that skip deck auth (``/api/events`` holds a stream
+      open; ``/api/ingest`` and the redeem route have their own credentials). Anything
+      else is left as-is and the gateway answers 404.
+    """
+    rewritten = _rewrite_os_pair_path(path)
+    if rewritten != path:
+        return rewritten
+    m = _OS_LINK_PATH.match(path)
+    if not m:
+        return path
+    auth = next((str(v) for k, v in headers.items() if str(k).lower() == "authorization"), "")
+    if not auth.startswith("Bearer "):
+        return path
+    target = m.group(1)
+    # The loopback client normalises dot segments, so "/api/deck/../events" would land
+    # on /api/events after all. Refuse dot segments and encoded separators outright.
+    route = target.split("?", 1)[0]
+    lowered = route.lower()
+    if "\\" in route or any(enc in lowered for enc in ("%2e", "%2f", "%5c")):
+        return path
+    if any(seg in (".", "..") for seg in route.split("/")):
+        return path
+    return target
 
 
 def _now() -> float:
@@ -110,6 +175,8 @@ class UplinkClient:
         snapshot_interval_s: float = 30.0,
         version: str = "",
         connectivity_listener: Optional[Callable[[str], None]] = None,
+        os_remote_enabled: bool = True,
+        os_remote_budget: int | None = None,
     ):
         self.lighthouse_url = lighthouse_url.rstrip("/")
         self.api_key = api_key
@@ -132,6 +199,21 @@ class UplinkClient:
         self._unsub: Callable[[], None] | None = None
         self._stop = False
         self.state = UplinkState()
+        # Remote NAVIG OS streams (os.navig.run → edge → here → the local NAVIG OS server).
+        # Their data goes through a bounded queue and ONE writer that yields between
+        # messages, so a busy stream is capped at one fragment ahead of a Telegram reply,
+        # and a slow edge pushes back on the NAVIG OS socket instead of growing memory.
+        from navig.cloud.os_relay import DEFAULT_DAILY_MSG_BUDGET, OsRelay
+
+        self._bulk_q: asyncio.Queue[str] = asyncio.Queue(maxsize=_BULK_QUEUE_MAX)
+        self._bulk_task: asyncio.Task | None = None
+        self.os_relay = OsRelay(
+            send_control=self._send,
+            send_data=self._send_os_data,
+            enabled=os_remote_enabled,
+            daily_msg_budget=DEFAULT_DAILY_MSG_BUDGET if os_remote_budget is None else os_remote_budget,
+            on_budget_exceeded=_note_os_budget_exceeded,
+        )
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
@@ -282,7 +364,7 @@ class UplinkClient:
             headers={"Authorization": f"Bearer {self.api_key}"},
             heartbeat=30,
             timeout=aiohttp.ClientTimeout(total=_CONNECT_TIMEOUT_S),
-            max_msg_size=8 * 1024 * 1024,
+            max_msg_size=16 * 1024 * 1024,
         )
         self.state.status = "online"
         self.state.connected_at = _now()
@@ -294,6 +376,7 @@ class UplinkClient:
         self._subscribe_events()
         self._event_drain_task = asyncio.create_task(self._event_drain_loop())
         self._snapshot_task = asyncio.create_task(self._snapshot_loop())
+        self._bulk_task = asyncio.create_task(self._bulk_writer_loop())
 
         try:
             async for msg in self._ws:
@@ -308,21 +391,38 @@ class UplinkClient:
                 ):
                     break
         finally:
-            for task in (self._snapshot_task, self._event_drain_task):
+            for task in (self._snapshot_task, self._event_drain_task, self._bulk_task):
                 if task is not None and not task.done():
                     task.cancel()
-            self._snapshot_task = self._event_drain_task = None
+            self._snapshot_task = self._event_drain_task = self._bulk_task = None
+            # Every remote NAVIG OS stream rode this socket; the edge has already closed
+            # the browsers (1012), so end ours and drop what was queued for them.
+            await self.os_relay.close_all()
+            while not self._bulk_q.empty():
+                self._bulk_q.get_nowait()
             self._unsubscribe_events()
             await self._close_ws()
 
     # ── Inbound frame handling ─────────────────────────────────────────────────
 
     def _on_frame(self, text: str) -> None:
+        # Remote NAVIG OS data: `@<sid>:<payload>`, never parsed here (it is the page's
+        # business, and parsing a streamed reply per message would be pure overhead).
+        if text.startswith("@"):
+            if len(text) > 38 and text[37] == ":":
+                self.os_relay.on_data(text[1:37], text[38:])
+            return
         try:
             frame = json.loads(text)
         except (ValueError, TypeError):
             return
         t = frame.get("t")
+        if t == "os_open":
+            self.os_relay.on_open(frame)
+            return
+        if t == "os_close":
+            self.os_relay.on_close(str(frame.get("sid") or ""), frame.get("code", 1000), frame.get("reason", ""))
+            return
         if t == "req":
             task = asyncio.create_task(self._dispatch(frame))
             self._inflight.add(task)
@@ -346,6 +446,8 @@ class UplinkClient:
                 path = frame.get("path", "/")
                 if path.startswith("/ingest/"):
                     path = _rewrite_ingest_path(path)
+                elif path.startswith("/os/"):
+                    path = _rewrite_os_path(path, frame.get("headers") or {})
                 status, headers, body = await self._dispatch_loopback(frame, path)
         except asyncio.CancelledError:
             raise
@@ -374,8 +476,13 @@ class UplinkClient:
         headers = {
             k: v
             for k, v in (frame.get("headers") or {}).items()
-            if k.lower() not in ("host", "content-length")
+            if k.lower() not in ("host", "content-length", RELAY_VIA_HEADER.lower())
         }
+        # Every relayed request reaches the gateway from 127.0.0.1, so it must be marked
+        # as relayed by an explicit rule rather than by whatever Cloudflare headers the
+        # edge happened to pass along. Set LAST, over any inbound value, so a caller
+        # cannot spoof or strip it. deck/auth.py `_request_is_local` refuses it.
+        headers[RELAY_VIA_HEADER] = "lighthouse"
         raw_body = frame.get("body") or ""
         data = raw_body.encode("utf-8") if (raw_body and method not in ("GET", "HEAD")) else None
         async with session.request(
@@ -423,10 +530,44 @@ class UplinkClient:
 
     async def _send_hello(self) -> None:
         snap = await self._collect_snapshot()
-        frame: dict[str, Any] = {"t": "hello", "version": self.version}
+        frame: dict[str, Any] = {"t": "hello", "version": self.version, "caps": self.os_relay.caps()}
         if snap is not None:
             frame["snapshot"] = json.dumps(snap)
         await self._send(frame)
+
+    async def _send_os_data(self, sid: str, payload: str) -> None:
+        # Awaiting put() is the backpressure: a full queue stalls this stream's reader,
+        # which stops reading the NAVIG OS socket, which pushes back on the server.
+        await self._bulk_q.put(f"@{sid}:{payload}")
+
+    async def _bulk_writer_loop(self) -> None:
+        try:
+            while True:
+                item = await self._bulk_q.get()
+                ws = self._ws
+                if ws is None or ws.closed:
+                    continue
+                try:
+                    await ws.send_str(item)
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("uplink os data send failed: %r", exc)
+                # Let any waiting res/pong/event frame go before the next chunk of data.
+                await asyncio.sleep(0)
+        except asyncio.CancelledError:
+            return
+
+    async def send_retire(self) -> bool:
+        """Tell the edge this tenant is retired (the deck key is about to rotate).
+
+        Paired devices still point at this tenant; after rotation nothing ever connects
+        here again, so without this they would see "computer offline" forever. Returns
+        whether the frame was handed to a live socket.
+        """
+        ws = self._ws
+        if ws is None or ws.closed:
+            return False
+        await self._send({"t": "retire"})
+        return True
 
     def _subscribe_events(self) -> None:
         ev = self.system_events

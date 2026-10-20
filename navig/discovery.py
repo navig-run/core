@@ -72,9 +72,15 @@ class ServerDiscovery:
 
         return cmd
 
-    def _execute_ssh(self, command: str) -> tuple[bool, str, str]:
+    def _execute_ssh(self, command: str, stdin: str | None = None) -> tuple[bool, str, str]:
         """
         Execute SSH command and return (success, stdout, stderr).
+
+        Args:
+            command: the remote command line — never put a secret in it; it is
+                logged and visible in process lists on both ends.
+            stdin: text written to the remote command's stdin, then closed. The
+                channel for secrets (see ``navig.core.remote_secret_env``).
 
         Returns:
             Tuple of (success: bool, stdout: str, stderr: str)
@@ -87,11 +93,15 @@ class ServerDiscovery:
                     "",
                     "Password authentication requires paramiko; install paramiko or configure ssh_key.",
                 )
-            return self._execute_ssh_paramiko(command)
+            if stdin is None:
+                return self._execute_ssh_paramiko(command)
+            return self._execute_ssh_paramiko(command, stdin=stdin)
 
-        return self._execute_ssh_subprocess(command)
+        if stdin is None:
+            return self._execute_ssh_subprocess(command)
+        return self._execute_ssh_subprocess(command, stdin=stdin)
 
-    def _execute_ssh_paramiko(self, command: str) -> tuple[bool, str, str]:
+    def _execute_ssh_paramiko(self, command: str, stdin: str | None = None) -> tuple[bool, str, str]:
         """Execute SSH command using paramiko with connection pooling."""
         import time
 
@@ -121,7 +131,14 @@ class ServerDiscovery:
 
             pool = SSHConnectionPool.get_instance()
             conn = pool.get_connection(ssh_config)
-            success, stdout_text, stderr_text = conn.execute(command, timeout=_DISCOVERY_SSH_TIMEOUT)
+            if stdin is None:
+                success, stdout_text, stderr_text = conn.execute(
+                    command, timeout=_DISCOVERY_SSH_TIMEOUT
+                )
+            else:
+                success, stdout_text, stderr_text = conn.execute(
+                    command, timeout=_DISCOVERY_SSH_TIMEOUT, stdin=stdin
+                )
 
             duration_ms = (time.time() - start_time) * 1000
 
@@ -152,7 +169,7 @@ class ServerDiscovery:
 
             return (False, "", error_msg)
 
-    def _execute_ssh_subprocess(self, command: str) -> tuple[bool, str, str]:
+    def _execute_ssh_subprocess(self, command: str, stdin: str | None = None) -> tuple[bool, str, str]:
         """Execute SSH command using subprocess (key auth only)."""
         import time
 
@@ -179,6 +196,9 @@ class ServerDiscovery:
                 encoding="utf-8",
                 errors="replace",
                 timeout=_DISCOVERY_SSH_TIMEOUT,
+                # Without input, stdin is inherited; with BatchMode that is harmless,
+                # but a secret must arrive here and nowhere else.
+                input=stdin,
             )
 
             success = result.returncode == 0

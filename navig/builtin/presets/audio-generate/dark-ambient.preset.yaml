@@ -1,0 +1,17 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: audio-generate/dark-ambient
+name: Dark Ambient
+tool: audio.generate
+layer: style
+category: Music
+tags:
+- music
+description: Dark ambient drone.
+instructions: 'Dark ambient drone: low evolving textures, metallic resonances, distant rumbles, slow movement,
+  no clear rhythm.'
+params:
+  kind: music
+  duration_s: 45
+  negative: melody hooks, drums, vocals

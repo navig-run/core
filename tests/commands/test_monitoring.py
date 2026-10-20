@@ -25,7 +25,8 @@ import pytest
 from navig.commands import monitoring as mon
 from navig.remote import RemoteOperations
 
-# One SSH round-trip returns every metric in this delimited form (see `_BATCH`).
+# One SSH round-trip returns every metric in this delimited form (see
+# `navig.monitoring.checks.RESOURCES_COMMAND` — the CLI and `collect()` share it).
 _BATCH_OK = """===CPU===
 12.5
 ===MEM===

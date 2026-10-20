@@ -1,4 +1,4 @@
-# NAVIG Persona: The Neon Octopus-Mind
+# NAVIG Persona: The Navigator
 
 > *A single calm, intelligent core with many agile, autonomous arms.*
 
@@ -12,7 +12,7 @@ This document defines NAVIG's visual and behavioral identity for use across all 
 
 ## Core Identity
 
-NAVIG embodies a **neon octopus-mind**: a single calm, intelligent core with many agile, autonomous arms. This persona reflects the octopus's natural traits of:
+NAVIG's mark is the octopus: a single calm, intelligent core with many agile, autonomous arms. The visual identity borrows the octopus's natural traits of:
 
 - **Distributed intelligence**: Parallel processing across multiple domains
 - **Adaptability**: Fluid responses to changing environments

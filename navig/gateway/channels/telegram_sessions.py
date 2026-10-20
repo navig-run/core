@@ -24,6 +24,14 @@ logger = logging.getLogger(__name__)
 # In-memory only — reactions on very old messages are not expected.
 _REPLY_RING_MAX: int = 100
 
+#: Session-metadata flag set by ``/incognito``: the chat's messages are not stored in
+#: the session, not cataloged, and the agent neither recalls nor saves memories.
+INCOGNITO_KEY = "incognito"
+
+
+def _session_is_incognito(session: Any) -> bool:
+    return bool((getattr(session, "metadata", None) or {}).get(INCOGNITO_KEY))
+
 
 @dataclass
 class SessionMessage:
@@ -262,9 +270,11 @@ class SessionManager:
         is_group: bool = False,
         username: str = "",
     ) -> TelegramSession:
-        """Add a user message to session."""
+        """Add a user message to session (skipped while the chat is incognito)."""
         with self._lock:
             session = self.get_or_create_session(chat_id, user_id, is_group, username)
+            if _session_is_incognito(session):
+                return session
             session.add_message("user", text, message_id, reply_to)
 
             # Trim old messages
@@ -282,9 +292,11 @@ class SessionManager:
         message_id: int | None = None,
         is_group: bool = False,
     ) -> TelegramSession:
-        """Add an assistant response to session."""
+        """Add an assistant response to session (skipped while the chat is incognito)."""
         with self._lock:
             session = self.get_or_create_session(chat_id, user_id, is_group)
+            if _session_is_incognito(session):
+                return session
             session.add_message("assistant", text, message_id)
             self._save_session(session)
             return session
@@ -341,6 +353,14 @@ class SessionManager:
                 session.context_summary = ""
                 session.metadata = {}
                 self._save_session(session)
+
+    def is_incognito_chat(self, chat_id: int) -> bool:
+        """True when any session in *chat_id* has incognito switched on."""
+        with self._lock:
+            return any(
+                s.chat_id == chat_id and _session_is_incognito(s)
+                for s in self._sessions.values()
+            )
 
     def get_session_metadata(
         self,

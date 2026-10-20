@@ -198,10 +198,19 @@ async def _analyze_image(data: bytes) -> tuple[str | None, str | None]:
         return None, None
 
 
-async def _transcribe_path(path: Path, language: str | None = None) -> str | None:
+async def _transcribe_path(
+    path: Path, language: str | None = None, *, auto_detect: bool = False
+) -> str | None:
     try:
         from navig.core.language import resolve_language
         from navig.voice.stt import transcribe as stt_transcribe
+
+        if auto_detect:
+            # Someone ELSE's voice. The operator's `user.language` is the language
+            # THEY read in, not the one this person speaks: pinning it transcribed a
+            # French voice note as if it were Russian. "auto" reaches the provider
+            # as "detect" whatever the STT config says.
+            return await stt_transcribe(str(path), language="auto")
 
         # Pass the resolved preference explicitly. Passing nothing used to inherit
         # STTConfig's hard-coded "en", so non-English audio was transcribed as if
@@ -292,6 +301,7 @@ async def analyze_video_file(
     language: str | None = None,
     *,
     max_ocr_frames: int = 1,
+    auto_detect: bool = False,
 ) -> tuple[str | None, str | None, str | None]:
     """Return (transcript, ocr_text, note) for a video already on disk.
 
@@ -318,7 +328,7 @@ async def analyze_video_file(
         audio = tmpd / "audio.wav"
         if await _run_ffmpeg([ffmpeg, "-y", "-i", str(path), "-vn", "-ac", "1", "-ar", "16000", str(audio)]):
             if audio.exists() and audio.stat().st_size > 0:
-                transcript = await _transcribe_path(audio, language)
+                transcript = await _transcribe_path(audio, language, auto_detect=auto_detect)
         # 2) Frames → OCR. One thumbnail catches at most one caption, and TikTok
         #    captions change throughout the clip, so anything asking for depth
         #    samples scene changes instead.
@@ -411,3 +421,155 @@ async def _emit(chat_id: Any) -> None:
             await queue.emit("telegram_catalog_update", {"chat_id": chat_id, "kind": "analysis"})
     except Exception:  # noqa: BLE001
         pass
+
+
+# ── One message's media, as text a model can answer ──────────────────────────
+#
+# Asked 2026-09-28: a business-chat role (`tyler`) should "detect images, videos
+# and voice". It could only answer words: a reply to a photo or a voice note said
+# "that message has no text", and pro mode silently skipped media altogether. The
+# primitives were all here; this puts them behind one call a persona reply can use.
+
+#: (kind, Telegram message field), most specific first. A video note is a round
+#: VIDEO whose content is almost always speech, so it is read as audio.
+_MESSAGE_MEDIA: tuple[tuple[str, str], ...] = (
+    ("photo", "photo"),
+    ("video_note", "video_note"),
+    ("voice", "voice"),
+    ("audio", "audio"),
+    ("video", "video"),
+    ("animation", "animation"),
+    ("sticker", "sticker"),
+    ("document", "document"),
+)
+
+_SUFFIX = {"voice": ".ogg", "audio": ".mp3", "video_note": ".mp4", "video": ".mp4", "animation": ".mp4"}
+
+
+def message_media(msg: dict) -> dict | None:
+    """The one readable file in a Telegram message, as ``{kind, file_id, size, mime}``.
+
+    A photo arrives as a LIST of sizes; the largest is the one worth reading. A
+    document counts only when it is an image, audio or video — a PDF is not
+    something a chat reply should be answering.
+    """
+    for kind, field in _MESSAGE_MEDIA:
+        value = msg.get(field)
+        if not value:
+            continue
+        if isinstance(value, list):
+            value = max(value, key=lambda p: (p.get("file_size") or 0, p.get("width") or 0))
+        mime = str(value.get("mime_type") or "")
+        if kind == "document" and not mime.startswith(("image/", "audio/", "video/")):
+            continue
+        if not value.get("file_id"):
+            continue
+        return {
+            "kind": kind,
+            "file_id": value["file_id"],
+            "size": int(value.get("file_size") or 0),
+            "mime": mime,
+        }
+    return None
+
+
+async def _describe_frame(path: Path) -> str | None:
+    """What one representative frame of a clip SHOWS, via the vision model.
+
+    Speech and on-screen text were all a clip was read for, so a silent GIF — most
+    of what people send — came back as nothing and a `tyler` reply to it stopped at
+    "couldn't read that message" (2026-09-30). ffmpeg's ``thumbnail`` filter picks
+    the most representative frame, the same one the OCR fallback already uses.
+    """
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return None
+    frame = path.with_name("frame.jpg")
+    cmd = [ffmpeg, "-y", "-i", str(path), "-vf", "thumbnail", "-frames:v", "1", str(frame)]
+    if not await _run_ffmpeg(cmd) or not frame.exists():
+        return None
+    _ocr, desc = await _analyze_image(frame.read_bytes())
+    return desc.strip() if desc and desc.strip() else None
+
+
+def _sticker_emoji(msg: dict) -> str | None:
+    """The emoji a sticker stands for — all that is left of an animated (.tgs)
+    sticker, which no image model can open."""
+    emoji = (msg.get("sticker") or {}).get("emoji")
+    return f"a sticker ({emoji})" if emoji else None
+
+
+async def understand_message_media(channel: Any, msg: dict) -> str | None:
+    """What the photo, video or voice note in *msg* shows or says — or None.
+
+    Speech is transcribed in the language it was SPOKEN in (``auto_detect``), not
+    the operator's preferred one: this reads someone else's message. Never raises;
+    a file that cannot be downloaded or read is None, and the caller says so.
+    """
+    media = message_media(msg)
+    if media is None:
+        return None
+    kind, mime = media["kind"], media["mime"]
+    if media["size"] and media["size"] > _max_bytes():
+        return None
+    try:
+        data = await _download(channel, media)
+    except Exception:  # noqa: BLE001
+        data = None
+    if not data:
+        return _sticker_emoji(msg) if kind == "sticker" else None
+
+    sticker = msg.get("sticker") or {}
+    if kind == "sticker" and sticker.get("is_animated"):
+        return _sticker_emoji(msg)  # Lottie JSON, not an image
+    try:
+        if kind == "sticker" and sticker.get("is_video"):
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "sticker.webm"
+                path.write_bytes(data)
+                shown = await _describe_frame(path)
+            if shown:
+                return f"a sticker showing: {shown}"
+            return _sticker_emoji(msg)
+        if kind in _IMAGE_KINDS or mime.startswith("image/"):
+            ocr, desc = await _analyze_image(data)
+            parts = []
+            if desc:
+                parts.append(f"a {'sticker' if kind == 'sticker' else 'photo'} showing: {desc.strip()}")
+            if ocr and ocr.strip():
+                parts.append(f"text in it: {ocr.strip()}")
+            return "; ".join(parts) or (_sticker_emoji(msg) if kind == "sticker" else None)
+
+        suffix = _SUFFIX.get(kind) or (".mp4" if mime.startswith("video/") else ".ogg")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / f"media{suffix}"
+            path.write_bytes(data)
+            if kind == "video_note":
+                # A round video: what they said AND what the camera shows.
+                said = await _transcribe_path(path, auto_detect=True)
+                shown = await _describe_frame(path)
+                parts = []
+                if shown:
+                    parts.append(f"showing: {shown}")
+                if said and said.strip():
+                    parts.append(f"saying: {said.strip()}")
+                return ("a round video message — " + "; ".join(parts)) if parts else None
+            if kind in _AUDIO_KINDS or mime.startswith("audio/"):
+                said = await _transcribe_path(path, auto_detect=True)
+                label = "a voice message" if kind == "voice" else "an audio clip"
+                return f"{label} saying: {said.strip()}" if said and said.strip() else None
+            if kind in _VIDEO_KINDS or mime.startswith("video/"):
+                said, on_screen, _note = await analyze_video_file(path, auto_detect=True)
+                shown = await _describe_frame(path)
+                parts = []
+                if shown:
+                    parts.append(f"showing: {shown}")
+                if said and said.strip():
+                    parts.append(f"said in it: {said.strip()}")
+                if on_screen and on_screen.strip():
+                    parts.append(f"text on screen: {on_screen.strip()}")
+                label = "a GIF" if kind == "animation" else "a video"
+                return (f"{label} — " + "; ".join(parts)) if parts else None
+    except Exception:  # noqa: BLE001 — a reply must degrade, never crash the task
+        logger.debug("understand_message_media failed for a %s", kind, exc_info=True)
+    return None

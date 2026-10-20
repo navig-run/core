@@ -88,7 +88,15 @@ class ConnectorManifest:
     #   "manual_credentials"  → user pastes static creds into a Configure form
     #                           (the connector self-authenticates, e.g. Azure AD
     #                           App-Only client-credentials for Partner Center)
+    #   "api_key"             → the values in ``key_fields`` (env, then vault)
     auth_mode: str = "oauth"
+    # What an "api_key" connector needs, as ``navig.connectors.secrets.KeyField``s — the
+    # app renders one input per field and saves it to the field's vault label.
+    key_fields: tuple = ()
+    # Where an OAuth connector's APP credentials live: (vault namespace, env prefix, label)
+    # → ``<ns>/oauth_client_id`` / ``<PREFIX>_CLIENT_ID``. Lets the app ask for them when
+    # the provider is not configured, instead of a Connect that can only 404.
+    oauth_app: tuple[str, str, str] | None = None
     # Capabilities this connector supports (search / fetch / act)
     can_search: bool = True
     can_fetch: bool = True

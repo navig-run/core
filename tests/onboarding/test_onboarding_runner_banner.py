@@ -29,7 +29,12 @@ def _make_engine_state(interrupted_at=None):
 
 
 def test_banner_first_time_setup():
-    """Banner says 'first-time setup' when force=False."""
+    """First-run banner (force=False) invites setup on THIS machine.
+
+    It no longer says "first-time setup": the copy now invites setup here and
+    points someone adding an existing NAVIG at the join page (`/install`).
+    Assert the current copy — the two stdout-purity guards pin the banner too,
+    and pinning its body there is what made them go stale."""
     import pathlib
 
     state = _make_engine_state()
@@ -50,9 +55,13 @@ def test_banner_first_time_setup():
         run_engine_onboarding(force=False, show_banner=True)
 
     output = buf.getvalue()
-    assert "first-time setup" in output
+    assert "set up this computer" in output
     assert "NAVIG_SKIP_ONBOARDING" in output
     assert "reconfigur" not in output
+    # The old banner told EVERY machine it must be "the brain" — wrong for a laptop
+    # joining an existing NAVIG; the banner now points those at the join page.
+    assert "should BE the" not in output
+    assert "/install" in output
 
 
 def test_banner_reconfigure():
@@ -161,3 +170,60 @@ def test_console_banner_written_to_stdout():
     # The banner must appear in output regardless of whether Rich strips markup
     assert "Welcome back" in output
     assert "reconfiguring" in output.lower()
+
+
+# ── first-run shape: optional integrations become "Add later" ────────────────
+
+
+def _fake_steps():
+    from types import SimpleNamespace
+
+    return [
+        SimpleNamespace(id="workspace-init", title="Workspace", tier="essential"),
+        SimpleNamespace(id="ai-provider", title="AI provider", tier="recommended"),
+        SimpleNamespace(id="telegram-bot", title="Telegram bot", tier="optional"),
+        SimpleNamespace(id="lighthouse", title="Lighthouse", tier="optional"),
+        SimpleNamespace(id="review", title="Review", tier="optional"),
+    ]
+
+
+def _run_capturing_steps(**kwargs):
+    state = _make_engine_state()
+    buf = io.StringIO()
+    with (
+        patch("navig.onboarding.runner.load_or_create") as mock_genesis,
+        patch("navig.onboarding.runner.build_step_registry", return_value=_fake_steps()),
+        patch("navig.onboarding.runner.OnboardingEngine") as mock_engine_cls,
+        patch("navig.onboarding.runner._print_verification_dashboard"),
+        patch("sys.stdout", buf),
+    ):
+        mock_genesis.return_value = MagicMock()
+        mock_engine_cls.return_value.run.return_value = state
+        from navig.onboarding.runner import run_engine_onboarding
+
+        run_engine_onboarding(show_banner=True, skip_if_configured=False, **kwargs)
+        ran = [s.id for s in mock_engine_cls.call_args.args[1]]
+    return ran, buf.getvalue()
+
+
+def test_automatic_first_run_defers_optional_integrations():
+    ran, out = _run_capturing_steps(include_optional=False)
+    assert ran == ["workspace-init", "ai-provider", "review"]  # review is the summary — kept
+    assert "Add later" in out
+    assert "Telegram bot" in out and "Lighthouse" in out
+    assert "navig init --reconfigure" in out
+
+
+def test_explicit_wizard_still_runs_every_step():
+    ran, out = _run_capturing_steps()  # include_optional defaults to True (navig init)
+    assert ran == ["workspace-init", "ai-provider", "telegram-bot", "lighthouse", "review"]
+    assert "Add later" not in out
+
+
+def test_main_first_run_uses_the_short_shape():
+    import inspect
+
+    import navig.main as main_mod
+
+    src = inspect.getsource(main_mod._check_first_run)
+    assert "include_optional=False" in src

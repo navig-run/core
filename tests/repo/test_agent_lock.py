@@ -206,24 +206,24 @@ def test_git_c_via_an_unexpandable_shell_variable(hook, root: Path) -> None:
 
 
 def test_from_msys_converts_only_bash_drive_paths(hook, monkeypatch) -> None:
-    """git-bash renders `E:\\foo` as `/e/foo`; convert that to native, nothing else."""
+    """git-bash renders `C:\\foo` as `/c/foo`; convert that to native, nothing else."""
     monkeypatch.setattr(hook.os, "name", "nt")
-    assert hook._from_msys("/e/projects/x") == "E:\\projects\\x"
+    assert hook._from_msys("/c/projects/x") == "C:\\projects\\x"
     assert hook._from_msys("/c/Users/a/b") == "C:\\Users\\a\\b"
     # already-native, non-drive POSIX, and short forms are all untouched
-    assert hook._from_msys("E:\\projects\\x") == "E:\\projects\\x"
+    assert hook._from_msys("C:\\projects\\x") == "C:\\projects\\x"
     assert hook._from_msys("/tmp/foo") == "/tmp/foo"  # multi-char first segment is not a drive
     assert hook._from_msys("/e") == "/e"
     # POSIX: always a no-op (there are no drive-letter paths)
     monkeypatch.setattr(hook.os, "name", "posix")
-    assert hook._from_msys("/e/projects/x") == "/e/projects/x"
+    assert hook._from_msys("/c/projects/x") == "/c/projects/x"
 
 
-@pytest.mark.skipif(os.name != "nt", reason="MSYS /e/ drive paths are a Windows git-bash form")
+@pytest.mark.skipif(os.name != "nt", reason="MSYS /c/ drive paths are a Windows git-bash form")
 def test_git_c_via_msys_bash_worktree_path(hook, root: Path) -> None:
-    """Regression: `git -C /e/…/worktrees/x` (git-bash drive form) blocked real work.
+    """Regression: `git -C /c/…/worktrees/x` (git-bash drive form) blocked real work.
 
-    Path("/e/…") is not absolute on Windows, so the worktree target was mis-resolved and
+    Path("/c/…") is not absolute on Windows, so the worktree target was mis-resolved and
     a legitimate command enforced. Both the literal MSYS path and the `$WT`-variable form
     (with the MSYS path in the assignment) must be exempt.
     """
@@ -542,10 +542,10 @@ def test_from_a_worktree_session_a_sibling_worktree_add_in_the_main_tree_is_not_
 
 # -- a `cd` hop in git-bash / PowerShell form ----------------------------------
 # The `-C` target was converted from MSYS form (regression test above), but the `cd`
-# hop that decides the same thing was not: Path("/e/...") has a root and no drive, so
-# `base / hop` kept only the drive and produced E:\e\projects\..., "outside the repo",
+# hop that decides the same thing was not: Path("/c/...") has a root and no drive, so
+# `base / hop` kept only the drive and produced C:\e\projects\..., "outside the repo",
 # and the command was EXEMPT. Live incident 2026-09-26: another session ran
-#   cd /e/projects/apps/navig && git checkout -b fix/deck-initdata-signature-field
+#   cd /c/projects/apps/navig && git checkout -b fix/deck-initdata-signature-field
 # from the repo's core/ dir while this session held a fresh lock; the checkout went
 # through, and this session's next commit landed on that foreign branch.
 
@@ -555,7 +555,7 @@ def _msys(p: Path) -> str:
     return "/" + drive[0].lower() + rest.replace("\\", "/")
 
 
-@pytest.mark.skipif(os.name != "nt", reason="MSYS /e/ drive paths are a Windows git-bash form")
+@pytest.mark.skipif(os.name != "nt", reason="MSYS /c/ drive paths are a Windows git-bash form")
 def test_cd_into_the_main_checkout_via_msys_path_is_enforced(hook, root: Path) -> None:
     (root / "core").mkdir()
     cmd = f"cd {_msys(root)} && git checkout -b fix/x 2>&1 | tail -2"
@@ -566,7 +566,7 @@ def test_cd_into_the_main_checkout_via_msys_path_is_enforced(hook, root: Path) -
     assert hook.classify_tool(_bash(cmd, cwd=str(wt)), root) == "enforce"
 
 
-@pytest.mark.skipif(os.name != "nt", reason="MSYS /e/ drive paths are a Windows git-bash form")
+@pytest.mark.skipif(os.name != "nt", reason="MSYS /c/ drive paths are a Windows git-bash form")
 def test_cd_into_a_worktree_via_msys_path_stays_exempt(hook, root: Path) -> None:
     wt = root / ".dev" / "worktrees" / "slug"
     wt.mkdir(parents=True)
@@ -574,7 +574,7 @@ def test_cd_into_a_worktree_via_msys_path_stays_exempt(hook, root: Path) -> None
     assert hook.classify_tool(_bash(cmd, cwd=str(root)), root) == "exempt"
 
 
-@pytest.mark.skipif(os.name != "nt", reason="MSYS /e/ drive paths are a Windows git-bash form")
+@pytest.mark.skipif(os.name != "nt", reason="MSYS /c/ drive paths are a Windows git-bash form")
 def test_cd_via_msys_path_outside_the_repo_stays_exempt(hook, root: Path) -> None:
     other = root.parent / "elsewhere"
     other.mkdir(exist_ok=True)
@@ -673,3 +673,370 @@ def test_cd_tilde_is_expanded_not_treated_as_unknown(hook, root: Path, monkeypat
 def test_a_read_only_command_after_an_unknown_cd_stays_exempt(hook, root: Path) -> None:
     wt = _wt(root)
     assert hook.classify_tool(_bash('cd "$ROOT" && git status', cwd=str(wt)), root) == "exempt"
+
+
+# -- the commit-branch guard ---------------------------------------------------
+# The lock stops another HOOKED session moving HEAD; nothing stopped a terminal or an
+# unhooked tool doing it between this session's `checkout -b X` and its `commit`, which
+# then landed on their branch (twice on 2026-09-26). The lock now records the branch this
+# session switched to and refuses a commit when HEAD has moved to a different named branch.
+
+
+def _gitdir(root: Path, head: str = "main", branches=("main",), packed=(), remotes=()) -> Path:
+    """A minimal on-disk .git the hook can read without spawning git."""
+    g = root / ".git"
+    (g / "refs" / "heads").mkdir(parents=True, exist_ok=True)
+    (g / "HEAD").write_text(
+        head if head.startswith(("ref:", "0", "a")) and len(head) >= 40 else f"ref: refs/heads/{head}\n",
+        encoding="utf-8",
+    )
+    for b in branches:
+        p = g / "refs" / "heads" / b
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("0" * 40 + "\n", encoding="utf-8")
+    for r in remotes:
+        p = g / "refs" / "remotes" / "origin" / r
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("0" * 40 + "\n", encoding="utf-8")
+    if packed:
+        (g / "packed-refs").write_text(
+            "# pack-refs with: peeled fully-peeled sorted\n"
+            + "".join(f"{'1' * 40} refs/heads/{b}\n" for b in packed),
+            encoding="utf-8",
+        )
+    return g
+
+
+def _set_head(root: Path, branch: str) -> None:
+    (root / ".git" / "HEAD").write_text(f"ref: refs/heads/{branch}\n", encoding="utf-8")
+
+
+def test_a_commit_after_head_moved_to_another_branch_is_blocked(hook, root: Path) -> None:
+    _gitdir(root, head="theirs", branches=("main", "mine", "theirs"))
+    msg, expected = hook.commit_branch_check("git commit -m work", root, "mine")
+    assert msg and "'theirs'" in msg and "'mine'" in msg
+    assert msg.isascii(), "the hook pipe garbles non-ASCII"
+    assert expected == "mine"
+
+
+def test_a_commit_on_the_expected_branch_is_allowed(hook, root: Path) -> None:
+    _gitdir(root, head="mine", branches=("main", "mine"))
+    assert hook.commit_branch_check("git commit -m work", root, "mine") == (None, "mine")
+
+
+def test_without_a_recorded_branch_nothing_is_checked(hook, root: Path) -> None:
+    _gitdir(root, head="theirs", branches=("main", "theirs"))
+    assert hook.commit_branch_check("git commit -m work", root, None) == (None, None)
+
+
+def test_a_detached_head_is_never_checked(hook, root: Path) -> None:
+    _gitdir(root, head="a" * 40, branches=("main", "mine"))  # mid-rebase / bisect
+    assert hook.commit_branch_check("git commit -m work", root, "mine")[0] is None
+
+
+def test_a_switch_then_commit_in_one_command_is_not_a_move(hook, root: Path) -> None:
+    _gitdir(root, head="main", branches=("main",))
+    for cmd in (
+        "git checkout -b feat/x && git add -- a.py && git commit -m x",
+        "git switch -c feat/x; git commit -m x",  # PowerShell-style separator
+    ):
+        msg, expected = hook.commit_branch_check(cmd, root, "old")
+        assert msg is None and expected == "feat/x", cmd
+
+
+def test_switch_forms_that_are_recorded(hook, root: Path) -> None:
+    _gitdir(root, head="main", branches=("main", "loose"), packed=("packed",), remotes=("remote",))
+    cases = {
+        "git checkout -b feat/a": "feat/a",
+        "git checkout -B feat/a origin/main": "feat/a",
+        "git switch -c feat/a": "feat/a",
+        "git switch --create feat/a": "feat/a",
+        "git checkout --orphan gh-pages": "gh-pages",
+        "git checkout loose": "loose",
+        "git checkout packed": "packed",  # only in packed-refs
+        "git switch remote": "remote",  # git DWIMs origin/remote into a local branch
+        "git -c core.x=y checkout -q loose": "loose",
+    }
+    for cmd, want in cases.items():
+        assert hook.commit_branch_check(cmd, root, None) == (None, want), cmd
+
+
+def test_moves_the_hook_cannot_name_clear_the_record(hook, root: Path) -> None:
+    _gitdir(root, head="main", branches=("main", "mine"))
+    for cmd in (
+        "git checkout 1234abcd",  # a sha: detached
+        "git switch --detach",
+        "git checkout -",
+        "git branch -m renamed",
+        "git bisect start",
+        "gh pr merge 12 --squash",
+        "gh pr checkout 12",
+    ):
+        assert hook.commit_branch_check(cmd, root, "mine") == (None, None), cmd
+
+
+def test_commands_that_do_not_move_head_keep_the_record(hook, root: Path) -> None:
+    _gitdir(root, head="mine", branches=("main", "mine"))
+    (root / "a.py").write_text("x\n", encoding="utf-8")
+    for cmd in (
+        "git checkout -- a.py",
+        "git checkout a.py",  # a path, not a branch
+        "git branch feat/new",
+        "git status",
+        "git rebase origin/main",
+    ):
+        assert hook.commit_branch_check(cmd, root, "mine") == (None, "mine"), cmd
+
+
+def test_a_commit_in_another_checkout_via_dash_c_is_not_checked(hook, root: Path) -> None:
+    _gitdir(root, head="theirs", branches=("main", "theirs"))
+    cmd = 'git -C "C:/c/.dev/worktrees/y" commit -m x'
+    assert hook.commit_branch_check(cmd, root, "mine")[0] is None
+
+
+# -- the record survives the lock's own refreshes ------------------------------
+
+
+def test_write_lock_carries_the_record_for_the_same_session_only(hook, root: Path) -> None:
+    _gitdir(root, head="mine", branches=("main", "mine"))
+    hook.write_lock(root, "me", None, expected="mine")
+    hook.heartbeat(root, "me")  # an exempt call refreshes...
+    assert hook.read_lock(root)["expected_branch"] == "mine"  # ...and keeps it
+    hook.write_lock(root, "me", hook.read_lock(root))  # a plain refresh keeps it too
+    assert hook.read_lock(root)["expected_branch"] == "mine"
+    hook.write_lock(root, "someone-else", hook.read_lock(root))  # a new holder starts clean
+    assert hook.read_lock(root)["expected_branch"] is None
+
+
+def _drive_hook(hook, root: Path, monkeypatch, session: str, command: str) -> int:
+    import io
+    import json
+
+    monkeypatch.setattr(hook, "repo_root", lambda: root)
+    payload = {
+        "hook_event_name": "PreToolUse",
+        "session_id": session,
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "cwd": str(root),
+    }
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+    return hook.main()
+
+
+def test_end_to_end_a_terminal_moving_head_blocks_the_sessions_next_commit(
+    hook, root: Path, monkeypatch
+) -> None:
+    _gitdir(root, head="main", branches=("main",))
+    assert _drive_hook(hook, root, monkeypatch, "me", "git checkout -b feat/mine") == 0
+    _gitdir(root, head="feat/mine", branches=("main", "feat/mine"))  # git did it
+    assert hook.read_lock(root)["expected_branch"] == "feat/mine"
+
+    _set_head(root, "theirs")  # a person at a terminal: git checkout -b theirs
+    (root / ".git" / "refs" / "heads" / "theirs").write_text("0" * 40, encoding="utf-8")
+    assert _drive_hook(hook, root, monkeypatch, "me", "git commit -m work") == 2
+
+    # Going back is the recovery, and it is recorded as this session's choice.
+    assert _drive_hook(hook, root, monkeypatch, "me", "git checkout feat/mine") == 0
+    _set_head(root, "feat/mine")
+    assert _drive_hook(hook, root, monkeypatch, "me", "git commit -m work") == 0
+
+
+def test_end_to_end_the_normal_flow_is_never_blocked(hook, root: Path, monkeypatch) -> None:
+    _gitdir(root, head="main", branches=("main",))
+    assert _drive_hook(hook, root, monkeypatch, "me", "git checkout -b feat/a && git commit -m a") == 0
+    _gitdir(root, head="feat/a", branches=("main", "feat/a"))
+    assert _drive_hook(hook, root, monkeypatch, "me", "git commit -m b") == 0
+    assert _drive_hook(hook, root, monkeypatch, "me", "git checkout main && git pull --ff-only") == 0
+    _set_head(root, "main")
+    assert _drive_hook(hook, root, monkeypatch, "me", "git checkout -b feat/b") == 0
+
+
+# ── a branch move that would drop unpushed commits ───────────────────────────
+#
+# 2026-10-13: a session aborted a rebase in the Schema checkout, then reset main to
+# origin/main and dropped seven commits another session had not pushed yet -- recovered
+# by hand from the reflog a day later. The resetting session held the lock, so the
+# check runs for EVERY session. Real scratch repos with a real remote; nothing mocked.
+
+
+def _repo_with_remote(tmp_path: Path) -> Path:
+    """A clone whose main is in sync with origin/main (one commit)."""
+    import subprocess
+
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origin)], check=True)
+    seed = _scratch_repo(tmp_path)
+    g = ["git", "-C", str(seed)]
+    subprocess.run([*g, "branch", "-M", "main"], check=True)
+    subprocess.run([*g, "remote", "add", "origin", str(origin)], check=True)
+    subprocess.run([*g, "push", "-q", "origin", "main"], check=True)
+    subprocess.run([*g, "fetch", "-q", "origin"], check=True)
+    return seed
+
+
+def _commit(repo: Path, name: str, message: str) -> None:
+    import subprocess
+
+    (repo / name).write_text(message + "\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", name], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", message], check=True)
+
+
+def test_hard_reset_to_the_remote_over_unpushed_commits_is_blocked(hook, tmp_path: Path) -> None:
+    """The 2026-10-13 shape: unpushed work on main, then `reset --hard origin/main`."""
+    repo = _repo_with_remote(tmp_path)
+    _commit(repo, "a.txt", "the sentinel walks")
+    _commit(repo, "b.txt", "the handle is sealed")
+    lost, branch = hook.unpushed_commits_dropped(
+        _bash("git reset --hard origin/main", cwd=str(repo)), repo
+    )
+    assert branch == "main"
+    assert [line.split(" ", 1)[1] for line in lost] == ["the handle is sealed", "the sentinel walks"]
+    msg = hook.dropped_message(lost, branch)
+    assert "the sentinel walks" in msg
+    assert "git branch keep/main main" in msg
+    assert msg.isascii()  # the Windows hook pipe garbles anything else
+
+
+def test_keeping_the_commits_on_a_branch_unblocks_the_same_reset(hook, tmp_path: Path) -> None:
+    import subprocess
+
+    repo = _repo_with_remote(tmp_path)
+    _commit(repo, "a.txt", "work")
+    subprocess.run(["git", "-C", str(repo), "branch", "keep/main", "main"], check=True)
+    assert hook.unpushed_commits_dropped(
+        _bash("git reset --hard origin/main", cwd=str(repo)), repo
+    ) == ([], "main")
+
+
+def test_pushed_work_resets_freely(hook, tmp_path: Path) -> None:
+    import subprocess
+
+    repo = _repo_with_remote(tmp_path)
+    _commit(repo, "a.txt", "work")
+    subprocess.run(["git", "-C", str(repo), "push", "-q", "origin", "main"], check=True)
+    lost, _ = hook.unpushed_commits_dropped(_bash("git reset --hard HEAD~1", cwd=str(repo)), repo)
+    assert lost == []
+
+
+def test_work_already_upstream_as_a_rebased_copy_is_not_lost(hook, tmp_path: Path) -> None:
+    """`git cherry` sees the patch upstream under another sha -- a reset after a rebase."""
+    import subprocess
+
+    repo = _repo_with_remote(tmp_path)
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", "-q", str(tmp_path / "origin.git"), str(other)], check=True)
+    for r in (repo, other):
+        subprocess.run(["git", "-C", str(r), "config", "user.email", "t@t"], check=True)
+        subprocess.run(["git", "-C", str(r), "config", "user.name", "t"], check=True)
+    _commit(other, "z.txt", "someone else landed first")
+    subprocess.run(["git", "-C", str(other), "push", "-q", "origin", "main"], check=True)
+    _commit(repo, "a.txt", "work")
+    sha = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    # The same patch lands on the remote through another clone (a rebase elsewhere).
+    subprocess.run(["git", "-C", str(other), "fetch", "-q", str(repo), sha], check=True)
+    subprocess.run(["git", "-C", str(other), "cherry-pick", sha], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(other), "push", "-q", "origin", "main"], check=True)
+    subprocess.run(["git", "-C", str(repo), "fetch", "-q", "origin"], check=True)
+    lost, _ = hook.unpushed_commits_dropped(
+        _bash("git reset --hard origin/main", cwd=str(repo)), repo
+    )
+    assert lost == []
+
+
+def test_resets_that_keep_the_content_are_not_judged(hook, tmp_path: Path) -> None:
+    repo = _repo_with_remote(tmp_path)
+    _commit(repo, "a.txt", "work")
+    for cmd in ("git reset --soft origin/main", "git reset origin/main", "git reset --hard",
+                "git reset HEAD -- a.txt", "git status"):
+        assert hook.unpushed_commits_dropped(_bash(cmd, cwd=str(repo)), repo)[0] == [], cmd
+
+
+def test_force_moving_a_branch_off_unpushed_commits_is_blocked(hook, tmp_path: Path) -> None:
+    import subprocess
+
+    repo = _repo_with_remote(tmp_path)
+    subprocess.run(["git", "-C", str(repo), "checkout", "-qb", "feat/x"], check=True)
+    _commit(repo, "a.txt", "feature work")
+    subprocess.run(["git", "-C", str(repo), "checkout", "-q", "main"], check=True)
+    for cmd in ("git branch -f feat/x origin/main", "git checkout -B feat/x origin/main",
+                "git switch -C feat/x origin/main"):
+        lost, branch = hook.unpushed_commits_dropped(_bash(cmd, cwd=str(repo)), repo)
+        assert branch == "feat/x", cmd
+        assert [line.split(" ", 1)[1] for line in lost] == ["feature work"], cmd
+    # Creating a NEW branch moves nothing.
+    assert hook.unpushed_commits_dropped(
+        _bash("git checkout -B fresh origin/main", cwd=str(repo)), repo
+    ) == ([], "")
+
+
+def test_the_reset_guard_follows_git_c_and_fails_open_on_a_variable(hook, tmp_path: Path) -> None:
+    repo = _repo_with_remote(tmp_path)
+    _commit(repo, "a.txt", "work")
+    elsewhere = str(tmp_path)
+    lost, _ = hook.unpushed_commits_dropped(
+        _bash(f'git -C "{repo}" reset --hard origin/main', cwd=elsewhere), repo
+    )
+    assert len(lost) == 1
+    assert hook.unpushed_commits_dropped(
+        _bash("git -C $wt reset --hard origin/main", cwd=elsewhere), repo
+    ) == ([], "")
+
+
+def test_main_blocks_the_drop_for_the_lock_holder_too(hook, tmp_path: Path, monkeypatch) -> None:
+    """Exit 2 even with no lock contention -- the 10-13 resetter held the lock."""
+    import io
+    import json
+
+    repo = _repo_with_remote(tmp_path)
+    _commit(repo, "a.txt", "work")
+    monkeypatch.setattr(hook, "repo_root", lambda: repo)
+    payload = {"hook_event_name": "PreToolUse", "session_id": "me", **_bash(
+        "git reset --hard origin/main", cwd=str(repo)
+    )}
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+    assert hook.main() == 2
+
+
+def test_the_reset_guard_reads_git_grammar_not_words(hook) -> None:
+    """A path holding the word `reset`, and `switch -C <branch>`, are not what they look like."""
+    cmd = 'git -C "C:/c/.dev/worktrees/reset-guard/core" reset --hard origin/main'
+    m = hook._RESET.search(cmd)
+    assert m and m.group(1).strip() == "--hard origin/main"
+    assert hook._GIT_GLOBAL_C.search(cmd).group(1) == '"C:/c/.dev/worktrees/reset-guard/core"'
+    assert hook._GIT_GLOBAL_C.search("git switch -C feat/x origin/main") is None
+    assert hook._RESET.search("git log --grep=reset") is None
+    assert hook._RESET.search('git commit -m "reset the board"') is None
+
+
+# ── a message or a pattern is never read as a verb (word-scan false positives) ─
+#
+# 2026-10-17 the word-scan blocked `git branch --list "*reset*"` while sweeping a
+# checkout: the PATTERN argument held a dangerous word. git reads its subcommand
+# from one position; words in arguments are data.
+
+
+def test_a_message_or_argument_holding_a_verb_word_is_read_only(hook, root: Path) -> None:
+    for command in (
+        'git branch --list "*reset*"',
+        "git log --grep=reset --oneline",
+        'git log --grep "checkout stuff"',
+        "git diff --name-only my-reset-branch",
+        "git show HEAD -- path/with-reset-in-it.txt",
+        "git log && reset",
+    ):
+        assert hook.classify_tool(_bash(command), root) == "exempt", command
+
+
+def test_a_real_verb_still_counts_with_any_message(hook, root: Path) -> None:
+    for command in (
+        'git commit -m "reset the board"',
+        'git -C "some dir" reset --hard',
+        "git stash pop",
+        "git rebase origin/main",
+        'git worktree add .dev/worktrees/x -b feat/x && git reset --hard origin/main',
+    ):
+        assert hook.classify_tool(_bash(command), root) == "enforce", command

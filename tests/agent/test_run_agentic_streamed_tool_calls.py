@@ -232,3 +232,100 @@ async def test_parallel_streamed_tool_calls_both_dispatch(monkeypatch):
         ("download", {"url": "b"}),
     ]
     assert reply == "both done"
+
+
+# A long message (>= 12 words) — NOT "chat-feel". Before the streaming gate was
+# decoupled from _short_chat, this took the blocking complete() path and no
+# token reached on_partial until the whole turn was done.
+LONG_MESSAGE = (
+    "please write me a careful step by step explanation of how this works in detail"
+)
+
+
+def _skip_heavy_context(monkeypatch, conv_cls):
+    """Stub the non-short-chat context builders so the test stays hermetic.
+
+    A long message runs plan-context gather + skills + recall; none of that is
+    under test here and all of it does disk I/O, so neutralise it.
+    """
+    monkeypatch.setattr(conv_cls, "_get_plan_context_block", lambda self: "")
+    monkeypatch.setattr(conv_cls, "_build_skills_section", lambda self, message: "")
+    monkeypatch.setattr(conv_cls, "_recall_block", lambda self, message: "")
+
+
+@pytest.mark.asyncio
+async def test_long_message_now_streams_to_on_partial(monkeypatch):
+    """The core win: a substantive (non-short) turn streams, it no longer blocks.
+
+    `assert len(LONG_MESSAGE.split()) >= 12` keeps this honest — if someone
+    shortens the fixture it would silently fall back onto the always-streamed
+    short-chat path and stop testing the decoupled gate.
+    """
+    from navig.agent.conv import ConversationalAgent as ConvAgent
+
+    assert len(LONG_MESSAGE.split()) >= 12, "fixture must be a non-short message"
+    _apply_common_patches(monkeypatch, _Registry())
+    _skip_heavy_context(monkeypatch, ConvAgent)
+    client = _StreamingClient([
+        [_chunk(delta="Sure"), _chunk(delta=", here"), _chunk(finish_reason="stop")],
+    ])
+    _install(monkeypatch, client)
+
+    seen = []
+
+    async def _capture(text: str) -> None:
+        seen.append(text)
+
+    agent = ConvAgent()
+    reply = await agent.run_agentic(message=LONG_MESSAGE, on_partial=_capture)
+
+    assert reply == "Sure, here"
+    assert seen == ["Sure", "Sure, here"], "a long turn must stream incrementally"
+    assert client.complete_calls == 0, "a streamed text answer must not block on complete()"
+
+
+@pytest.mark.asyncio
+async def test_preamble_streams_but_freezes_once_a_tool_call_begins(monkeypatch):
+    """Text before a tool call is shown; text after it is not surfaced live.
+
+    This is the half-answer-flicker guard: the user sees "Let me check that",
+    then the bubble stops editing while the tool runs, so the post-tool text the
+    model emits in the same round is never shown and then retracted. It is still
+    kept in the turn's content.
+    """
+    from navig.agent.conv import ConversationalAgent as ConvAgent
+
+    registry = _Registry()
+    _apply_common_patches(monkeypatch, registry)
+    _skip_heavy_context(monkeypatch, ConvAgent)
+    client = _StreamingClient([
+        [
+            _chunk(delta="Let me "),
+            _chunk(delta="check that"),
+            _tool_fragment(name="download", tc_id="call_a", index=0),
+            _tool_fragment(args='{"url": "x"}', index=0),
+            _chunk(delta="POST-TOOL-TEXT"),      # arrives after the tool call
+            _chunk(finish_reason="tool_calls"),
+        ],
+        [_chunk(delta="done"), _chunk(finish_reason="stop")],
+    ])
+    _install(monkeypatch, client)
+
+    seen = []
+
+    async def _capture(text: str) -> None:
+        seen.append(text)
+
+    agent = ConvAgent()
+    reply = await agent.run_agentic(message=LONG_MESSAGE, on_partial=_capture)
+
+    assert registry.dispatched == [("download", {"url": "x"})]
+    assert reply == "done"
+    # The preamble streams; then the bubble freezes for the rest of turn 1; then
+    # turn 2's final answer streams on its own (the guard is per-round, so a
+    # final no-tool round is never suppressed). The post-tool text of turn 1 is
+    # the one thing that must never surface.
+    assert seen == ["Let me ", "Let me check that", "done"], seen
+    assert all("POST-TOOL-TEXT" not in text for text in seen), (
+        "text emitted after the tool call must not reach the live bubble"
+    )

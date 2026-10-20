@@ -223,6 +223,11 @@ DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
         "navig_runtime_mission_action",
         # marketplace acquisition (entitlement + writes installed content)
         "navig_bay_acquire",
+        # remote host execution — arbitrary commands over SSH. The executor appends
+        # `--yes` to its `navig run` subprocess (the CLI confirm is redundant there),
+        # so the ApprovalGate is the ONLY authorization decision for these two.
+        "remote_execute",
+        "remote_multi_host",
     }
 )
 
@@ -1021,6 +1026,36 @@ def bind_approval_manager(manager: Any | None, audit_log: Any | None = None) -> 
 _SHELL_TOOLS: frozenset[str] = frozenset({"bash_exec", "run_command", "navig_run"})
 
 
+def _auto_approve_read_only() -> bool:
+    """Is the chat-path read bypass on?
+
+    Precedence (owner design, 2026-10-15 — the router-firewall levels):
+
+    1. an EXPLICIT ``approval.auto_approve_read_only`` always wins — a key
+       the operator wrote is a decision, not a default;
+    2. otherwise the value derives from ``approval.security_level``:
+       ``high`` → off (even proven reads page), ``medium``/``low`` → on;
+    3. unreadable config → on (the safe-for-UX default this has always had).
+
+    Reads through coerce_bool because ``navig config set … false`` stores the
+    STRING ``"false"`` — a raw truthiness check would keep it enabled while the
+    operator had clearly disabled it.
+    """
+    try:
+        from navig.config import get as config_get
+        from navig.core.coerce import coerce_bool
+
+        explicit = config_get("approval.auto_approve_read_only", None)
+        if explicit is not None:
+            return bool(coerce_bool(explicit, default=True))
+        from navig.approval.policies import coerce_security_level
+
+        level = coerce_security_level(config_get("approval.security_level", None))
+        return level != "high"
+    except Exception:  # noqa: BLE001 — an unreadable config keeps the safe-for-UX default
+        return True
+
+
 @dataclass(frozen=True)
 class MissionGrant:
     """What a running mission may do without asking."""
@@ -1120,6 +1155,29 @@ async def gate_agent_tool_call(
                 "report this command as a recommended action for the operator, with the "
                 "exact command and why it is needed.]"
             )
+        # Chat path: a provably read-only shell command runs unprompted. The
+        # operator's ask (2026-10-13): grep/ls/cat cards looped in Telegram —
+        # "Approval Required" for every diagnostic, and a denial the model then
+        # retried (fresh card each time). is_read_only is the same conservative
+        # classifier the mission grant already trusts (verb allow-list, no
+        # composition or write flags), and every auto-approval is audited naming
+        # the config key that allowed it. `rm` and friends still prompt.
+        if tool_name in _SHELL_TOOLS and _auto_approve_read_only():
+            from navig.tools.shell_readonly import is_read_only
+
+            _params = parameters or {}
+            _cmd = str(_params.get("command") or _params.get("cmd") or "")
+            if _cmd and is_read_only(_cmd):
+                audit_auto_approval(
+                    tool_name,
+                    enabled_by="approval.auto_approve_read_only",
+                    parameters=parameters,
+                )
+                logger.info(
+                    "approval: tool='{}' auto-approved — read-only shell command",
+                    tool_name,
+                )
+                return None
         gate = get_approval_gate()
         context: dict[str, Any] = {}
         if session_key:
@@ -1140,5 +1198,13 @@ async def gate_agent_tool_call(
         return f"[Denied: approval gate error for '{tool_name}' — failing closed]"
 
     if decision != ApprovalDecision.APPROVED:
-        return f"[Denied: operator did not approve '{tool_name}']"
+        # Anti-retry (incident 2026-10-13): the old bare string was read as
+        # "ask again" — the model re-issued the same call and spawned a fresh
+        # approval card every time (3 in 2 minutes). The mission denial above
+        # already carries this instruction; the chat denial must too.
+        return (
+            f"[Denied: operator did not approve '{tool_name}'. Do not retry it — "
+            "the answer will not change. Continue without the tool call, or report "
+            "it as a suggested action for the operator instead.]"
+        )
     return None

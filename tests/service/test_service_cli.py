@@ -428,6 +428,9 @@ def test_service_install_handles_malformed_existing_config(monkeypatch, tmp_path
     assert cfg["gateway"] is True
     assert cfg["scheduler"] is True
     assert cfg["health_port"] == 123
+    # The flag still round-trips (no CLI break) but must SAY it is dead: cron
+    # runs inside the gateway, and the scheduler child was a silent no-op.
+    assert "deprecated" in result.output.lower()
 
 
 def test_stop_failure_message_prefers_recorded_reason(monkeypatch):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import subprocess
 import sys
@@ -24,6 +25,30 @@ class SkillCommand:
     description: str
     risk: str = "safe"
     confirmation_msg: str | None = None
+
+
+# A manifest must not be able to label a destructive command "safe" by omission. The dict
+# form of `navig-commands` carries an explicit risk; the shorthand string form does not, so
+# the risk is inferred from the verb — the same principle Blocks use (risk comes from what
+# the command does, not from what the author claimed).
+_DESTRUCTIVE_WORDS = frozenset({
+    "restart", "stop", "kill", "rm", "del", "delete", "remove", "drop", "prune", "truncate",
+    "flush", "reset", "destroy", "uninstall", "purge", "wipe", "reboot", "shutdown", "terminate",
+})
+_RISKY_WORDS = frozenset({
+    "start", "apply", "deploy", "push", "write", "set", "update", "install", "migrate", "sync",
+    "move", "copy", "upload", "publish", "run", "exec", "execute",
+})
+
+
+def infer_command_risk(syntax: str) -> str:
+    """Risk for a shorthand ``navig-commands`` entry, derived from its verbs."""
+    words = {w for w in re.findall(r"[a-z]+", (syntax or "").lower())}
+    if words & _DESTRUCTIVE_WORDS:
+        return "destructive"
+    if words & _RISKY_WORDS:
+        return "moderate"
+    return "safe"
 
 
 @dataclass(frozen=True)
@@ -139,13 +164,20 @@ def _collect_skills(skills_dirs: Iterable[Path]) -> list[SkillInfo]:
                         )
                     )
                 elif isinstance(c, str):
-                    # Simple form: "navig docker ps"
+                    # Simple form: "navig docker logs {container}". The NAME is the
+                    # subcommand — the token after the verb — not the last token: splitting
+                    # on [-1] named both `logs {container}` and `restart {container}`
+                    # "{container}", so `skill show` listed two identical rows and
+                    # `skill run docker-manage:restart` could never address one of them.
+                    parts = c.split()
+                    if parts and parts[0].lower() == "navig":
+                        parts = parts[1:]
                     parsed_commands.append(
                         SkillCommand(
-                            name=c.split()[-1] if c.strip() else c,
+                            name=(parts[1] if len(parts) > 1 else (parts[0] if parts else "")),
                             syntax=c,
                             description="",
-                            risk="safe",
+                            risk=infer_command_risk(c),
                         )
                     )
 
@@ -198,7 +230,7 @@ def list_skills_cmd(options: dict[str, Any]) -> list[SkillInfo]:
     if not skills_dirs:
         ch.error("Skills directory not found.")
         ch.dim("  Expected a skills/ directory relative to NAVIG, or pass --dir.")
-        ch.dim("  Example: navig skills list --dir C:/path/to/skills")
+        ch.dim("  Example: navig skill list --dir C:/path/to/skills")
         return []
 
     skills = _collect_skills(skills_dirs)
@@ -275,7 +307,7 @@ def tree_skills_cmd(options: dict[str, Any]) -> dict[str, list[str]]:
     if not skills_dirs:
         ch.error("Skills directory not found.")
         ch.dim("  Expected a skills/ directory relative to NAVIG, or pass --dir.")
-        ch.dim("  Example: navig skills tree --dir C:/path/to/skills")
+        ch.dim("  Example: navig skill tree --dir C:/path/to/skills")
         return {}
 
     skills = _collect_skills(skills_dirs)
@@ -350,7 +382,7 @@ def show_skill_cmd(name: str, options: dict[str, Any]) -> SkillInfo | None:
 
     if skill is None:
         ch.error(f"Skill not found: {name}")
-        ch.dim("  Use 'navig skills list' to see available skills.")
+        ch.dim("  Use 'navig skill list' to see available skills.")
         return None
 
     if want_json:
@@ -460,7 +492,7 @@ def run_skill_cmd(spec: str, extra_args: list[str], options: dict[str, Any]) -> 
     skill = _find_skill(skill_name, options)
     if skill is None:
         ch.error(f"Skill not found: {skill_name}")
-        ch.dim("  Use 'navig skills list' to see available skills.")
+        ch.dim("  Use 'navig skill list' to see available skills.")
         return 1
 
     # Case 1: Run a named command from the skill's navig-commands
@@ -555,7 +587,7 @@ def run_skill_cmd(spec: str, extra_args: list[str], options: dict[str, Any]) -> 
 
     # Case 4: No entrypoint, no command — show info
     ch.warning(f"Skill '{skill.name}' has no entrypoint or runnable commands.")
-    ch.dim(f"  Use 'navig skills show {skill.name}' for details.")
+    ch.dim(f"  Use 'navig skill show {skill.name}' for details.")
     return 1
 
 
@@ -664,7 +696,7 @@ def skills_install(
         else:
             ch.success(f"Installed {len(targets)} skill(s).", details=", ".join(t.name for t in targets))
             if len(targets) == 1:
-                ch.info("Run it: navig skills run " + targets[0].name)
+                ch.info("Run it: navig skill run " + targets[0].name)
         return
 
     # 2) Community registry (GitHub-backed) — unchanged.
@@ -761,7 +793,7 @@ def skills_new(
     )
     skill_file.write_text(content, encoding="utf-8")
     ch.success(f"Created skill '{slug}'.", details=str(skill_file))
-    ch.info("Edit the description (auto-activation matches it), then: navig skills run " + slug)
+    ch.info("Edit the description (auto-activation matches it), then: navig skill run " + slug)
 
 
 @skills_app.command("lint")
@@ -1410,12 +1442,15 @@ def _load_community_registry() -> list[dict]:
     """Load the community CLI-skill registry from the workspace, else GitHub."""
     import json
 
-    # 1. Local workspace copy (navig-community/cli-skills/registry.json)
+    # 1. Local workspace copy (<registry checkout>/cli-skills/registry.json) — the repo
+    # was navig-community until 2026-10-16; the old folder name still resolves.
     try:
         here = Path(__file__).resolve()
         for _ in range(8):
             here = here.parent
-            cand = here / "navig-community" / "cli-skills" / "registry.json"
+            cand = here / "registry" / "cli-skills" / "registry.json"
+            if not cand.exists():
+                cand = here / "navig-community" / "cli-skills" / "registry.json"
             if cand.exists():
                 data = json.loads(cand.read_text(encoding="utf-8"))
                 return data.get("skills", []) if isinstance(data, dict) else list(data or [])
@@ -1425,7 +1460,7 @@ def _load_community_registry() -> list[dict]:
     try:
         import urllib.request
 
-        url = "https://raw.githubusercontent.com/navig-run/community/main/cli-skills/registry.json"
+        url = "https://raw.githubusercontent.com/navig-run/registry/main/cli-skills/registry.json"
         req = urllib.request.Request(url, headers={"User-Agent": "navig-cli"})  # noqa: S310 — https
         with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310
             data = json.loads(resp.read().decode("utf-8"))
@@ -1501,13 +1536,13 @@ def skills_suggest(
     ch.info(f"Stack: {', '.join(stack) or 'unknown'}" + (f"   ·   Space: {space}" if space else ""))
 
     if not picks:
-        ch.info("No stack-specific suggestions yet. Browse: navig skill install github:navig-run/community/...")
+        ch.info("No stack-specific suggestions yet. Browse: navig skill install github:navig-run/registry/...")
         return
 
     ch.info("Suggested skills:")
     for sk in picks:
         cmd = sk.get("install") or (
-            f"navig skill install github:navig-run/community/cli-skills/{sk.get('category')}/{sk.get('id')}"
+            f"navig skill install github:navig-run/registry/cli-skills/{sk.get('category')}/{sk.get('id')}"
         )
         ch.info(f"  • {sk.get('id')} — {sk.get('description', '')}")
         if not install:
@@ -1517,7 +1552,7 @@ def skills_suggest(
         from navig.commands.install import install_asset
 
         for sk in picks:
-            spec = f"github:navig-run/community/cli-skills/{sk.get('category')}/{sk.get('id')}"
+            spec = f"github:navig-run/registry/cli-skills/{sk.get('category')}/{sk.get('id')}"
             try:
                 install_asset(spec, force=False)
             except Exception as exc:  # noqa: BLE001
@@ -1655,7 +1690,7 @@ def skills_show(
     ctx: typer.Context,
     name: str = typer.Argument(
         ...,
-        help="Skill name (e.g., 'docker-manage', 'git-basics', 'official/docker-ops')",
+        help="Skill name (e.g., 'docker-manage', 'official/docker-ops')",
     ),
     skills_dir: Path | None = typer.Option(
         None,
@@ -1698,10 +1733,10 @@ def skills_run(
       <skill>            — run the skill's entrypoint (main.py / index.js)
 
     Examples:
-        navig skills run docker-manage:ps
-        navig skills run git-basics:git-status
-        navig skills run file-operations:list-files /var/log
-        navig skills run my-custom-skill   # runs entrypoint
+        navig skill run docker-manage:ps
+        navig skill run git-basics:git-status
+        navig skill run file-operations:list-files /var/log
+        navig skill run my-custom-skill   # runs entrypoint
     """
     if json_output:
         ctx.obj["json"] = True
@@ -1745,9 +1780,9 @@ def skills_synthesize(
     and generates ready-to-use NAVIG skill definitions.
 
     Examples:
-        navig skills synthesize                  # preview top patterns
-        navig skills synthesize --apply          # generate + save skills
-        navig skills synthesize --min-occurrences 5 --apply --yes
+        navig skill synthesize                  # preview top patterns
+        navig skill synthesize --apply          # generate + save skills
+        navig skill synthesize --min-occurrences 5 --apply --yes
     """
     try:
         from navig.agent.pattern_analyzer import PatternAnalyzer  # type: ignore

@@ -226,3 +226,45 @@ class TestMigrateLegacyApply:
         ):
             result = migrate_legacy.apply(action, ctx)
         assert "No legacy" in result.message or "skip" in result.message
+
+
+class TestMigrateLegacyReportsOnlyRealMoves:
+    """A fresh Ubuntu server printed "Migrated: Windows runtime layout, Documents/.navig"
+    although neither existed — both helpers returned None and the module counted the
+    CALL as a migration."""
+
+    def test_nothing_moved_is_skipped_not_migrated(self, tmp_path):
+        from navig.installer.contracts import Action, InstallerContext, ModuleState
+        from navig.installer.modules import migrate_legacy
+
+        ctx = InstallerContext(profile="server", config_dir=tmp_path)
+        action = Action(id="migrate_legacy.run", description="migrate", module="migrate_legacy", reversible=False)
+        with (
+            patch("navig.commands.init._migrate_legacy_windows_runtime_layout", return_value=False),
+            patch("navig.commands.init._migrate_legacy_documents_dir", return_value=False),
+        ):
+            result = migrate_legacy.apply(action, ctx)
+        assert result.state == ModuleState.SKIPPED
+        assert "Migrated" not in result.message
+
+    def test_only_the_layout_that_moved_is_named(self, tmp_path):
+        from navig.installer.contracts import Action, InstallerContext, ModuleState
+        from navig.installer.modules import migrate_legacy
+
+        ctx = InstallerContext(profile="server", config_dir=tmp_path)
+        action = Action(id="migrate_legacy.run", description="migrate", module="migrate_legacy", reversible=False)
+        with (
+            patch("navig.commands.init._migrate_legacy_windows_runtime_layout", return_value=False),
+            patch("navig.commands.init._migrate_legacy_documents_dir", return_value=True),
+        ):
+            result = migrate_legacy.apply(action, ctx)
+        assert result.state == ModuleState.APPLIED
+        assert result.message == "Migrated: Documents/.navig"
+
+    def test_the_real_helpers_report_nothing_on_a_clean_machine(self, tmp_path, monkeypatch):
+        from navig.commands import init as init_mod
+
+        monkeypatch.setattr(init_mod, "_legacy_windows_platformdirs_root", lambda: tmp_path / "absent-a")
+        monkeypatch.setattr(init_mod, "_legacy_documents_config_dir", lambda: tmp_path / "absent-b")
+        assert init_mod._migrate_legacy_windows_runtime_layout() is False
+        assert init_mod._migrate_legacy_documents_dir(tmp_path / "cfg") is False

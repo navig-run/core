@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "navig"
-version = "3.25.0"
+version = "3.27.5"
 description = "Terminal-first infrastructure CLI with multi-host SSH management, encrypted vault, AI operator layer, and memory"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -59,7 +59,7 @@ dependencies = [
   "httpx>=0.27.0",
   "loguru>=0.7.0",
   "speedtest-cli>=2.1.3",
-  "tomli>=2.0; python_version < '3.11'",
+  "tomli>=2.4.1; python_version < '3.11'",
   "pydantic>=2.0.0",
   "json-repair>=0.30.0",
   "readchar>=3.0",
@@ -69,14 +69,50 @@ dependencies = [
   # now shims that alias themselves to it, so without it `import navig.vault.types` raises
   # and the vault -- which the agent, the gateway and 7 plugins all read secrets through --
   # does not work at all. An extra is for something the product is complete without.
-  "navig-vault>=0.6.0",
+  # Floor 0.8.0: `navig vault export|open|import|opener` import navig_vault.svg /
+  # svg_export / transfer. Below it those four verbs are still advertised in the help and
+  # the HANDBOOK, and only answer "pip install -U navig-vault" — the floor makes pip
+  # resolve the version the commands actually need. Keep core/requirements.txt in step
+  # (tests/packaging/test_requirements_txt_matches_pyproject.py).
+  # Floor 0.9.0: navig.vault imports add_sso_login (SSO logins). The repo carried that code
+  # under 0.8.0 while PyPI kept an OLDER 0.8.0, so 3.27.0 installed the old wheel and every
+  # fresh install's gateway died on the ImportError (found on a clean Ubuntu 24.04 VM).
+  # scripts/check_plugin_version_drift.py now refuses that state at publish time.
+  # Floor 0.11.0 (0.10.0 on PyPI predates the authority's rate limits and backup.skipped_unreadable): `navig vault status|run|backup|restore|rotate|recovery|devices|grant|join` and
+  # vault:// / federation resolution import navig_vault.keyslots / refs / backup / federation.
+  "navig-vault>=0.12.0",
+  # navig-sdk is the shared seam standalone plugins run on, and it now OWNS code navig uses:
+  # navig/net/ssrf.py aliases itself to navig_sdk.ssrf (one copy of the SSRF rules). Tiny,
+  # standard-library only. HARD dependency: it must be on PyPI before a core release that
+  # declares it (`npm run ci:install` resolves the built wheel from PyPI and proves it).
+  "navig-sdk>=2.13.0",
   # navig-contacts owns `navig contacts` outright: the address book and the
   # alias->route table dispatch resolves against are one store, so the verb
   # cannot be an optional extra without `navig contacts` disappearing for
   # anyone who did not install it. Like navig-vault above, this is a HARD
-  # dependency. The schema itself stays in core (navig.store.contacts), which
-  # is what messaging reads; the plugin brings the importer and the CLI.
-  "navig-contacts>=0.1.0",
+  # dependency. It also OWNS the store: navig/store/contacts.py aliases itself to
+  # navig_contacts.store, which messaging, the deck and Telegram read. Must be on
+  # PyPI before a core release that declares this floor (`npm run ci:install`).
+  "navig-contacts>=0.2.0",
+  # navig-media-core OWNS the shared media foundation: navig/media/{types,
+  # refs_library,context_builder,audio_edit,video_edit,frames,fx}.py,
+  # navig/store/generated_media.py and navig/tools/media_providers.py alias themselves to
+  # it (extracted from navig-generate so every media package shares one copy). HARD, like
+  # the two above. Must be on PyPI before a core release that declares this floor
+  # (`npm run ci:install`).
+  "navig-media-core>=0.2.0",
+  # navig-generate OWNS generation (ADR-0002): navig/media/{generation_service,beats,
+  # tonality,processing}.py and
+  # navig/tools/{image,video,audio}_generation.py alias themselves to it, and core's
+  # `navig generate` and the Telegram voice path import it. HARD, like the two above; it
+  # stays light (ffmpeg via subprocess, numpy/Pillow lazy). Must be on PyPI before a core
+  # release that declares this floor (`npm run ci:install`).
+  "navig-generate>=0.4.1",
+  # navig-browser OWNS the browser engine: navig/browser/*.py are identity aliases of
+  # navig_browser.*, and `navig cdp` is its CLI. Core imports it from `do`, `gmail`, `links`,
+  # `cortex`, the MCP cdp tools, the agent's browser tool and the idle-browser reaper, so it is
+  # a HARD dependency — publish it before any core release that declares it.
+  "navig-browser>=0.1.0",
   # First-party plugins (Deck UI, navig-github, navig-social/download/generate) are intentionally
   # NOT default deps — this keeps a bare `pip install navig` lean and always
   # resolvable (no unpublished packages in the base). They ship as optional
@@ -97,11 +133,17 @@ dev = [
   "build>=1.2.1",
   # Required by memory/embeddings similarity calculation in tests
   "numpy>=1.24.0",
+  # The Discord bot glue tests (tests/discord_manager/test_gateway_bot.py) build the real
+  # slash-command tree; without the library they skip.
+  "discord.py>=2.4,<3",
 ]
 # Voice (TTS/STT) now lives in the navig-audio plugin; core keeps thin
 # `navig.voice.*` compat shims. `navig[voice]`/`navig[audio]` pull the plugin.
-voice = ["navig-audio>=0.1.0"]
-audio = ["navig-audio>=0.1.0"]
+voice = ["navig-audio>=0.2.0"]
+audio = ["navig-audio>=0.2.0"]
+# `navig video` — a channel's render verbs (kinetic, bulletin, formats, variants);
+# the engines come from navig-audio (voice/beats) and navig-media-core (frames).
+video = ["navig-video>=0.1.0"]
 keyring = [
   "keyring>=25.0.0",
 ]
@@ -110,9 +152,22 @@ keyring = [
 # channel works without it.
 telegram = [
   "telethon>=1.43.2",
+  "navig-telegram>=0.1.0",
 ]
 matrix = [
   "matrix-nio[e2e]>=0.24.0",
+  "navig-matrix>=0.1.0",
+]
+# The AutoHotkey surface (`navig ahk`). The plugin registers only on win32; installing it
+# elsewhere is harmless and keeps the extra nameable on every platform.
+ahk = [
+  "navig-ahk>=0.1.0",
+]
+# The NAVIG Discord bot (gateway channel: slash commands, moderation, agent DMs).
+# Optional — `navig discord` REST commands work without it; `navig discord setup`
+# offers to install it. discord.py pulls audioop-lts itself on Python 3.13+.
+discord = [
+  "discord.py>=2.4,<3",
 ]
 # Twilio SMS transport for the `adapters.sms` messaging channel. Optional and
 # lazily imported, like telethon above — but with a difference worth knowing: the
@@ -130,15 +185,17 @@ deck = []
 desktop = [
   "uiautomation>=2.0.18",
   "comtypes>=1.2.0",
+  # pyautogui backs the desktop controller (so `navig ahk screenshot` / `ocr` work) and
+  # the bundled `windows-automation` skill's click / drag / key / read_region scripts.
+  # It was imported by both and declared by neither, so every one of those paths failed
+  # with "install pyautogui" instead of being one extra away. BSD, latest 0.9.54.
+  "pyautogui>=0.9.54",
 ]
 # Stealth browser tier — Patchright (drop-in Playwright that defeats Cloudflare/Datadome/
 # Kasada) + BrowserForge for coherent fingerprints. Optional: the fast/CDP tiers work
 # without it, but the TikTok Tier-B signed-comment path and hardened-site automation need
 # it. Install with `navig[stealth]` then `patchright install chromium` (or use channel=chrome).
-stealth = [
-  "patchright>=1.40",
-  "browserforge>=1.2.0",
-]
+stealth = ["navig-browser[stealth]>=0.1.0"]  # the extra lives with the engine now
 # Firefox engine — a NON-CDP browser tier (Juggler protocol) that sidesteps CDP-surface
 # detection (e.g. TikTok's automated-login region check that fails in Chromium). Plain
 # `engine="firefox"` uses Playwright's own Firefox (navig-managed binary; `playwright install
@@ -146,25 +203,38 @@ stealth = [
 # Firefox that hides `navigator.webdriver` and ships a coherent fingerprint + geoip — used by
 # `engine="camoufox"` (the default when installed). navig fetches its binary on first use
 # (`python -m camoufox fetch`). The [geoip] extra aligns timezone/locale/WebRTC to a proxy IP.
-firefox = [
-  "camoufox[geoip]>=0.4",
-]
+firefox = ["navig-browser[firefox]>=0.1.0"]
 # First-party companion plugins (free, in-process engines). Optional so a bare
 # install stays lean; the installer / `navig store install pip:<pkg>` pulls them
 # for the complete product. Resolve from PyPI (once published) or from the local
 # monorepo in dev via [tool.uv.sources] below.
 github = ["navig-github>=0.2.0"]
+agentctl = ["navig-agentctl>=0.1.0"]
+devnet = ["navig-devnet>=0.1.0"]
 ebay = ["navig-ebay>=0.1.0"]
 social = ["navig-social>=0.1.0"]
 download = ["navig-download>=0.1.0"]
-generate = ["navig-generate>=0.1.0"]
+generate = ["navig-generate>=0.2.0"]  # a hard dependency now; kept so `navig[generate]` still resolves
 antivirus = ["navig-antivirus>=0.1.0"]
 games = ["navig-games>=0.1.0"]
 mobile = ["navig-mobile>=0.1.0"]
+# `navig vm` — VMware Workstation lab machines (create from a cloud image + a recipe,
+# snapshot, revert); the NAVIG OS lab VM is built with it. Windows hosts with Workstation.
+vm = ["navig-vm>=0.1.0"]
 # Perceptual duplicate finder (photos/video/audio + exact files). The engine
 # (numpy/Pillow) was extracted here from core; `navig.media.*_dedupe` are now
 # thin shims, and `navig dedupe` / `navig media dedupe-*` need this extra.
 dedupe = ["navig-dedupe>=0.1.0"]
+# Bookmark manager (`navig bookmarks`): import/export with folders, FTS search, AI folder
+# plans and tags, dead-link checks, dedupe. Replaces core's `navig links`, which is now a
+# deprecated alias that forwards here (or prints the install hint without it).
+bookmarks = ["navig-bookmarks>=0.1.0"]
+# AI chat library (`navig chats`): import ChatGPT exports, search every message, NAVIG folders,
+# export; backs the NAVIG Dock's ChatGPT Lens and Chat Library page (/api/deck/chats/*).
+chats = ["navig-chats>=0.1.0"]
+# Web sticky notes (`navig notes`): the NAVIG Dock syncs its page/site/everywhere notes here
+# (/api/deck/notes/*); list, search, add and export them, and Recall finds them (`--source notes`).
+notes = ["navig-notes>=0.1.0"]
 # Documents, one plugin (navig-cabinet): `navig cabinet` — an encrypted cabinet for
 # important files (ID/passport scans, medical records, photos, recordings; local-OCR
 # search, expiry reminders, portable backups) — and `navig paperwork`, the business
@@ -211,16 +281,29 @@ tui = [
 # resolves the PyPI package via the `>=` specifier in the extra above.
 [tool.uv.sources]
 navig-vault = { path = "../plugins/navig-vault", editable = true }
+navig-sdk = { path = "../registry/sdk/python", editable = true }
 navig-github = { path = "../plugins/navig-github", editable = true }
+navig-agentctl = { path = "../plugins/navig-agentctl", editable = true }
+navig-devnet = { path = "../plugins/navig-devnet", editable = true }
 navig-ebay = { path = "../plugins/navig-ebay", editable = true }
 navig-social = { path = "../plugins/navig-social", editable = true }
 navig-download = { path = "../plugins/navig-download", editable = true }
+navig-matrix = { path = "../plugins/navig-matrix", editable = true }
+navig-ahk = { path = "../plugins/navig-ahk", editable = true }
+navig-telegram = { path = "../plugins/navig-telegram", editable = true }
 navig-generate = { path = "../plugins/navig-generate", editable = true }
+navig-media-core = { path = "../plugins/navig-media-core", editable = true }
+navig-browser = { path = "../plugins/navig-browser", editable = true }
 navig-audio = { path = "../plugins/navig-audio", editable = true }
+navig-video = { path = "../plugins/navig-video", editable = true }
 navig-antivirus = { path = "../plugins/navig-antivirus", editable = true }
 navig-games = { path = "../plugins/navig-games", editable = true }
 navig-mobile = { path = "../plugins/navig-mobile", editable = true }
+navig-vm = { path = "../plugins/navig-vm", editable = true }
 navig-dedupe = { path = "../plugins/navig-dedupe", editable = true }
+navig-bookmarks = { path = "../plugins/navig-bookmarks", editable = true }
+navig-chats = { path = "../plugins/navig-chats", editable = true }
+navig-notes = { path = "../plugins/navig-notes", editable = true }
 navig-blackbox = { path = "../plugins/navig-blackbox", editable = true }
 navig-contacts = { path = "../plugins/navig-contacts", editable = true }
 navig-cabinet = { path = "../plugins/navig-cabinet", editable = true }
@@ -462,3 +545,5 @@ directory = ".dev/coverage/html"
 
 [tool.coverage.xml]
 output = ".dev/coverage/coverage.xml"
+
+

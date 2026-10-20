@@ -143,7 +143,7 @@ class TestBuildHelpCategory:
         result = TelegramCommandsMixin._build_help_category("ai_models")
         assert result is not None
         text, kb = result
-        assert "AI & Models" in text
+        assert "AI Auto Mode" in text
         # Should have subcategory buttons, not command detail buttons
         all_cb = [btn["callback_data"] for row in kb for btn in row]
         assert any(cb.startswith("help:s:") for cb in all_cb)
@@ -171,7 +171,7 @@ class TestBuildHelpSubcategory:
         assert any(cb.startswith("help:d:") for cb in all_cb)
 
     def test_back_returns_to_parent_category(self):
-        result = TelegramCommandsMixin._build_help_subcategory("ai_models", "models")
+        result = TelegramCommandsMixin._build_help_subcategory("ai_models", "auto")
         assert result is not None
         _text, kb = result
         last_row_cbs = [btn["callback_data"] for btn in kb[-1]]
@@ -191,15 +191,15 @@ class TestBuildHelpSubcategory:
     # ("can't parse entities"), which _api_call silently swallowed.
     # ------------------------------------------------------------------
 
-    def test_personas_subcategory_returns_result(self):
-        """'Personas & Style' subcategory must return a valid (text, keyboard) tuple."""
-        result = TelegramCommandsMixin._build_help_subcategory("ai_models", "personas")
-        assert result is not None, "personas subcategory returned None — routing broken"
+    def test_auto_subcategory_returns_result(self):
+        """'Auto Mode' subcategory must return a valid (text, keyboard) tuple."""
+        result = TelegramCommandsMixin._build_help_subcategory("ai_models", "auto")
+        assert result is not None, "auto subcategory returned None — routing broken"
         text, kb = result
-        assert "Personas" in text
+        assert "Auto Mode" in text
 
     def test_continuation_subcategory_returns_result(self):
-        """'Continuation & Auto' subcategory must return a valid (text, keyboard) tuple."""
+        """'Continuation' subcategory must return a valid (text, keyboard) tuple."""
         result = TelegramCommandsMixin._build_help_subcategory("ai_models", "continuation")
         assert result is not None, "continuation subcategory returned None — routing broken"
         text, kb = result
@@ -207,7 +207,7 @@ class TestBuildHelpSubcategory:
 
     def test_underscore_command_names_escaped_in_text(self):
         """Command names containing _ appear as-is in HTML mode (no backslash escaping)."""
-        result = TelegramCommandsMixin._build_help_subcategory("ai_models", "continuation")
+        result = TelegramCommandsMixin._build_help_subcategory("ai_models", "auto")
         assert result is not None
         text, _ = result
         # In HTML mode, underscore chars are NOT escaped with backslashes
@@ -217,8 +217,8 @@ class TestBuildHelpSubcategory:
         # MarkdownV2 backslash escapes must not appear in HTML output
         assert "\\_" not in text, "backslash-escaped underscore must not appear in HTML text"
 
-    def test_explain_ai_escaped_in_personas_text(self):
-        result = TelegramCommandsMixin._build_help_subcategory("ai_models", "personas")
+    def test_explain_ai_escaped_in_text_subcategory(self):
+        result = TelegramCommandsMixin._build_help_subcategory("utilities", "text")
         assert result is not None
         text, _ = result
         # In HTML mode, underscores are not escaped
@@ -227,7 +227,7 @@ class TestBuildHelpSubcategory:
 
     def test_callback_data_uses_raw_command_name(self):
         """callback_data must NOT contain escape sequences — routing depends on raw names."""
-        result = TelegramCommandsMixin._build_help_subcategory("ai_models", "continuation")
+        result = TelegramCommandsMixin._build_help_subcategory("ai_models", "auto")
         assert result is not None
         _, kb = result
         all_cb = [btn["callback_data"] for row in kb for btn in row]

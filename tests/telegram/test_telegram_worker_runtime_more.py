@@ -1,4 +1,3 @@
-import asyncio
 import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -129,34 +128,6 @@ async def test_start_stop_gateway_http(monkeypatch):
     assert gateway.running is False
 
 
-async def test_mcp_reconnect_loop():
-    stop_event = asyncio.Event()
-
-    class DummyManager:
-        def __init__(self):
-            # No pre-existing client → the loop exercises the first-connect path
-            # (register once via add_client, then connect_client). For an already
-            # registered client the loop intentionally skips add_client.
-            self.clients: dict = {}
-            self.add_client = AsyncMock()
-            self.connect_client = AsyncMock(return_value=True)
-
-    gateway = SimpleNamespace(mcp_client_manager=DummyManager())
-
-    # Let it run one iteration and then stop
-    async def delayed_stop():
-        await asyncio.sleep(0.02)
-        stop_event.set()
-
-    asyncio.create_task(delayed_stop())
-
-    await tw._mcp_reconnect_loop(
-        gateway, {"reconnect_interval": 0.01, "mcp_url": "ws://mcp"}, stop_event
-    )
-    assert gateway.mcp_client_manager.add_client.await_count >= 1
-    assert gateway.mcp_client_manager.connect_client.await_count >= 1
-
-
 async def test_run_fully_mocked(mock_config_manager, monkeypatch):
     monkeypatch.setattr(tw, "_load_env", MagicMock())
 
@@ -178,14 +149,21 @@ async def test_run_fully_mocked(mock_config_manager, monkeypatch):
             self.clients = {}
             self.add_client = AsyncMock()
             self.connect_client = AsyncMock(return_value=True)
+            self.stop = AsyncMock()
 
     import sys
+
+    # The worker does `from navig.mcp.client import MCPClientConfig` AFTER we stub
+    # the `navig.mcp` package below. Import the real submodule first so that lookup
+    # resolves from sys.modules in ANY test order — run alone, it used to raise
+    # inside the worker's except-and-log, so the client was never registered and
+    # every MCP assertion here passed against a manager nothing had touched.
+    import navig.mcp.client  # noqa: F401
 
     monkeypatch.setitem(sys.modules, "navig.mcp", SimpleNamespace(MCPClientManager=DummyMCPManager))
 
     monkeypatch.setattr(tw, "_start_gateway_http", AsyncMock())
     monkeypatch.setattr(tw, "_stop_gateway_http", AsyncMock())
-    monkeypatch.setattr(tw, "_mcp_reconnect_loop", AsyncMock())
 
     class ImmediateEvent:
         def is_set(self):
@@ -199,8 +177,31 @@ async def test_run_fully_mocked(mock_config_manager, monkeypatch):
     fake_loop = SimpleNamespace(add_signal_handler=MagicMock(side_effect=NotImplementedError))
     monkeypatch.setattr(tw.asyncio, "get_running_loop", lambda: fake_loop)
 
+    created: list = []
+    real_ctor = DummyMCPManager
+
+    def _tracking_ctor():
+        m = real_ctor()
+        created.append(m)
+        return m
+
+    monkeypatch.setitem(sys.modules, "navig.mcp", SimpleNamespace(MCPClientManager=_tracking_ctor))
+
     # Test full run execution
     await tw._run(port=9999, enable_gateway=True)
+
+    # ONE MCP connection owner: the bridge client is registered once (add_client
+    # auto-connects and arms the registry's backoff-aware health sweep) and the
+    # worker never calls the EXPLICIT connect path, which resets that backoff.
+    # The old worker loop did, every 60 s — an absent bridge logged WARN+ERROR
+    # every minute. Shutdown stops the manager so no retry task outlives it.
+    assert created, "bridge auto_connect defaults on — the MCP manager should have been created"
+    mgr = created[0]
+    assert mgr.add_client.await_count == 1, mgr.add_client.await_args_list
+    assert mgr.connect_client.await_count == 0, (
+        "worker called connect_client() — the explicit path resets the registry backoff"
+    )
+    assert mgr.stop.await_count == 1, "the MCP manager (and its health sweep) was not stopped"
 
 
 def test_main(monkeypatch):

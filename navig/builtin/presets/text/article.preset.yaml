@@ -1,0 +1,14 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: text/format/article
+name: Article
+tool: text
+layer: format
+category: Format
+description: A complete, publishable article with title, intro, sections and takeaway.
+params:
+  kind: article
+tags:
+- format
+- article

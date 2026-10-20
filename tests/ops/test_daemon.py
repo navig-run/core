@@ -70,13 +70,28 @@ class TestNavigDaemon:
         assert d.children[0].name == "gateway"
         assert "9999" in d.children[0].command
 
-    def test_add_scheduler(self):
+    def test_add_scheduler_is_gone(self):
+        """No scheduler child: cron is gateway-attached, and the old registration
+        spawned `python -m navig.scheduler.cron_service` — a module with no runner
+        that imported and exited 0 (a supervised no-op)."""
+        from navig.daemon.supervisor import NavigDaemon
+
+        assert not hasattr(NavigDaemon, "add_scheduler"), (
+            "add_scheduler() was removed — a scheduler child is a silent no-op; "
+            "cron runs inside the gateway (NavigGateway._start_cron)"
+        )
+
+    def test_registered_children_never_spawn_the_cron_module(self):
+        """Acceptance: no registration builder can put the cron module on a child argv."""
         from navig.daemon.supervisor import NavigDaemon
 
         d = NavigDaemon()
-        d.add_scheduler()
-        assert len(d.children) == 1
-        assert d.children[0].name == "scheduler"
+        d.add_telegram_bot()
+        d.add_gateway(port=9999)
+        assert d.children, "expected the two real children to register"
+        for child in d.children:
+            assert "navig.scheduler.cron_service" not in child.command
+            assert child.name != "scheduler"
 
     def test_pid_management(self, tmp_path):
         """PID file write/read/remove cycle."""
@@ -88,7 +103,7 @@ class TestNavigDaemon:
             from navig.daemon.supervisor import NavigDaemon
 
             d = NavigDaemon()
-            d._write_pid()
+            assert d._claim_pid() is True
             assert sv.PID_FILE.exists()
             assert NavigDaemon.read_pid() == os.getpid()
             d._remove_pid()

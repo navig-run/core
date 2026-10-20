@@ -113,6 +113,11 @@ def ledger_verify(
         )
         return
 
+    # Name the file. Without it, a run from inside a checkout verifies that
+    # repo's scratch `.navig/history/operations.jsonl` — and its breakage reads
+    # as "the audit spine is broken" when the operator's own ledger is intact.
+    ch.dim(f"ledger: {result.path}")
+
     if status == "intact":
         ch.success(f"{result.chained:,} operations, chain intact")
     else:

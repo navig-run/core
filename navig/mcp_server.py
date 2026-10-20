@@ -21,14 +21,41 @@ import json
 import logging
 import secrets
 import sys
+import threading
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
 from navig import console_helper as ch
 from navig.config import ConfigManager
+from navig.mcp.validation import summarise, validate_arguments
 
 logger = logging.getLogger(__name__)
+
+
+def _tool_error(
+    code: str,
+    detail: str,
+    *,
+    field: str | None = None,
+    problems: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build a tool error envelope that both a human and a model can act on.
+
+    The text used to be a bare sentence (``Unknown tool: x`` / ``Tool error: ...``), and
+    a model could not tell WHICH argument was wrong or what type was expected. The body
+    is now JSON — ``{"error": code, "detail": ..., "field": ...}`` — while the human
+    prefix stays, because existing tests and users read it.
+    """
+    body: dict[str, Any] = {"error": code, "detail": detail}
+    if field:
+        body["field"] = field
+    if problems:
+        body["problems"] = problems
+    return {
+        "isError": True,
+        "content": [{"type": "text", "text": json.dumps(body, indent=2)}],
+    }
 
 
 def _result_signals_error(result: Any) -> bool:
@@ -60,13 +87,22 @@ def _result_signals_error(result: Any) -> bool:
 class MCPProtocolHandler:
     """Handles MCP JSON-RPC protocol over stdio."""
 
-    def __init__(self):
+    def __init__(self, only: list[str] | tuple[str, ...] | None = None):
+        #: Tool bundles to serve (``navig mcp serve --only``); ``None`` serves them all.
+        self._only = tuple(only) if only else None
         self.tools: dict[str, dict[str, Any]] = {}
         self.resources: dict[str, dict[str, Any]] = {}
         self.prompts: dict[str, dict[str, Any]] = {}
         self._handlers: dict[str, Callable] = {}
         self._running = False
         self._config = ConfigManager()
+        # Tools a stdio loop may run off the reader thread (bundles opt in), so a slow
+        # call never blocks the next request — or the client's notifications/cancelled.
+        self._concurrent_tools: set[str] = set()
+        self._cancel_hooks: dict[Any, list[Callable[[], None]]] = {}
+        self._cancelled: set[Any] = set()
+        self._local = threading.local()
+        self._out_lock = threading.Lock()
 
         # Register built-in methods
         self._setup_protocol_handlers()
@@ -81,10 +117,14 @@ class MCPProtocolHandler:
         self._handlers["tools/list"] = self._handle_tools_list
         self._handlers["tools/call"] = self._handle_tools_call
         self._handlers["resources/list"] = self._handle_resources_list
+        # Part of the Resources capability, with no flag of its own — a client calls it as
+        # soon as the resources panel opens (see ``_handle_resources_templates_list``).
+        self._handlers["resources/templates/list"] = self._handle_resources_templates_list
         self._handlers["resources/read"] = self._handle_resources_read
         self._handlers["prompts/list"] = self._handle_prompts_list
         self._handlers["prompts/get"] = self._handle_prompts_get
         self._handlers["ping"] = self._handle_ping
+        self._handlers["notifications/cancelled"] = self._handle_cancelled
 
     def _setup_navig_tools(self):
         """Register NAVIG tools for MCP."""
@@ -96,10 +136,19 @@ class MCPProtocolHandler:
         self._tool_safety: dict[str, str] = {}
         from navig.mcp.tools import register_all_tools
 
-        register_all_tools(self)
+        only = getattr(self, "_only", None)
+        if only:
+            register_all_tools(self, only=only)
+        else:
+            register_all_tools(self)  # the long-standing one-argument contract (tests patch it)
 
     def _setup_navig_resources(self):
         """Register NAVIG resources for MCP."""
+        if getattr(self, "_only", None):
+            # The resources read the inventory/wiki/agent tools — a narrow server does not
+            # carry those, so it offers no resources rather than ones that always fail.
+            self.resources = {}
+            return
         self.resources = {
             "navig://config/hosts": {
                 "uri": "navig://config/hosts",
@@ -211,16 +260,87 @@ class MCPProtocolHandler:
     # =========================================================================
 
     def _handle_initialize(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Handle MCP initialize request."""
+        """Handle MCP initialize request.
+
+        Three things here are load-bearing for every marketplace listing:
+
+        * ``serverInfo.version`` must be NAVIG's real version. It used to be a literal
+          "1.0.0", so a client (and every directory that scans us) reported 1.0.0 for a
+          3.27.x server — the one number a reviewer checks against PyPI.
+        * ``capabilities`` must only announce what is actually served. ``prompts`` was
+          advertised while ``prompts/list`` always returned an empty list, which shows up
+          in clients as a permanently empty Prompts panel.
+        * ``protocolVersion`` should echo the client's revision when we implement it, and
+          fall back to our known-good one otherwise.
+        """
+        # Who is calling (e.g. "claude-code") — tools that act visibly for the user, like
+        # the Dock's browser overlay, name the agent instead of a generic "an agent".
+        info = (params or {}).get("clientInfo")
+        if isinstance(info, dict) and isinstance(info.get("name"), str):
+            self.client_name = info["name"][:60]
+
+        known = {"2024-11-05", "2025-03-26", "2025-06-18"}
+        requested = (params or {}).get("protocolVersion") if isinstance(params, dict) else None
+        protocol = requested if requested in known else "2024-11-05"
+
+        capabilities: dict[str, Any] = {"tools": {}, "resources": {}}
+        if getattr(self, "prompts", None):
+            capabilities["prompts"] = {}
+
         return {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {"tools": {}, "resources": {}, "prompts": {}},
-            "serverInfo": {"name": "navig-mcp-server", "version": "1.0.0"},
+            "protocolVersion": protocol,
+            "capabilities": capabilities,
+            "serverInfo": {"name": "navig-mcp-server", "version": self._server_version()},
+            # MCP `instructions`: a client shows this to the model before it picks a tool.
+            # Without it the model meets 148 names and no context; with it, the first call
+            # is usually navig_get_context instead of a guess. Kept short on purpose —
+            # it costs tokens on every session.
+            "instructions": (
+                "NAVIG exposes the machine it runs on: SSH host and app inventory, a local "
+                "wiki, an encrypted vault, persistent memory, and (on Windows) desktop and "
+                "CDP browser control. Start with navig_get_context or navig_list_hosts to "
+                "see what is configured. Tools whose names end in _act, _write, _delete, "
+                "_exec, _install or _apply change state and are gated by NAVIG's approval "
+                "layer; prefer the read-only tools while exploring."
+            ),
         }
+
+    @staticmethod
+    def _server_version() -> str:
+        """NAVIG's version, resolved from the installed package (never a literal)."""
+        try:
+            from navig import __version__ as navig_version
+
+            return str(navig_version)
+        except Exception:  # pragma: no cover - a broken install still has to answer
+            return "0.0.0-unknown"
 
     def _handle_initialized(self, params: dict[str, Any]) -> None:
         """Handle MCP initialized notification."""
         return None
+
+    def _handle_cancelled(self, params: dict[str, Any]) -> None:
+        """``notifications/cancelled``: run the cancel hooks the request registered."""
+        rid = (params or {}).get("requestId")
+        if rid is None:
+            return None
+        self._cancelled.add(rid)
+        for hook in self._cancel_hooks.pop(rid, []):
+            try:
+                hook()
+            except Exception as exc:  # noqa: BLE001 — a hook failing must not stop the others
+                logger.debug("MCP cancel hook failed for %s: %s", rid, exc)
+        return None
+
+    def current_request_id(self) -> Any:
+        """The JSON-RPC id of the request this thread is serving (stdio), else None."""
+        return getattr(self._local, "request_id", None)
+
+    def on_cancel(self, hook: Callable[[], None]) -> None:
+        """Run *hook* if the client cancels the request being served on this thread."""
+        rid = self.current_request_id()
+        if rid is not None:
+            self._cancel_hooks.setdefault(rid, []).append(hook)
 
     def _handle_ping(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle ping request."""
@@ -231,21 +351,54 @@ class MCPProtocolHandler:
         return {"tools": list(self.tools.values())}
 
     def _handle_tools_call(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Execute a tool call."""
-        tool_name = params.get("name")
-        arguments = params.get("arguments", {})
+        """Execute a tool call, after checking the arguments against its schema.
 
-        if tool_name not in self.tools:
-            return {
-                "isError": True,
-                "content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}],
-            }
+        Validation runs BEFORE the approval gate and the handler, because both assume
+        well-formed arguments: a wrong type used to reach the handler and come back as
+        ``'int' object has no attribute 'strip'``, which names neither the tool nor the
+        argument. An unknown argument is refused rather than ignored — a client that
+        sends ``hostname`` instead of ``host`` must be told, not silently answered about
+        something else.
+        """
+        tool_name = params.get("name")
+        arguments = params.get("arguments")
+        if arguments is None:
+            arguments = {}
+
+        tool = self.tools.get(tool_name) if isinstance(tool_name, str) else None
+        if tool is None:
+            return _tool_error("unknown_tool", f"Unknown tool: {tool_name}")
+
+        problems = validate_arguments(tool.get("inputSchema") or {}, arguments)
+        if problems:
+            return _tool_error(
+                "invalid_arguments",
+                f"{tool_name}: {summarise(problems)}",
+                field=problems[0].get("field"),
+                problems=problems,
+            )
 
         try:
             result = self._execute_tool(tool_name, arguments)
-            envelope: dict[str, Any] = {
-                "content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]
-            }
+            # A tool may hand over ready MCP content blocks (an image, compact JSON) under
+            # `_mcp_content`; the rest of the dict still decides isError below.
+            ready = result.get("_mcp_content") if isinstance(result, dict) else None
+            if isinstance(ready, list) and ready:
+                envelope: dict[str, Any] = {"content": ready}
+            else:
+                envelope = {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
+
+            # Structured output: only for tools that DECLARE an outputSchema, and only in
+            # the shape that schema promises (list tools wrap in {"items": [...]}). A
+            # client that understands it can skip re-parsing the text block; one that
+            # does not loses nothing.
+            declared = tool.get("outputSchema")
+            if isinstance(declared, dict):
+                if isinstance(result, dict):
+                    envelope["structuredContent"] = result
+                elif isinstance(result, list) and declared.get("properties", {}).get("items"):
+                    envelope["structuredContent"] = {"items": result}
+
             # A tool that signals failure by RETURNING a sentinel (not raising) must
             # surface as a protocol-level error, not a phantom success — an MCP
             # client keyed on isError would otherwise record a failed op as done.
@@ -253,14 +406,28 @@ class MCPProtocolHandler:
                 envelope["isError"] = True
             return envelope
         except Exception as e:
-            return {
-                "isError": True,
-                "content": [{"type": "text", "text": f"Tool error: {str(e)}"}],
-            }
+            return _tool_error("tool_error", f"Tool error: {str(e)}")
 
     def _handle_resources_list(self, params: dict[str, Any]) -> dict[str, Any]:
         """Return list of available resources."""
         return {"resources": list(self.resources.values())}
+
+    def _handle_resources_templates_list(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Return the parameterised resource URIs a client may construct.
+
+        NAVIG serves none: every resource here is a fixed URI (``_setup_navig_resources``),
+        so the honest answer is an empty list — a template that resolves to nothing would
+        be worse than no template at all.
+
+        The METHOD still has to exist. ``initialize`` advertises the ``resources``
+        capability, and ``resources/templates/list`` has no capability flag of its own, so
+        a spec-following client treats it as part of Resources and calls it the moment that
+        panel opens (Glama's hosted Inspector, Claude Desktop, every directory that
+        introspects us). While the handler was missing they got ``-32601 Method not
+        found`` for a capability the server had just claimed — a healthy 3.27.3 server
+        looked broken, and the Inspector's Resource Templates tab showed only the error.
+        """
+        return {"resourceTemplates": []}
 
     def _handle_resources_read(self, params: dict[str, Any]) -> dict[str, Any]:
         """Read a resource."""
@@ -437,9 +604,41 @@ class MCPProtocolHandler:
                 }
             return None
 
+    def _serve_one(self, message: dict[str, Any]) -> None:
+        """Handle one message and write its response (thread-safe; drops cancelled ones)."""
+        rid = message.get("id")
+        self._local.request_id = rid
+        try:
+            response = self.handle_message(message)
+        finally:
+            self._local.request_id = None
+            self._cancel_hooks.pop(rid, None)
+        if rid is not None and rid in self._cancelled:
+            self._cancelled.discard(rid)
+            return  # the client cancelled it: MCP says no response is sent
+        if response:
+            with self._out_lock:
+                sys.stdout.write(json.dumps(response) + "\n")
+                sys.stdout.flush()
+
+    def _runs_concurrently(self, message: dict[str, Any]) -> bool:
+        if message.get("method") != "tools/call" or message.get("id") is None:
+            return False
+        name = (message.get("params") or {}).get("name")
+        return name in self._concurrent_tools
+
     def run_stdio(self):
-        """Run MCP server in stdio mode."""
+        """Run MCP server in stdio mode.
+
+        Opted-in tools (``_concurrent_tools``, e.g. the ``dock_*`` browser tools) run on a
+        small pool so the reader keeps reading: the next request and a
+        ``notifications/cancelled`` for the running one are handled while it works.
+        Everything else stays strictly in order on this thread.
+        """
+        from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
+
         self._running = True
+        pool: ThreadPoolExecutor | None = None
 
         while self._running:
             try:
@@ -448,16 +647,23 @@ class MCPProtocolHandler:
                     break
 
                 message = json.loads(line)
-                response = self.handle_message(message)
-
-                if response:
-                    sys.stdout.write(json.dumps(response) + "\n")
-                    sys.stdout.flush()
+                if self._runs_concurrently(message):
+                    if pool is None:
+                        pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="mcp-tool")
+                    pool.submit(self._serve_one, message)
+                    continue
+                self._serve_one(message)
 
             except json.JSONDecodeError as e:
                 sys.stderr.write(f"JSON decode error: {e}\n")
             except Exception as e:
                 sys.stderr.write(f"Error: {e}\n")
+
+        if pool is not None:
+            # The client went away: cancel what is still running so we exit promptly.
+            for rid in list(self._cancel_hooks):
+                self._handle_cancelled({"requestId": rid})
+            pool.shutdown(wait=True)
 
     def stop(self):
         """Stop the server."""
@@ -469,6 +675,7 @@ def start_mcp_server(
     port: int = 3001,
     token: str | None = None,
     host: str = "127.0.0.1",
+    only: list[str] | tuple[str, ...] | None = None,
 ):
     """Start the NAVIG MCP server.
 
@@ -477,8 +684,9 @@ def start_mcp_server(
         port: Port for WebSocket/HTTP mode (default 3001)
         token: Optional auth token; auto-generated if None in websocket mode
         host: Bind address for HTTP/WebSocket modes (default 127.0.0.1)
+        only: Serve only these tool bundles (e.g. ``["recall"]``); default all
     """
-    handler = MCPProtocolHandler()
+    handler = MCPProtocolHandler(only=only)
 
     if mode == "stdio":
         handler.run_stdio()
@@ -1057,8 +1265,11 @@ async def memory_retrieve(query: str, limit: int = 10, token_budget: int = 2000)
 
 async def memory_remember(text: str, source: str = "mcp") -> dict:
     """Extract and persist key facts from text."""
+    from navig.memory.controls import memory_off_reason
     from navig.memory.fact_extractor import FactExtractor
 
+    if reason := memory_off_reason():
+        return {"added": 0, "error": reason}
     store = _memory_store()
     extractor = FactExtractor(store)
     added = await extractor.extract_and_store(

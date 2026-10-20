@@ -17,6 +17,10 @@ What this does (stdlib-only, fail-open — any internal error allows the call):
 * Sibling worktrees are blocked for EVERY session (independent of the lock):
   ``git worktree add`` targeting a path OUTSIDE the repo violates the house
   hard rule — worktrees live inside ``.dev/worktrees/``.
+* Unpushed commits are protected for EVERY session (independent of the lock): a
+  ``git reset --hard|--keep|--merge``, ``checkout -B``, ``switch -C`` or
+  ``branch -f`` that would leave commits held by no other ref is blocked, with the
+  one-line way to keep them (``unpushed_commits_dropped``).
 * SessionEnd: releases the lock if this session holds it.
 
 Always allowed (never locked):
@@ -48,19 +52,90 @@ TTL_MINUTES = 60  # keep in sync with core/navig/commands/repo.py
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 SHELL_TOOLS = {"Bash", "PowerShell"}
 
-# A shell command is dangerous when it runs a git verb that mutates the
-# working tree / index / HEAD of this checkout.
-_DANGEROUS_GIT = re.compile(
-    # `merge(?!-)`: `merge-base` and `merge-tree` are READ-ONLY plumbing, but the
-    # hyphen is a word boundary so a bare `merge` matched them. That blocked the very
-    # command you reach for to check whether a detached HEAD or a stray branch holds
-    # unmerged work — the careful inspection you do BEFORE touching anything — and a
-    # guard that blocks the careful path pushes people toward `lock release --force`
-    # instead. Same shape as the `stash(?!…)` carve-out below; plain `merge` still matches.
-    r"\bgit\b[^\n|&;]*?\b(checkout|switch|rebase|reset|merge(?!-)|pull|cherry-pick"
-    r"|revert|clean|restore|commit|add|rm|mv|am|apply"
-    r"|stash(?!\s+(?:list|show)|@))\b"  # stash@{n} is a ref, not the verb
-)
+# A shell command is dangerous when it runs a git subcommand that mutates the
+# working tree / index / HEAD of this checkout. The SUBCOMMAND is parsed the way git
+# reads it -- the first verb-shaped token after `git` and its global options -- never
+# a word anywhere after `git`: the word-scan read messages and search patterns as
+# verbs (`git branch --list "*reset*"` blocked a read-only sweep, 2026-10-17; `git
+# log --grep=reset` would block every log search), and it needed carve-outs for
+# `merge-base`/`merge-tree` (a hyphen is a word boundary) and `stash@{n}` that token
+# parsing gets for free. `git commit -m "reset the board"` still counts: `commit` IS
+# the verb.
+_DANGEROUS_VERBS = frozenset({
+    "checkout", "switch", "rebase", "reset", "merge", "pull", "cherry-pick",
+    "revert", "clean", "restore", "commit", "add", "rm", "mv", "am", "apply", "stash",
+})
+#: Global options whose NEXT token is their value (`git -C "my dir" reset`).
+_GIT_VALUE_FLAGS = frozenset({"-C", "-c", "--exec-path", "--namespace", "--config-env"})
+_GIT_INVOCATION = re.compile(r"(?<![\w.-])git(?:\.exe)?\s+")
+#: What a subcommand looks like: lowercase, no dots/quotes/slashes -- a path
+#: fragment or a quoted message never reads as the verb.
+_VERB_TOKEN = re.compile(r"[a-z][a-z0-9_-]*\Z")
+#: Shell operators: a command's arguments end at one.
+_SEGMENT = re.compile(r"[^;&|\n]+")
+#: The read-only stash subcommands (the old carve-out, kept).
+_STASH_READONLY = ("list", "show")
+
+
+def _read_token(text: str, pos: int, limit: int) -> tuple[str, int, int] | None:
+    """(token, start, end) at/after `pos`, never past `limit`; a quoted token runs
+    through its closing quote (or to `limit` when unterminated)."""
+    n = min(len(text), limit)
+    while pos < n and text[pos].isspace():
+        pos += 1
+    if pos >= n:
+        return None
+    if text[pos] in "\"'":
+        quote = text[pos]
+        close = text.find(quote, pos + 1, n)
+        end = n if close < 0 else close + 1
+        return text[pos:end], pos, end
+    end = pos
+    while end < n and not text[end].isspace():
+        end += 1
+    return text[pos:end], pos, end
+
+
+def _dangerous_git_at(cmd: str) -> int | None:
+    """Position of the `git` token where a DANGEROUS subcommand runs, else None.
+
+    Scanned per shell segment (a command's arguments end at `&&`, `;`, `|`), so
+    nothing past a shell operator is read as this git's verb -- `git log && reset`
+    exempts like the word-scan did -- while a quoted message or a grep pattern
+    before/at the verb can never be the verb anyway: the FIRST verb-shaped
+    non-option token is. Fail-open like the rest of this hook: an invocation with
+    no verb-shaped token mutates nothing.
+    """
+    for seg in _SEGMENT.finditer(cmd):
+        seg_start, seg_end = seg.start(), seg.end()
+        for inv in _GIT_INVOCATION.finditer(seg.group()):
+            offset = seg_start + inv.start()
+            pos = seg_start + inv.end()
+            while (tok := _read_token(cmd, pos, seg_end)) is not None:
+                token, _start, nxt = tok
+                if token[0] in "\"'":
+                    pos = nxt  # an argument, never the verb
+                    continue
+                if token in _GIT_VALUE_FLAGS:
+                    value = _read_token(cmd, nxt, seg_end)
+                    pos = value[2] if value else nxt
+                    continue
+                if token.startswith("-"):
+                    pos = nxt
+                    continue
+                if not _VERB_TOKEN.match(token):
+                    pos = nxt  # a path fragment, junk, a glued `dir"` tail
+                    continue
+                if token in _DANGEROUS_VERBS:
+                    if token == "stash":
+                        sub = _read_token(cmd, nxt, seg_end)
+                        if sub and sub[0] in _STASH_READONLY:
+                            break  # `git stash list` / `show`: read-only
+                    return offset
+                break  # a safe subcommand: this invocation is judged
+    return None
+
+
 _GIT_C_TARGET = re.compile(r"\bgit\b\s+(?:[^\s]+\s+)*?-C\s+([^\s\"']+|\"[^\"]+\"|'[^']+')")
 # A `cd`/`pushd` at the start of the command or of a chained segment — it moves the
 # directory a following git verb runs in (`cd .dev/worktrees/x && git rebase ...`).
@@ -123,12 +198,12 @@ def lock_path(root: Path) -> Path:
 
 
 def _from_msys(path_str: str) -> str:
-    """Convert a git-bash / MSYS drive path (``/e/foo``) to a native Windows path
-    (``E:\\foo``). No-op on POSIX and for already-native paths.
+    """Convert a git-bash / MSYS drive path (``/c/foo``) to a native Windows path
+    (``C:\\foo``). No-op on POSIX and for already-native paths.
 
-    On Windows, git-bash renders ``E:\\`` as ``/e/`` — but ``Path("/e/foo")`` is NOT
-    absolute there (no drive), so ``git -C /e/…/worktrees/x`` was mis-resolved and a
-    legitimate worktree command got blocked. Only a single-letter ``/x/`` prefix converts,
+    On Windows, git-bash renders ``C:\\`` as ``/c/`` — but ``Path("/c/foo")`` is NOT
+    absolute there (no drive), so ``git -C /c/…/worktrees/x`` was mis-resolved and a
+    legitimate worktree command got blocked. Only a single-letter ``/c/`` prefix converts,
     so real POSIX paths like ``/tmp/foo`` are untouched.
     """
     if os.name == "nt":
@@ -156,18 +231,18 @@ def _mentions_worktree_path(cmd: str, root: Path) -> bool:
     Only used when a ``git -C`` target is a shell variable we cannot expand. Requiring an
     absolute path (not a bare ``.dev/worktrees`` mention) is what keeps this from being
     the old text-substring bypass all over again. Recognises BOTH the native path and its
-    git-bash/MSYS form (``E:\\…`` ↔ ``/e/…``), since agents drive git from bash too.
+    git-bash/MSYS form (``C:\\…`` ↔ ``/c/…``), since agents drive git from bash too.
     """
     try:
         wt_abs = (root / ".dev" / "worktrees").resolve()
     except OSError:  # pragma: no cover
         return False
-    # normcase folds separators (/ -> \) and case on Windows, so /e/… and E:\… collapse
+    # normcase folds separators (/ -> \) and case on Windows, so /c/… and C:\… collapse
     # onto the same haystack; only the NEEDLE differs between the two path forms.
     hay = os.path.normcase(cmd.replace("/", os.sep))
     if (os.path.normcase(str(wt_abs)) + os.sep) in hay:  # native drive-colon form: C:\…
         return True
-    # git-bash/MSYS form on Windows: E:\projects\… is written /e/projects/… — which
+    # git-bash/MSYS form on Windows: C:\projects\… is written /c/projects/… — which
     # normalises to \e\projects\… (no drive colon), a needle distinct from the native one.
     drive, rest = os.path.splitdrive(str(wt_abs))
     if drive.endswith(":"):
@@ -286,6 +361,151 @@ def pathspec_message(discarded: list[str]) -> str:
     )
 
 
+# ── unpushed commits a branch move would drop ───────────────────────────────
+#
+# `git reset --hard <ref>` moves the branch tip, and every commit above <ref> that no
+# other ref holds becomes reachable from the reflog ONLY -- which expires, which no
+# other session reads, and which `git log` never shows. On 2026-10-13 a session in the
+# Schema checkout aborted a rebase, then ran `git reset` to origin/main and dropped
+# seven commits another session had made and not yet pushed. They were recovered by
+# hand from the reflog a day later. The lock never saw it: the session that reset WAS
+# the lock holder. So, like the pathspec check, this runs for every session.
+
+# The verbs that move an EXISTING branch off its commits AND throw the content away:
+# reset --hard/--keep/--merge (a --soft or mixed reset leaves the content in the tree --
+# the normal squash flow -- so it is not judged), checkout -B, switch -C, branch -f.
+# Parsed in git's own grammar -- `git [-C dir] [-c k=v] <subcommand>`, the shape the
+# branch-moved check below uses -- never as a word anywhere in the line: a path naming a
+# `reset-guard` worktree held the word "reset" and hid the real `reset --hard` after it,
+# and `switch -C <branch>` is not git's `-C <dir>`.
+_GIT_PREFIX = r"\bgit\b(?:\s+-C\s+(?:\"[^\"]*\"|'[^']*'|\S+)|\s+-c\s+\S+)*\s+"
+_GIT_GLOBAL_C = re.compile(r"\bgit\b(?:\s+-c\s+\S+)*\s+-C\s+(\"[^\"]*\"|'[^']*'|\S+)")
+_RESET = re.compile(_GIT_PREFIX + r"reset\b([^\n|&;]*)")
+_RESET_DESTRUCTIVE = re.compile(r"(?:^|\s)--(?:hard|keep|merge)\b")
+_FORCE_BRANCH = re.compile(
+    _GIT_PREFIX
+    + r"(?:checkout\s+-B|switch\s+(?:-C|--force-create)|branch\s+(?:-f|--force))"
+    + r"\s+([^\s\"';&|]+)(?:\s+([^\s\"';&|-][^\s\"';&|]*))?"
+)
+
+
+def _git(repo: Path, *args: str) -> str | None:
+    """`git -C repo <args>` stdout, or None on any failure (the guard fails open)."""
+    import subprocess
+
+    try:
+        return subprocess.run(
+            ["git", "-C", str(repo), *args],
+            capture_output=True, timeout=10, check=True,
+            text=True, encoding="utf-8", errors="replace",
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _command_repo(payload: dict, cmd: str, root: Path) -> Path | None:
+    """The repo a git command runs in: `-C`, else a leading `cd`, else the shell cwd.
+
+    An unexpandable target ($var, %VAR%) returns None -- we cannot inspect a repo we
+    cannot name, and a wrong guess would judge the wrong tree.
+    """
+    repo = Path(payload.get("cwd") or root)
+    for pattern in (_CD_TARGET, _GIT_GLOBAL_C):
+        m = pattern.search(cmd)
+        if m:
+            target = _from_msys(m.group(1).strip("\"'"))
+            if _SHELL_VAR.search(target):
+                return None
+            t = Path(target)
+            repo = t if t.is_absolute() else repo / t
+    return repo
+
+
+def _orphaned(repo: Path, tip: str, target: str, keep_out: str | None) -> list[str]:
+    """Commits on `tip` that would be held by nothing once it moves to `target`.
+
+    Held = reachable from `target`, a remote-tracking ref, a tag, or any OTHER local
+    branch (`keep_out` is the branch being moved -- it cannot hold itself). A commit
+    already upstream as a patch-equivalent (`git cherry` "-") is not lost either:
+    that is a reset after the work was rebased onto the remote, which is fine.
+    """
+    tip_sha = _git(repo, "rev-parse", "--verify", "--quiet", f"{tip}^{{commit}}")
+    target_sha = _git(repo, "rev-parse", "--verify", "--quiet", f"{target}^{{commit}}")
+    if not tip_sha or not target_sha:
+        return []
+    heads = _git(repo, "for-each-ref", "--format=%(refname)", "refs/heads") or ""
+    others = [f"^{h}" for h in heads.splitlines() if h and h != f"refs/heads/{keep_out}"]
+    listed = _git(
+        repo, "rev-list", "--max-count=50", tip_sha, f"^{target_sha}",
+        "--not", "--remotes", "--tags", "--not", *others,
+    )
+    if not listed:
+        return []
+    shas = listed.split()
+    upstream = _git(repo, "cherry", target_sha, tip_sha) or ""
+    landed = {line[2:] for line in upstream.splitlines() if line.startswith("- ")}
+    lost = [sha for sha in shas if sha not in landed]
+    lines = []
+    for sha in lost[:10]:
+        subject = _git(repo, "log", "-1", "--format=%h %s", sha) or sha[:10]
+        lines.append(subject[:100])
+    if len(lost) > 10:
+        lines.append(f"... and {len(lost) - 10} more")
+    return lines
+
+
+def unpushed_commits_dropped(payload: dict, root: Path) -> tuple[list[str], str]:
+    """The unpushed commits this branch move would drop, and the branch it moves.
+
+    Empty when the command moves nothing, keeps the content, or every commit it moves
+    off is held by another ref.
+    """
+    if payload.get("tool_name", "") not in SHELL_TOOLS:
+        return [], ""
+    cmd = str((payload.get("tool_input") or {}).get("command", ""))
+    if "git" not in cmd:
+        return [], ""
+
+    m = _RESET.search(cmd)
+    if m and _RESET_DESTRUCTIVE.search(m.group(1)):
+        repo = _command_repo(payload, cmd, root)
+        if repo is None:
+            return [], ""
+        args = m.group(1).split(" -- ")[0].split()
+        refs = [a.strip("\"'") for a in args if not a.startswith("-")]
+        target = refs[0] if refs else "HEAD"
+        branch = _git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
+        return _orphaned(repo, "HEAD", target, branch), branch or "HEAD"
+
+    f = _FORCE_BRANCH.search(cmd)
+    if f:
+        repo = _command_repo(payload, cmd, root)
+        if repo is None:
+            return [], ""
+        branch, target = f.group(1), f.group(2) or "HEAD"
+        if not _git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"):
+            return [], ""  # a NEW branch: nothing is moved off anything
+        return _orphaned(repo, f"refs/heads/{branch}", target, branch), branch
+    return [], ""
+
+
+def dropped_message(lost: list[str], branch: str) -> str:
+    return (
+        f"BLOCKED: this would move '{branch}' off commits that NO other ref holds -- no\n"
+        "remote, no tag, no other branch. They would survive only in the reflog, which\n"
+        "expires and which no other session reads:\n"
+        + "".join(f"  {line}\n" for line in lost)
+        + "(2026-10-13: seven unpushed commits were dropped exactly this way, by the\n"
+        "session that held the lock.)\n"
+        "Do ONE of:\n"
+        f"  1. Keep them first:  git branch keep/{branch.replace('/', '-')} {branch}\n"
+        "     -- then the same command is allowed (the commits are held).\n"
+        "  2. Push or land them, then move the branch.\n"
+        "  3. If they are truly abandoned, say so to the owner and delete them on purpose\n"
+        "     with `git branch -D` on a kept branch -- never as a side effect of a reset.\n"
+    )
+
+
 def _unresolved_location(cmd: str, root: Path) -> str:
     """Verdict when a mutating git verb runs somewhere we cannot resolve — a shell variable
     in a `-C` target or a `cd`, or `cd -`.
@@ -316,6 +536,7 @@ def classify_tool(payload: dict, root: Path) -> str:
 
     if tool in SHELL_TOOLS:
         cmd = str(tool_input.get("command", ""))
+        danger_at = _dangerous_git_at(cmd)
         wt_add = _WORKTREE_ADD.search(cmd)
         if wt_add:
             target = worktree_add_target(wt_add.group(1))
@@ -325,12 +546,19 @@ def classify_tool(payload: dict, root: Path) -> str:
             bases = [Path(payload.get("cwd") or root), root]
             if target and not any(_is_within(target, root, base=b) for b in bases):
                 return "block-sibling"  # hard rule: no worktrees outside the repo
-            return "exempt"  # in-repo worktree add never moves this HEAD
-        danger = _DANGEROUS_GIT.search(cmd)
-        if not danger:
+            if danger_at is None:
+                return "exempt"  # a pure in-repo worktree add never moves this HEAD
+            # ...but the command may MUTATE elsewhere too (`... add ... && git
+            # reset`): an in-repo worktree add used to exempt the WHOLE line, and
+            # the reset behind it moved this checkout's HEAD (caught by this
+            # change's own test, 2026-10-17). Fall through and judge by WHERE the
+            # dangerous verb runs — the cd/-C logic below.
+        if danger_at is None:
             return "exempt"
-        if re.search(r"\bgit\s+worktree\b", cmd):
-            return "exempt"  # worktree management never moves this HEAD
+        # `git worktree add` needs no carve-out here: `worktree` is the parsed
+        # subcommand (it was `add` in the old word-scan), and the sibling check
+        # above already judged its target. A cmd that merely MENTIONS a worktree
+        # no longer exempts a real reset later in it (that hole is gone with it).
 
         # WHERE does this command actually act? Decide from the `-C` target, else from
         # the directory the git verb runs in — never from a substring of the text.
@@ -348,7 +576,7 @@ def classify_tool(payload: dict, root: Path) -> str:
         # move where that verb ran — treating it as if it could would just reopen the
         # hole from the other side (`git checkout main && cd .dev/worktrees/x`).
         for cd in _CD_TARGET.finditer(cmd):
-            if cd.start() > danger.start():
+            if cd.start() > danger_at:
                 break
             raw = cd.group(1).strip("\"'")
             if raw.startswith("~"):
@@ -359,9 +587,9 @@ def classify_tool(payload: dict, root: Path) -> str:
                 # -b ...` from a worktree exempt — the same hole as the MSYS `cd` below.
                 base = None
                 continue
-            # `_from_msys` as for `-C`: git-bash writes E:\x as /e/x, and Path("/e/x") has a
-            # root but no drive, so `base / hop` kept only the drive -> E:\e\x -> "outside
-            # the repo" -> EXEMPT. That let `cd /e/<repo> && git checkout -b ...` through a
+            # `_from_msys` as for `-C`: git-bash writes C:\x as /c/x, and Path("/c/x") has a
+            # root but no drive, so `base / hop` kept only the drive -> C:\e\x -> "outside
+            # the repo" -> EXEMPT. That let `cd /c/<repo> && git checkout -b ...` through a
             # live lock (2026-09-26) and moved HEAD under the lock holder's next commit.
             hop = Path(_from_msys(raw))
             if hop.is_absolute():
@@ -422,6 +650,124 @@ def lock_decision(
     return "block", lock
 
 
+def _head_branch(root: Path) -> str | None:
+    """The branch HEAD is on, or None when detached/unreadable (never a guess)."""
+    try:
+        head = (root / ".git" / "HEAD").read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return head[len("ref: refs/heads/"):] if head.startswith("ref: refs/heads/") else None
+
+
+def _ref_exists(root: Path, ref: str) -> bool:
+    """Is ``refs/...`` present, loose or packed? Read from disk — the hook never spawns git."""
+    git_dir = root / ".git"
+    if (git_dir / ref).is_file():
+        return True
+    try:
+        packed = (git_dir / "packed-refs").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return any(line.endswith(" " + ref) for line in packed.splitlines())
+
+
+# ── the commit-branch guard ──────────────────────────────────────────────────
+# The lock stops another HOOKED session from moving this checkout's HEAD. Nothing stops a
+# person at a terminal, or any tool without the hook, from doing it between this session's
+# `checkout -b X` and its `commit` — and the commit then lands on THEIR branch with no
+# error (it happened twice on 2026-09-26, once through a hole in the lock itself). So the
+# lock records the branch this session last switched the main checkout to, and a commit is
+# refused when HEAD has moved to a different named branch since.
+#
+# It fails OPEN wherever it is unsure: only an unambiguous switch is recorded; anything
+# that moves HEAD in a way the hook cannot follow CLEARS the record (no check until the
+# next unambiguous switch); a detached HEAD is never checked (rebase/bisect flows).
+
+_GIT_VERB = re.compile(
+    r"\bgit\b(?:\s+-C\s+(?:\"[^\"]*\"|'[^']*'|\S+)|\s+-c\s+\S+)*\s+"
+    r"(?P<verb>checkout|switch|commit|branch|bisect)\b(?P<args>[^\n|&;]*)"
+)
+_GH_MOVES_HEAD = re.compile(r"\bgh\s+pr\s+(?:checkout|merge)\b")
+_SWITCH_VALUE_FLAGS = {"-b", "-B", "-c", "-C", "--create", "--force-create", "--orphan"}
+
+
+def _branch_switch(verb: str, args: str, root: Path) -> tuple[str, str | None] | None:
+    """What a checkout/switch/branch/bisect does to HEAD: ``("set", name)``,
+    ``("clear", None)`` (moves it somewhere we cannot name), or None (does not move it).
+    """
+    tokens = [t.strip("\"'") for t in args.split()]
+    if verb == "bisect":
+        return ("clear", None)
+    if verb == "branch":
+        # A rename moves HEAD's branch name; creating/listing/deleting does not.
+        return ("clear", None) if any(t in ("-m", "-M", "--move") for t in tokens) else None
+    if verb == "checkout" and "--" in tokens:
+        return None  # `git checkout <rev> -- <paths>` restores files; HEAD stays put
+    for i, tok in enumerate(tokens):
+        if tok in _SWITCH_VALUE_FLAGS:
+            return ("set", tokens[i + 1]) if i + 1 < len(tokens) else ("clear", None)
+    if "--detach" in tokens or "-" in tokens:
+        return ("clear", None)
+    names = [t for t in tokens if t and not t.startswith("-")]
+    if not names:
+        return None  # bare `git checkout` / `git switch` changes nothing
+    name = names[0]
+    if _ref_exists(root, f"refs/heads/{name}"):
+        return ("set", name)
+    if _ref_exists(root, f"refs/remotes/origin/{name}"):
+        return ("set", name)  # git creates the local branch from origin/<name>
+    if verb == "checkout" and (root / name).exists():
+        return None  # `git checkout <file>` — restores a path, HEAD stays put
+    return ("clear", None)  # a sha, a tag, a remote ref: detached or unknown
+
+
+def commit_branch_check(
+    cmd: str, root: Path, expected: str | None
+) -> tuple[str | None, str | None]:
+    """Walk *cmd* in order. Returns ``(block_message_or_None, new_expected)``.
+
+    A switch earlier in the same command moves HEAD before the commit runs, so it counts
+    as where HEAD will be — `git checkout -b x && git commit` is not a move.
+    """
+    head = _head_branch(root)
+    events: list[tuple[int, str, str]] = [
+        (m.start(), m.group("verb"), m.group("args"))
+        for m in _GIT_VERB.finditer(cmd)
+        # `git -C <path> ...` acts on another checkout (the classifier already decided
+        # whether the command as a whole touches this one) — not this HEAD's business.
+        if "-C" not in cmd[m.start() : m.start("verb")].split()
+    ]
+    events += [(m.start(), "gh", "") for m in _GH_MOVES_HEAD.finditer(cmd)]
+    for _pos, verb, args in sorted(events):
+        if verb == "gh":
+            expected, head = None, None
+            continue
+        if verb == "commit":
+            if expected and head and head != expected:
+                return _moved_message(expected, head), expected
+            continue
+        change = _branch_switch(verb, args, root)
+        if change is None:
+            continue
+        kind, name = change
+        expected, head = (name, name) if kind == "set" else (None, None)
+    return None, expected
+
+
+def _moved_message(expected: str, head: str) -> str:
+    # ASCII only: the Windows hook pipe garbles non-ASCII characters.
+    return (
+        f"BLOCKED: this commit would land on '{head}', but this session last switched the "
+        f"main checkout to '{expected}'. Something else moved HEAD since (another terminal "
+        f"or a tool without this hook) - committing now puts your work on their branch.\n"
+        f"  Check: git reflog -5   (who moved it, and when)\n"
+        f"  Then:  git checkout {expected}   (uncommitted changes come along if they do not "
+        f"conflict) and commit again.\n"
+        f"  If '{head}' really is where this belongs: git checkout {head}  (records it), "
+        f"then commit."
+    )
+
+
 def _current_branch(root: Path) -> str:
     """Best-effort branch name without spawning git."""
     try:
@@ -433,17 +779,26 @@ def _current_branch(root: Path) -> str:
         return "?"
 
 
-def write_lock(root: Path, session_id: str, previous: dict | None) -> None:
+_KEEP = object()  # write_lock: carry the previous expected_branch forward
+
+
+def write_lock(
+    root: Path, session_id: str, previous: dict | None, *, expected: object = _KEEP
+) -> None:
     now = datetime.now(timezone.utc).isoformat()
-    claimed = (
-        previous.get("claimed_at", now)
-        if previous and previous.get("session_id") == session_id
-        else now
-    )
+    mine = bool(previous and previous.get("session_id") == session_id)
+    claimed = previous.get("claimed_at", now) if mine else now
+    # `branch` is where HEAD IS (re-read on every write, so it follows any move silently);
+    # `expected_branch` is where THIS session last PUT it. Only the second can tell that
+    # somebody else moved it. A new holder starts with none: another session's intent is
+    # not ours to enforce.
+    if expected is _KEEP:
+        expected = previous.get("expected_branch") if mine else None
     lock = {
         "session_id": session_id,
         "tool": "claude-code",
         "branch": _current_branch(root),
+        "expected_branch": expected,
         "claimed_at": claimed,
         "updated_at": now,
         "note": "main-checkout agent lock - inspect with: navig repo lock",
@@ -526,6 +881,10 @@ def main() -> int:
         if discarded:
             print(pathspec_message(discarded), file=sys.stderr)
             return 2
+        lost, moved_branch = unpushed_commits_dropped(payload, root)
+        if lost:
+            print(dropped_message(lost, moved_branch), file=sys.stderr)
+            return 2
 
         verdict = classify_tool(payload, root)
         if verdict == "exempt":
@@ -539,7 +898,17 @@ def main() -> int:
         if action == "block":
             print(block_message(lock or {}, root), file=sys.stderr)
             return 2
-        write_lock(root, session_id, lock)
+        # Only a lock this session already held carries an intent of ours to check.
+        previous_expected = (lock or {}).get("expected_branch") if action == "refresh" else None
+        cmd = str((payload.get("tool_input") or {}).get("command", ""))
+        moved, expected = commit_branch_check(cmd, root, previous_expected) if cmd else (
+            None,
+            previous_expected,
+        )
+        if moved:
+            print(moved, file=sys.stderr)
+            return 2
+        write_lock(root, session_id, lock, expected=expected)
         return 0
     except Exception:  # noqa: BLE001 — a broken hook must never block work
         return 0

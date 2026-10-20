@@ -28,6 +28,8 @@ def _plan(
     unpushed_rc: int = 0,
     lock: dict | None = None,
     default: str = "main",
+    incoming: str = "",
+    incoming_rc: int = 0,
 ) -> dict:
     """Drive ``sync_plan`` over faked git output — no repository required."""
 
@@ -44,6 +46,8 @@ def _plan(
             return _Res(dirty)
         if args[0] == "log":
             return _Res(unpushed, unpushed_rc)
+        if args[0] == "diff":
+            return _Res(incoming, incoming_rc)
         return _Res()
 
     monkeypatch.setattr(R, "_git", fake_git)
@@ -88,9 +92,54 @@ def test_a_stale_lock_does_not_block(monkeypatch):
     assert plan["blocked"] is None
 
 
-def test_a_dirty_tree_blocks(monkeypatch):
-    plan = _plan(monkeypatch, branch="main", dirty=" M core/navig/x.py\n")
-    assert plan["blocked"] and "uncommitted" in plan["blocked"]
+def test_a_dirty_file_the_sync_would_overwrite_blocks(monkeypatch):
+    plan = _plan(
+        monkeypatch,
+        branch="main",
+        dirty=" M core/navig/x.py\n",
+        incoming="core/navig/x.py\n",
+    )
+    assert plan["blocked"] and "core/navig/x.py" in plan["blocked"]
+    assert "overwritten" in plan["blocked"]
+    assert plan["actions"] == []
+
+
+def test_an_unrelated_dirty_file_does_not_block(monkeypatch):
+    """The real case that made this command unusable: an IDE writing its own settings.
+
+    Refusing on *any* modification meant a checkout the editor keeps dirty could never be
+    synced — reinstating the staleness `repo sync` exists to remove. Git carries a
+    non-colliding change across a checkout untouched, so there is nothing to protect here.
+    """
+    plan = _plan(
+        monkeypatch,
+        branch="main",
+        dirty=" M .vscode/settings.json\n",
+        incoming="core/navig/llm/router.py\ncore/navig/llm/guard.py\n",
+    )
+    assert plan["blocked"] is None
+    assert plan["actions"] == ["pull --ff-only"]
+    assert plan["carried"] == [".vscode/settings.json"]
+
+
+def test_an_unreadable_incoming_diff_stays_conservative(monkeypatch):
+    # If we cannot tell what is arriving, we do not get to claim it is safe.
+    plan = _plan(
+        monkeypatch,
+        branch="main",
+        dirty=" M core/navig/x.py\n",
+        incoming="",
+        incoming_rc=128,
+    )
+    assert plan["blocked"] and "could not be read" in plan["blocked"]
+
+
+def test_dirty_paths_reads_renames_and_quotes():
+    assert R._dirty_paths(" M a.py\n") == ["a.py"]
+    # both sides of a rename move on checkout, so both count
+    assert R._dirty_paths("R  old.py -> new.py\n") == ["old.py", "new.py"]
+    assert R._dirty_paths('R  "a b.py" -> "c d.py"\n') == ["a b.py", "c d.py"]
+    assert R._dirty_paths("\n\n") == []
 
 
 def test_unpushed_commits_block_the_switch(monkeypatch):

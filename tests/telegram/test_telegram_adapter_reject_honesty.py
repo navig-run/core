@@ -124,3 +124,60 @@ def test_sent_id_separates_rejection_from_an_unreadable_id():
     assert _sent_id({}) == "", "delivered, id unreadable — NOT a rejection"
     assert _sent_id({"message_id": 7}) == "7"
     assert _sent_id(MagicMock(message_id=7)) == "7"
+
+
+# ── generated audio arrives as a PLAYER, not a file ────────────────────────────
+
+
+def _audio(filename="dark-drone.mp3"):
+    return {"data": b"ID3fake", "kind": "audio", "filename": filename}
+
+
+async def test_an_mp3_track_goes_to_send_audio_with_a_title():
+    """`navig audio gen` output used to land as an inert document; a track should be
+    Telegram's in-chat player (title, scrubber)."""
+    adapter, bot = _adapter_with_bot()
+    bot.send_audio = AsyncMock(return_value={"message_id": 9})
+    bot.send_document = AsyncMock(return_value={"message_id": 10})
+
+    receipt = await adapter.send_message("42", "horror drone", [_audio()])
+
+    assert receipt.ok is True and receipt.message_id == "9"
+    bot.send_audio.assert_awaited_once()
+    assert bot.send_audio.await_args.kwargs["title"] == "dark-drone"
+    assert bot.send_audio.await_args.kwargs["filename"] == "dark-drone.mp3"
+    bot.send_document.assert_not_awaited()
+
+
+async def test_m4a_is_also_a_player_track():
+    adapter, bot = _adapter_with_bot()
+    bot.send_audio = AsyncMock(return_value={"message_id": 1})
+    bot.send_document = AsyncMock()
+
+    receipt = await adapter.send_message("42", "", [_audio("take.m4a")])
+
+    assert receipt.ok is True
+    bot.send_audio.assert_awaited_once()
+
+
+async def test_wav_stays_a_document_because_send_audio_would_refuse_it():
+    """The Bot API only plays MP3/M4A. A .wav sent through sendAudio is rejected, so
+    the render would FAIL over its container — it must go out as a document instead."""
+    adapter, bot = _adapter_with_bot()
+    bot.send_audio = AsyncMock(return_value={"message_id": 1})
+    bot.send_document = AsyncMock(return_value={"message_id": 2})
+
+    receipt = await adapter.send_message("42", "", [_audio("master.wav")])
+
+    assert receipt.ok is True and receipt.message_id == "2"
+    bot.send_audio.assert_not_awaited()
+    bot.send_document.assert_awaited_once()
+
+
+async def test_a_rejected_audio_send_is_still_reported_as_a_failure():
+    adapter, bot = _adapter_with_bot()
+    bot.send_audio = AsyncMock(return_value=None)  # rejected, no exception
+
+    receipt = await adapter.send_message("42", "", [_audio()])
+
+    assert receipt.ok is False, "the player route must keep the honest-receipt contract"

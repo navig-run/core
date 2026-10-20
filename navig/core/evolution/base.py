@@ -4,9 +4,10 @@ from dataclasses import dataclass
 from typing import Any
 
 _FENCE_RE = re.compile(r"```[^\n`]*\n(.*?)\n```", re.DOTALL)
+_LEADING_BLANK_LINES = re.compile(r"\A(?:[ \t]*\r?\n)+")
 
 
-def extract_code_block(artifact: str) -> str:
+def extract_code_block(artifact: str, keep_indent: bool = False) -> str:
     """Pull the code out of the model's fenced markdown block.
 
     ONE extractor for every evolver, because two parsers for one format drift.
@@ -18,9 +19,17 @@ def extract_code_block(artifact: str) -> str:
 
     An artifact with no fence is returned unchanged: the model answering with
     bare code is a supported shape, not a parse failure.
+
+    ``keep_indent=True`` trims only blank lines at the edges. A whole file starts
+    at column 0 so a full ``strip()`` is harmless there, but a snippet cut from
+    inside a function starts indented — stripping it moves the first line to
+    column 0 and the spliced result no longer parses.
     """
     match = _FENCE_RE.search(artifact)
-    return match.group(1).strip() if match else artifact
+    code = match.group(1) if match else artifact
+    if keep_indent:
+        return _LEADING_BLANK_LINES.sub("", code).rstrip()
+    return code.strip() if match else artifact
 
 
 def safe_artifact_name(raw: str, fallback: str) -> str:

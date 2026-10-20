@@ -1,0 +1,17 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: speech/news-presenter
+name: News presenter (English)
+tool: speech
+layer: style
+category: Voice
+tags:
+- news
+- english
+description: Brisk, confident presenter delivery.
+params:
+  provider: edge
+  voice: en-US-GuyNeural
+  lang: en
+  speed: 1.08

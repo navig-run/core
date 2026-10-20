@@ -90,3 +90,158 @@ async def test_transcribe_degrades_without_navig_audio(monkeypatch):
             body = await resp.json()
             assert body.get("error_code") == "plugin_required"
             assert "navig-audio" in str(body).lower()
+
+
+# ── Hardening: the routes refuse websites and relayed callers ────────────────────────
+
+
+@pytest.fixture(autouse=False)
+def no_network_tts(monkeypatch):
+    """Past the guard the handler would really synthesize; stub the engine so these
+    tests never reach a speech provider over the network."""
+    try:
+        import navig.voice.tts as shim
+    except ImportError:
+        return  # no plugin → the handler answers 503 without touching the network
+
+    class _Result:
+        success = False
+        audio_path = None
+        provider = None
+        error = "stubbed"
+
+    class _Tts:
+        config = types.SimpleNamespace(provider=types.SimpleNamespace(value="stub"))
+
+        async def synthesize(self, text, **kw):  # noqa: ANN001, ANN003, ANN201
+            return _Result()
+
+    monkeypatch.setattr(shim, "get_tts", lambda: _Tts())
+
+
+async def _post_synthesize(headers: dict, token: str | None = None):
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from navig.gateway.routes import voice
+
+    app = web.Application()
+    gw = types.SimpleNamespace(config=types.SimpleNamespace(auth_token=token))
+    voice.register(app, gw)
+    async with TestClient(TestServer(app)) as client:
+        # A text/plain body: the "simple" cross-origin request a page can send with no
+        # preflight — exactly the shape a credit-burning website would use.
+        resp = await client.post(
+            "/api/voice/synthesize",
+            data='{"text": "hello"}',
+            headers={"Content-Type": "text/plain", **headers},
+        )
+        return resp.status, await resp.json()
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Origin": "https://evil.example"},
+        {"Origin": "null"},
+        {"X-Navig-Via": "lighthouse"},  # relayed in from outside this machine
+        {"CF-Ray": "abc123"},  # arrived through a Cloudflare tunnel
+    ],
+)
+async def test_synthesize_refuses_websites_and_relayed_callers(headers):
+    pytest.importorskip("aiohttp")
+    status, body = await _post_synthesize(headers)
+    assert status == 403, body
+    assert body.get("error_code") == "forbidden"
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {},  # Echo's Rust bridge: loopback, no Origin
+        {"Origin": "chrome-extension://abcdefghijklmnop"},
+        {"Origin": "http://localhost:7432"},
+    ],
+)
+async def test_synthesize_still_serves_this_machines_clients(headers, no_network_tts):
+    pytest.importorskip("aiohttp")
+    status, body = await _post_synthesize(headers)
+    # Past the guard: whatever happens next (no plugin → 503, audio → 200, provider
+    # failure → 500), it is never the 403 a website gets.
+    assert status != 403, body
+
+
+async def test_a_relayed_caller_with_the_gateway_token_is_served(no_network_tts):
+    pytest.importorskip("aiohttp")
+    status, body = await _post_synthesize(
+        {"X-Navig-Via": "lighthouse", "Authorization": "Bearer tok-123456"}, token="tok-123456"
+    )
+    assert status != 403, body
+    status, _ = await _post_synthesize(
+        {"X-Navig-Via": "lighthouse", "Authorization": "Bearer wrong"}, token="tok-123456"
+    )
+    assert status == 403
+
+
+# ── voice.policy decides here too: offline never reaches a cloud engine ───────
+
+
+@pytest.fixture
+def policy_engine(monkeypatch, tmp_path):
+    """Record engine calls, isolate the packs root, and let each test set the policy.
+
+    Without the plugin the fixture skips — the routing lives in navig-audio, and the
+    plugin-less degrade path is pinned by the 503 tests above.
+    """
+    pytest.importorskip("aiohttp")
+    try:
+        import navig.voice.tts as shim
+    except ImportError:
+        pytest.skip("navig-audio (navig.voice.tts shim) not installed")
+
+    from navig_audio.voice import packs as pk
+
+    from navig.gateway.routes import voice as vroute
+
+    monkeypatch.setattr(pk, "packs_root", lambda: tmp_path / "packs")
+    calls: list[dict] = []
+    state = {"policy": "auto"}
+
+    class _Result:
+        success = False
+        audio_path = None
+        provider = None
+        error = "stubbed on purpose"
+        format = "mp3"
+
+    class _Tts:
+        config = types.SimpleNamespace(provider=types.SimpleNamespace(value="stub"))
+
+        async def synthesize(self, text, **kw):  # noqa: ANN001, ANN003, ANN201
+            calls.append({"text": text, **kw})
+            return _Result()
+
+    monkeypatch.setattr(shim, "get_tts", lambda: _Tts())
+    monkeypatch.setattr(vroute, "_voice_policy", lambda: state["policy"])
+    return {"calls": calls, "state": state}
+
+
+async def test_synthesize_under_offline_never_reaches_a_cloud_engine(policy_engine):
+    """Regression: this endpoint ignored voice.policy, so offline text still went out
+    through the default cloud engine. Now offline resolves only to LOCAL (or refuses)."""
+    policy_engine["state"]["policy"] = "offline"
+    status, body = await _post_synthesize({})
+    assert status == 422, body
+    assert "Offline" in str(body.get("error", ""))
+    assert body.get("error_code") == "provider_unavailable"
+    assert policy_engine["calls"] == [], "the engine ran while offline had no on-device voice"
+
+
+async def test_synthesize_pins_the_routed_provider_into_the_engine(policy_engine):
+    policy_engine["state"]["policy"] = "auto"
+    status, body = await _post_synthesize({})
+    # The stub answers "no audio" (500), but only AFTER the route chose the provider —
+    # pinned into synthesize(), never the TTS default chain behind it.
+    assert status == 500, body
+    assert policy_engine["calls"], "the routed provider never reached the engine"
+    assert policy_engine["calls"][0]["provider"].value == "edge"

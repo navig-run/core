@@ -262,46 +262,75 @@ def _tool_get_context(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     return context
 
 
+#: The NAVIG command PATHS this tool may run, as segments rather than a display string.
+#:
+#: Two defects lived in the previous list. It compared ``full_cmd.startswith(entry)``,
+#: so ``"helper"`` matched ``"help"``; and it never fired for the call every agent writes
+#: — ``command="host list"`` — because the CLI receives ONE argv token and answers
+#: ``No such command 'host list'`` (measured: exit 2). The call worked only when a caller
+#: happened to pass ``command="host", args=["list"]``, which the schema never says.
+#: Segments are compared, and ``_command_parts`` splits either spelling.
+READ_ONLY_COMMANDS: tuple[tuple[str, ...], ...] = (
+    ("host", "list"),
+    ("host", "show"),
+    ("host", "info"),
+    ("app", "list"),
+    ("app", "show"),
+    ("app", "info"),
+    ("db", "list"),
+    ("db", "show"),
+    ("db", "tables"),
+    ("wiki", "list"),
+    ("wiki", "show"),
+    ("wiki", "search"),
+    ("tunnel", "list"),
+    ("backup", "list"),
+    ("status",),
+    ("version",),
+    ("help",),
+)
+
+
+def _command_parts(command: Any, args: Any) -> list[str]:
+    """Flatten the tool's two spellings into argv segments.
+
+    ``command="host list"`` and ``command="host", args=["list"]`` must issue the same
+    command; the first is what an agent writes from the field name, the second is what the
+    old allowlist silently required.
+    """
+    parts = str(command or "").split()
+    if isinstance(args, (list, tuple)):
+        parts.extend(str(item) for item in args)
+    return parts
+
+
+def _is_read_only_command(parts: list[str]) -> bool:
+    """True when *parts* is one of the allowlisted paths (extra flags are allowed)."""
+    return any(tuple(parts[: len(path)]) == path for path in READ_ONLY_COMMANDS)
+
+
 def _tool_run_command(server: Any, args: dict[str, Any]) -> dict[str, Any]:
-    """Execute a NAVIG CLI command."""
+    """Run one allowlisted, read-only NAVIG command and return its captured output."""
     import subprocess
+    import sys
 
-    command = args.get("command", "")
-    cmd_args = args.get("args", [])
+    parts = _command_parts(args.get("command"), args.get("args"))
+    if not parts:
+        return {"error": "command is required", "allowed": [" ".join(p) for p in READ_ONLY_COMMANDS]}
 
-    # Safety: only allow read operations by default
-    safe_commands = [
-        "host list",
-        "host show",
-        "host info",
-        "app list",
-        "app show",
-        "app info",
-        "db list",
-        "db show",
-        "db tables",
-        "wiki list",
-        "wiki show",
-        "wiki search",
-        "tunnel list",
-        "backup list",
-        "status",
-        "version",
-        "help",
-    ]
-
-    full_cmd = command + " " + " ".join(cmd_args)
-    is_safe = any(full_cmd.startswith(safe) for safe in safe_commands)
-
-    if not is_safe:
+    if not _is_read_only_command(parts):
         return {
-            "error": f"Command not allowed: {full_cmd}",
-            "hint": "Only read-only commands are allowed via MCP for safety",
+            "error": f"Command not allowed: {' '.join(parts)}",
+            "hint": (
+                "This tool runs READ-ONLY NAVIG commands only; a destructive verb needs its own "
+                "MCP tool or the operator's CLI."
+            ),
+            "allowed": [" ".join(path) for path in READ_ONLY_COMMANDS],
         }
 
     try:
         result = decode_console_result(subprocess.run(
-            ["python", "-m", "navig.cli", command] + cmd_args,
+            [sys.executable, "-m", "navig", *parts],
             capture_output=True,
                         timeout=30,
         ))
@@ -311,7 +340,7 @@ def _tool_run_command(server: Any, args: dict[str, Any]) -> dict[str, Any]:
             "returncode": result.returncode,
         }
     except subprocess.TimeoutExpired:
-        return {"error": "Command timed out"}
+        return {"error": "Command timed out after 30s"}
     except Exception as e:
         return {"error": str(e)}
 

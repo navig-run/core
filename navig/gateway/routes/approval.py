@@ -1,5 +1,5 @@
-"""Approval routes: /approval/pending, /approval/request, /approval/{id}/respond,
-/approval/auto-evolve (GET status, POST toggle)."""
+"""Approval routes: /approval/pending, /approval/policy, /approval/request,
+/approval/{id}/respond, /approval/auto-evolve (GET status, POST toggle)."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ logger = get_debug_logger()
 
 def register(app, gateway):
     app.router.add_get("/approval/pending", _pending(gateway))
+    app.router.add_get("/approval/policy", _policy(gateway))
     app.router.add_post("/approval/request", _request(gateway))
     app.router.add_post("/approval/{request_id}/respond", _respond(gateway))
     app.router.add_get("/approval/auto-evolve", _auto_evolve_status(gateway))
@@ -51,6 +52,31 @@ def _pending(gw):
                     for req in pending
                 ]
             }
+        )
+
+    return h
+
+
+def _policy(gw):
+    """GET /approval/policy — the posture the RUNNING gateway enforces.
+
+    The policy is built once at gateway startup, so the config file can say one
+    thing while the daemon does another (set a level, forget to restart). This is
+    the only place that tells the two apart.
+    """
+
+    async def h(r):
+        auth = require_bearer_auth(r, gw)
+        if auth is not None:
+            return auth
+        if not gw.approval_manager:
+            return json_error_response(
+                "Approval module not available", status=503, code="module_unavailable"
+            )
+        from navig.tools.approval import _auto_approve_read_only
+
+        return json_ok(
+            gw.approval_manager.policy.posture(read_bypass=_auto_approve_read_only())
         )
 
     return h

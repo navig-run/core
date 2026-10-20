@@ -1,7 +1,6 @@
 name: assistant
 display_name: "Assistant"
 tone: formal
-model_hint: "gpt-4o"
 voice_id: "alloy"
 wallpaper: ""
 startup_sound: ""

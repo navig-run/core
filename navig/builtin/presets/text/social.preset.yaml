@@ -1,0 +1,14 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: text/format/social
+name: Social post
+tool: text
+layer: format
+category: Format
+description: One concise post of at most 280 characters.
+params:
+  kind: social
+tags:
+- format
+- social

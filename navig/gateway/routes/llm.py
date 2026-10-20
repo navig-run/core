@@ -37,6 +37,7 @@ except ImportError as _exc:
 
 from navig.debug_logger import get_debug_logger
 from navig.gateway.routes.common import (
+    gateway_mesh_token,
     json_error_response,
     json_ok,
     require_bearer_auth,
@@ -107,12 +108,19 @@ def _chat(gw: NavigGateway):
         formation          (str)   Formation name from .navig/profile.json.
         flags              (dict)  {treatAsInbox, autoEvolve, includeWorkspaceContext}.
         workspaceContext   (str)   Pre-built workspace context blob.
+
+    Auth: this route is the ONE peer-forward target of the mesh
+    (``navig.mesh.router._forward`` posts here with the fleet-shared
+    ``gateway.mesh_token`` — install.py writes that secret onto joiners),
+    so it explicitly accepts EITHER the admin bearer OR the mesh token.
+    Every other guarded route stays admin-bearer-only; when NEITHER secret
+    is configured the request still fails closed with 503 (Gate 0).
     """
 
     async def handler(request: web.Request) -> web.Response:
         start_ms = time.monotonic()
 
-        auth = require_bearer_auth(request, gw)
+        auth = require_bearer_auth(request, gw, extra_tokens=(gateway_mesh_token(gw),))
         if auth is not None:
             return auth
 
@@ -134,6 +142,12 @@ def _chat(gw: NavigGateway):
         formation = body.get("formation")
         flags = body.get("flags", {})
         workspace_context = body.get("workspaceContext")
+        # Incognito: no memory read/write and nothing in the Synapse SYNC log.
+        from navig.core.coerce import coerce_bool
+
+        incognito = coerce_bool(
+            flags.get("incognito") if isinstance(flags, dict) else None, default=False
+        )
 
         # Synapse: extract correlation ID (body takes precedence over header)
         msg_id = body.get("msgId") or request.headers.get("X-Msg-Id") or str(_uuid.uuid4())
@@ -145,6 +159,7 @@ def _chat(gw: NavigGateway):
             "flags": flags,
             "workspace_context": workspace_context,
             "source": "http",
+            "incognito": incognito,
         }
 
         # If caller requested a specific tier, forward it
@@ -152,7 +167,8 @@ def _chat(gw: NavigGateway):
             metadata["tier_override"] = "big"
 
         # Synapse: log user message for SYNC recovery
-        _log_message(msg_id, "user", text)
+        if not incognito:
+            _log_message(msg_id, "user", text)
 
         # ── Route through the gateway's conversational pipeline ─
         try:
@@ -167,7 +183,8 @@ def _chat(gw: NavigGateway):
             err_msg = str(exc)
             # Synapse: log error response so SYNC can surface it
             err_id = str(_uuid.uuid4())
-            _log_message(err_id, "assistant", f"[Error] {err_msg}")
+            if not incognito:
+                _log_message(err_id, "assistant", f"[Error] {err_msg}")
             return json_error_response(
                 "LLM chat handler error",
                 status=500,
@@ -184,7 +201,8 @@ def _chat(gw: NavigGateway):
 
         # Synapse: log assistant response
         resp_id = str(_uuid.uuid4())
-        _log_message(resp_id, "assistant", response_text or "")
+        if not incognito:
+            _log_message(resp_id, "assistant", response_text or "")
 
         return json_ok(
             {

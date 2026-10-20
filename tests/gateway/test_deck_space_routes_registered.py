@@ -54,14 +54,29 @@ async def _resolve(app: web.Application, method: str, path: str):
         ("/api/deck/spaces/demo/apps", cat.handle_deck_space_apps),
         ("/api/deck/spaces/demo/app-sections", cat.handle_deck_space_app_sections),
         ("/api/deck/spaces/demo/books", cat.handle_deck_space_books),
+        ("/api/deck/spaces/demo/info", cat.handle_deck_space_info),
+        ("/api/deck/spaces/repath", cat.handle_deck_space_repath),
+        ("/api/deck/spaces/forget", cat.handle_deck_space_forget),
         ("/api/deck/spaces/demo/enable", cat.handle_deck_space_enable),
         ("/api/deck/spaces/demo/activate", cat.handle_deck_space_activate),
+        ("/api/deck/spaces/demo/relations", cat.handle_deck_space_relations_update),
     ],
 )
 async def test_space_control_routes_are_registered(path, handler):
     route = await _resolve(_routed_app(), "POST", path)
     assert route is not None, f"POST {path} resolves to NOTHING — handler is unreachable"
     assert route.handler is handler, f"POST {path} dispatches to {route.handler!r}, not {handler!r}"
+
+
+async def test_relations_and_context_read_routes_are_registered():
+    """The Phase C read side — same 'written but never wired' risk as the POSTs."""
+    app = _routed_app()
+    rel = await _resolve(app, "GET", "/api/deck/spaces/demo/relations")
+    ctx = await _resolve(app, "GET", "/api/deck/spaces/demo/context")
+    assert rel is not None, "GET /api/deck/spaces/demo/relations resolves to NOTHING"
+    assert rel.handler is cat.handle_deck_space_relations
+    assert ctx is not None, "GET /api/deck/spaces/demo/context resolves to NOTHING"
+    assert ctx.handler is cat.handle_deck_space_linked_context
 
 
 async def test_app_sections_is_not_swallowed_by_the_dynamic_id_segment():

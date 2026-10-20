@@ -36,6 +36,7 @@ class GoogleDriveConnector(BaseConnector):
         oauth_scopes=["https://www.googleapis.com/auth/drive.readonly", "openid", "email", "profile"],
         oauth_provider="google_drive",
         requires_oauth=True,
+        oauth_app=("google", "GOOGLE", "Google OAuth"),
         can_search=True,
         can_fetch=True,
         can_act=False,

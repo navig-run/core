@@ -269,5 +269,6 @@ Official docs: https://learn.microsoft.com/en-us/windows/privacy/configure-windo
 
 ## Related Skills
 
-- `defender-exclusion-manage` — modify Defender exclusions
 - `procmon-capture` — detailed per-process file/registry/network trace (requires Procmon64.exe on USB)
+- `docker-restart-safe` (Block) — restart a container and verify it came back, when the telemetry
+  question turns out to be a service restart instead

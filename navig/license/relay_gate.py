@@ -7,12 +7,16 @@ per active user — bandwidth, broker D1 reads, Pages Functions invocations,
 relay uptime. The local Deck UI, vault, agent runtime, modules — none of
 that has a per-user marginal cost. So we draw the line here:
 
-    Perpetual packs (one-time)  ─→  local app, yours forever, ONE host,
-                                    no hosted relay (self-host the Mini
-                                    App with `navig cloud tailscale
-                                    --enable` for free)
     Subscription                 ─→  host scale + the hosted relay +
                                     future modules + support
+    Lapsed subscription          ─→  30-day grace, then no hosted relay
+    Everyone else                ─→  hosted relay (free on-ramp)
+
+Buying something can never cost a user a feature they had for free. The old
+split denied the relay to anyone holding a one-time token or ANY perpetual
+grant — so a free user who bought a $5 Bay space lost the relay a never-paid
+user keeps, and a comp/contract Enterprise token (issued `one_time`) was
+refused it outright.
 
 This module is a PURE decision function — no I/O, no side effects, no
 caching — so it's trivially testable and can be re-used from the daemon,
@@ -41,16 +45,20 @@ Cases
       DENIED. Banner directs to renew or self-host with Tailscale.
       (reason="subscription_lapsed")
 
-  Perpetual-only (billing_period="one_time", subscription_active=False)
-      DENIED. Banner explains the split honestly: their local app is
-      forever, the hosted relay needs a subscription.
-      (reason="requires_subscription")
+  Perpetual paid tier (billing_period="one_time" on a paid tier: a contract
+  or comp licence, or a retired lifetime purchase)
+      ALLOWED. They hold the tier; the relay is part of it.
+      (reason="perpetual_tier")
 
-  No license / brand new free Solo
+  No license / free tier — including free users who own Bay items or
+  legacy module grants (content purchases, not relay purchases)
       ALLOWED. This is the viral hook — `pip install navig` + Telegram
       Mini App works out of the box on 1 host. Their broker traffic is
       already rate-limited globally; they're not the cost problem.
       (reason="solo_free")
+
+  `requires_subscription` is kept in the Literal for consumers of older
+  payloads; nothing emits it now.
 """
 
 from __future__ import annotations
@@ -70,6 +78,7 @@ RelayReason = Literal[
     "lapsed_grace",
     "subscription_lapsed",
     "requires_subscription",
+    "perpetual_tier",
     "solo_free",
 ]
 
@@ -146,23 +155,14 @@ def evaluate_relay_access(
             ),
         )
 
-    # 3. No subscription history. Distinguish perpetual-only (paid once)
-    #    from genuine free Solo (never paid).
+    # 3. No subscription history. A perpetual PAID tier (contract/comp
+    #    licence, retired lifetime) holds the tier, relay included.
     billing = getattr(status, "billing_period", None)
-    perpetual_mods = list(getattr(status, "perpetual_modules", None) or [])
+    tier = str(getattr(status, "effective_tier", "") or "").lower()
+    if billing == "one_time" and tier not in ("", "free", "solo"):
+        return RelayDecision(allowed=True, reason="perpetual_tier")
 
-    is_perpetual_buyer = billing == "one_time" or bool(perpetual_mods)
-    if is_perpetual_buyer:
-        return RelayDecision(
-            allowed=False,
-            reason="requires_subscription",
-            banner=(
-                "Cloud relay is a subscription feature. Your perpetual "
-                "entitlements stay yours forever; self-host the Mini App "
-                "for free with `navig cloud tailscale --enable`."
-            ),
-        )
-
-    # 4. Genuine free Solo — viral on-ramp. Broker still applies its
-    #    global rate limit so abuse is bounded.
+    # 4. Free tier — never paid, or paid only for content (Bay items, legacy
+    #    module grants). Viral on-ramp; the broker still applies its global
+    #    rate limit so abuse is bounded.
     return RelayDecision(allowed=True, reason="solo_free")

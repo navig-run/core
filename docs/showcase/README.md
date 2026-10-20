@@ -95,9 +95,17 @@ fix next to each finding.
   sshd — maintainer tooling that **changes the WSL distro it runs in**; its header lists every change,
   and you never need it to run navig) then `npm run showcase:record`. GIFs land here; MP4/WebM land in `core/.dev/showcase/video/` for the
   release upload, and `npm run showcase:trailer` stitches the trailer.
+- **The plugin demos are recorded the same way.** Each `plugins/<p>/docs/demo.gif` comes from
+  `tools/showcase/tapes/plugins/<p>.tape` — `wsl -e bash core/tools/showcase/record.sh --plugins [<name> …]`
+  (no arguments = every tape there). The tape is the whole wiring step: `setup-wsl.sh` derives which
+  plugins to rsync and install from the tapes that exist, so a new demo is one file, and its README
+  card picks the GIF up from `gen_plugin_catalog.py` with no hand-editing.
 - **Verified on every push.** `npm run showcase:check` (also a CI step, pure Node — no WSL) fails if a GIF
   no longer matches its manifest entry, if a page embeds one that was never committed, if a recording is
   committed but shown nowhere, if one blows the size budget, if `core/README.md` links one relatively (PyPI
-  renders no relative image), or if a tape and its scene have fallen out of step.
+  renders no relative image), or if a tape and its scene have fallen out of step. The plugin demos get the
+  same treatment: a tape with no GIF, a GIF no README embeds, a README embedding one that was never
+  committed, a relative image (that README is the plugin's PyPI long description too), or an over-budget
+  plugin GIF each fail the check.
 - **Before publishing**, `npm run showcase:staleness` says how far the showcased commands have moved since
   these were captured — recordings that lag a redesign are worse than none.

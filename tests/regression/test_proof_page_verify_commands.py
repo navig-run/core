@@ -64,9 +64,25 @@ def test_verify_receipt_rejects_a_tampered_download(download_folder: Path) -> No
 
 
 def test_ledger_verify_reads_the_downloaded_file(download_folder: Path) -> None:
+    """The printed count must be the DOWNLOADED file's, whatever that file holds today.
+
+    Counted from the artifact rather than pinned as a literal: /proof is re-recorded
+    whenever the published sample is refreshed (#1604 took it from 5 operations to 3),
+    and a frozen number turns every re-record into a red suite that says nothing about
+    the behaviour under test. The behaviour is that `verify` reads the file it was
+    NAMED — the bug this pins reported "No ledger ... nothing recorded yet" and exited 0,
+    having read the active space's empty ledger instead.
+    """
+    lines = (download_folder / "operations.jsonl").read_text(encoding="utf-8").splitlines()
+    recorded = [ln for ln in lines if ln.strip()]
+    assert len(recorded) >= 2, (
+        "the published sample must be a CHAIN of operations, not a single entry — "
+        "verifying a one-link chain proves nothing about chaining"
+    )
+
     result = _runner.invoke(ledger_app, ["verify", "--path", "operations.jsonl"])
     assert result.exit_code == 0, result.output
-    assert "5 operations, chain intact" in result.output
+    assert f"{len(recorded)} operations, chain intact" in result.output
 
 
 def test_ledger_verify_named_missing_file_fails(download_folder: Path) -> None:

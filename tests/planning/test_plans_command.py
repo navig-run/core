@@ -266,6 +266,10 @@ def test_plans_summary_missing_phase_shows_dash_row(temp_dir, monkeypatch):
 
     missing = config_dir / "spaces" / "empty"
     missing.mkdir(parents=True, exist_ok=True)
+    # A space WITHOUT its phase file — identity comes from VISION.md: since 9c86cf9317 a
+    # bare directory in a spaces root is not a space at all (stub guard), which would drop
+    # the row instead of showing the dashes this test is about.
+    (missing / "VISION.md").write_text("# Empty space\n", encoding="utf-8")
 
     result = runner.invoke(plans_app, ["summary", "--path", str(temp_dir / "repo")])
     assert result.exit_code == 0

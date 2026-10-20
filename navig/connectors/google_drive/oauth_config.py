@@ -1,14 +1,13 @@
 """Google Drive OAuth configuration."""
 from __future__ import annotations
 
-import os
-
 from navig.connectors.google_oauth_constants import (
     GOOGLE_AUTH_URL,
     GOOGLE_TOKEN_URL,
     GOOGLE_USERINFO_URL,
 )
 from navig.connectors.oauth_redirect import connector_redirect_uri
+from navig.connectors.secrets import oauth_app_credentials
 from navig.providers.oauth import OAuthProviderConfig
 
 GOOGLE_DRIVE_SCOPES = [
@@ -26,10 +25,15 @@ def build_google_drive_oauth_config(client_id: str, client_secret: str | None = 
         redirect_uri=connector_redirect_uri(),
         scopes=GOOGLE_DRIVE_SCOPES,
         userinfo_url=GOOGLE_USERINFO_URL,
+        # Without these Google issues NO refresh token and the link dies an hour later
+        # (the same defect gmail/oauth_config.py documents).
+        extra_authorize_params={"access_type": "offline", "prompt": "consent"},
     )
 
 def get_google_drive_oauth_config() -> OAuthProviderConfig | None:
-    client_id = os.getenv("GOOGLE_CLIENT_ID", "")
+    """Env ``GOOGLE_CLIENT_ID``/``GOOGLE_CLIENT_SECRET`` first, then the vault labels
+    ``google/oauth_client_id`` / ``google/oauth_client_secret`` (what the app saves)."""
+    client_id, client_secret = oauth_app_credentials("google", "GOOGLE")
     if not client_id:
         return None
-    return build_google_drive_oauth_config(client_id, os.getenv("GOOGLE_CLIENT_SECRET"))
+    return build_google_drive_oauth_config(client_id, client_secret)

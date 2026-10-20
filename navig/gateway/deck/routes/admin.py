@@ -32,6 +32,8 @@ except ImportError:
 if TYPE_CHECKING:
     pass  # aiohttp types only used at runtime
 
+from navig.core.coerce import coerce_bool
+
 logger = logging.getLogger(__name__)
 
 # ── Provider icon map (cosmetic — not stored in WELL_KNOWN_*) ─────────────────
@@ -79,6 +81,19 @@ _VOICE_ICONS: dict[str, str] = {
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
+
+def _global_config(cm: object) -> dict:
+    """The live global config dict.
+
+    Every loader below used to read ``cm.get_config() if hasattr(cm, "get_config")
+    else {}`` — but ``ConfigManager`` has no ``get_config``, so the guard always took
+    the ``{}`` branch: ``agents.custom``/``agents.enabled``, connectors, document sets,
+    service accounts and every admin setting were never read, and a value saved via
+    ``POST /api/deck/admin/settings`` (which writes through ``cm.set``) never read back.
+    """
+    cfg = cm.get_global_config()  # type: ignore[attr-defined]
+    return cfg if isinstance(cfg, dict) else {}
 
 
 def _load_llm_providers() -> list[dict]:
@@ -201,7 +216,16 @@ def _load_voice_providers() -> dict:
         return {"stt": [], "tts": []}
 
 
-def _load_mcp_servers() -> list[dict]:
+def _load_mcp_servers(live_clients: dict | None = None) -> list[dict]:
+    """``~/.navig/mcp/servers.json`` entries (the ``navig mcp`` CLI's store).
+
+    ``running`` comes from the LIVE gateway's client manager when one is passed. It used
+    to be ``MCPManager().is_running()`` on a manager built for this request — whose
+    ``process`` is always ``None`` — so every server read "not running", always. When
+    the live state is unknowable (no gateway) it is ``None``, never a confident False.
+    ``subtitle``/``command`` read ``s.config``: ``MCPServer`` has no such attributes,
+    so the old ``hasattr`` guards returned "" for every row.
+    """
     try:
         from navig.mcp_manager import MCPManager
 
@@ -210,14 +234,21 @@ def _load_mcp_servers() -> list[dict]:
         # AttributeError into the handler below and the admin page showed no MCP
         # servers at all — with only a log line to say so.
         servers = mgr.list_servers()
+
+        def _running(name: str) -> bool | None:
+            if live_clients is None:
+                return None
+            client = live_clients.get(name)
+            return bool(client is not None and getattr(client, "is_connected", False))
+
         return [
             {
                 "key": s.name,
                 "label": s.name,
-                "subtitle": s.description if hasattr(s, "description") else "",
+                "subtitle": str(s.config.get("description") or s.config.get("package") or ""),
                 "enabled": s.is_enabled(),
-                "running": s.is_running(),
-                "command": s.command if hasattr(s, "command") else "",
+                "running": _running(s.name),
+                "command": str(s.config.get("command") or ""),
             }
             for s in servers
         ]
@@ -231,22 +262,22 @@ def _load_admin_settings() -> dict:
         from navig.config import get_config_manager
 
         cm = get_config_manager()
-        cfg = cm.get_config() if hasattr(cm, "get_config") else {}
+        cfg = _global_config(cm)
         code_cfg = cfg.get("code_interpreter", {}) if isinstance(cfg, dict) else {}
         chat_cfg = cfg.get("chat", {}) if isinstance(cfg, dict) else {}
         index_cfg = cfg.get("index", {}) if isinstance(cfg, dict) else {}
         return {
             "code_interpreter": {
-                "python_enabled": bool(code_cfg.get("python_enabled", True)),
-                "node_enabled": bool(code_cfg.get("node_enabled", False)),
-                "network_enabled": bool(code_cfg.get("network_enabled", False)),
+                "python_enabled": coerce_bool(code_cfg.get("python_enabled"), default=True),
+                "node_enabled": coerce_bool(code_cfg.get("node_enabled"), default=False),
+                "network_enabled": coerce_bool(code_cfg.get("network_enabled"), default=False),
                 "timeout_seconds": int(code_cfg.get("timeout_seconds", 30)),
                 "memory_mb": int(code_cfg.get("memory_mb", 512)),
             },
             "chat_preferences": {
                 "verbosity": str(chat_cfg.get("verbosity", "standard")),
-                "markdown": bool(chat_cfg.get("markdown", True)),
-                "streaming": bool(chat_cfg.get("streaming", True)),
+                "markdown": coerce_bool(chat_cfg.get("markdown"), default=True),
+                "streaming": coerce_bool(chat_cfg.get("streaming"), default=True),
                 "citations": str(chat_cfg.get("citations", "inline")),
                 "context_messages": int(chat_cfg.get("context_messages", 20)),
             },
@@ -256,8 +287,8 @@ def _load_admin_settings() -> dict:
                 ),
                 "chunk_size": int(index_cfg.get("chunk_size", 512)),
                 "chunk_overlap": int(index_cfg.get("chunk_overlap", 50)),
-                "hybrid_search": bool(index_cfg.get("hybrid_search", True)),
-                "reranking": bool(index_cfg.get("reranking", False)),
+                "hybrid_search": coerce_bool(index_cfg.get("hybrid_search"), default=True),
+                "reranking": coerce_bool(index_cfg.get("reranking"), default=False),
             },
         }
     except Exception as exc:
@@ -312,7 +343,11 @@ async def handle_deck_admin_voice_providers(request: "web.Request") -> "web.Resp
 
 async def handle_deck_admin_mcp_servers(request: "web.Request") -> "web.Response":
     """GET /api/deck/admin/mcp-servers"""
-    return web.json_response({"servers": _load_mcp_servers()})
+    from navig.gateway.deck.routes.connectors import live_mcp_manager
+
+    mgr = live_mcp_manager(request)
+    live = dict(mgr.clients) if mgr is not None else None
+    return web.json_response({"servers": _load_mcp_servers(live)})
 
 
 async def handle_deck_admin_settings(request: "web.Request") -> "web.Response":
@@ -364,7 +399,7 @@ def _load_agents() -> dict:
         from navig.config import get_config_manager
 
         cm = get_config_manager()
-        cfg = cm.get_config() if hasattr(cm, "get_config") else {}
+        cfg = _global_config(cm)
         custom_raw = cfg.get("agents", {}).get("custom", []) if isinstance(cfg, dict) else []
         enabled_keys: set[str] = set(
             cfg.get("agents", {}).get("enabled", []) if isinstance(cfg, dict) else []
@@ -381,7 +416,7 @@ def _load_agents() -> dict:
                 "label": c.get("name", c.get("key", "")),
                 "subtitle": c.get("description", c.get("url", "")),
                 "builtin": False,
-                "enabled": bool(c.get("enabled", True)),
+                "enabled": coerce_bool(c.get("enabled"), default=True),
             }
             for c in (custom_raw if isinstance(custom_raw, list) else [])
         ]
@@ -410,7 +445,7 @@ def _load_connectors() -> list[dict]:
         from navig.config import get_config_manager
 
         cm = get_config_manager()
-        cfg = cm.get_config() if hasattr(cm, "get_config") else {}
+        cfg = _global_config(cm)
         raw = cfg.get("connectors", []) if isinstance(cfg, dict) else []
         if not isinstance(raw, list):
             return []
@@ -436,7 +471,7 @@ def _load_document_sets() -> list[dict]:
         from navig.config import get_config_manager
 
         cm = get_config_manager()
-        cfg = cm.get_config() if hasattr(cm, "get_config") else {}
+        cfg = _global_config(cm)
         raw = cfg.get("document_sets", []) if isinstance(cfg, dict) else []
         if not isinstance(raw, list):
             return []
@@ -461,7 +496,7 @@ def _load_service_accounts() -> list[dict]:
         from navig.config import get_config_manager
 
         cm = get_config_manager()
-        cfg = cm.get_config() if hasattr(cm, "get_config") else {}
+        cfg = _global_config(cm)
         raw = cfg.get("service_accounts", []) if isinstance(cfg, dict) else []
         if not isinstance(raw, list):
             return []

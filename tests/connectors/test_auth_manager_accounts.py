@@ -23,7 +23,14 @@ pytestmark = pytest.mark.unit
 
 
 class FakeVault:
-    """Just enough of the vault: rows keyed by (provider, profile)."""
+    """Just enough of the vault: rows keyed by (provider, profile).
+
+    Shaped like the REAL vault, not like what the code wished it were: list() rows carry
+    their profile in ``metadata`` (VaultItems have no ``profile_id`` attribute), and items
+    are removed with ``delete(id)`` (there is no ``remove``). The old fake had both, which
+    kept these tests green while ``list_accounts()`` returned [] and every Disconnect was a
+    no-op on a real install.
+    """
 
     def __init__(self):
         self.rows: dict[tuple[str, str], SimpleNamespace] = {}
@@ -32,11 +39,10 @@ class FakeVault:
         row = SimpleNamespace(
             id=f"{provider}/{profile_id}",
             provider=provider,
-            profile_id=profile_id,
             credential_type=CredentialType.OAUTH,
             data=data,
             label=label,
-            metadata=metadata,
+            metadata={**metadata, "profile_id": profile_id},
         )
         self.rows[(provider, profile_id)] = row
         return row.id
@@ -51,10 +57,12 @@ class FakeVault:
             if (provider is None or p == provider) and (profile_id is None or prof == profile_id)
         ]
 
-    def remove(self, cred_id):
+    def delete(self, cred_id):
         for k, r in list(self.rows.items()):
             if r.id == cred_id:
                 del self.rows[k]
+                return True
+        return False
 
 
 def _mgr() -> ConnectorAuthManager:

@@ -8,6 +8,7 @@ Receipts feed the TrustScore computation for Nodes.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -15,6 +16,9 @@ from enum import Enum
 from typing import Any
 
 from navig.core.dict_utils import now_iso
+from navig.debug_logger import get_debug_logger
+
+logger = get_debug_logger()
 
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
@@ -138,3 +142,38 @@ class ExecutionReceipt:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
+# ── Signing ────────────────────────────────────────────────────────────────────
+
+
+def result_digest(result: Any) -> str | None:
+    """sha256 of a mission result's canonical JSON, or None when there is no result.
+
+    Stored in ``artifacts.result_digest`` so the receipt signature covers WHAT the
+    mission produced, not only that it finished. The result itself stays out of the
+    receipt (it can be large, and it is not redacted); holding the output, anyone can
+    recompute the digest and check it against a verified receipt.
+    """
+    if result is None:
+        return None
+    blob = json.dumps(result, sort_keys=True, separators=(",", ":"), default=str)
+    return "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def sign_receipt(receipt: ExecutionReceipt) -> bool:
+    """Attach this device's Ed25519 signature to ``receipt`` in place.
+
+    The dataclass is frozen but ``artifacts`` is a mutable dict, so the signature
+    fields go there (the signed message blanks them — see
+    ``license.device_keys._signing_message``). Best-effort: an unsigned receipt is
+    still a valid receipt and verifies as "unsigned", never as tampered. Returns
+    whether a signature was attached.
+    """
+    try:
+        from navig.license.device_keys import sign_receipt_dict
+
+        receipt.artifacts.update(sign_receipt_dict(receipt.to_dict()))
+        return True
+    except Exception as exc:  # noqa: BLE001 — signing must never fail the mission
+        logger.debug("receipt signing skipped: %s", exc)
+        return False

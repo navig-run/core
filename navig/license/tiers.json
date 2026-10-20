@@ -21,19 +21,19 @@
   },
 
   "live": {
-    "_comment": "The live NAVIG Harbor model. Free/Plus/Max are self-serve; Team/Enterprise are contact-us (self-serve Team = Phase 4). Plus and Max carry identical capabilities; they differ on AI allowance, host scale, priority relay, and the lifetime SKU (Max only).",
+    "_comment": "The live NAVIG Harbor model. Free/Plus/Max are self-serve; Team/Enterprise are contact-us (self-serve Team = Phase 4). Plus and Max carry identical capabilities and differ on host scale. Tiers are SUBSCRIPTIONS ONLY: the Max lifetime SKU is retired (licences already issued one_time still verify). Team/Enterprise host_limit is a DEFAULT: a signed token may carry `contract_hosts` (positive int) to set the negotiated number, honoured for team/enterprise only (keys.py).",
     "tier_order": ["free", "plus", "max", "team", "enterprise"],
     "tiers": {
       "free":       { "host_limit": 1,      "capabilities": ["core_ops"] },
       "plus":       { "host_limit": 5,      "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "echo"] },
       "max":        { "host_limit": 200,    "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "echo"] },
       "team":       { "host_limit": 200,    "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "client_ops", "echo"] },
-      "enterprise": { "host_limit": 100000, "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "client_ops", "echo"] }
+      "enterprise": { "host_limit": 1000,   "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "client_ops", "echo"] }
     },
     "prices_usd": {
       "_comment": "Hypotheses from MONETIZATION.md; Stripe SKUs created by setup-stripe.mjs. Free has no SKU; Team/Enterprise are contact-us.",
       "plus": { "annual": 144, "monthly": 15 },
-      "max":  { "annual": 432, "monthly": 45, "lifetime": 1080 }
+      "max":  { "annual": 432, "monthly": 45 }
     },
     "legacy_to_harbor": {
       "_comment": "Map a retired legacy tier UP to its Harbor equivalent (>= value; nobody loses entitlements). Applied at verify time in keys.py for any old token.",

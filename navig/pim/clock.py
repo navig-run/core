@@ -18,9 +18,60 @@ desktop clock is a source of confusion with no upside until they are somewhere e
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, tzinfo
 
-__all__ = ["from_utc_iso", "local_now", "to_local", "to_utc_iso"]
+__all__ = ["LOCAL", "from_utc_iso", "local_now", "to_local", "to_utc_iso"]
+
+
+class _SystemZone(tzinfo):
+    """The system zone, WITH its daylight-saving rules.
+
+    `datetime.now().astimezone()` returns a FIXED offset — today's. Every date the
+    PIM builds is `now.replace(day=…, hour=…)` or `now + timedelta(…)`, so a fixed
+    offset carries today's offset onto every future date. In October that is the
+    summer offset, and an appointment "lundi 26 octobre à 10h30" — the day after
+    the clocks go back — was stored as 09:30 local and pinged an hour early.
+
+    This zone asks the operating system for the offset of EACH wall-clock moment,
+    so 10:30 on the 26th is 10:30 on the 26th whatever today's offset is.
+    """
+
+    def utcoffset(self, dt: datetime | None) -> timedelta | None:
+        return _local_view(dt).utcoffset()
+
+    def dst(self, dt: datetime | None) -> timedelta | None:
+        return None  # unknown — nothing here derives a meaning from it
+
+    def tzname(self, dt: datetime | None) -> str | None:
+        return _local_view(dt).tzname()
+
+    def fromutc(self, dt: datetime) -> datetime:
+        utc = dt.replace(tzinfo=UTC)
+        try:
+            local = utc.astimezone()
+        except (OverflowError, OSError, ValueError):  # outside the platform's range
+            local = utc.astimezone(datetime.now().astimezone().tzinfo)
+        return local.replace(tzinfo=self)
+
+    def __repr__(self) -> str:
+        return "LOCAL"
+
+
+def _local_view(dt: datetime | None) -> datetime:
+    """``dt``'s wall-clock time as a fixed-offset aware datetime, per the system rules."""
+    if dt is None:
+        return datetime.now().astimezone()
+    try:
+        return dt.replace(tzinfo=None).astimezone()
+    except (OverflowError, OSError, ValueError):
+        # Windows' mktime refuses years before 1970; the current offset is the
+        # honest fallback for a date that far out of reach.
+        return datetime.now().astimezone()
+
+
+#: The operator's zone. Use THIS, never a bare `.astimezone()`, for anything that
+#: builds or shows a wall-clock time.
+LOCAL = _SystemZone()
 
 
 def local_now() -> datetime:
@@ -29,7 +80,7 @@ def local_now() -> datetime:
     Aware, never naive: a naive value silently loses the offset and every conversion
     after it is wrong by that offset with nothing to signal it.
     """
-    return datetime.now().astimezone()
+    return datetime.now(LOCAL)
 
 
 def to_utc_iso(when: datetime) -> str:
@@ -43,7 +94,7 @@ def to_utc_iso(when: datetime) -> str:
     A naive input is read as LOCAL, matching `create_reminder`.
     """
     if when.tzinfo is None:
-        when = when.astimezone()
+        when = when.replace(tzinfo=LOCAL)
     return when.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
@@ -64,4 +115,4 @@ def from_utc_iso(raw: str | None) -> datetime | None:
 
 def to_local(when: datetime | None) -> datetime | None:
     """UTC in, operator's zone out. Everything a person READS goes through here."""
-    return when.astimezone() if when else None
+    return when.astimezone(LOCAL) if when else None

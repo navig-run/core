@@ -38,6 +38,7 @@ class SlackConnector(BaseConnector):
         oauth_scopes=["channels:read", "channels:history", "chat:write", "search:read"],
         oauth_provider="slack",
         requires_oauth=True,
+        oauth_app=("slack", "SLACK", "Slack app"),
         can_search=True,
         can_fetch=True,
         can_act=True,

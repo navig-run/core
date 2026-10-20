@@ -1,10 +1,13 @@
 """Approval policies and command classification."""
 
 import fnmatch
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 
 from navig.core.coerce import coerce_bool, coerce_int
+
+logger = logging.getLogger(__name__)
 
 
 class ApprovalLevel(Enum):
@@ -62,6 +65,95 @@ DEFAULT_NEVER_PATTERNS = [
     "DROP DATABASE *",
 ]
 
+# ── Security levels — the router-firewall knob (owner ask 2026-10-15) ────────
+#
+# One knob, three levels, like the "Security Level: High / Medium / Low" switch
+# on a consumer router firewall — instead of the seven partially-overlapping
+# approval keys an operator had to reason about alone:
+#
+#   high    nothing is trusted: even a proven read-only shell command pages,
+#           and ANY approval timeout denies (fail-closed, regardless of
+#           default_action)
+#   medium  the designed default: proven reads run unprompted (audited),
+#           writes page, dangerous always denies on timeout
+#   low     the terminal is exempt: bash_exec/run_command/navig_run never
+#           page (reads AND writes, still audited); every OTHER gated tool
+#           and gateway action (db_query, cdp_eval, connector writes,
+#           missions, shutdown) still pages
+#
+# `approval.enabled: false` remains the master kill-switch OUTSIDE these
+# levels (the "unplug it" position). Explicit granular keys still win over
+# the level — security_level sets the DERIVED defaults, not an override.
+
+#: Canonical level values (what `approval.security_level` may hold).
+SECURITY_LEVELS: tuple[str, ...] = ("high", "medium", "low")
+
+#: Spellings people reach for from the router analogy or from prose —
+#: accepted and normalized, never stored.
+_SECURITY_LEVEL_ALIASES: dict[str, str] = {
+    "strict": "high",
+    "balanced": "medium",
+    "permissive": "low",
+}
+
+#: The default when the key is absent — the behaviour the code shipped with.
+DEFAULT_SECURITY_LEVEL = "medium"
+
+#: One line per level — what an operator reads before choosing. The single source
+#: for `navig approve status`, the gateway's `/approval/policy` and the docs, so the
+#: three can't describe different levels.
+LEVEL_SUMMARY: dict[str, str] = {
+    "high": "nothing trusted — even proven reads ask; no answer = deny",
+    "medium": "balanced — proven reads run unasked, writes ask",
+    "low": "terminal free — shell never asks; db / cdp / connectors / missions still do",
+}
+
+#: `low` exempts exactly the shell family the chat gate treats as one
+#: (`navig.tools.approval._SHELL_TOOLS`); parity is pinned by
+#: ``tests/approval/test_security_levels.py``.
+SHELL_TOOL_NAMES: frozenset[str] = frozenset({"bash_exec", "run_command", "navig_run"})
+SHELL_TOOL_PATTERNS: tuple[str, ...] = tuple(
+    f"tool {name}*" for name in sorted(SHELL_TOOL_NAMES)
+)
+
+
+def parse_security_level(raw: object) -> str | None:
+    """The canonical level for *raw*, or ``None`` when it is not one — STRICT.
+
+    For input surfaces (`navig approve level <x>`): a typo must be refused, not
+    quietly stored as some other level. :func:`coerce_security_level` is the
+    lenient twin for values already on disk, where refusing would mean refusing
+    to boot.
+    """
+    if raw is None:
+        return None
+    text = _SECURITY_LEVEL_ALIASES.get(str(raw).strip().lower(), str(raw).strip().lower())
+    return text if text in SECURITY_LEVELS else None
+
+
+def coerce_security_level(raw: object) -> str:
+    """Normalize a configured level to a canonical value. Never raises.
+
+    A typo must not kill the gateway at boot (`from_config` runs there), and
+    it must not fail open either: an unknown value lands on ``medium`` — the
+    documented default whose only privilege is running PROVEN reads, always
+    audited — and says so in the log. Failing a typo toward ``high`` would
+    trade a visible misconfiguration for surprise prompt-spam; failing toward
+    ``low`` would hand a typo the shell. ``medium`` is the honest middle.
+    """
+    if raw is None or not str(raw).strip():
+        return DEFAULT_SECURITY_LEVEL
+    parsed = parse_security_level(raw)
+    if parsed is not None:
+        return parsed
+    logger.warning(
+        "approval.security_level=%r is not one of %s — using %r",
+        raw,
+        "/".join(SECURITY_LEVELS),
+        DEFAULT_SECURITY_LEVEL,
+    )
+    return DEFAULT_SECURITY_LEVEL
+
 
 # Actions that auto-approve will accept when auto_evolve_enabled is True.
 # Mirrors the VS Code navig-bridge WHITELIST constant — keep in sync.
@@ -79,6 +171,10 @@ class ApprovalPolicy:
     """Policy configuration for approvals."""
 
     enabled: bool = True
+    #: The router-firewall knob — one of SECURITY_LEVELS. Sets the derived
+    #: defaults (safe patterns under `low`, timeout posture under `high`);
+    #: explicit granular keys still win over it (see from_config).
+    security_level: str = DEFAULT_SECURITY_LEVEL
     # How long a human has to answer. 120 s was the old value and it predates
     # approvals ever REACHING a human: nothing sent them to Telegram, so the
     # window only ever governed how fast the request auto-denied itself
@@ -119,6 +215,35 @@ class ApprovalPolicy:
         """Create default policy with standard patterns."""
         return cls()
 
+    def posture(self, *, read_bypass: bool) -> dict:
+        """The operator-facing summary of what this policy does — JSON-safe.
+
+        *read_bypass* is passed in rather than computed here: it is read LIVE from
+        config on every chat tool call (`tools.approval._auto_approve_read_only`),
+        while the rest of this policy was frozen when the gateway booted — the two
+        have different lifetimes, and the caller knows which process it is in.
+        """
+        return {
+            "enabled": self.enabled,
+            "security_level": self.security_level,
+            "summary": LEVEL_SUMMARY.get(self.security_level, ""),
+            "read_bypass": bool(read_bypass),
+            "shell_exempt": self.security_level == "low",
+            "fail_closed_timeout": self.fail_closed_timeout,
+            "timeout_seconds": self.timeout_seconds,
+            "default_action": self.default_action,
+        }
+
+    @property
+    def fail_closed_timeout(self) -> bool:
+        """`high`: ANY approval timeout denies, regardless of default_action.
+
+        The router-High position: an unanswered question is a blocked packet.
+        Under `medium`/`low` the timeout follows `default_action` (dangerous
+        always denies regardless).
+        """
+        return self.security_level == "high"
+
     @property
     def patterns(self) -> dict:
         """Get patterns as dict for display."""
@@ -135,14 +260,29 @@ class ApprovalPolicy:
 
     @classmethod
     def from_config(cls, config: dict) -> "ApprovalPolicy":
-        """Load policy from config dict."""
+        """Load policy from config dict.
+
+        `approval.security_level` (high/medium/low) derives the defaults —
+        `low` appends the shell-tool safe patterns; explicit
+        `approval.levels.safe` entries are kept, never replaced, and the
+        caller's list is copied before anything is appended (a config dict
+        must never be mutated by a load).
+        """
         approval_cfg = config.get("approval", {})
         levels = approval_cfg.get("levels", {})
         channels = approval_cfg.get("channels", {})
         auto_evolve_cfg = approval_cfg.get("auto_evolve", {})
 
+        security_level = coerce_security_level(approval_cfg.get("security_level"))
+        safe_patterns = list(levels.get("safe", DEFAULT_SAFE_PATTERNS.copy()))
+        if security_level == "low":
+            safe_patterns.extend(
+                p for p in SHELL_TOOL_PATTERNS if p not in safe_patterns
+            )
+
         return cls(
             enabled=coerce_bool(approval_cfg.get("enabled", True), default=True),
+            security_level=security_level,
             # coerce_int, not a bare get: `navig config set` stores raw STRINGS, and
             # an int used raw does not misbehave quietly — `timedelta(seconds="600")`
             # and `asyncio.wait_for(timeout="600")` both raise TypeError. Setting the
@@ -151,7 +291,7 @@ class ApprovalPolicy:
                 approval_cfg.get("timeout_seconds", 900), 900, minimum=1
             ),
             default_action=approval_cfg.get("default_action", "deny"),
-            safe_patterns=levels.get("safe", DEFAULT_SAFE_PATTERNS.copy()),
+            safe_patterns=safe_patterns,
             confirm_patterns=levels.get("confirm", DEFAULT_CONFIRM_PATTERNS.copy()),
             dangerous_patterns=levels.get("dangerous", DEFAULT_DANGEROUS_PATTERNS.copy()),
             never_patterns=levels.get("never", DEFAULT_NEVER_PATTERNS.copy()),

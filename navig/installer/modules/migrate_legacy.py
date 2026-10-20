@@ -36,8 +36,10 @@ def apply(action: Action, ctx: InstallerContext) -> Result:
     try:
         from navig.commands.init import _migrate_legacy_windows_runtime_layout
 
-        _migrate_legacy_windows_runtime_layout()
-        messages.append("Windows runtime layout")
+        # Report only what MOVED: a fresh Ubuntu server printed "Migrated: Windows
+        # runtime layout, Documents/.navig" for two no-ops.
+        if _migrate_legacy_windows_runtime_layout():
+            messages.append("Windows runtime layout")
     except Exception as exc:  # noqa: BLE001
         skipped.append(f"Windows layout: {exc}")
 
@@ -45,8 +47,8 @@ def apply(action: Action, ctx: InstallerContext) -> Result:
     try:
         from navig.commands.init import _migrate_legacy_documents_dir
 
-        _migrate_legacy_documents_dir(ctx.config_dir)
-        messages.append("Documents/.navig")
+        if _migrate_legacy_documents_dir(ctx.config_dir):
+            messages.append("Documents/.navig")
     except Exception as exc:  # noqa: BLE001
         skipped.append(f"Documents migration: {exc}")
 

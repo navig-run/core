@@ -2,6 +2,7 @@
 
 from unittest.mock import patch
 
+import pytest
 from typer.testing import CliRunner
 
 _WARN = "navig.console_helper.warning"
@@ -73,7 +74,7 @@ def test_replay_run_with_speed_option():
 
 
 # ===========================================================================
-# agents.py
+# agents.py — superseded: `navig formation agents` / `navig agent run`
 # ===========================================================================
 
 from navig.commands.agents import app as agents_app
@@ -81,60 +82,28 @@ from navig.commands.agents import app as agents_app
 agents_runner = CliRunner()
 
 
-def test_agents_help_exits_nonzero():
+def test_agents_help_exits_0():
     result = agents_runner.invoke(agents_app, ["--help"])
     assert result.exit_code == 0
 
 
-def test_agents_help_mentions_list():
-    result = agents_runner.invoke(agents_app, ["--help"])
-    assert "list" in result.output.lower()
-
-
-# `navig.agents` has no `list_agents` — the command's `from navig.agents import
-# list_agents` raises ImportError for real, which IS the fallback these tests mean to
-# exercise. They used to fabricate the symbol with `create=True` just to make it raise;
-# that mocked away the very condition under test. Let the real import fail.
-
-
-def test_agents_list_exits_nonzero():
-    with patch(_WARN):
-        result = agents_runner.invoke(agents_app, ["list"])
-    assert result.exit_code == 0
-
-
-def test_agents_list_fallback_warns_when_not_implemented():
-    with patch(_WARN) as mock_warn:
-        agents_runner.invoke(agents_app, ["list"])
-    mock_warn.assert_called_once()
-    assert "not yet" in mock_warn.call_args[0][0].lower()
-
-
-def test_agents_run_with_name_exits_nonzero():
-    with patch(_WARN):
-        result = agents_runner.invoke(agents_app, ["run", "myagent"])
-    assert result.exit_code == 1
-
-
-def test_agents_run_calls_warn():
-    with patch(_WARN) as mock_warn:
-        agents_runner.invoke(agents_app, ["run", "myagent"])
-    mock_warn.assert_called_once()
-
-
-def test_agents_run_not_implemented():
-    with patch(_WARN) as mock_warn:
-        agents_runner.invoke(agents_app, ["run", "myagent"])
-    assert "not implemented" in mock_warn.call_args[0][0]
-
-
-def test_agents_run_missing_name_exits_nonzero():
-    result = agents_runner.invoke(agents_app, ["run"])
-    assert result.exit_code != 0
+@pytest.mark.parametrize(
+    ("argv", "target"),
+    [
+        (["list"], "navig formation agents"),
+        (["run", "myagent", "do it"], "navig agent run"),
+        (["run"], "navig agent run"),
+        ([], "navig formation agents"),
+    ],
+)
+def test_agents_verbs_point_at_the_real_command_and_exit_1(argv, target):
+    result = agents_runner.invoke(agents_app, argv)
+    assert result.exit_code == 1, result.output
+    assert target in result.output
 
 
 # ===========================================================================
-# boot_cmd.py
+# boot_cmd.py — superseded: NAVIG starts as the background service
 # ===========================================================================
 
 from navig.commands.boot_cmd import boot_app
@@ -142,52 +111,21 @@ from navig.commands.boot_cmd import boot_app
 boot_runner = CliRunner()
 
 
-def test_boot_help_exits_nonzero():
+def test_boot_help_exits_0():
     result = boot_runner.invoke(boot_app, ["--help"])
     assert result.exit_code == 0
 
 
-def test_boot_help_mentions_show():
-    result = boot_runner.invoke(boot_app, ["--help"])
-    assert "show" in result.output.lower()
-
-
-def test_boot_help_mentions_run():
-    result = boot_runner.invoke(boot_app, ["--help"])
-    assert "run" in result.output.lower()
-
-
-def test_boot_show_exits_nonzero():
-    with patch(_WARN):
-        result = boot_runner.invoke(boot_app, ["show"])
-    assert result.exit_code == 1
-
-
-def test_boot_show_calls_warn():
-    with patch(_WARN) as mock_warn:
-        boot_runner.invoke(boot_app, ["show"])
-    mock_warn.assert_called_once()
-
-
-def test_boot_show_not_implemented():
-    with patch(_WARN) as mock_warn:
-        boot_runner.invoke(boot_app, ["show"])
-    assert "not yet implemented" in mock_warn.call_args[0][0]
-
-
-def test_boot_run_exits_nonzero():
-    with patch(_WARN):
-        result = boot_runner.invoke(boot_app, ["run"])
-    assert result.exit_code == 1
-
-
-def test_boot_run_calls_warn():
-    with patch(_WARN) as mock_warn:
-        boot_runner.invoke(boot_app, ["run"])
-    mock_warn.assert_called_once()
-
-
-def test_boot_run_with_dry_run_flag():
-    with patch(_WARN):
-        result = boot_runner.invoke(boot_app, ["run", "--dry-run"])
-    assert result.exit_code == 1
+@pytest.mark.parametrize(
+    ("argv", "target"),
+    [
+        (["show"], "navig service status"),
+        (["run"], "navig service start"),
+        (["run", "--dry-run"], "navig service start"),
+        ([], "navig service status"),
+    ],
+)
+def test_boot_verbs_point_at_the_service_and_exit_1(argv, target):
+    result = boot_runner.invoke(boot_app, argv)
+    assert result.exit_code == 1, result.output
+    assert target in result.output

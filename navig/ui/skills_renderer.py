@@ -11,7 +11,7 @@ Only refactors skills prompt injection.
 
 Usage:
     from navig.ui.skills_renderer import render_skills_prompt
-    prompt = render_skills_prompt(["ahk", "git-basics", "file-ops"])
+    prompt = render_skills_prompt(["docker-manage", "disk-space", "official/docker-ops"])
 """
 
 from __future__ import annotations

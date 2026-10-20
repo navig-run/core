@@ -206,3 +206,31 @@ async def test_a_description_that_merely_repeats_the_command_adds_no_line() -> N
     await h.on_approval_request(_Req(command="deploy prod", description="Execute: deploy prod"))
 
     assert "What:" not in ch.sent[0]["text"]
+
+
+async def test_the_card_goes_out_tagged_for_the_system_sweep() -> None:
+    """telegram.system_cleanup only sweeps what was tagged at send time — an
+    untagged approval card would sit in the chat forever (incident 2026-10-13:
+    yesterday's cards were still there the next morning)."""
+    from navig.telegram import chat_tidy
+
+    seen: dict[str, object] = {}
+
+    class _Tagged(_Channel):
+        async def send_message(self, chat_id, text, parse_mode=None, keyboard=None, **kw):
+            seen["kind"] = chat_tidy._KIND.get()
+            seen["routine"] = chat_tidy._ROUTINE.get()
+            return await super().send_message(
+                chat_id, text, parse_mode=parse_mode, keyboard=keyboard, **kw
+            )
+
+    token = chat_tidy._ROUTINE.set(False)
+    kind_token = chat_tidy._KIND.set("notice")
+    try:
+        h = TelegramApprovalHandler(_Manager(), bot=_Tagged(), owner_chat_id=159901607)
+        await h.on_approval_request(_Req())
+    finally:
+        chat_tidy._KIND.reset(kind_token)
+        chat_tidy._ROUTINE.reset(token)
+
+    assert seen == {"kind": "system", "routine": True}

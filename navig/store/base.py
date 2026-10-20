@@ -41,9 +41,19 @@ BASE_PRAGMAS: dict[str, Any] = {
     "mmap_size": 0,  # disabled by default
 }
 
-def _utcnow() -> str:
-    """ISO-8601 UTC timestamp."""
+def utcnow() -> str:
+    """ISO-8601 UTC timestamp.
+
+    Public: this is the value a store column wants when it stamps a row, and it is
+    shared with plugins (`navig-agentctl`). Exporting it under a leading underscore
+    forced them to reach for `_utcnow`, which makes every core refactor a breaking
+    change for an outside package.
+    """
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+#: Old private name, kept so in-tree callers and dotted-path patches keep working.
+_utcnow = utcnow
 
 
 def _to_utc_iso(dt: datetime) -> str:

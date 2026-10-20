@@ -14,6 +14,7 @@ import asyncio
 import contextvars
 import hmac
 import html
+import inspect
 import logging
 import random
 import re
@@ -21,10 +22,11 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 from navig.core.background import spawn
 from navig.core.coerce import coerce_id_rejects, coerce_id_set
+from navig.gateway.dedupe import UpdateDedupe
 from navig.providers.bridge_grid_reader import (
     BRIDGE_DEFAULT_PORT,  # noqa: F401  # re-exported; bridge port constant
 )
@@ -176,6 +178,38 @@ logger = logging.getLogger(__name__)
 _FORUM_THREAD: contextvars.ContextVar[int | None] = contextvars.ContextVar(
     "navig_telegram_forum_thread", default=None
 )
+
+# Why the most recent `_api_call` in THIS task was refused ("" on success). A
+# ContextVar rather than an attribute: `_api_call` awaits after deciding, so a
+# concurrent task could overwrite a shared attribute before the caller reads it.
+_LAST_API_ERROR: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "navig_telegram_last_api_error", default=""
+)
+
+
+def _is_entity_parse_error(description: str) -> bool:
+    """True only when Telegram refused the TEXT's markup.
+
+    The "resend without parse_mode" fallback is right for exactly this case. For
+    any other refusal — above all ``message is not modified`` on an identical
+    re-render — the plain resend is no longer identical (the tags are now
+    literal characters), so Telegram ACCEPTS it and the card is rewritten with
+    its ``<b>``/``<code>`` tags showing. That is what "🔄 Refresh" on /status did.
+    """
+    d = description.lower()
+    return "can't parse entities" in d or "can't find end of the entity" in d
+
+
+def _should_retry_without_markup() -> bool:
+    """Whether the last refused call is worth resending with ``parse_mode`` stripped.
+
+    Yes for a markup parse error. Yes, as before, when there is no Telegram
+    verdict at all (timeout / transport error: ``""``), so the resend still acts
+    as the one retry it always was. No for any other definite refusal: the plain
+    resend cannot fix it, and when it does land it lands with raw tags.
+    """
+    desc = _LAST_API_ERROR.get()
+    return not desc or _is_entity_parse_error(desc)
 _THREADED_SEND_METHODS = frozenset({
     "sendMessage", "sendPhoto", "sendDocument", "sendAudio", "sendVoice", "sendVideo",
     "sendAnimation", "sendChecklist", "sendMediaGroup", "sendSticker", "sendPoll",
@@ -188,6 +222,30 @@ _API_CALL_MAX_RETRIES: int = 3       # Telegram API: max retries on HTTP 429
 _REMINDER_MAX_RETRIES: int = 3       # Reminder poller: max delivery attempts
 _REMINDER_RETRY_DELAY_SEC: int = 60  # Reminder poller: backoff seconds per retry
 _TALK_SLOW_LOG_MS: int = 2500        # TALK mode: warn when end-to-end latency exceeds this
+
+
+def _tidy_note(result: Any) -> None:
+    """Hand a sent Message to the daily chat tidy ledger (ids only; never raises)."""
+    from navig.telegram import chat_tidy
+
+    chat_tidy.note(result)
+
+
+def _orphan_progress_id(progress: Any, finalized_ph_id: int | None) -> int | None:
+    """The progress bubble's id when it did NOT become the answer — an orphan
+    to delete. ``None`` when there is no bubble or it was reused as the answer.
+
+    Measured 2026-10: the deep path renders a "💭 Thinking…" progress bubble;
+    when streaming also created its own placeholder, the stream bubble was
+    finalized into the reply and the progress bubble was neither reused
+    (telegram.py only reuses it when ``_ph_id is None``) nor deleted — leaving
+    "💭 Thinking…" stuck forever above every deep answer. This is the one
+    decision that cleanup hangs on, so it is a pure function of the two ids.
+    """
+    pid = getattr(progress, "message_id", None)
+    if pid is None or pid == finalized_ph_id:
+        return None
+    return int(pid)
 
 
 def _strip_disabled_buttons(data: dict | None) -> dict | None:
@@ -326,6 +384,36 @@ class TelegramMessage:
             "is_group": self.is_group,
             "reply_to": self.reply_to_message_id,
         }
+
+
+class PhotoVisionResult(NamedTuple):
+    """What a photo analysis produced: local OCR text and/or a vision description.
+
+    The chat bubble gets an HTML-escaped 700-char snippet of this; the AGENT gets
+    a fuller plain-text rendering via ``_compose_photo_context_block`` — without
+    it the model never sees the OCR at all (it exists only in the outgoing
+    bubble) and answerably cannot know what the photo said.
+    """
+
+    ocr_text: str | None
+    description: str | None
+
+
+#: Cap on OCR chars handed to the LLM. The bubble keeps its 700-char snippet;
+#: the agent gets more because the decisive date can sit far down a billing
+#: page — but 4000 (≈1k tokens) bounds the prompt cost of a photo turn.
+_PHOTO_OCR_AGENT_CHARS = 4000
+
+#: Synthetic `text` for a photo sent with NO caption — what lets the bare-photo
+#: branch fall through to the normal pipeline (auth → mention gate → dispatch).
+#: Deliberately ≤2 words:
+#:   * classify_mode() short-circuits 1-2-word messages to TALK (never ACT/CODE,
+#:     the two modes that do NOT prepend photo_context) and the NL intent gate
+#:     (`word_count >= 3 or is_media_caption`) stays shut;
+#:   * date-free, so appointments.maybe_capture can never fire;
+#:   * not a reply-keyword and never starts with "/".
+#: The OCR itself must NEVER go in `text` — it rides metadata["photo_context"].
+_BARE_PHOTO_TEXT = "Photo attached"
 
 
 # Extensions Telegram routes as a plain document rather than as `audio`. Which of the
@@ -481,6 +569,12 @@ class TelegramChannel:
         # None = not yet started; health monitor skips None channels so the
         # process-uptime value of monotonic() doesn't trigger a false stale.
         self._last_event_at: float | None = None
+        # Update-id idempotency for EVERY webhook delivery path (local route,
+        # lighthouse uplink, bridge replay). Memory + disk — the lighthouse edge
+        # 504s after its 30s budget while this pipeline runs 60s+, so Telegram's
+        # retry of the same update_id arrives MID-PROCESSING; without this the
+        # whole vision+agent block re-runs (the 3× OCR loop, 2026-10-13).
+        self._update_dedupe = UpdateDedupe()
         # The boot greeting announces the brain coming online — it must fire once
         # per process, NOT on every channel (auto-)restart. The health monitor can
         # restart a channel internally; that is an operational event the operator
@@ -491,6 +585,11 @@ class TelegramChannel:
         self._reminder_task: asyncio.Task | None = None
         self._notifier = None
         self._use_webhook = bool(webhook_url)
+        # True while the poller is PARKED because a webhook is registered elsewhere (the
+        # Lighthouse edge delivers through the uplink). Silence is then the healthy
+        # state, exactly as in webhook mode, so the health monitor must not restart the
+        # channel for it. Read-only signal: never drives webhook set/delete.
+        self._parked_on_webhook = False
 
         # Per-user model tier preference: {user_id: "small"|"big"|"coder_big"|""}
         self._user_model_prefs: dict[int, str] = {}
@@ -693,11 +792,13 @@ class TelegramChannel:
                 return
             try:
                 from navig.boot_messages import get_boot_message
+                from navig.telegram import chat_tidy
 
                 boot_msg = get_boot_message()
                 for user_id in self.allowed_users:
                     try:
-                        await self.send_message(user_id, boot_msg, parse_mode=None)
+                        with chat_tidy.routine("greeting"):
+                            await self.send_message(user_id, boot_msg, parse_mode=None)
                     except Exception:  # noqa: BLE001
                         pass  # best-effort; failure is non-critical
             except Exception as exc:  # noqa: BLE001
@@ -718,6 +819,19 @@ class TelegramChannel:
                 logger.debug("deletion digest resume skipped: %s", exc)
 
         spawn(_resume_deletion_digest())
+
+        # Business-chat reminders ("напомни через 16 часов …") are hours long; a
+        # restart in between must re-arm them. Both supervisor processes resume;
+        # each reminder is claimed cross-process before it is posted.
+        async def _resume_business_reminders() -> None:
+            try:
+                from navig.telegram import biz_reminders
+
+                await biz_reminders.resume_pending(self)
+            except Exception as exc:  # noqa: BLE001 — never block channel start
+                logger.debug("business reminders resume skipped: %s", exc)
+
+        spawn(_resume_business_reminders())
 
         # Proactively bind allowed Telegram users to this daemon on the broker
         # so the Mini App resolves by telegram_id WITHOUT the user needing to
@@ -826,6 +940,7 @@ class TelegramChannel:
         self, method: str, data: dict | None = None, *, _retry_count: int = 0
     ) -> dict | None:
         """Make an API call to Telegram with rate limit handling."""
+        _LAST_API_ERROR.set("")
         if not self._session:
             return None
 
@@ -870,9 +985,12 @@ class TelegramChannel:
 
                 result = await resp.json()
                 if result.get("ok"):
+                    if method.startswith("send"):
+                        _tidy_note(result.get("result"))
                     return result.get("result")
                 else:
                     description: str = result.get("description") or ""
+                    _LAST_API_ERROR.set(description)
                     # Stale callback-query acknowledgements are expected after a
                     # restart (Telegram's 30-second window has already elapsed for
                     # queued button-press events).  Log at DEBUG to avoid filling
@@ -1017,9 +1135,13 @@ class TelegramChannel:
                             # (The first draft `continue`d to the top of the
                             # loop after one sleep, which re-issued getUpdates
                             # once per park: the test caught it.)
-                            while self._running and url:
-                                await asyncio.sleep(_WEBHOOK_RECHECK_S)
-                                url = await self._registered_webhook_url()
+                            self._parked_on_webhook = True
+                            try:
+                                while self._running and url:
+                                    await asyncio.sleep(_WEBHOOK_RECHECK_S)
+                                    url = await self._registered_webhook_url()
+                            finally:
+                                self._parked_on_webhook = False
                             if not self._running:
                                 break
                             logger.info("Telegram webhook is gone; resuming polling.")
@@ -1081,6 +1203,28 @@ class TelegramChannel:
             except Exception as e:
                 logger.error("Reminder poller error: %s", e)
 
+            # Check-ins: re-send snoozed pill cards, close expired prompts as
+            # "missed" (never "taken"). Throttled inside; cheap when idle.
+            try:
+                from navig.checkins import engine as _checkins
+
+                await _checkins.tick(self)
+            except asyncio.CancelledError:
+                break
+            except Exception:  # noqa: BLE001
+                logger.warning("check-in tick failed", exc_info=True)
+
+            # Once a day, after telegram.daily_clean.hour: take back yesterday's
+            # routine messages. A no-op unless enabled; cheap on every other tick.
+            try:
+                from navig.telegram import chat_tidy
+
+                await chat_tidy.maybe_sweep(self._api_call)
+            except asyncio.CancelledError:
+                break
+            except Exception:  # noqa: BLE001
+                logger.warning("daily chat tidy failed", exc_info=True)
+
             await asyncio.sleep(poll_interval_sec)
 
     async def _deliver_one_reminder(self, store: "Any", reminder: dict) -> None:
@@ -1118,6 +1262,17 @@ class TelegramChannel:
                     return
             except Exception:  # noqa: BLE001 — never let the gate stop a delivery
                 logger.debug("reminder id=%s: todo gate unreadable", reminder_id, exc_info=True)
+
+        # Take the row before sending it. Both gateway processes poll this table, and
+        # without a claim each reads a due row before either completes it — the ping
+        # went out twice. Tolerable in the operator's DM; not in a client's Business
+        # chat. A store without claims (an older test double) keeps the old behaviour.
+        if reminder_id and hasattr(store, "claim_reminder"):
+            try:
+                if not store.claim_reminder(reminder_id):
+                    return  # the sibling process has it
+            except Exception:  # noqa: BLE001 — a failed claim must not stop delivery
+                logger.debug("reminder id=%s: claim failed", reminder_id, exc_info=True)
 
         if not msg:
             # Genuinely malformed (no message) — close it. A reminder with NO Telegram chat
@@ -1164,6 +1319,11 @@ class TelegramChannel:
             except Exception:
                 _due_label = remind_at_str.replace("T", " ")[:16]
             _header = _i18n.t("notify.reminder.missed", due=_due_label)
+
+        # A shared Business-chat list's item pings THAT chat (see pim.service._delivery).
+        if reminder.get("bcid") and chat_id:
+            await self._deliver_business_reminder(store, reminder, _header)
+            return
 
         # Resolve the reminder's channels once (the matrix decides whether Telegram fires and
         # which other channels — deck feed / email / sms / … — also receive it). Telegram can
@@ -1217,12 +1377,112 @@ class TelegramChannel:
             _settle_reminder(store, reminder_id, bool(_others_delivered), retry_count, chat_id, msg)
             return
 
-        sent = await self.send_message(
-            int(chat_id),
-            f"{_header}\n{html.escape(msg)}",
-            parse_mode="HTML",
-        )
+        from navig.telegram import chat_tidy
+
+        # A card (bold title · italic "when" · details), not the escaped raw string:
+        # a pasted appointment used to arrive as one unbroken blob.
+        try:
+            from navig.telegram.reminder_card import render as _render_reminder
+
+            _card = _render_reminder(_header, msg)
+        except Exception:  # noqa: BLE001 — formatting must never cost the delivery
+            logger.debug("reminder card render failed; sending escaped text", exc_info=True)
+            _card = f"{_header}\n{html.escape(msg)}"
+
+        # The operator's own reminders (their DM — a positive chat id) follow the
+        # `reminder` type's Telegram chat/sound setting (Notifications → Telegram
+        # chats). A reminder that belongs to a group stays in that group.
+        _routed = False
+        if int(chat_id) > 0:
+            try:
+                from navig.notify import telegram_routes
+
+                _routed = telegram_routes.wants_direct_delivery("reminder")
+            except Exception:  # noqa: BLE001 — a routing read must never cost the delivery
+                logger.debug("reminder route read failed", exc_info=True)
+
+        # A "3 days / 1 day before" warning stays: the deadline is still ahead, and
+        # tomorrow's tidy would delete the only note of it.
+        from contextlib import nullcontext as _nullcontext
+
+        from navig.pim.reminders import is_advance_warning
+
+        _tidy = (_nullcontext() if is_advance_warning(reminder_id)
+                 else chat_tidy.routine("reminder"))
+        with _tidy:
+            if _routed:
+                from navig.notify import telegram_routes
+
+                sent, _detail = await asyncio.to_thread(
+                    telegram_routes.deliver, "reminder", _card, fallback_chat_id=str(chat_id)
+                )
+            else:
+                sent = await self.send_message(
+                    int(chat_id),
+                    _card,
+                    parse_mode="HTML",
+                )
         _settle_reminder(store, reminder_id, bool(sent), retry_count, chat_id, msg)
+
+    async def _deliver_business_reminder(self, store: "Any", reminder: dict, header: str) -> None:
+        """Post a shared-list ping into its Business chat; never retry into a refusal.
+
+        Telegram refuses a business post when the chat has had no recent activity or the
+        connection lost its reply right. Retrying a refusal only repeats it, so the
+        owner gets the ping in their DM — with a line saying where it was meant to go —
+        and the row is completed either way. With the `business` extension off, the DM
+        is the only target.
+        """
+        reminder_id = int(reminder.get("id") or 0)
+        chat_id = int(reminder.get("chat_id") or 0)
+        owner_id = int(reminder.get("user_id") or 0)
+        msg = str(reminder.get("message") or "").strip()
+        try:
+            from navig.telegram.reminder_card import render as _render_reminder
+
+            card = _render_reminder(header, msg)
+        except Exception:  # noqa: BLE001
+            card = f"{header}\n{html.escape(msg)}"
+
+        business_on = True
+        try:
+            from navig.gateway.channels.telegram_extensions import is_enabled
+
+            business_on = is_enabled("business")
+        except Exception:  # noqa: BLE001
+            logger.debug("business extension state unreadable", exc_info=True)
+
+        sent = None
+        if business_on:
+            try:
+                sent = await self._api_call(
+                    "sendMessage",
+                    {
+                        "chat_id": chat_id,
+                        "text": card,
+                        "parse_mode": "HTML",
+                        "business_connection_id": str(reminder["bcid"]),
+                    },
+                )
+            except Exception:  # noqa: BLE001
+                logger.info("business reminder id=%s refused by Telegram; sending to the DM", reminder_id)
+                sent = None
+        if not sent and owner_id:
+            from navig.core import i18n as _i18n
+
+            note = _i18n.t("notify.reminder.biz_fallback")
+            if note == "notify.reminder.biz_fallback":
+                note = "(Telegram would not post this in the chat, so it is here.)"
+            from navig.telegram import chat_tidy  # noqa: PLC0415
+
+            try:
+                with chat_tidy.routine("reminder"):
+                    await self.send_message(
+                        owner_id, f"{card}\n<i>{html.escape(note)}</i>", parse_mode="HTML")
+            except Exception:  # noqa: BLE001
+                logger.warning("business reminder id=%s: DM fallback failed too", reminder_id)
+        if reminder_id:
+            store.complete_reminder(reminder_id)
 
     # ── Webhook mode ──────────────────────────────────────────────в”Ђ
 
@@ -1396,6 +1656,23 @@ class TelegramChannel:
         # longer flags webhook channels on silence).
         self._last_event_at = time.monotonic()
 
+        # Update-id idempotency. RECORDED BEFORE DISPATCH: the lighthouse edge
+        # 504s after 30s while this pipeline can run 60s+, so Telegram's retry
+        # arrives WHILE the first delivery is still processing — record-after
+        # would let it through and reproduce the triple-vision loop. At-most-once
+        # by design: if processing crashes this update is dropped (Telegram's own
+        # ACK is independent of outcome, so retries are not a recovery mechanism
+        # here — a forget-on-exception would re-run vision+agent on every retry
+        # of a failing update). After the secret check so an unauthenticated POST
+        # cannot poison the durable ledger.
+        update_id = update.get("update_id")
+        if update_id is not None and self._update_dedupe.check_and_record(str(update_id)):
+            logger.info(
+                "Duplicate telegram update_id=%s — already accepted, skipping replay",
+                update_id,
+            )
+            return True  # ACK accepted → callers return 200 → Telegram stops retrying
+
         try:
             await self._process_update(update)
             return True
@@ -1514,6 +1791,18 @@ class TelegramChannel:
         except Exception as _biz_exc:  # noqa: BLE001
             logger.warning("Telegram business update handling failed: %s", _biz_exc)
 
+        # ── A post in the reminder channel becomes a task + reminder ──
+        #    (navig.telegram.channel_capture). Only the chat the `reminder` type is
+        #    routed to; every other channel post flows on unchanged.
+        if _cp := update.get("channel_post"):
+            try:
+                from navig.telegram import channel_capture
+
+                if await channel_capture.handle_channel_post(self, _cp):
+                    return
+            except Exception as _cap_exc:  # noqa: BLE001
+                logger.warning("Reminder channel capture failed: %s", _cap_exc)
+
         # Message reactions are no longer an action trigger — replaced by reply
         # keywords (see navig.telegram.reply_actions). Ignore them quietly.
         if update.get("message_reaction"):
@@ -1563,6 +1852,21 @@ class TelegramChannel:
             if not await self._reject_disabled_extension_callback(
                 callback_query, cb_data, cb_chat_id_cq, cb_message_id
             ):
+                return
+
+            # ── Plugin-owned buttons (navig/telegram/plugin_callbacks.py) ──
+            # After authorisation and the extension gate; the registry applies the
+            # plugin's own module switch. Core prefixes cannot be claimed by a plugin.
+            from navig.telegram import plugin_callbacks
+
+            if await plugin_callbacks.dispatch(self, callback_query, cb_data):
+                return
+
+            # ── pr: prompt library card + picker (navig/telegram/prompt_actions.py) ──
+            if cb_data.startswith("pr:"):
+                from navig.telegram import prompt_actions
+
+                await prompt_actions.handle_callback(self, callback_query, cb_data)
                 return
 
             # ── slash: monitoring refresh/nav buttons ──────────────────────
@@ -1713,6 +2017,14 @@ class TelegramChannel:
         reply_to_message_id = reply_to_msg.get("message_id")
 
         _voice_lang = ""  # detected language from STT (empty for text messages)
+        # Captured by BOTH photo paths (bare + captioned) and injected into
+        # metadata["photo_context"] further down. Declared HERE — before the
+        # non-text branch — because the bare-photo path sets it during its
+        # fall-through; a declaration at the captioned site would clobber it.
+        photo_result: PhotoVisionResult | None = None
+        # True when a photo with NO caption is routed into the normal pipeline
+        # with a synthetic instruction as `text` (OCR rides photo_context).
+        bare_photo = False
         # ── Handle non-text messages (voice, sticker, photo, etc.) ──
         if not text and not message.get("caption"):
             # Check what kind of non-text content it is
@@ -1761,8 +2073,27 @@ class TelegramChannel:
                     # text is now the transcript — fall through to pipeline
                 # ── Photo: vision analysis pipeline ──────────────────────в”Ђ
                 elif content_type == "photo":
-                    await self._handle_photo_vision(chat_id, user_id, is_group, message)
-                    return
+                    # A bare photo gets an AGENT TURN too: fall through with a
+                    # synthetic instruction as `text`; the OCR itself is captured
+                    # into photo_result at the unified vision site below and
+                    # delivered as metadata["photo_context"] — never as `text`
+                    # (OCR in `text` would hit ACT/CODE classification, slash
+                    # hijack, appointments, the NL command gate). Vision runs
+                    # AFTER the courrier gate below, so `mailroom.photos:
+                    # courrier` owns every bare photo and is never double-handled.
+                    # Groups: the mention gate below decides whether a reply
+                    # happens. When that gate is NOT in force (sessions off /
+                    # bot username not yet known) keep the old bubble-only
+                    # behaviour so no group photo ever triggers an unprompted
+                    # reply.
+                    if is_group and not (
+                        HAS_SESSIONS and getattr(self, "_bot_username", "")
+                    ):
+                        await self._handle_photo_vision(chat_id, user_id, is_group, message)
+                        return
+                    bare_photo = True
+                    text = _BARE_PHOTO_TEXT
+                    # fall through to the pipeline (same shape as the voice branch)
                 else:
                     logger.debug(
                         "Non-text message (%s) from user %s — skipping",
@@ -1786,6 +2117,18 @@ class TelegramChannel:
             if not text:
                 return
 
+        # A text file sent with the caption `/read` is a bedtime story, not a document to
+        # analyse: it is read aloud, in parts, by navig.telegram.read_actions. A DM gesture
+        # only — and checked here, before any document handling, so the file is never
+        # offered to a model first. (A chapter cannot be pasted: a message is capped at
+        # 4096 characters, which is why the file is the way in for a long text.)
+        if not is_group and message.get("document"):
+            from navig.telegram import read_actions
+
+            if read_actions.wants_read(message):
+                await read_actions.handle_document(self, chat_id, user_id, message)
+                return
+
         # A photographed LETTER is not a picture to describe: `/courrier` as the caption
         # (or `mailroom.photos: courrier` for every bare photo) files it into the paperwork
         # space with local OCR — and must be decided BEFORE the vision branches below, or
@@ -1801,13 +2144,31 @@ class TelegramChannel:
                 return
 
         # Use caption as text for media with captions (photos, videos with text)
+        # photo_result carries the OCR/description forward so the AGENT sees the
+        # photo's content — without it the model only ever receives the caption
+        # and answers "I don't know what subscription/date you mean" while the
+        # OCR bubble sits right above it in the chat. One unified site for BOTH
+        # photo paths (photo_result/bare_photo are declared above the non-text
+        # branch; the courrier gate above runs first so `mailroom.photos:
+        # courrier` owns bare photos before any cloud vision call).
+        if message.get("photo") and (
+            bare_photo or (not text and message.get("caption"))
+        ):
+            try:
+                photo_result = await self._handle_photo_vision(
+                    chat_id, user_id, is_group, message
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Photo analysis failed: %s", exc)
+        if bare_photo and (
+            photo_result is None
+            or not (photo_result.ocr_text or photo_result.description)
+        ):
+            # Vision produced nothing usable — the failure bubble already told
+            # the user; an agent turn would have nothing to read.
+            return
         if not text and message.get("caption"):
             text = message.get("caption", "")
-            if message.get("photo"):
-                try:
-                    await self._handle_photo_vision(chat_id, user_id, is_group, message)
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug("Captioned photo analysis failed: %s", exc)
 
         # Media captions are conversational payloads for media flows and should
         # not be consumed by pending API-key intake handlers.
@@ -1938,7 +2299,7 @@ class TelegramChannel:
                     await self.send_message(
                         chat_id,
                         "ℹ️ Your previous AI session expired after 24h of inactivity. "
-                        "Use `/agent start` to re-enable auto mode.",
+                        "Send /auto_start to turn auto-replies back on.",
                         parse_mode=None,
                     )
             if auto_state and auto_state.get("mode") == "active":
@@ -2005,9 +2366,22 @@ class TelegramChannel:
 
         # Add session context to metadata
         metadata = telegram_msg.to_metadata()
+        if photo_result is not None:
+            # Plain-text block; the TALK/REASON handlers prepend it to the LLM
+            # message only — never to `text` (mode/act/tiktok gates and the
+            # session store must keep seeing the clean caption).
+            _photo_block = self._compose_photo_context_block(photo_result)
+            if _photo_block:
+                metadata["photo_context"] = _photo_block
         if session:
             metadata["session_key"] = session.session_key
-            metadata["context_messages"] = session.get_context_messages(limit=10)
+            if (getattr(session, "metadata", None) or {}).get("incognito"):
+                # /incognito: a fresh, memory-less conversation — no earlier turns
+                # as context, no recall, nothing saved (see channel_router).
+                metadata["incognito"] = True
+                metadata["context_messages"] = []
+            else:
+                metadata["context_messages"] = session.get_context_messages(limit=10)
             try:
                 import time as _time
                 try:
@@ -2137,10 +2511,19 @@ class TelegramChannel:
                     except Exception:  # noqa: BLE001
                         pass  # best-effort; session overrides are optional
 
+                # Decision-model brief (`navig decider`, shadow-only): ONE Clef call that
+                # answers what the classifiers below each decide on their own. Starts in
+                # the background and returns at once — updates are handled one at a time,
+                # so nothing here may make the bot wait. A no-op while the use is off.
+                if not is_slash_command:
+                    from navig.agent import message_brief
+
+                    message_brief.start(chat_id, message_id, text)
+
                 # First in the chain because it is the most specific: it fires only
                 # for a reply to one known message id, so it can never shadow a
                 # prompt any later handler is waiting for.
-                if await self._handle_pending_journal_input(
+                if not bare_photo and await self._handle_pending_journal_input(
                     chat_id=chat_id,
                     text=text,
                     reply_to_message_id=reply_to_message_id,
@@ -2154,44 +2537,84 @@ class TelegramChannel:
                 # Same shape and the same reason: it fires only for a reply to
                 # the one message id the weigh-in prompt recorded, so a bare
                 # "87.4" sent at any other moment stays an ordinary message.
-                if await self._handle_pending_body_input(
+                if not bare_photo and await self._handle_pending_body_input(
+                    chat_id=chat_id,
+                    text=text,
+                    reply_to_message_id=reply_to_message_id,
+                ):
+                    # The typed answer ("125") is part of the check-in too: a bot may
+                    # delete incoming messages in a private chat, so it goes with the
+                    # prompt and the receipt when the day is tidied.
+                    from navig.telegram import chat_tidy
+
+                    chat_tidy.note(message, routine=True, kind="body")
+                    return
+                # Check-ins (pills: "what time did you take it?") — the same
+                # exact-message-id rule, keyed per prompt so several questions
+                # can be open at once without overwriting each other.
+                if not bare_photo and await self._handle_pending_checkin_input(
                     chat_id=chat_id,
                     text=text,
                     reply_to_message_id=reply_to_message_id,
                 ):
                     return
-                if not is_media_caption:
+                # A bare photo's synthetic text must never be swallowed as the
+                # answer to an open prompt (an API key, an eve/nl/intake reply).
+                if not is_media_caption and not bare_photo:
                     if await self._handle_pending_api_key_input(
                         chat_id=chat_id,
                         user_id=user_id,
                         text=text,
                     ):
                         return
-                if await self._handle_eve_pending_reply(
+                if not bare_photo and await self._handle_eve_pending_reply(
                     chat_id=chat_id,
                     user_id=user_id,
                     text=text,
                 ):
                     return
-                if await self._handle_nl_pending_reply(
+                if not bare_photo and await self._handle_nl_pending_reply(
                     chat_id=chat_id,
                     user_id=user_id,
                     text=text,
                 ):
                     return
-                if await self._handle_intake_reply(
+                if not bare_photo and await self._handle_intake_reply(
                     chat_id=chat_id,
                     user_id=user_id,
                     text=text,
                 ):
                     return
+                # An appointment ("lundi 26 octobre 2026 à 10h30 …") is SAVED with
+                # reminders before any model sees it. Without this the LLM answered
+                # "Rendez-vous noté" with nothing noted — it has no task tools here.
+                # A bare photo's constant text can never be an appointment (and its
+                # OCR must not be either — screenshot dates are not bookings).
+                if not is_slash_command and not bare_photo:
+                    from navig.telegram import appointments
+
+                    if await appointments.maybe_capture(
+                        self,
+                        chat_id=chat_id,
+                        user_id=user_id,
+                        message_id=message_id,
+                        text=text,
+                        is_group=is_group,
+                    ):
+                        return
                 # NL command intent detection: skip for very short messages (1-2
                 # words) — genuine NL command intents ("set reminder", "run disk
                 # check") always use 3+ words; single-word and two-word casual
                 # turns avoid 3 serial async store round-trips here.
                 # Exception: media captions are already context-rich and should
                 # still pass NL intent resolution even when short.
-                if not is_slash_command and (word_count >= 3 or is_media_caption):
+                # A bare photo's constant never qualifies either way (belt and
+                # suspenders: the registry contains everyday words like "photo").
+                if (
+                    not is_slash_command
+                    and not bare_photo
+                    and (word_count >= 3 or is_media_caption)
+                ):
                     if await self._handle_natural_language_request(
                         chat_id=chat_id,
                         user_id=user_id,
@@ -2221,41 +2644,20 @@ class TelegramChannel:
                             )
                         except Exception as _fx:  # noqa: BLE001 -- routing must never block a reply
                             logger.debug("forum routing skipped for /%s: %r", _cmd_bare, _fx)
+                    # Sits above every dispatch path below — the hardcoded commands,
+                    # the dynamic registry dispatch and the cli_template route — so one
+                    # check covers all three.
+                    if _cmd_bare and await self._reject_switched_off_command(
+                        chat_id, _cmd_bare
+                    ):
+                        return
+                    # The bare first token, with any @botname suffix dropped. Exact
+                    # matches below use it so `/skills` is not `/skill` and
+                    # `/status@MyBot` is still `/status`.
                     if _cmd_bare:
-                        from .telegram_commands import (
-                            LOCKED_COMMANDS as _LOCKED,
-                        )
-                        from .telegram_commands import (
-                            get_disabled_commands as _get_disabled,
-                        )
-                        if _cmd_bare not in _LOCKED and _cmd_bare in _get_disabled():
-                            await self.send_message(
-                                chat_id,
-                                f"/{_cmd_bare} is switched off.\n"
-                                "Turn it back on: Deck → Social → Telegram → Commands",
-                                parse_mode=None,
-                            )
-                            return
-                        # Extension gate. Sits above every dispatch path below —
-                        # the hardcoded commands, the dynamic registry dispatch
-                        # and the cli_template route — so one check covers all
-                        # three. Distinct message from the per-command case
-                        # above: the two have different fixes, and pointing at
-                        # the wrong switch is worse than saying nothing.
-                        if _cmd_bare not in _LOCKED:
-                            from .telegram_extensions import (
-                                command_enabled as _ext_ok,
-                            )
-                            from .telegram_extensions import (
-                                disabled_notice as _ext_notice,
-                            )
-                            if not _ext_ok(_cmd_bare):
-                                await self.send_message(
-                                    chat_id, _ext_notice(_cmd_bare), parse_mode=None
-                                )
-                                return
+                        _head, _sep, _rest = cmd.partition(" ")
+                        cmd = f"/{_cmd_bare}{_sep}{_rest}"
 
-                # /models, /model, /routing, /router moved to Deck → Account → Model Tier.
                 if cmd == "/status":
                     await self._handle_status(chat_id, user_id)
                     return
@@ -2271,7 +2673,6 @@ class TelegramChannel:
                     _help_topic = cmd[len("/help "):].strip() if cmd.startswith("/help ") else None
                     await self._handle_help(chat_id, topic=_help_topic)
                     return
-                # /mode moved to Deck → Account → Focus Mode (+ chat NL: "switch focus to deep work").
                 if cmd == "/briefing":
                     await self._handle_briefing(chat_id, user_id, metadata)
                     return
@@ -2281,20 +2682,12 @@ class TelegramChannel:
                 if cmd == "/ping":
                     await self._handle_ping(chat_id, user_id)
                     return
-                # /voiceon, /voiceoff moved to Deck → Account → Voice & Audio
-                # (+ chat NL: "turn voice replies on/off").
-                # /settings moved to Deck → Account section (Focus / Tier / Voice / Persona).
-                # /routing, /router moved to Deck → Account → Model Tier.
-                # /providers /provider moved to Deck (Admin / LLM Providers).
                 if cmd == "/debug":
                     await self._handle_debug(chat_id)
                     return
                 if cmd == "/trace":
                     await self._handle_trace_cmd(chat_id=chat_id, user_id=user_id, text=text)
                     return
-
-                # /big, /small, /coder, /auto moved to Deck → Account → Model Tier
-                # (+ chat NL: "use big model", "switch to small", "auto model").
 
                 # ── /restart: daemon (systemd) vs container (docker) ──
                 if cmd.startswith("/restart"):
@@ -2306,7 +2699,8 @@ class TelegramChannel:
                     )
                     return
 
-                if cmd.startswith("/skill"):
+                # Exact command, not a prefix: `/skills` is not `/skill`.
+                if cmd == "/skill" or cmd.startswith("/skill "):
                     await self._handle_skill_cmd(
                         chat_id=chat_id,
                         user_id=user_id,
@@ -2315,115 +2709,26 @@ class TelegramChannel:
                     )
                     return
 
-                # ── Dynamic Registry Dispatch (New Features) ──
-                if cmd.startswith("/"):
-                    cmd_bare = cmd.split(" ")[0][1:].split("@", 1)[0]
-                    import functools
-                    import inspect
+                # ── Dynamic Registry Dispatch ──
+                if cmd.startswith("/") and await self._dispatch_registry_command(
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    text=text,
+                    username=username,
+                    metadata=metadata,
+                    is_group=is_group,
+                    session=session,
+                ):
+                    return
 
-                    from .telegram_commands import (
-                        _SLASH_REGISTRY,
-                        TelegramCommandsMixin,
-                    )
-
-                    business_chat_only = {"kick", "mute", "unmute", "search"}
-                    if cmd_bare in business_chat_only and not is_group:
-                        await self.send_message(
-                            chat_id,
-                            "This command is only available in business chats (groups/supergroups).",
-                            parse_mode=None,
-                        )
-                        return
-
-                    if cmd_bare in business_chat_only:
-                        if not await self._is_group_admin(chat_id, user_id):
-                            await self.send_message(
-                                chat_id,
-                                "Admin permissions are required for this command in group chats.",
-                                parse_mode=None,
-                            )
-                            return
-
-                    registry_entry = next(
-                        (e for e in _SLASH_REGISTRY if e.command == cmd_bare), None
-                    )
-                    if registry_entry and registry_entry.handler:
-                        handler_func = getattr(self, registry_entry.handler, None)
-                        if handler_func is None:
-                            mixin_handler = getattr(
-                                TelegramCommandsMixin, registry_entry.handler, None
-                            )
-                            if mixin_handler is not None:
-                                handler_func = functools.partial(mixin_handler, self)
-                        # Messaging mixin fallback
-                        if handler_func is None:
-                            try:
-                                from navig.gateway.channels.telegram_messaging_mixin import (
-                                    TelegramMessagingMixin,
-                                )
-
-                                msg_handler = getattr(
-                                    TelegramMessagingMixin,
-                                    registry_entry.handler,
-                                    None,
-                                )
-                                if msg_handler is not None:
-                                    handler_func = functools.partial(msg_handler, self)
-                            except ImportError:
-                                pass
-                        # Messengers mixin fallback
-                        if handler_func is None:
-                            try:
-                                from navig.gateway.channels.telegram_messengers_mixin import (
-                                    TelegramMessengersMixin,
-                                )
-
-                                msgrh = getattr(
-                                    TelegramMessengersMixin,
-                                    registry_entry.handler,
-                                    None,
-                                )
-                                if msgrh is not None:
-                                    handler_func = functools.partial(msgrh, self)
-                            except ImportError:
-                                pass
-                        # Mesh mixin fallback — /nodes, /leader, /mesh, /switch.
-                        # Without this the four registry entries resolve to nothing:
-                        # TelegramChannel's MRO is [TelegramChannel, object], so the
-                        # handlers are only reachable through their defining mixin.
-                        if handler_func is None:
-                            try:
-                                from navig.gateway.channels.telegram_mesh import (
-                                    TelegramMeshMixin,
-                                )
-
-                                meshh = getattr(
-                                    TelegramMeshMixin, registry_entry.handler, None
-                                )
-                                if meshh is not None:
-                                    handler_func = functools.partial(meshh, self)
-                            except ImportError:
-                                pass
-                        if handler_func:
-                            sig = inspect.signature(handler_func)
-                            kwargs = {}
-                            if "chat_id" in sig.parameters:
-                                kwargs["chat_id"] = chat_id
-                            if "user_id" in sig.parameters:
-                                kwargs["user_id"] = user_id
-                            if "username" in sig.parameters:
-                                kwargs["username"] = username
-                            if "metadata" in sig.parameters:
-                                kwargs["metadata"] = metadata
-                            if "is_group" in sig.parameters:
-                                kwargs["is_group"] = is_group
-                            if "text" in sig.parameters:
-                                kwargs["text"] = text
-                            if "session" in sig.parameters:
-                                kwargs["session"] = session
-
-                            await handler_func(**kwargs)
-                            return
+                # ── Commands that moved to the Mini App ──
+                # Before the AI fallback: a bare `/models` used to reach the model as
+                # chat and get an improvised answer. `/big <text>` is still a one-shot
+                # tier prefix (parsed above); only the bare word gets the pointer.
+                if cmd.startswith("/") and await self._reply_moved_command(
+                    chat_id, cmd, is_group=is_group
+                ):
+                    return
 
                 # ── Server / infra commands → navig CLI ──
                 cli_result = self._match_cli_command(text.strip())
@@ -2622,8 +2927,12 @@ class TelegramChannel:
         # "run disk check" or "show memory usage" and route them directly to
         # the dedicated handler, bypassing the LLM pipeline entirely.  This
         # prevents the ACT → search → empty-results → hallucination path.
+        from navig.agent import message_brief
+
+        _brief_msg = metadata.get("message_id")
         if HAS_CLASSIFIER:
             _sys_cmd = _match_system_intent(clean_text)
+            message_brief.note(chat_id, _brief_msg, "system_intent", _sys_cmd or "none")
             if _sys_cmd is not None:
                 handler = getattr(self, f"_handle_{_sys_cmd}_cmd", None)
                 if handler is not None:
@@ -2666,6 +2975,9 @@ class TelegramChannel:
             metadata = {**metadata, "answer_depth": depth}
             if depth == "deep" and mode == "TALK":
                 mode = "REASON"
+            message_brief.note(chat_id, _brief_msg, "depth", depth)
+        if HAS_CLASSIFIER:
+            message_brief.note(chat_id, _brief_msg, "mode", mode)
 
         # Send-side decision block for the debug X-ray (rendered only in debug mode).
         metadata = {
@@ -2803,7 +3115,11 @@ class TelegramChannel:
         try:
             text = self._strip_internal_tags(response)
             explore_qs: list[str] = []
-            if HAS_KEYBOARDS and "EXPLORE_Q:" in text:
+            # No substring pre-check: the extractor's regex is the ONE definition of
+            # the marker (case-insensitive, decorated, fullwidth colon…). A
+            # case-sensitive `"EXPLORE_Q:" in text` gate here disagreed with it, so
+            # `Explore_Q:` or `**EXPLORE_Q**:` was printed raw instead of as buttons.
+            if HAS_KEYBOARDS:
                 try:
                     from navig.gateway.channels.telegram_keyboards import (
                         extract_explore_questions,
@@ -2812,6 +3128,8 @@ class TelegramChannel:
                     text, explore_qs = extract_explore_questions(text)
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; never block the reply
+            # What the voice reply reads: the visible answer, never the marker line.
+            spoken = text
             # A block-rich reply (table / heading / divider / long quote) can't be
             # rendered inside an edited HTML bubble — Telegram HTML has no tables.
             # Signal the caller to delete the placeholder and route through
@@ -2855,16 +3173,22 @@ class TelegramChannel:
                 # which left the "Thinking…" placeholder stuck forever on research replies.
                 keyboard = [*keyboard, extra_krow] if keyboard else [extra_krow]
 
-            # Edit in place. Try HTML; on parse rejection / no-op, retry plain.
-            # If both no-op (streamed text already final), we still own the
-            # bubble — never fall back to deleting a correct message.
+            # Edit in place. Try HTML; on parse rejection, retry plain.
+            # ⚠ If BOTH edits fail, the bubble still shows the raw streamed partial —
+            # unformatted, no buttons (and, before partials were scrubbed, the raw
+            # `EXPLORE_Q: …` line). Report False so the caller deletes it and sends
+            # the reply fresh through _send_response. The streamed partial always
+            # ends in "…", so the final text can never be a "not modified" no-op.
             res = await self.edit_message(
                 chat_id, placeholder_id, text, parse_mode="HTML", keyboard=keyboard
             )
             if res is None:
-                await self.edit_message(
+                res = await self.edit_message(
                     chat_id, placeholder_id, text, parse_mode=None, keyboard=keyboard
                 )
+            if res is None:
+                logger.debug("finalize: both edits of the streamed bubble failed — resending")
+                return False
 
             if HAS_SESSIONS and original_text:
                 try:
@@ -2875,7 +3199,7 @@ class TelegramChannel:
                     pass  # best-effort; failure is non-critical
 
             # Voice reply is additive — the user already has the text bubble.
-            await self._maybe_send_voice(chat_id, user_id, is_group, response)
+            await self._maybe_send_voice(chat_id, user_id, is_group, spoken)
             return True
         except Exception as exc:  # noqa: BLE001
             logger.debug("finalize streamed message failed: %r", exc)
@@ -2926,6 +3250,9 @@ class TelegramChannel:
             "last_edit_at": 0.0,
             "last_sent_text": "",
             "streaming_started": False,
+            # Time-to-first-token is the latency the user actually feels; total
+            # latency alone hides whether a long reply started promptly.
+            "started_at": time.monotonic(),
         }
 
         async def _stream_on_partial(accumulated: str) -> None:
@@ -2938,9 +3265,30 @@ class TelegramChannel:
             _first_token = not _stream_state["streaming_started"]
             _stream_state["streaming_started"] = True
             now = time.monotonic()
+            if _first_token:
+                logger.info(
+                    "telegram reply first token after %dms (deep=%s)",
+                    int((now - _stream_state["started_at"]) * 1000),
+                    is_deep,
+                )
             if not _first_token and (now - _stream_state["last_edit_at"]) < 0.45:
                 return
-            text_to_send = accumulated[-3800:]  # safe under Telegram's 4096 cap
+            # Never stream the EXPLORE_Q marker (or a half-typed one) into the live
+            # bubble: it is a rendering instruction, and if the final edit fails the
+            # partial is what the user is left looking at.
+            visible = accumulated
+            if HAS_KEYBOARDS:
+                try:
+                    from navig.gateway.channels.telegram_keyboards import (
+                        hide_explore_partial,
+                    )
+
+                    visible = hide_explore_partial(accumulated)
+                except Exception:  # noqa: BLE001
+                    visible = accumulated
+            if not visible.strip():
+                return
+            text_to_send = visible[-3800:]  # safe under Telegram's 4096 cap
             pid = _stream_state["placeholder_id"]
             if pid is None:
                 try:
@@ -3049,6 +3397,18 @@ class TelegramChannel:
             except Exception as exc:  # noqa: BLE001
                 logger.debug("stream placeholder delete failed: %r", exc)
 
+        # The progress bubble ("💭 Thinking…") is only the answer bubble when
+        # streaming never created its own placeholder above (line ~3198). When
+        # it DID, this one is an orphan: never reused, never edited, never
+        # deleted — the "Thinking…" stuck forever over every deep reply
+        # (measured 2026-10). Delete it here, in BOTH branches (answered or not).
+        _orphan = _orphan_progress_id(progress, _ph_id)
+        if _orphan is not None:
+            try:
+                await self.delete_message(chat_id, _orphan)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("orphan progress bubble delete failed: %r", exc)
+
         return response or ""
 
     async def _handle_talk(
@@ -3090,11 +3450,15 @@ class TelegramChannel:
             if self._is_debug_mode(user_id)
             else None
         )
+        # Photo context (OCR + description) goes to the LLM only — `text`
+        # stays the clean caption for original_text, limits and recording.
+        _photo_ctx = str(metadata.get("photo_context") or "")
+        _llm_message = f"{_photo_ctx}\n\n{text}" if _photo_ctx else text
         llm_t0 = time.monotonic()
         response = await self._stream_reply(
             chat_id,
             user_id,
-            text,
+            _llm_message,
             metadata,
             original_text=text,
             is_group=is_group,
@@ -3161,6 +3525,9 @@ class TelegramChannel:
             context = state.get("context") or {}
             policy = policy_from_context(context)
             classifier_state, classifier_reason = classify_continuation_state(trigger_text)
+            from navig.agent import judges
+
+            judges.continuation_state(trigger_text, classifier_state)  # shadow-only, background
             context = {
                 **context,
                 "continuation": {
@@ -3193,7 +3560,7 @@ class TelegramChannel:
                     user_id=user_id,
                     chat_id=chat_id,
                     mode="active",
-                    persona=state.get("persona") or "assistant",
+                    persona=state.get("persona"),  # None keeps the stored persona
                     context=context,
                 )
                 return
@@ -3210,7 +3577,7 @@ class TelegramChannel:
                     user_id=user_id,
                     chat_id=chat_id,
                     mode="active",
-                    persona=state.get("persona") or "assistant",
+                    persona=state.get("persona"),  # None keeps the stored persona
                     context=context,
                 )
                 return
@@ -3220,7 +3587,7 @@ class TelegramChannel:
                     user_id=user_id,
                     chat_id=chat_id,
                     mode="active",
-                    persona=state.get("persona") or "assistant",
+                    persona=state.get("persona"),  # None keeps the stored persona
                     context=context,
                 )
                 await self.send_message(
@@ -3273,7 +3640,7 @@ class TelegramChannel:
                 user_id=user_id,
                 chat_id=chat_id,
                 mode="active",
-                persona=state.get("persona") or "assistant",
+                persona=state.get("persona"),  # None keeps the stored persona
                 context=updated_context,
             )
         except Exception as exc:
@@ -3366,6 +3733,11 @@ class TelegramChannel:
                     )
             except Exception:  # noqa: BLE001
                 pass  # buttons are best-effort; never block the reply
+        # Photo context (OCR + description) prepended AFTER the grounding
+        # rebinding and read-buttons note so it survives both — web search
+        # still queried the clean caption above.
+        if _photo_ctx := str(metadata.get("photo_context") or ""):
+            _enriched_text = f"{_photo_ctx}\n\n{_enriched_text}"
         # Deep answers earn rich formatting — tell the model exactly what Telegram
         # renders so it composes a scannable card, not a plain wall of text. Only
         # the research tier gets this; a borderline/quick REASON stays terse.
@@ -3433,6 +3805,15 @@ class TelegramChannel:
             suffix = f"\n\n✅ Done · Model: {model_name}" if model_name else "\n\n✅ Done"
         else:
             suffix = "\n\n✅ Done"
+        if HAS_KEYBOARDS:
+            # CODE renders no explore buttons — but a model that saw the marker in
+            # earlier turns still appends it. Never show the instruction itself.
+            try:
+                from navig.gateway.channels.telegram_keyboards import strip_explore_marker
+
+                response = strip_explore_marker(response)
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; never block the reply
         final_text = f"{response}{suffix}"
 
         self._record_assistant_msg(session, session_manager, chat_id, user_id, response, is_group)
@@ -3847,9 +4228,17 @@ class TelegramChannel:
         text: str,
         is_group: bool,
     ) -> None:
-        """Record assistant reply in session history (best-effort)."""
+        """Record assistant reply in session history (best-effort).
+
+        The EXPLORE_Q marker is stripped first: it is a rendering instruction, and a
+        history full of raw "EXPLORE_Q: …" lines teaches the model to write it on turns
+        that never asked for it.
+        """
         if HAS_SESSIONS and session and session_manager:
             try:
+                from navig.gateway.channels.telegram_keyboards import strip_explore_marker
+
+                text = strip_explore_marker(text or "")
                 session_manager.add_assistant_message(
                     chat_id=chat_id,
                     user_id=user_id,
@@ -3865,13 +4254,17 @@ class TelegramChannel:
         user_id: int,
         is_group: bool,
         message: dict,
-    ) -> None:
+    ) -> PhotoVisionResult | None:
         """Handle a photo message by routing it through the vision model.
 
         Resolves the best vision provider/model from session overrides → config
         → active provider → any connected provider. Downloads the largest photo
         variant from Telegram, sends it to the resolved vision model, and posts
         the description back.
+
+        Returns the OCR text and description for the CALLER to hand to the agent
+        (captioned-photo path), or None on any failure. Bare ``return`` on the
+        failure paths is the None of this union.
         """
         import base64
 
@@ -3970,14 +4363,26 @@ class TelegramChannel:
         )
 
         reply = self._compose_photo_analysis_reply(model_name, description, ocr_text)
-        if reply:
-            await self.send_message(chat_id, reply, parse_mode="HTML")
-        else:
-            await self.send_message(
-                chat_id,
-                "⚠️ Vision analysis failed — the model could not process this image.",
-                parse_mode=None,
-            )
+        # Tagged `system`: the OCR bubble (and the failure notice) is a
+        # machine-generated extract, not conversation — swept the next morning
+        # when telegram.system_cleanup is on. The photo itself is the
+        # operator's own message and is never touched; the agent's history
+        # keeps the full OCR regardless (photo_context is persisted per turn).
+        from navig.telegram import chat_tidy
+
+        with chat_tidy.routine("system"):
+            if reply:
+                await self.send_message(chat_id, reply, parse_mode="HTML")
+            else:
+                await self.send_message(
+                    chat_id,
+                    "⚠️ Vision analysis failed — the model could not process this image.",
+                    parse_mode=None,
+                )
+
+        # Hand both parts back even when only one is non-None (the incident's
+        # shape was OCR-only) — the caller composes what it has for the agent.
+        return PhotoVisionResult(ocr_text, description)
 
     def _extract_photo_ocr_text(self, image_bytes: bytes) -> str | None:
         """Best-effort OCR text extraction for Telegram photos."""
@@ -4012,6 +4417,27 @@ class TelegramChannel:
         short_model = model_name.split("/")[-1].split(":")[-1]
         parts.append(f"\n\n<i>👁 {html.escape(short_model)}</i>")
         return "\n".join(parts)
+
+    def _compose_photo_context_block(self, result: PhotoVisionResult | None) -> str:
+        """Plain-text (NOT HTML) photo context block for the LLM.
+
+        Two consumers, two formats: the chat bubble keeps its 700-char
+        HTML-escaped snippet (``_compose_photo_analysis_reply``); the agent gets
+        this fuller raw text because the decisive date can sit far down a
+        billing page. Never html-escapes — escaping would feed ``&amp;`` garbage
+        to the model. Returns "" when nothing was extracted.
+        """
+        if not result:
+            return ""
+        parts: list[str] = []
+        if result.ocr_text and result.ocr_text.strip():
+            ocr = result.ocr_text.strip()
+            if len(ocr) > _PHOTO_OCR_AGENT_CHARS:
+                ocr = ocr[:_PHOTO_OCR_AGENT_CHARS] + "…"
+            parts.append(f"[Photo attached — OCR]\n{ocr}")
+        if result.description and result.description.strip():
+            parts.append(f"[Image description]\n{result.description.strip()}")
+        return "\n\n".join(parts)
 
     async def _call_vision_api(
         self,
@@ -4588,6 +5014,16 @@ class TelegramChannel:
         from navig.voice.tts import TTSProvider as _P
 
         order = []
+        # Xiaomi MiMo first when keyed: official endpoint, FREE during the
+        # promo (measured live 2026-10-13) — the operator's chosen primary
+        # voice. Falls to Fish Audio → Deepgram → OpenAI → Edge as keyed.
+        if _T._resolve_api_key("mimo", "MIMO_API_KEY"):
+            order.append(_P.MIMO)
+        # OpenRouter Fish Audio when keyed: free-tier-friendly pricing and the
+        # operator's second voice engine — a keyed provider ahead of the paid
+        # ones follows the same "keyed providers first" rule.
+        if _T._resolve_api_key("openrouter", "OPENROUTER_API_KEY"):
+            order.append(_P.OPENROUTER)
         if _T._resolve_api_key("deepgram", "DEEPGRAM_API_KEY"):
             order.append(_P.DEEPGRAM)
         if _T._resolve_api_key("openai", "OPENAI_API_KEY"):
@@ -4796,7 +5232,7 @@ class TelegramChannel:
         # _handle_reason extracts them before calling us (explore_questions kwarg on build()).
         # Every other path (TALK, ACT, …) lands here — extract once, reuse below.
         _explore_qs: list[str] = []
-        if HAS_KEYBOARDS and "EXPLORE_Q:" in response:
+        if HAS_KEYBOARDS:  # no case-sensitive pre-check — the regex decides
             try:
                 from navig.gateway.channels.telegram_keyboards import extract_explore_questions
                 response, _explore_qs = extract_explore_questions(response)
@@ -5509,13 +5945,57 @@ class TelegramChannel:
                     receipt = settled
                 else:
                     await _ba.settle_prompt(self, chat_id, prompt_id, settled)
+            elif _kind == "note":
+                # The treatment note is the weekly card's third answer. Redraw the
+                # card so it shows it, and when this note finished the week, the
+                # completion IS the receipt — one message, not "saved" plus a
+                # second "all done" right under it.
+                finished = await _ba.after_note(self, chat_id, _day)
+                if finished:
+                    receipt = finished
         except Exception as exc:  # noqa: BLE001
-            logger.debug("settling the weigh-in prompt failed: %s", exc)
+            logger.warning("settling the body check-in prompt failed: %s", exc)
 
         # ALWAYS acknowledge, whatever happened to the prompt. One new message per
         # answer — the same receipt the "note" branch has always produced, since it
         # never had an edit to hide behind.
-        await self.send_message(chat_id, receipt)
+        from navig.telegram import chat_tidy  # noqa: PLC0415
+
+        with chat_tidy.routine("body"):
+            await self.send_message(chat_id, receipt)
+        return True
+
+    async def _handle_pending_checkin_input(
+        self,
+        chat_id: int,
+        text: str,
+        reply_to_message_id: int | None,
+    ) -> bool:
+        """Consume a typed answer to an open check-in question (navig.checkins).
+
+        Only a reply to the exact message id of an OPEN prompt is consumed; any
+        other message continues down the chain. Returns False on anything
+        unexpected — a bug here must not make the bot deaf.
+        """
+        if not reply_to_message_id:
+            return False
+        try:
+            from navig.checkins import engine as ci  # noqa: PLC0415
+            from navig.checkins import state as ci_state  # noqa: PLC0415
+
+            if ci_state.get_prompt(chat_id, reply_to_message_id) is None:
+                return False
+            receipt = await ci.consume_reply(self, chat_id, reply_to_message_id, text)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("check-in reply failed (chat=%s): %s", chat_id, exc)
+            await self.send_message(chat_id, "⚠️ Could not record that.")
+            return True
+        if receipt is None:
+            return False
+        from navig.telegram import chat_tidy  # noqa: PLC0415
+
+        with chat_tidy.routine("checkin"):
+            await self.send_message(chat_id, receipt, parse_mode="HTML")
         return True
 
     async def _handle_eve_pending_reply(
@@ -5567,13 +6047,23 @@ class TelegramChannel:
         metadata: dict | None = None,
     ) -> bool:
         """Delegate natural-language → command intent resolver."""
-        # Messaging intent first: "send sms/message to <contact> [in <lang>] …"
-        # (incl. voice). Handles translate + dispatch; short-circuits on success.
-        try:
-            if await self._try_nl_messaging_intent(chat_id, text, metadata):
-                return True
-        except Exception:
-            logger.debug("nl messaging intent failed", exc_info=True)
+        # "send an sms to Alex …" → a DRAFT card with ✅ Send / ✖ Cancel. It never sends
+        # by itself: navig.telegram.send_drafts only sends on the asker's own tap, once.
+        # Private chats only (nobody in a group can draft a message on the owner's
+        # behalf), and only while the Messaging extension is on.
+        if not is_group:
+            try:
+                from navig.gateway.channels.telegram_extensions import is_enabled
+                from navig.gateway.channels.telegram_messaging_mixin import (
+                    TelegramMessagingMixin,
+                )
+
+                if is_enabled("messaging") and await TelegramMessagingMixin._try_nl_messaging_intent(
+                    self, chat_id, text, metadata, user_id=user_id
+                ):
+                    return True
+            except Exception as exc:  # noqa: BLE001 — never block the normal reply path
+                logger.debug("messaging draft intent skipped: %s", exc)
 
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
@@ -5934,6 +6424,159 @@ class TelegramChannel:
 
         await TelegramCommandsMixin._register_commands(self)
 
+    async def _reject_switched_off_command(self, chat_id: int, cmd_bare: str) -> bool:
+        """Tell the user a command is switched off, and return True; else False.
+
+        Two switches, two messages: the per-command toggle (Deck → Commands) and the
+        per-feature extension gate (/extensions). They have different fixes, and
+        pointing at the wrong switch is worse than saying nothing. Locked commands
+        bypass both.
+        """
+        from .telegram_commands import LOCKED_COMMANDS, get_disabled_commands
+
+        if not cmd_bare or cmd_bare in LOCKED_COMMANDS:
+            return False
+        if cmd_bare in get_disabled_commands():
+            await self.send_message(
+                chat_id,
+                f"/{cmd_bare} is switched off.\n"
+                "Turn it back on: Deck → Social → Telegram → Commands",
+                parse_mode=None,
+            )
+            return True
+        from .telegram_extensions import command_enabled, disabled_notice
+
+        if not command_enabled(cmd_bare):
+            await self.send_message(chat_id, disabled_notice(cmd_bare), parse_mode=None)
+            return True
+        return False
+
+    def _resolve_registry_handler(self, handler_name: str):
+        """The callable a registry ``handler`` name runs as, bound to this channel.
+
+        The channel does not inherit its mixins (MRO is ``[TelegramChannel, object]``),
+        so a name the channel does not define is looked up on the mixins that own
+        registry handlers and bound with ``functools.partial`` -- inside it, ``self``
+        IS this channel. Returns None when nothing defines the name.
+        """
+        import functools
+
+        handler = getattr(self, handler_name, None)
+        if handler is not None:
+            return handler
+        from .telegram_commands import TelegramCommandsMixin
+
+        owners: list[type] = [TelegramCommandsMixin]
+        for module, cls_name in (
+            ("navig.gateway.channels.telegram_messaging_mixin", "TelegramMessagingMixin"),
+            ("navig.gateway.channels.telegram_messengers_mixin", "TelegramMessengersMixin"),
+            # /nodes, /leader, /mesh, /switch
+            ("navig.gateway.channels.telegram_mesh", "TelegramMeshMixin"),
+        ):
+            try:
+                import importlib
+
+                owners.append(getattr(importlib.import_module(module), cls_name))
+            except (ImportError, AttributeError):
+                continue
+        for owner in owners:
+            fn = getattr(owner, handler_name, None)
+            if fn is not None:
+                return functools.partial(fn, self)
+        return None
+
+    async def _dispatch_registry_command(
+        self,
+        *,
+        chat_id: int,
+        user_id: int,
+        text: str,
+        username: str = "",
+        metadata: dict | None = None,
+        is_group: bool = False,
+        session: Any = None,
+    ) -> bool:
+        """Run a slash command through ``_SLASH_REGISTRY``. True when it was handled.
+
+        The ONE path a typed command and an inline ``nav:cmd:/x`` button share, so a
+        button can never drift from what typing the command does. Arguments are
+        passed by name, only those the handler declares.
+        """
+        import inspect
+
+        from .telegram_commands import _SLASH_REGISTRY, bare_command
+
+        cmd_bare = bare_command(text)
+        if not cmd_bare:
+            return False
+
+        business_chat_only = {"kick", "mute", "unmute", "search"}
+        if cmd_bare in business_chat_only and not is_group:
+            await self.send_message(
+                chat_id,
+                "This command is only available in business chats (groups/supergroups).",
+                parse_mode=None,
+            )
+            return True
+        if cmd_bare in business_chat_only and not await self._is_group_admin(chat_id, user_id):
+            await self.send_message(
+                chat_id,
+                "Admin permissions are required for this command in group chats.",
+                parse_mode=None,
+            )
+            return True
+
+        entry = next((e for e in _SLASH_REGISTRY if e.command == cmd_bare), None)
+        if entry is None or not entry.handler:
+            return False
+        handler_func = self._resolve_registry_handler(entry.handler)
+        if handler_func is None:
+            return False
+
+        available = {
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "username": username,
+            "metadata": metadata if metadata is not None else {},
+            "is_group": is_group,
+            "text": text,
+            "session": session,
+        }
+        params = inspect.signature(handler_func).parameters
+        await handler_func(**{k: v for k, v in available.items() if k in params})
+        return True
+
+    async def _reply_moved_command(
+        self, chat_id: int, cmd: str, *, is_group: bool = False
+    ) -> bool:
+        """Answer a command that moved to the Mini App with where it lives now.
+
+        True when *cmd* named one. ``/big`` ``/small`` ``/coder`` followed by text are
+        one-shot tier prefixes handled before this; only the bare word lands here.
+        A ``web_app`` button only works in a private chat, so a group gets the text.
+        """
+        from .telegram_commands import moved_command_notice
+
+        notice = moved_command_notice(cmd)
+        if notice is None:
+            return False
+        deck_url = None
+        if not is_group:
+            try:
+                deck_url = self._get_deck_url()
+            except Exception as exc:  # noqa: BLE001 -- the pointer still reads without a button
+                logger.debug("deck url unavailable for moved-command pointer: %s", exc)
+        if deck_url:
+            await self.send_message(
+                chat_id,
+                notice,
+                parse_mode=None,
+                keyboard=[[{"text": "⚙️ Open Settings", "web_app": {"url": deck_url}}]],
+            )
+        else:
+            await self.send_message(chat_id, notice, parse_mode=None)
+        return True
+
     async def _is_group_admin(self, chat_id: int, user_id: int) -> bool:
         """Check if user has admin rights in the current group chat."""
         member = await self._api_call("getChatMember", {"chat_id": chat_id, "user_id": user_id})
@@ -6055,8 +6698,15 @@ class TelegramChannel:
         parse_mode: str | None = "HTML",
         reply_to_message_id: int | None = None,
         keyboard: list[list[dict]] | None = None,
+        business_connection_id: str | None = None,
     ) -> dict | None:
-        """Send a message to a chat."""
+        """Send a message to a chat.
+
+        ``business_connection_id`` posts ON BEHALF OF a Telegram Business
+        connection (i.e. as the business account). Without it a send into a
+        business chat is rejected — Telegram treats it as the bot DMing a user
+        who never started it ("Forbidden: bot can't initiate conversation").
+        """
         if parse_mode == "HTML":
             text = self._auto_markdown_to_html(text)
 
@@ -6071,6 +6721,7 @@ class TelegramChannel:
                 return await self._send_long(
                     chat_id, text, parse_mode,
                     reply_to_message_id=reply_to_message_id, keyboard=keyboard,
+                    business_connection_id=business_connection_id,
                 )
         except Exception:  # noqa: BLE001 — the length guard must never block a send
             pass
@@ -6088,8 +6739,11 @@ class TelegramChannel:
         if keyboard:
             data["reply_markup"] = self._reply_markup(keyboard)
 
+        if business_connection_id:
+            data["business_connection_id"] = business_connection_id
+
         result = await self._api_call("sendMessage", data)
-        if result is None and parse_mode:
+        if result is None and parse_mode and _should_retry_without_markup():
             retry_data = {k: v for k, v in data.items() if k != "parse_mode"}
             result = await self._api_call("sendMessage", retry_data)
         return result
@@ -6116,6 +6770,7 @@ class TelegramChannel:
         *,
         reply_to_message_id: int | None = None,
         keyboard: list[list[dict]] | None = None,
+        business_connection_id: str | None = None,
     ) -> dict | None:
         """Split an over-length body into ordered messages and send them.
 
@@ -6163,9 +6818,13 @@ class TelegramChannel:
                 data["reply_to_message_id"] = reply_to_message_id
             if is_last and keyboard:
                 data["reply_markup"] = self._reply_markup(keyboard)
+            if business_connection_id:
+                # Every part posts as the business account — a split transcript
+                # whose middle arrived as the BOT would be a different sender.
+                data["business_connection_id"] = business_connection_id
             res = await self._api_call("sendMessage", data)
-            if res is None and parse_mode:
-                retry = {k: v for k, v in data.items() if k != "parse_mode"}
+            if res is None and parse_mode and _should_retry_without_markup():
+                retry ={k: v for k, v in data.items() if k != "parse_mode"}
                 res = await self._api_call("sendMessage", retry)
             if res is None:
                 logger.error(
@@ -6243,8 +6902,10 @@ class TelegramChannel:
         result = await self._api_call("editMessageText", payload)
         if result is not None:
             return result
-        if parse_mode:
-            # Retry without parse_mode for HTML parse errors
+        if parse_mode and _should_retry_without_markup():
+            # Retry without parse_mode for HTML parse errors ONLY — never for
+            # "message is not modified", or an identical refresh rewrites the
+            # card with its tags showing (see _is_entity_parse_error).
             retry_payload = {k: v for k, v in payload.items() if k != "parse_mode"}
             return await self._api_call("editMessageText", retry_payload)
         return None
@@ -6427,6 +7088,7 @@ class TelegramChannel:
             async with self._session.post(f"{self.base_url}/sendVoice", data=form) as resp:
                 result = await resp.json()
                 if result.get("ok"):
+                    _tidy_note(result.get("result"))
                     return result.get("result")
                 desc = str(result.get("description", ""))
                 # Privacy block or codec mismatch → deliver as a normal audio clip.
@@ -6443,6 +7105,7 @@ class TelegramChannel:
             async with self._session.post(f"{self.base_url}/sendAudio", data=form) as resp:
                 result = await resp.json()
                 if result.get("ok"):
+                    _tidy_note(result.get("result"))
                     return result.get("result")
                 logger.warning("sendAudio fallback error: %s", result.get("description"))
                 return None
@@ -6503,6 +7166,7 @@ class TelegramChannel:
         parse_mode: str | None = "HTML",
         reply_to_message_id: int | None = None,
         extra_fields: dict[str, str] | None = None,
+        business_connection_id: str | None = None,
     ) -> dict | None:
         """Upload media via a multipart Bot API call (sendPhoto/Video/Document/…).
 
@@ -6513,6 +7177,11 @@ class TelegramChannel:
           ``parse_mode`` so the media goes out with a plain caption instead of being
           silently dropped — the previous behaviour returned ``None`` and lost the
           whole upload on any caption parse error.
+
+        ``business_connection_id`` posts the media ON BEHALF OF a business
+        connection (as the business account) — the one route Telegram accepts
+        for a business chat; without it the upload is rejected like any other
+        message to a user who never started the bot.
         """
         if not self._session or not aiohttp:
             return None
@@ -6537,6 +7206,8 @@ class TelegramChannel:
                 form.add_field("caption", caption)
             if pm:
                 form.add_field("parse_mode", pm)
+            if business_connection_id:
+                form.add_field("business_connection_id", business_connection_id)
             for key, value in (extra_fields or {}).items():
                 form.add_field(key, value)
             self._add_reply_fields(form, reply_to_message_id)
@@ -6547,6 +7218,7 @@ class TelegramChannel:
             async with self._session.post(url, data=_build(parse_mode)) as resp:
                 result = await resp.json()
             if result.get("ok"):
+                _tidy_note(result.get("result"))
                 return result.get("result")
             desc = result.get("description") or ""
             if caption and parse_mode and self._is_caption_parse_error(desc):
@@ -6555,6 +7227,7 @@ class TelegramChannel:
                 async with self._session.post(url, data=_build(None)) as resp2:
                     result = await resp2.json()
                 if result.get("ok"):
+                    _tidy_note(result.get("result"))
                     return result.get("result")
                 desc = result.get("description") or desc
             logger.warning("%s API error: %s", method, desc)
@@ -6570,6 +7243,7 @@ class TelegramChannel:
         caption: str | None = None,
         parse_mode: str | None = "HTML",
         reply_to_message_id: int | None = None,
+        business_connection_id: str | None = None,
     ) -> dict | None:
         """Send a photo message to a chat (caption rendered as HTML)."""
         return await self._post_media(
@@ -6577,6 +7251,7 @@ class TelegramChannel:
             filename="image.jpeg", content_type="image/jpeg",
             caption=caption, parse_mode=parse_mode,
             reply_to_message_id=reply_to_message_id,
+            business_connection_id=business_connection_id,
         )
 
     async def send_media_group(
@@ -6641,12 +7316,14 @@ class TelegramChannel:
             async with self._session.post(url, data=_build(parse_mode)) as resp:
                 result = await resp.json()
             if result.get("ok"):
+                _tidy_note(result.get("result"))
                 return result.get("result")
             desc = result.get("description") or ""
             if caption and parse_mode and self._is_caption_parse_error(desc):
                 async with self._session.post(url, data=_build(None)) as resp2:
                     result = await resp2.json()
                 if result.get("ok"):
+                    _tidy_note(result.get("result"))
                     return result.get("result")
                 desc = result.get("description") or desc
             logger.warning("sendMediaGroup API error: %s", desc)
@@ -6663,6 +7340,7 @@ class TelegramChannel:
         caption: str | None = None,
         parse_mode: str | None = "HTML",
         reply_to_message_id: int | None = None,
+        business_connection_id: str | None = None,
     ) -> dict | None:
         """Send a document/file to a chat (sendDocument Bot API)."""
         return await self._post_media(
@@ -6670,6 +7348,7 @@ class TelegramChannel:
             filename=filename, content_type="application/octet-stream",
             caption=caption, parse_mode=parse_mode,
             reply_to_message_id=reply_to_message_id,
+            business_connection_id=business_connection_id,
         )
 
     async def send_audio(
@@ -6683,6 +7362,7 @@ class TelegramChannel:
         performer: str | None = None,
         duration: int | None = None,
         reply_to_message_id: int | None = None,
+        business_connection_id: str | None = None,
     ) -> dict | None:
         """Send an audio track to a chat (sendAudio Bot API).
 
@@ -6704,6 +7384,7 @@ class TelegramChannel:
             caption=caption, parse_mode=parse_mode,
             reply_to_message_id=reply_to_message_id,
             extra_fields=extra or None,
+            business_connection_id=business_connection_id,
         )
 
     async def send_video(
@@ -6716,8 +7397,16 @@ class TelegramChannel:
         width: int | None = None,
         height: int | None = None,
         reply_to_message_id: int | None = None,
+        supports_streaming: bool | None = None,
+        business_connection_id: str | None = None,
     ) -> dict | None:
-        """Send a video to a chat (sendVideo Bot API)."""
+        """Send a video to a chat (sendVideo Bot API).
+
+        ``supports_streaming=True`` marks the upload suitable for in-flight
+        playback (Telegram then streams instead of buffering; SCHEMA's legacy
+        poster always set it for episode MP4s). ``None`` omits the field — the
+        pre-existing wire behaviour, so existing callers are byte-identical.
+        """
         extra: dict[str, str] = {}
         if duration is not None:
             extra["duration"] = str(duration)
@@ -6725,12 +7414,15 @@ class TelegramChannel:
             extra["width"] = str(width)
         if height is not None:
             extra["height"] = str(height)
+        if supports_streaming is not None:
+            extra["supports_streaming"] = "true" if supports_streaming else "false"
         return await self._post_media(
             "sendVideo", chat_id, "video", video_data,
             filename="video.mp4", content_type="video/mp4",
             caption=caption, parse_mode=parse_mode,
             reply_to_message_id=reply_to_message_id,
             extra_fields=extra or None,
+            business_connection_id=business_connection_id,
         )
 
     # ── Rich messages (sendRichMessage / sendRichMessageDraft) ───────────────
@@ -6799,6 +7491,7 @@ class TelegramChannel:
                 result = await resp.json()
             if result.get("ok"):
                 self._rich_supported = True
+                _tidy_note(result.get("result"))
                 return result.get("result")
             desc = (result.get("description") or "").lower()
             if (resp.status == 404 or "not found" in desc or "unknown method" in desc
@@ -7111,6 +7804,12 @@ from navig.gateway.channels.telegram_commands import (  # noqa: E402 - after the
 from navig.gateway.channels.telegram_features import (  # noqa: E402 - after the class by necessity
     TelegramFeaturesMixin as _TelegramFeaturesMixin,
 )
+from navig.gateway.channels.telegram_mesh import (  # noqa: E402 - after the class by necessity
+    TelegramMeshMixin as _TelegramMeshMixin,
+)
+from navig.gateway.channels.telegram_messaging_mixin import (  # noqa: E402 - after the class by necessity
+    TelegramMessagingMixin as _TelegramMessagingMixin,
+)
 from navig.gateway.channels.telegram_voice import (  # noqa: E402 - after the class by necessity
     TelegramVoiceMixin as _TelegramVoiceMixin,
 )
@@ -7219,8 +7918,68 @@ _FORUM_METHODS = (
     "_create_topic",
 )
 
+# Siblings that command handlers reach as `self._x()`. Command dispatch hands the handler
+# `functools.partial(mixin_fn, channel)`, so inside it `self` IS the channel -- and a helper
+# that lives only on the mixin is an AttributeError there:
+_COMMAND_INTERNAL_METHODS = (
+    "_start_system_prompt",       # /start -> "oops, hit an error: ... '_start_system_prompt'"
+    "_maybe_reflect_on_journal",  # /journal: the reflection was skipped on EVERY entry
+                                  # (caught, logged at WARN, never reached the user)
+    "_handle_habits",             # bare /workout -> AttributeError
+    "_handle_plan_cmd",
+    "_handle_plans_cmd",
+    "_handle_space",
+    "_handle_user",
+    "_parse_remindme_request",
+)
+
+# The same shape in every other mixin the channel hands itself to. Each list is the
+# mixin's full set of `self._sibling` names that the channel does not define itself;
+# tests/regression/test_telegram_mixin_siblings_resolve.py recomputes it and fails on drift.
+_AUTOHEAL_INTERNAL_METHODS = (
+    "_send_autoheal_status",       # /autoheal status
+)
+_CHECKLIST_METHODS = (
+    "_get_checklist_config",       # reached by _try_send_checklist
+    "_try_send_checklist",
+)
+_INLINE_METHODS = (                # @bot <query> in any chat
+    "_answer_inline_error",
+    "_answer_inline_hint",
+    "_answer_inline_locked",
+    "_build_inline_results",
+    "_get_inline_config",
+    "_inline_ask_ai",
+)
+_MESH_METHODS = (                  # /mesh … commands
+    "_mesh_get",
+    "_unwrap",
+)
+_MESSAGING_METHODS = (             # /threads, /reply
+    "_handle_messaging_threads",
+    "_messaging_dispatch",
+    "_messaging_reply_to_thread",
+)
+_VOICE_INTERNAL_METHODS = (        # spoken replies
+    "_generate_audio_title",
+    "_resolve_api_key",
+    "_send_audio_bytes",
+    "_send_voice_file",
+    "_send_voice_reply",
+    "_handle_audio_file_message",  # an .mp3/.wav sent to the bot: _process_update calls it
+                                   # for the Transcribe/Identify/Info card, and it raised
+                                   # AttributeError on every audio file instead
+)
+
 _MIXIN_BINDINGS = (
     (_TelegramCommandsMixin, _CALLBACK_REACHABLE_COMMAND_METHODS),
+    (_TelegramCommandsMixin, _COMMAND_INTERNAL_METHODS),
+    (_AutoHealMixin, _AUTOHEAL_INTERNAL_METHODS),
+    (_TelegramMeshMixin, _MESH_METHODS),
+    (_TelegramMessagingMixin, _MESSAGING_METHODS),
+    (_TelegramVoiceMixin, _VOICE_INTERNAL_METHODS),
+    *(((_TelegramInlineMixin, _INLINE_METHODS),) if HAS_INLINE else ()),
+    *(((_TelegramChecklistMixin, _CHECKLIST_METHODS),) if HAS_CHECKLIST else ()),
     # The forum mixin is imported under try/except at the top of this module; bind it only
     # when that import succeeded, or a missing optional module would NameError here.
     *(((_TelegramForumMixin, _FORUM_METHODS),) if HAS_FORUM else ()),
@@ -7232,7 +7991,10 @@ _MIXIN_BINDINGS = (
 
 for _mixin, _names in _MIXIN_BINDINGS:
     for _name in _names:
-        _impl = getattr(_mixin, _name, None)
+        # getattr_static, not getattr: a plain getattr unwraps a @staticmethod into a bare
+        # function, which setattr would then bind as an INSTANCE method -- the channel would
+        # arrive as the first argument (`_start_system_prompt(self=tod, ...)`).
+        _impl = inspect.getattr_static(_mixin, _name, None)
         if _impl is None:  # pragma: no cover - a rename should fail loudly, not silently unbind
             raise AttributeError(
                 f"{_mixin.__name__} has no {_name!r}; the binding list is stale and the "

@@ -1,0 +1,17 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: audio-generate/game-ui-sound
+name: Game UI Sound
+tool: audio.generate
+layer: style
+category: Sound design
+tags:
+- sfx
+description: Crisp game UI confirm sound.
+instructions: 'Crisp game UI confirm sound: short pleasant tonal blip with a quick bright attack and no
+  tail.'
+params:
+  kind: sfx
+  duration_s: 0.6
+  negative: voice, noise, long decay

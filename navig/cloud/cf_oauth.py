@@ -45,6 +45,10 @@ SCOPES = [
     "user:read",
     "workers_scripts:write",
     "workers_routes:write",
+    # Workers AI — lets the decision model (`navig decider`, Clef) run on the user's own
+    # account. Logins granted before this scope existed lack it; the decider detects the
+    # 401/403 and tells the user to re-run `navig lighthouse login`.
+    "ai:write",
     "offline_access",
 ]
 
@@ -84,12 +88,22 @@ def _expires_at(expires_in: int | None) -> str:
     return when.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# Centred by a fixed full-viewport overlay, not a 100vh flex body: an embedding
+# browser that lays the tab out before its final size collapsed the old one to
+# ~0 width and clipped the card off the left edge.
 _DONE_HTML = (
-    b"<!doctype html><meta charset=utf-8><title>NAVIG</title>"
-    b"<body style='font-family:system-ui;background:#050505;color:#eee;"
-    b"display:flex;align-items:center;justify-content:center;height:100vh'>"
-    b"<div style='text-align:center'><div style='font-size:42px'>\xf0\x9f\x97\xbc</div>"
-    b"<h2>Cloudflare connected</h2><p>You can close this tab and return to NAVIG.</p></div>"
+    b"<!doctype html><html lang=en><meta charset=utf-8>"
+    b"<meta name=viewport content='width=device-width,initial-scale=1'>"
+    b"<title>NAVIG</title>"
+    b"<body style='margin:0;background:#050505;color:#eee;"
+    b"font-family:system-ui,-apple-system,Segoe UI,sans-serif'>"
+    b"<main style='position:fixed;inset:0;display:grid;place-items:center;"
+    b"padding:24px;box-sizing:border-box'>"
+    b"<div style='text-align:center;width:min(420px,100%)'>"
+    b"<div style='font-size:42px;line-height:1'>\xf0\x9f\x97\xbc</div>"
+    b"<h2 style='margin:16px 0 8px'>Cloudflare connected</h2>"
+    b"<p style='margin:0;color:#aaa'>You can close this tab and return to NAVIG.</p>"
+    b"</div></main>"
 )
 
 

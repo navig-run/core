@@ -1,0 +1,21 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: text/format/book-chapter
+name: Book Chapter
+tool: text
+layer: format
+category: Format
+tags:
+- book
+- fiction
+- format
+description: 'Prose fiction: a scene or chapter in plain Markdown, no commentary.'
+params:
+  kind: draft
+instructions: 'Return only the prose of the scene or chapter. Start with a ''## '' scene heading.
+
+  Use paragraphs and dialogue; no bullet points, no notes to the author, no summary at the end.
+
+  Keep continuity with any approved context provided; if something you need is not in it, write around
+  it rather than inventing established facts.'

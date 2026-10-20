@@ -440,8 +440,6 @@ async def complete_oauth(
 ) -> Connection:
     """Exchange the pasted code for credentials, store them in the vault, and
     create a routable subscription connection (Claude or ChatGPT)."""
-    import json as _json
-
     store = store or get_connection_store()
     pending = store.take_pending_oauth(handle)  # single-use — consumed on read
     if pending is None:
@@ -501,55 +499,7 @@ async def complete_oauth(
             raise
         if not tokens.get("access_token"):
             raise ConnectionValidationError("Token exchange returned no access token.")
-        bundle = _json.dumps(tokens)
-        account_uuid = tokens.get("account_uuid")
-        account_email = tokens.get("account_email")
-        meta_id = {k: v for k, v in {
-            "account_uuid": account_uuid,
-            "account_email": account_email,
-            "organization": tokens.get("organization"),
-        }.items() if v}
-        # Label by email so multiple Claude subscriptions are distinguishable.
-        display = name or (f"Claude — {account_email}" if account_email else None)
-
-        existing = [c for c in store.list() if c.template_id == "claude-max"]
-        # Re-login updates the SAME account (matched by uuid); DIFFERENT accounts
-        # stay as separate connections (never blindly delete another account).
-        match = None
-        if account_uuid:
-            match = next((c for c in existing
-                          if (c.metadata or {}).get("account_uuid") == account_uuid), None)
-        elif name is None and len(existing) == 1:
-            # No account id and no explicit name → single-account convenience.
-            match = existing[0]
-
-        if match is not None:
-            if match.secret_ref:
-                store.update_secret(match.secret_ref, bundle)
-            else:
-                match.secret_ref = store.store_secret("claude-max", bundle, provider="claude-max")
-            if display:
-                match.name = display
-            if meta_id:
-                match.metadata = {**(match.metadata or {}), **meta_id}
-            store.update(match, expected_revision=match.revision)
-            # Re-login replaced the token bundle — drop any cached resolution so
-            # dispatch never serves the pre-login bearer for the TTL window.
-            from navig.providers.inference import invalidate_credential_cache
-
-            invalidate_credential_cache("anthropic")
-            return await revalidate(match.connection_id, store=store)
-
-        # New account (or first login) → create; leave other accounts untouched.
-        secret_ref = store.store_secret("claude-max", bundle, provider="claude-max")
-        conn = await connect_provider("claude-max", name=display, store=store,
-                                      existing_secret_ref=secret_ref)
-        if meta_id:
-            fresh = store.get(conn.connection_id)
-            fresh.metadata = {**(fresh.metadata or {}), **meta_id}
-            store.update(fresh, expected_revision=fresh.revision)
-            return store.get(conn.connection_id)
-        return conn
+        return await _save_claude_tokens(tokens, name=name, store=store)
 
     # ChatGPT/Codex → exchange the id_token for a real OpenAI API key, then store
     # it as a standard openai connection (routable via the OpenAI native path).
@@ -567,6 +517,187 @@ async def complete_oauth(
     secret_ref = store.store_secret("chatgpt", api_key, provider="chatgpt")
     return await connect_provider("chatgpt", name=name, store=store,
                                   existing_secret_ref=secret_ref)
+
+
+async def _save_claude_tokens(
+    tokens: dict[str, Any], *, name: str | None, store: ConnectionStore
+) -> Connection:
+    """Store a Claude token bundle as the ``claude-max`` connection it belongs to.
+
+    Shared by the browser login (:func:`complete_oauth`) and the NAVIG OS hand-off
+    (:func:`import_claude_oauth`), so both match an existing account the same way.
+    """
+    import json as _json
+
+    bundle = _json.dumps(tokens)
+    account_uuid = tokens.get("account_uuid")
+    account_email = tokens.get("account_email")
+    meta_id = {k: v for k, v in {
+        "account_uuid": account_uuid,
+        "account_email": account_email,
+        "organization": tokens.get("organization"),
+    }.items() if v}
+    # Label by email so multiple Claude subscriptions are distinguishable.
+    display = name or (f"Claude — {account_email}" if account_email else None)
+
+    existing = [c for c in store.list() if c.template_id == "claude-max"]
+    # Re-login updates the SAME account (matched by uuid); DIFFERENT accounts
+    # stay as separate connections (never blindly delete another account).
+    match = None
+    if account_uuid:
+        match = next((c for c in existing
+                      if (c.metadata or {}).get("account_uuid") == account_uuid), None)
+    elif name is None and len(existing) == 1:
+        # No account id and no explicit name → single-account convenience.
+        match = existing[0]
+
+    if match is not None:
+        if match.secret_ref:
+            store.update_secret(match.secret_ref, bundle)
+        else:
+            match.secret_ref = store.store_secret("claude-max", bundle, provider="claude-max")
+        if display:
+            match.name = display
+        if meta_id:
+            match.metadata = {**(match.metadata or {}), **meta_id}
+        store.update(match, expected_revision=match.revision)
+        # Re-login replaced the token bundle — drop any cached resolution so
+        # dispatch never serves the pre-login bearer for the TTL window.
+        from navig.providers.inference import invalidate_credential_cache
+
+        invalidate_credential_cache("anthropic")
+        return await revalidate(match.connection_id, store=store)
+
+    # New account (or first login) → create; leave other accounts untouched.
+    secret_ref = store.store_secret("claude-max", bundle, provider="claude-max")
+    conn = await connect_provider("claude-max", name=display, store=store,
+                                  existing_secret_ref=secret_ref)
+    if meta_id:
+        fresh = store.get(conn.connection_id)
+        fresh.metadata = {**(fresh.metadata or {}), **meta_id}
+        store.update(fresh, expected_revision=fresh.revision)
+        return store.get(conn.connection_id)
+    return conn
+
+
+def _normalise_claude_bundle(tokens: dict[str, Any]) -> dict[str, Any]:
+    """Accept a Claude token bundle in either app's shape, return core's shape.
+
+    NAVIG OS stores ``{accessToken, refreshToken, expiresAt}`` with ``expiresAt`` in
+    MILLISECONDS; core stores ``{access_token, refresh_token, expires_at}`` in
+    SECONDS. Treating milliseconds as seconds would read a token as valid for
+    another 50 000 years and never refresh it.
+    """
+    if not isinstance(tokens, dict):
+        raise ConnectionValidationError("Expected a token object.")
+    access = str(tokens.get("access_token") or tokens.get("accessToken") or "").strip()
+    refresh = str(tokens.get("refresh_token") or tokens.get("refreshToken") or "").strip()
+    if not access or not refresh:
+        raise ConnectionValidationError(
+            "A Claude login needs both an access token and a refresh token."
+        )
+    raw_exp = tokens.get("expires_at", tokens.get("expiresAt"))
+    expires_at: int | None = None
+    if raw_exp not in (None, ""):
+        try:
+            exp = float(raw_exp)
+        except (TypeError, ValueError) as exc:
+            raise ConnectionValidationError("expires_at must be a number.") from exc
+        expires_at = int(exp / 1000) if exp > 1e11 else int(exp)
+    out: dict[str, Any] = {
+        "access_token": access,
+        "refresh_token": refresh,
+        "expires_at": expires_at,
+        "scopes": list(tokens.get("scopes") or []),
+    }
+    for key, alt in (("account_uuid", "accountUuid"), ("account_email", "accountEmail"),
+                     ("organization", "organization")):
+        val = tokens.get(key) or tokens.get(alt)
+        if val:
+            out[key] = val
+    return out
+
+
+async def import_claude_oauth(
+    tokens: dict[str, Any], *, name: str | None = None, store: ConnectionStore | None = None
+) -> Connection:
+    """Take over a Claude subscription login that another NAVIG surface already holds.
+
+    NAVIG OS signs in to Claude on its own. Copying that login here would leave two
+    holders of one refresh token, and a refresh token is likely single-use: the
+    first app to refresh would sign the other one out. So this is a HAND-OFF. After
+    it, the brain is the only refresher, and the OS borrows short-lived access
+    tokens through :func:`lease_claude_access_token` instead of refreshing its own
+    copy.
+    """
+    store = store or get_connection_store()
+    return await _save_claude_tokens(_normalise_claude_bundle(tokens), name=name, store=store)
+
+
+def _claude_connection(store: ConnectionStore) -> Connection | None:
+    """The Claude subscription to lease from: the default if it is one, else the first."""
+    conns = [c for c in store.list() if c.template_id == "claude-max" and c.secret_ref]
+    if not conns:
+        return None
+    default = store.get_default()
+    if default is not None and default.template_id == "claude-max" and default.secret_ref:
+        return default
+    return conns[0]
+
+
+async def lease_claude_access_token(*, store: ConnectionStore | None = None) -> dict[str, Any]:
+    """A currently-valid Claude access token for a LOCAL surface (NAVIG OS).
+
+    Refreshes under :func:`claude_oauth.refresh_lock` when the token is within
+    :data:`claude_oauth.REFRESH_BUFFER_S` of expiry. Returns the access token and
+    its expiry, never the refresh token: the refresh token is what makes a login
+    durable, and it stays on the brain.
+
+    Raises :class:`ConnectionValidationError` when there is no Claude login to
+    lease, and ``RuntimeError`` when a refresh the token needed failed.
+    """
+    import json as _json
+
+    from navig.providers import claude_oauth
+
+    store = store or get_connection_store()
+    conn = _claude_connection(store)
+    if conn is None:
+        raise ConnectionValidationError("No Claude subscription is signed in on the brain.")
+
+    def _read() -> dict[str, Any]:
+        raw = (store.read_secret(conn.secret_ref) or "").strip()
+        try:
+            data = _json.loads(raw) if raw.startswith("{") else {"access_token": raw}
+        except ValueError:
+            data = {}
+        if not data.get("access_token"):
+            raise ConnectionValidationError("The stored Claude login is unreadable.")
+        return data
+
+    def _fresh_enough(data: dict[str, Any]) -> bool:
+        exp = data.get("expires_at")
+        return not exp or time.time() < float(exp) - claude_oauth.REFRESH_BUFFER_S
+
+    bundle = _read()
+    if not _fresh_enough(bundle):
+        async with claude_oauth.refresh_lock():
+            bundle = _read()  # a refresher that held the lock may have rotated it
+            if not _fresh_enough(bundle):
+                if not bundle.get("refresh_token"):
+                    raise RuntimeError("The Claude login expired and has no refresh token.")
+                fresh = await claude_oauth.refresh_tokens(bundle["refresh_token"])
+                bundle = {**bundle, **{k: v for k, v in fresh.items() if v}}
+                store.update_secret(conn.secret_ref, _json.dumps(bundle))
+                from navig.providers.inference import invalidate_credential_cache
+
+                invalidate_credential_cache("anthropic")
+    return {
+        "access_token": bundle["access_token"],
+        "expires_at": bundle.get("expires_at"),
+        "account_email": bundle.get("account_email") or (conn.metadata or {}).get("account_email"),
+        "connection_id": conn.connection_id,
+    }
 
 
 async def complete_codex_oauth(handle: str, code: str, *, name: str | None = None,
@@ -826,10 +957,12 @@ def disconnect(connection_id: str, store: ConnectionStore | None = None) -> bool
         if store.get_setting("default_connection_id") == connection_id:
             store.set_setting("default_connection_id", None)
         invalidate_credential_cache(provider_id)  # dispatch must not reuse it
+        clear_catalog_cache(connection_id)
         return True
     removed = store.delete(connection_id)
     if removed:
         invalidate_credential_cache()  # dispatch must re-resolve immediately
+        clear_catalog_cache(connection_id)  # a re-added connection must list afresh
     return removed
 
 
@@ -959,6 +1092,91 @@ async def revalidate(connection_id: str, store: ConnectionStore | None = None) -
         if not conn.default_model and conn.models:
             conn.default_model = conn.models[0]
     return store.update(conn, expected_revision=conn.revision)
+
+
+# Live catalogs, per connection: (fetched_at, chat ids). A provider's /v1/models is
+# 0.2–2.4 s (measured 2026-10-15) and pickers ask on every connection switch; ten
+# minutes is fresh enough for a list that changes on a weeks scale.
+CATALOG_TTL_S = 600.0
+_LIVE_CATALOG: dict[str, tuple[float, list[str]]] = {}
+
+
+def clear_catalog_cache(connection_id: str | None = None) -> None:
+    """Forget cached live catalogs (one connection, or all)."""
+    if connection_id is None:
+        _LIVE_CATALOG.clear()
+    else:
+        _LIVE_CATALOG.pop(connection_id, None)
+
+
+async def connection_catalog(
+    connection_id: str, store: ConnectionStore | None = None, *, refresh: bool = False
+) -> dict[str, Any]:
+    """The connection's full model catalog, tagged, with an Auto pick per intent.
+
+    ``Connection.models`` only holds the probe candidates recorded at connect
+    time (the registry's representative list, capped). This asks the driver's
+    MODEL_DISCOVERY capability for the provider's real catalog (``GET /v1/models``)
+    and merges: the stored ids first (the default stays first), then every live
+    chat id the provider reports, sorted. The live part is cached for
+    ``CATALOG_TTL_S`` (``refresh=True`` bypasses it).
+
+    Falls back to the stored list whenever discovery is unsupported or fails —
+    a flaky catalog must never empty the picker — and a failure is not cached.
+
+    Returns ``{models, tags: {id: [capability]}, intent: {ask, act}, cached}``.
+    """
+    import time
+
+    from navig.providers.capabilities import get_model_capabilities, intent_models, is_chat_model
+
+    store = store or get_connection_store()
+    conn = _find(store, connection_id)
+    if conn is None:
+        raise ConnectionNotFound(f"No connection: {connection_id}")
+    stored = list(conn.models or [])
+    ordered = list(dict.fromkeys(m for m in ([conn.default_model] + stored) if m))
+
+    live: list[str] = []
+    cached = False
+    hit = _LIVE_CATALOG.get(connection_id)
+    if hit and not refresh and time.monotonic() - hit[0] < CATALOG_TTL_S:
+        live, cached = list(hit[1]), True
+    else:
+        template = CONNECTION_TEMPLATES.get(conn.template_id)
+        drv = get_driver(template, store) if template is not None else None
+        if drv is not None and Capability.MODEL_DISCOVERY in set(getattr(drv, "advertised_capabilities", set())):
+            try:
+                found = await drv.list_models(
+                    secret_ref=conn.secret_ref,
+                    endpoint=(conn.metadata or {}).get("endpoint"),
+                )
+                # Discovered ids only: drop families that cannot hold a chat turn
+                # (TTS, ASR, embeddings, image, realtime …). Stored ids are the
+                # user's/registry's choice and are never filtered.
+                live = sorted(
+                    {m.id for m in found if getattr(m, "id", None) and is_chat_model(m.id)},
+                    key=str.lower,
+                )
+                _LIVE_CATALOG[connection_id] = (time.monotonic(), live)
+            except Exception:  # noqa: BLE001 — discovery is best-effort by contract
+                logger.debug("connection_catalog(%s) failed", connection_id, exc_info=True)
+
+    models = list(dict.fromkeys([*ordered, *(m for m in live if m not in set(ordered))]))
+    return {
+        "models": models,
+        "tags": {m: [c.value for c in get_model_capabilities(m)[0] if c.value != "text"] for m in models},
+        "intent": intent_models(stored, conn.default_model),
+        "cached": cached,
+    }
+
+
+async def list_connection_models(
+    connection_id: str, store: ConnectionStore | None = None, *, refresh: bool = False
+) -> list[str]:
+    """The merged model ids of :func:`connection_catalog` (kept for callers that
+    only need the list)."""
+    return (await connection_catalog(connection_id, store, refresh=refresh))["models"]
 
 
 def set_default(connection_id: str, store: ConnectionStore | None = None) -> None:

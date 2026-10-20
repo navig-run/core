@@ -9,7 +9,7 @@ A 5-phase workflow for turning a user goal into a structured plan file:
   Phase 2  Explore     — N parallel sub-agents probe the codebase / context
   Phase 3  Synthesise  — merge findings into a draft plan document
   Phase 4  Review      — user edits or approves the draft
-  Phase 5  Execute     — hand off to ``navig agent run --context-file <plan>``
+  Phase 5  Execute     — hand the plan body to ``navig agent plan "<plan>"``
 
 Plan files are stored in ``.navig/plans/<slug>.md`` and use front-matter
 to track status and metadata.
@@ -164,10 +164,10 @@ def plan_show(
 def plan_run(
     slug: str = typer.Argument(..., help="Plan slug to execute"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print the agent invocation without running it"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Approve the agent's step plan without prompting"),
 ):
-    """Execute a plan file via the NAVIG agent."""
+    """Execute a plan file via the NAVIG agent (`navig agent plan`)."""
     import subprocess
-    import sys
 
     from navig import console_helper as ch
 
@@ -176,10 +176,18 @@ def plan_run(
         ch.error(f"Plan {slug!r} not found.")
         raise typer.Exit(1)
 
-    cmd = [sys.executable, "-m", "navig", "agent", "run", "--context-file", str(plan_path)]
+    cmd = _agent_plan_argv(plan_path, yes=yes)
+    if cmd is None:
+        ch.error(
+            f"Plan {slug!r} is too long to hand to the agent in one request "
+            f"(over {_MAX_TASK_CHARS:,} characters).",
+            "Split it into smaller plans, or trim the context sections.",
+        )
+        raise typer.Exit(1)
 
     if dry_run:
-        console.print(f"[dim]Would run:[/dim] {' '.join(cmd)}")
+        shown = " ".join(cmd[:-1]) + f" <body of {plan_path.name}: {len(cmd[-1]):,} chars>"
+        console.print(f"[dim]Would run:[/dim] {shown}")
         return
 
     # Mark plan as running
@@ -199,6 +207,41 @@ def plan_run(
 # ──────────────────────────────────────────────────────────────────────────────
 # Internal helpers
 # ──────────────────────────────────────────────────────────────────────────────
+
+# Windows caps a whole command line at 32,767 characters; leave room for the
+# interpreter path and the fixed arguments.
+_MAX_TASK_CHARS: int = 30_000
+
+
+def _agent_plan_argv(plan_path: Path, *, yes: bool = False) -> list[str] | None:
+    """The `navig agent plan` invocation that executes *plan_path*, or None if too long.
+
+    `plan run` used to hand off to ``navig agent run --context-file <plan>`` — a flag
+    `agent run` has never had (it takes an agent id and ``--task``), so every plan run
+    died on a usage error and was reset to draft. The real plan executor is
+    ``navig agent plan "<task>"``; the task is the plan's BODY (front-matter stripped:
+    it is bookkeeping for `navig plan list`, not instructions for the agent).
+    """
+    import sys
+
+    body = _strip_frontmatter(plan_path.read_text(encoding="utf-8")).strip()
+    if not body:
+        body = plan_path.stem
+    if len(body) > _MAX_TASK_CHARS:
+        return None
+    # `--` ends option parsing, so a plan body that starts with "-" (a bullet list) is
+    # still the task argument rather than an unknown flag.
+    return [sys.executable, "-m", "navig", "agent", "plan", *(["--yes"] if yes else []), "--", body]
+
+
+def _strip_frontmatter(content: str) -> str:
+    """*content* without a leading ``---`` front-matter block (see _extract_frontmatter)."""
+    if not content.startswith("---"):
+        return content
+    end = content.find("---", 3)
+    if end == -1:
+        return content
+    return content[end + 3 :]
 
 def _read_config_int(key: str, default: int) -> int:
     try:

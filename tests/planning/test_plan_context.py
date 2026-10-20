@@ -443,3 +443,63 @@ def test_call_with_timeout_bounds_a_hung_fn():
         assert time.monotonic() - t0 < 5, "the cap must fire; it hung past 0.2s before the fix"
     finally:
         release.set()
+
+
+# ── the wiki empty-verdict cache ───────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _clean_wiki_cache():
+    """The cache is module-global (a per-space marker); isolate every test."""
+    from navig.plans import context as ctx_mod
+
+    ctx_mod._wiki_empty_until.clear()
+    yield
+    ctx_mod._wiki_empty_until.clear()
+
+
+def test_an_empty_wiki_search_is_cached_per_space(monkeypatch):
+    """Measured 2026-10-12: the empty-search warning fired on EVERY turn of a
+    wiki-less install — the search was re-paid per message. Within the TTL the
+    second call must not touch the wiki tools at all."""
+    from navig.plans.context import PlanContext
+
+    ctx = PlanContext()
+    calls = {"n": 0}
+
+    def fake_call(fn, **kwargs):
+        calls["n"] += 1
+        return []
+
+    monkeypatch.setattr(ctx, "_call_with_timeout", fake_call)
+
+    assert ctx._search_wiki("phase", "default") == []
+    assert ctx._search_wiki("phase", "default") == []
+    assert ctx._search_wiki("phase", "default") == []
+
+    assert calls["n"] == 1, f"empty wiki searched {calls['n']}x — the cache did not hold"
+
+
+def test_a_wiki_hit_clears_the_empty_marker(monkeypatch):
+    """One real hit must disarm the cache: content appeared, so the space is
+    no longer 'nothing relevant here' — the next turn searches again instead
+    of serving a stale cached-empty."""
+    from navig.plans import context as ctx_mod
+    from navig.plans.context import PlanContext
+
+    ctx = PlanContext()
+    calls = {"n": 0}
+    hit = [{"title": "t", "excerpt": "e", "path": "p"}]
+
+    def fake_call(fn, **kwargs):
+        calls["n"] += 1
+        return [] if calls["n"] == 1 else hit
+
+    monkeypatch.setattr(ctx, "_call_with_timeout", fake_call)
+
+    assert ctx._search_wiki("phase", "default") == []   # empty → marker set (n=1)
+    ctx_mod._wiki_empty_until["default"] = 0.0          # expire the marker (TTL elapsed)
+    assert len(ctx._search_wiki("phase", "default")) == 1  # searches, hits (n=2)
+    assert "default" not in ctx_mod._wiki_empty_until, "a hit must clear the marker"
+    assert len(ctx._search_wiki("phase", "default")) == 1  # searches again (n=3)
+    assert calls["n"] == 3, "a hit did not clear the empty-marker"

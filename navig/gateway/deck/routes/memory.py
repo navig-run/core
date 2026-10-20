@@ -41,8 +41,109 @@ def _fact_json(f) -> dict:
         "confidence": f.confidence,
         "tags": f.tags,
         "created_at": f.created_at,
+        "updated_at": f.updated_at,
         "source_platform": f.source_platform,
+        "pinned": bool(getattr(f, "pinned", False)),
+        "redacted": bool((f.metadata or {}).get("redacted")),
     }
+
+
+# Upper bound for ?limit= on the saved-memories list (same reasoning as pending).
+_MAX_LIST_LIMIT = 200
+_MAX_FACT_CHARS = 2_200  # matches the agent memory_write cap
+
+
+def _int_query(request, name: str, default: int) -> int:
+    try:
+        return int(request.query.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+async def handle_memory_list(request: "web.Request") -> "web.Response":
+    """GET /api/deck/memory/facts?q=&limit=&offset= — saved (approved) memories."""
+    q = (request.query.get("q") or "").strip()[:200]
+    limit = max(1, min(_MAX_LIST_LIMIT, _int_query(request, "limit", 50)))
+    offset = max(0, _int_query(request, "offset", 0))
+    facts, total = await asyncio.to_thread(
+        lambda: _store().list_saved(query=q, limit=limit, offset=offset)
+    )
+    return web.json_response(
+        {"facts": [_fact_json(f) for f in facts], "count": len(facts), "total": total}
+    )
+
+
+async def handle_memory_update(request: "web.Request") -> "web.Response":
+    """PATCH /api/deck/memory/facts/{fact_id} — body ``{content?, pinned?}``.
+
+    Content goes through the same secrets filter as every write: a secret value is
+    replaced (``redacted: true`` in the reply); a body that is only a secret is a 422.
+    """
+    from navig.memory.fact_redaction import SensitiveContentError
+
+    fact_id = request.match_info.get("fact_id", "")
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return web.json_response({"error": "invalid JSON body"}, status=400)
+    if not isinstance(body, dict) or not ({"content", "pinned"} & body.keys()):
+        return web.json_response({"error": "send content and/or pinned"}, status=400)
+
+    content = body.get("content")
+    if content is not None:
+        if not isinstance(content, str) or not content.strip():
+            return web.json_response({"error": "content must be non-empty text"}, status=400)
+        if len(content) > _MAX_FACT_CHARS:
+            return web.json_response(
+                {"error": f"content too long (max {_MAX_FACT_CHARS} chars)"}, status=400
+            )
+    pinned = body.get("pinned")
+    if pinned is not None and not isinstance(pinned, bool):
+        return web.json_response({"error": "pinned must be true or false"}, status=400)
+
+    def _apply():
+        store = _store()
+        fact = store.get(fact_id)
+        if fact is None or not fact.is_active:
+            return None
+        if content is not None:
+            fact = store.update_content(fact_id, content.strip())
+        if pinned is not None:
+            store.set_pinned(fact_id, pinned)
+        return store.get(fact_id)
+
+    try:
+        fact = await asyncio.to_thread(_apply)
+    except SensitiveContentError:
+        return web.json_response(
+            {"error": "That is only a secret — keep it in the vault, not in memory."},
+            status=422,
+        )
+    if fact is None:
+        return web.json_response({"error": "no such memory"}, status=404)
+    return web.json_response({"fact": _fact_json(fact)})
+
+
+async def handle_memory_delete(request: "web.Request") -> "web.Response":
+    """DELETE /api/deck/memory/facts/{fact_id} — forget a memory (soft delete)."""
+    fact_id = request.match_info.get("fact_id", "")
+    ok = await asyncio.to_thread(lambda: _store().soft_delete(fact_id))
+    return web.json_response({"ok": ok}, status=200 if ok else 404)
+
+
+async def handle_memory_summary(request: "web.Request") -> "web.Response":
+    """GET → the cached profile summary (+ ``stale``); POST → (re)generate it."""
+    from navig.agent.memory_summary import generate_summary, read_summary
+
+    if request.method == "GET":
+        data = await asyncio.to_thread(lambda: read_summary(_store()))
+        return web.json_response(data)
+    try:
+        data = await generate_summary(_store(), force=True)
+    except Exception as exc:  # noqa: BLE001 — report, never present a stale cache as fresh
+        logger.warning("memory summary generation failed: %s", exc)
+        return web.json_response({"error": f"Couldn't write the summary: {exc}"}, status=502)
+    return web.json_response(data)
 
 
 async def handle_memory_pending(request: "web.Request") -> "web.Response":

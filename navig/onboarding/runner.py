@@ -73,11 +73,56 @@ def should_auto_run_onboarding(argv: Sequence[str] | None = None) -> bool:
     if not command_tokens:
         return False
 
-    skip_cmds = {"help", "onboard", "quickstart", "service", "update", "version"}
+    # `config` is plumbing — installers and join scripts run `navig config set …`
+    # on a fresh machine; a 22-step interactive wizard must never pre-empt it
+    # (seen: the LAN join one-liner stalled on the AI-provider prompt).
+    #
+    # `mcp` is worse than plumbing: `navig mcp serve` IS the JSON-RPC transport, and
+    # stdout is the protocol stream. There is no human at the keyboard — a client (Claude
+    # Desktop, Cline, goose, a container health check) spawned the process — so the wizard
+    # can only corrupt the handshake or hang the client. Measured in a clean container:
+    # the 13-step onboarding ran before `initialize`, printing a welcome banner and a
+    # telemetry ping into the stream, and a directory's introspection only survived
+    # because mcp-proxy buffered it. Every `mcp` subcommand is programmatic by definition.
+    skip_cmds = {"config", "help", "mcp", "onboard", "quickstart", "service", "update", "version"}
     if command_tokens[0] in skip_cmds:
         return False
 
+    # `navig init --profile X` IS the non-interactive installer pipeline — the
+    # option's own help says "Run installer profile without wizard". First-run
+    # onboarding pre-empting it would put an interactive wizard in front of
+    # `install.sh -p server` (and of every scripted profile install) before the
+    # profile itself ever ran. Only this combination skips: `navig init` without
+    # --profile still triggers onboarding exactly as before.
+    if command_tokens[0] == "init" and any(
+        arg in ("--profile", "-p") or arg.startswith("--profile=") for arg in raw_args
+    ):
+        return False
+
+    # A device that JOINED an existing NAVIG (the LAN join scripts set
+    # `onboarding.role: node`) is configured already: the brain wizard — AI
+    # keys, Telegram, cloud deploys — is the wrong question for it. `navig init`
+    # still runs the wizard on request.
+    if configured_role(navig_dir) == "node":
+        return False
+
     return True
+
+
+def configured_role(navig_dir) -> str:
+    """``onboarding.role`` from config.yaml — ``"brain"`` unless a join set ``"node"``.
+
+    Read straight from the file (this runs before the CLI dispatches; no
+    ConfigManager boot). Unreadable or absent → the default ``"brain"``.
+    """
+    try:
+        import yaml
+
+        raw = yaml.safe_load((navig_dir / "config.yaml").read_text(encoding="utf-8")) or {}
+        role = ((raw.get("onboarding") or {}).get("role") or "").strip().lower()
+    except Exception:  # noqa: BLE001 — a missing/garbled config is just "not a node"
+        return "brain"
+    return "node" if role == "node" else "brain"
 
 
 def run_engine_onboarding(
@@ -87,9 +132,17 @@ def run_engine_onboarding(
     show_banner: bool = True,
     respect_skip_env: bool = False,
     skip_if_configured: bool = True,
+    include_optional: bool = True,
     _revisit_depth: int = 0,
 ) -> EngineState | None:
-    """Run canonical engine onboarding and return final state, or None if skipped."""
+    """Run canonical engine onboarding and return final state, or None if skipped.
+
+    ``include_optional=False`` is the automatic first-run shape: essential +
+    recommended steps only (plus the closing review). The optional
+    integrations (voice, Matrix, Telegram, Lighthouse, deck deploy, email,
+    social, runtime secrets, skills) are listed under "Add later" instead of
+    being asked one by one on someone's very first command.
+    """
     if respect_skip_env and os.getenv("NAVIG_SKIP_ONBOARDING") == "1":
         return None
 
@@ -108,6 +161,10 @@ def run_engine_onboarding(
     )
     genesis = load_or_create(navig_dir, name=socket.gethostname())
     steps = build_step_registry(cfg, genesis)
+    deferred: list[object] = []
+    if not include_optional and not jump_to_step:
+        deferred = [s for s in steps if _is_deferrable(s)]
+        steps = [s for s in steps if not _is_deferrable(s)]
     step_tiers = {step.id: getattr(step, "tier", "essential") for step in steps}
     step_total = len(steps)
     started = {"n": 0}
@@ -160,14 +217,17 @@ def run_engine_onboarding(
                 "  Your previous settings will be preserved where not overwritten.\n"
             )
         else:
-            _con_print("\n  Welcome to NAVIG — running first-time setup.")
+            _con_print("\n  [bold]Welcome to NAVIG[/bold] — let's set up this computer.")
             _con_print(
-                "  [dim]NAVIG = a daemon (the \"brain\") on one machine + a deck (client)\n"
-                "  you open anywhere. Run this setup on the machine that should BE the\n"
-                "  brain — where it acts and stays on (a server, your always-on box).[/dim]"
+                f"  [dim]{step_total} quick steps. Press Enter to accept a default; "
+                "everything can be changed later.[/dim]"
             )
             _con_print(
-                "  Set [dim]NAVIG_SKIP_ONBOARDING=1[/dim] to skip automatic setup.\n"
+                "  [dim]Adding this computer to a NAVIG you already run? Use the join page\n"
+                "  on that machine instead (http://<its-address>:8789/install).[/dim]"
+            )
+            _con_print(
+                "  [dim]Skip automatic setup: set NAVIG_SKIP_ONBOARDING=1[/dim]\n"
             )
 
     previous_guard = os.getenv("NAVIG_ONBOARDING_ACTIVE")
@@ -203,8 +263,22 @@ def run_engine_onboarding(
                 "\n  [green]Setup complete.[/green] Run [bold]navig --help[/bold] to get started.\n"
             )
         _print_verification_dashboard(state, step_tiers, _con)
+        if deferred and not state.interrupted_at:
+            _con_print("\n  [bold]Add later[/bold] [dim](whenever you want):[/dim]")
+            for step in deferred:
+                _con_print(f"    [dim]·[/dim] {getattr(step, 'title', getattr(step, 'id', step))}")
+            _con_print("  [dim]Run[/dim] [bold]navig init --reconfigure[/bold] [dim]to set any of these up.[/dim]\n")
 
     return state
+
+
+# Kept in the automatic first run even though its tier is "optional": it is the
+# closing summary, not an integration.
+_ALWAYS_RUN = frozenset({"review"})
+
+
+def _is_deferrable(step: object) -> bool:
+    return getattr(step, "tier", "essential") == "optional" and getattr(step, "id", "") not in _ALWAYS_RUN
 
 
 def _print_verification_dashboard(

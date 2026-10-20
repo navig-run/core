@@ -45,11 +45,27 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture
 def no_incident_side_effects(monkeypatch):
-    """Capture recorded incidents instead of writing to the real config dir."""
+    """Capture recorded incidents instead of writing to the real config dir.
+
+    Only incidents recorded on THIS test's thread count. The patch is process-wide, and
+    ``ConfigManager`` re-loads config.yaml on a background daemon thread
+    (``_shadow_verify``) that can outlive the test that started it — several tests here
+    make config.yaml unreadable on purpose — so its ``config_load_failed`` used to land in
+    whichever test ran next and fail an exact-list assertion at random under ``-n auto``.
+    Every store refusal these tests assert is recorded on the test's own thread (verified).
+    """
+    import threading
+
     from navig.core import incidents
 
+    owner = threading.current_thread()
     seen: list[tuple[str, dict]] = []
-    monkeypatch.setattr(incidents, "record", lambda event, **d: seen.append((event, d)))
+
+    def _record(event, **details):
+        if threading.current_thread() is owner:
+            seen.append((event, details))
+
+    monkeypatch.setattr(incidents, "record", _record)
     return seen
 
 
@@ -144,6 +160,34 @@ def test_a_malformed_goal_entry_does_not_drop_the_others(tmp_path, no_incident_s
     fresh = _planner(tmp_path)
     fresh.add_goal("new")
     assert planner.goals_file.read_text(encoding="utf-8") == broken
+
+
+def test_a_malformed_row_keeps_the_good_rows_readable(tmp_path, no_incident_side_effects):
+    """Skip the bad row, keep the good ones in memory — but still refuse to save.
+
+    The load must not stop at the first bad row (the old `return` did), and it must
+    not rewrite the file without the unparseable row either. Both at once: good goals
+    stay readable, the file is preserved until it parses cleanly.
+    """
+    seed = _planner(tmp_path)
+    good_id = seed.add_goal("keep me")
+    good_row = json.loads(seed.goals_file.read_text(encoding="utf-8"))["goals"][0]
+
+    broken = json.dumps({"goals": [good_row, 12345]})
+    seed.goals_file.write_text(broken, encoding="utf-8")
+
+    fresh = _planner(tmp_path)
+    assert good_id in {g.id for g in fresh.list_goals()}, (
+        "a single malformed row dropped the good goals that parsed fine"
+    )
+
+    fresh.add_goal("new")
+    assert fresh.goals_file.read_text(encoding="utf-8") == broken, (
+        "a mutation rewrote the file without the row that could not be parsed"
+    )
+    assert [e for e, _ in no_incident_side_effects] == ["store_write_refused"], (
+        "the partial load was not latched — the next save would wipe the bad row"
+    )
 
 
 def test_goals_still_persist_normally(tmp_path, no_incident_side_effects):
@@ -439,3 +483,17 @@ def test_the_last_seen_sidecar_still_updates_normally(tmp_path, no_incident_side
     tracker._flush_last_seen()
 
     assert "2026-08-01" in (tmp_path / "last_seen.json").read_text(encoding="utf-8")
+
+
+def test_a_background_threads_incident_does_not_land_in_this_test(no_incident_side_effects):
+    """The capture is per-thread: a leftover daemon thread from ANOTHER test (the config
+    shadow-verify loader) must not fail this module's exact-list assertions."""
+    import threading
+
+    from navig.core import incidents
+
+    t = threading.Thread(target=lambda: incidents.record(incidents.LOAD_FAILED, path="x"))
+    t.start()
+    t.join()
+    incidents.record(incidents.STORE_WRITE_REFUSED, path="y")
+    assert [e for e, _ in no_incident_side_effects] == ["store_write_refused"]

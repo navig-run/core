@@ -1,0 +1,19 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: image/style/product-photography
+name: Product Photography
+tool: image
+layer: style
+category: Visual style
+tags:
+- style
+description: Clean commercial product photograph on a seamless backdrop.
+params:
+  art_direction: Clean commercial product photograph on a seamless backdrop, crisp edges, accurate materials
+  mood: premium, clean
+  lighting: large softbox key light, subtle rim light, soft shadow
+  composition: centred hero product, generous negative space
+  aspect: '1:1'
+  quality: high
+  negative: clutter, extra objects, distorted proportions, text

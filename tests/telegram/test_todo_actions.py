@@ -132,7 +132,8 @@ def test_the_keyboard_is_capped_and_says_what_it_dropped(store: BoardStore) -> N
     _, keyboard = todo_actions.build_view("all", now=NOW)
 
     rows = keyboard["inline_keyboard"]
-    assert len(rows) <= 11
+    # 8 task rows + "… more" + the switcher (two rows of two) + agenda/reminders + add.
+    assert len(rows) <= 13
     assert any("more" in b["text"] for row in rows for b in row)
 
 
@@ -374,3 +375,48 @@ async def test_a_stale_suggestion_tap_answers_rather_than_raising(
     store: BoardStore, payload: str
 ) -> None:
     assert await tap(_Channel(), payload.format("gone123")) == "That task is gone"
+
+
+# ── categories on capture (the Planner) ─────────────────────────────────────
+
+
+def test_a_hash_files_the_capture_and_an_unknown_one_is_created(store: BoardStore) -> None:
+    todo = todo_actions.capture("Invoice ACME #work friday 9am", now=NOW)
+    assert (todo["title"], todo["category"]) == ("Invoice ACME", "work")
+    assert todo["due_at"] is not None
+    invented = todo_actions.capture("Logo draft #Freelance", now=NOW)
+    assert invented["category"] == "freelance"
+    assert store.get_category("freelance") is not None
+
+
+def test_a_quick_capture_offers_one_tap_categories(store: BoardStore) -> None:
+    todo = todo_actions.capture("Buy paper", now=NOW)
+    text, keyboard = todo_actions.build_added(todo, now=NOW)
+    assert "Buy paper" in text
+    datas = [b["callback_data"] for row in keyboard["inline_keyboard"] for b in row]
+    chips = [d for d in datas if d.startswith("td:k:")]
+    assert chips == [f"td:k:{todo['id']}:{i}" for i in range(4)]  # work · project · life · business
+    assert all(len(d.encode()) <= 64 for d in datas)
+
+
+async def test_tapping_a_category_files_it(store: BoardStore) -> None:
+    todo = todo_actions.capture("Buy paper", now=NOW)
+    channel = _Channel()
+    toast = await tap(channel, f"td:k:{todo['id']}:2")  # life
+    assert store.get_todo(todo["id"])["category"] == "life"
+    assert toast
+    assert "td:k:" not in str(channel.calls[-1][1].get("reply_markup"))  # filed: no more chips
+    assert await tap(_Channel(), f"td:k:{todo['id']}:99")  # an out-of-range chip answers honestly
+
+
+def test_a_captured_category_shows_instead_of_the_question(store: BoardStore) -> None:
+    todo = todo_actions.capture("Report #project", now=NOW)
+    _, keyboard = todo_actions.build_added(todo, now=NOW)
+    datas = [b["callback_data"] for row in keyboard["inline_keyboard"] for b in row]
+    assert not any(d.startswith("td:k:") for d in datas)
+
+
+def test_the_list_links_to_the_agenda_and_reminders(store: BoardStore) -> None:
+    _, keyboard = todo_actions.build_view("all", now=NOW)
+    datas = [b["callback_data"] for row in keyboard["inline_keyboard"] for b in row]
+    assert "ag:v" in datas and "rv:v" in datas

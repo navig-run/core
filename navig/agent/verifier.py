@@ -154,6 +154,12 @@ class AdversarialVerifier:
                     reason=f"low-confidence approval ({verdict.confidence:.2f}) — treated as unsafe",
                     subject=subject,
                 )
+            # Decision-model judge (shadow-only, background): a calibrated probability on
+            # the same action, compared with this verdict. Only real verdicts are compared —
+            # the fail-safe below is not a judgement.
+            from navig.agent import judges
+
+            judges.action_safety(action_description, verdict.safe)
         except Exception as exc:  # noqa: BLE001
             logger.debug("verifier error on %s: %s", subject, exc)
             verdict = Verdict(

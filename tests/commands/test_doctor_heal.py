@@ -239,3 +239,54 @@ def test_heal_json_dry_run_has_null_after(monkeypatch):
     assert payload["after"] is None
     assert payload["actions"][0]["executed"] is False
     assert result.exit_code == 1
+
+
+# ── editable-install remediation (dynamic labels) ────────────────────────────
+def _plan_row(label: str, ok: bool, detail: str) -> list[dr.PlannedAction]:
+    """plan() reads the SERIALIZED report — plain dicts, not CheckResult."""
+    return dr.plan({"sections": [{"name": "Runtime", "checks": [
+        {"label": label, "ok": ok, "detail": detail, "warn": False},
+    ]}]})
+
+
+def test_editable_failure_maps_to_report_only_reinstall():
+    """`editable <package>` rows are machine-local — mapped by prefix, never auto-run."""
+    actions = _plan_row(
+        "editable navig_pentest", False,
+        "target gone (was under navig-pentest) — reinstall from its checkout",
+    )
+    assert len(actions) == 1
+    rem = actions[0].remediation
+    assert rem is not None and rem.id == "editable-reinstall"
+    assert rem.safe is False, "pip must never run without the operator"
+    assert rem.action is None, "report-only: no _ACTIONS entry to execute"
+
+
+def test_unmapped_label_still_plans_without_remediation():
+    """The prefix fallback must not swallow the unmapped → None contract."""
+    actions = _plan_row("Something no one mapped", False, "detail")
+    assert len(actions) == 1
+    assert actions[0].remediation is None
+
+
+def test_passing_editable_row_is_never_planned():
+    """The healthy 'editable installs' row shares the prefix — ok checks stay out."""
+    assert _plan_row("editable installs", True, "28 mapped, all resolve") == []
+
+
+def test_heal_view_offers_the_reinstall_report_only(monkeypatch):
+    """CLI: the broken editable is listed with its fix, and nothing is executed."""
+    _no_settle(monkeypatch)
+    _stub_all_checks(
+        monkeypatch,
+        check_editable_installs=[
+            _check("editable navig_pentest", False,
+                   "target gone (was under navig-pentest) — reinstall from its checkout "
+                   "with pip install -e, or pip uninstall navig_pentest"),
+        ],
+    )
+    result = runner.invoke(doctor_app, ["--heal"], env=_WIDE)
+    assert result.exit_code == 1
+    assert "reinstall the editable package" in result.stdout
+    assert "report-only" in result.stdout
+    assert "pip install -e" in result.stdout

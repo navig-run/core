@@ -8,6 +8,8 @@ the same flow the CLI and onboarding use. Endpoints:
     POST   /api/deck/providers/connect      → create a connection (api-key/local)
     POST   /api/deck/providers/default      → set the global default
     DELETE /api/deck/providers/{id}         → safe-remove a connection
+    POST   /api/deck/providers/claude-max/import → hand a Claude login to the brain (local only)
+    GET    /api/deck/providers/claude-max/token  → lease a Claude access token (local only)
 
 Secrets arrive only in POST bodies (loopback origin) and are never echoed back
 or logged. Responses carry ``secret_ref`` labels, never secret values.
@@ -26,8 +28,11 @@ from navig.providers.connect import (
     begin_oauth,
     complete_oauth,
     connect_provider,
+    connection_catalog,
     detect_external,
     disconnect,
+    import_claude_oauth,
+    lease_claude_access_token,
     list_connections,
     list_templates,
     resolve_default,
@@ -70,6 +75,28 @@ async def handle_deck_providers_list(request: "web.Request") -> "web.Response":
         "default": default,
         "default_connection_id": default["connection_id"] if default else None,
     })
+
+
+async def handle_deck_providers_models(request: "web.Request") -> "web.Response":
+    """GET /api/deck/providers/models?connection_id=…[&refresh=1] → the catalog.
+
+    The connection's FULL model catalog, discovered live from the provider
+    (falls back to the stored list). ``connection_id`` defaults to the resolved
+    default connection so a picker can refresh with no id at all.
+    """
+    cid = (request.query.get("connection_id") or "").strip()
+    if not cid:
+        default = resolve_default()
+        cid = (default or {}).get("connection_id") or ""
+    if not cid:
+        return web.json_response({"error": "no connection_id and no default connection"}, status=400)
+    refresh = request.query.get("refresh", "") in ("1", "true", "yes")
+    try:
+        catalog = await connection_catalog(cid, refresh=refresh)
+    except ConnError as exc:  # ConnectionNotFound and friends
+        return web.json_response({"error": str(exc)}, status=404)
+    # {models, tags: {id: [vision|code|reasoning|fast…]}, intent: {ask, act}, cached}
+    return web.json_response({"connection_id": cid, **catalog})
 
 
 async def handle_deck_providers_connect(request: "web.Request") -> "web.Response":
@@ -130,6 +157,74 @@ async def handle_deck_providers_oauth_complete(request: "web.Request") -> "web.R
     except Exception as exc:  # noqa: BLE001 — exchange/HTTP errors, redacted
         return web.json_response({"error": str(exc)[:300], "code": "oauth_error"}, status=502)
     return web.json_response({"connection": conn.to_public_dict()})
+
+
+def _local_only(request: "web.Request") -> "web.Response | None":
+    """Refuse a Claude-login route unless the request comes from THIS machine.
+
+    The deck API is also reachable through the Lighthouse edge. A token lease or a
+    login hand-off must never be: the access token is a live credential for the
+    operator's subscription, so only a surface on the same machine (NAVIG OS) gets
+    one. ``_request_is_local`` rejects anything Lighthouse or a tunnel relayed in,
+    even though those connect from 127.0.0.1.
+    """
+    from navig.gateway.deck.auth import _request_is_local
+
+    if _request_is_local(request):
+        return None
+    return web.json_response(
+        {"error": "Only available to apps on this machine.", "code": "local_only"}, status=403
+    )
+
+
+async def handle_deck_providers_claude_import(request: "web.Request") -> "web.Response":
+    """Hand a Claude subscription login over to the brain. LOCAL ONLY.
+
+    Body: ``{access_token|accessToken, refresh_token|refreshToken,
+    expires_at|expiresAt, name?}``. After this the brain is the login's only
+    refresher; the caller should borrow tokens from ``/claude-max/token`` instead
+    of refreshing its own copy (see ``connect.import_claude_oauth``).
+    """
+    denied = _local_only(request)
+    if denied is not None:
+        return denied
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return web.json_response({"error": "invalid json", "code": "bad_request"}, status=400)
+    if not isinstance(body, dict):
+        return web.json_response({"error": "expected an object", "code": "bad_request"}, status=400)
+    try:
+        conn = await import_claude_oauth(body, name=body.get("name"))
+    except ConnectionValidationError as exc:
+        return web.json_response({"error": str(exc), "code": exc.code}, status=400)
+    except ConnError as exc:
+        return web.json_response({"error": str(exc), "code": exc.code}, status=500)
+    logger.info("claude-max login handed over to the brain (connection %s)", conn.connection_id)
+    return web.json_response({"connection": conn.to_public_dict()})
+
+
+async def handle_deck_providers_claude_token(request: "web.Request") -> "web.Response":
+    """Lease a currently-valid Claude access token. LOCAL ONLY.
+
+    Returns ``{access_token, expires_at, account_email, connection_id}``. The
+    brain refreshes first when the token is near expiry. The refresh token is
+    never returned. ``expires_at`` is in SECONDS.
+    """
+    denied = _local_only(request)
+    if denied is not None:
+        return denied
+    try:
+        lease = await lease_claude_access_token()
+    except ConnectionValidationError as exc:
+        return web.json_response({"error": str(exc), "code": "no_login"}, status=404)
+    except Exception as exc:  # noqa: BLE001 — refresh/HTTP errors, never echo secrets
+        logger.warning("claude-max token lease failed: %s", type(exc).__name__)
+        return web.json_response(
+            {"error": "The brain could not refresh its Claude login.", "code": "refresh_failed"},
+            status=502,
+        )
+    return web.json_response(lease)
 
 
 async def handle_deck_providers_default(request: "web.Request") -> "web.Response":

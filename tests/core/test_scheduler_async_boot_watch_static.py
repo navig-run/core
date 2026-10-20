@@ -110,12 +110,13 @@ def test_boot_show_exits_nonzero_not_implemented():
     assert result.exit_code != 0, "an unimplemented command must not report success"
 
 
-def test_boot_show_warns_not_implemented():
-    """It must SAY why it failed, not just fail — the name promises the warning."""
-    with patch.object(_ch, "warning", return_value=None) as warned:
+def test_boot_show_says_where_the_command_moved():
+    """It must SAY why it failed, not just fail: #1871 made it name the replacement."""
+    with patch.object(_ch, "error", return_value=None) as said:
         result = _runner.invoke(boot_app, ["show"])
-    assert result.exit_code != 0, "an unimplemented command must not report success"
-    assert warned.called, "exited non-zero without telling the user why"
+    assert result.exit_code != 0, "a superseded command must not report success"
+    assert said.called, "exited non-zero without telling the user why"
+    assert "navig service status" in said.call_args.args[0]
 
 
 def test_boot_run_exits_nonzero_not_implemented():
@@ -135,10 +136,11 @@ def test_boot_run_dry_run_flag():
     assert result.exit_code != 0, "an unimplemented command must not report success"
 
 
-def test_boot_no_args_shows_help():
+def test_boot_no_args_points_at_the_service():
+    # #1871 superseded `navig boot`: a bare invocation names the replacement and exits 1.
     result = _runner.invoke(boot_app, [])
-    # no_args_is_help=True → exit code 0 (help) or 2 (typer may differ)
-    assert result.exit_code in (0, 2)
+    assert result.exit_code == 1
+    assert "navig service status" in (result.output or "")
 
 
 # ---------------------------------------------------------------------------

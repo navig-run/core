@@ -152,7 +152,7 @@ navig telegram business status                  # state + rights matrix + emoji 
 navig telegram business enable | disable        # refuses to arm if owner-gate isn't set
 navig telegram business rights                  # list all per-tool policies
 navig telegram business rights <tool> <who>     # who ∈ owner | both | off
-navig telegram business alerts on | off         # deleted message → DM you
+navig telegram business alerts on | off         # deletion alerts on (digest) / off — still recorded
 navig telegram business deleted                 # WHAT was deleted (table; --json, --chat, -n)
 navig telegram business deletions status         # record | mode | window | target | muted
 navig telegram business deletions mode digest    # digest (default) | instant | off
@@ -160,6 +160,8 @@ navig telegram business deletions record off     # stop tracking entirely (leave
 navig telegram business deletions window 900     # digest batching window, seconds
 navig telegram business deletions target <id>    # a log channel instead of your DM ('dm' resets)
 navig telegram business deletions mute <chat>    # silence one chat (--off to unmute)
+navig telegram business deletions quiet expired on # auto-delete timer expiries: recorded, not announced (default)
+navig telegram business deletions quiet wipes on   # whole-chat clears: recorded, not announced (default)
 navig telegram business deletions flush          # send the pending digest now
 navig telegram business emoji                   # list emoji → tool map
 navig telegram business emoji <emoji> <tool>    # remap a reaction (tool|off)
@@ -176,11 +178,11 @@ access, never a command). Set `both` to let a counterparty ping, `off` to disabl
 ## 🎵 TikTok (yt-dlp)
 
 ```bash
-navig tiktok download <url> [-o DIR] [--watermark]   # organized download
-navig tiktok profile  <@user> [--max N] [-o DIR]     # whole profile
-navig tiktok info     <url>                          # creator · country · description · stats
-navig tiktok comments <url> [--top N]                # top comments by likes
-navig tiktok analyse  <url> [-c N]                   # AI markdown briefing (desc + best comments)
+navig download download <url> [-o DIR] [--watermark]   # organized download
+navig download profile  <@user> [--max N] [-o DIR]     # whole profile
+navig download info     <url>                          # creator · country · description · stats
+navig download comments <url> [--top N]                # top comments by likes
+navig download analyse  <url> [-c N]                   # AI markdown briefing (desc + best comments)
 ```
 > `navig tt …` is a shorthand alias. Country is best-effort — TikTok rarely exposes it.
 
@@ -378,8 +380,35 @@ per-bot, no per-message latency). Disable with `navig config set telegram.rich_m
 
 ## 🗑️ Deletion alert
 
-With `business alerts on`, deleting a message in a business conversation DMs **you**
-the cached content — only you, never the deck or other channels.
+Deletions in business conversations are reported to **you** only — never the deck or
+other channels. By default as a **digest**: one card per window naming each chat and
+whose messages went (`• Yck 🧢 — 1 (от тебя)`), with **Show** for the text and files
+and **Quiet** to turn alerts off. Names only on the card — it shows on a lock screen.
+`business alerts on|off` is shorthand for `deletions mode digest|off`; the record is
+kept either way (`deletions record off` stops recording). See `deletions status`.
+
+Deletions **nobody chose** are recorded but not announced: a chat's **auto-delete timer**
+(a message that vanished a whole number of days after it was sent, ±10 min) and a
+**whole-chat clear** (one deletion of 10+ messages, or one that empties the chat). They
+still appear in `business deleted`, tagged ⏱ auto-delete / 🧹 chat cleared. Turn either
+back on with `deletions quiet expired off` / `deletions quiet wipes off`.
+
+---
+
+## ☀️🌙 Morning & evening briefings
+
+```bash
+navig telegram briefings                          # status: on/off · time · days
+navig telegram briefings off                      # both cards off
+navig telegram briefings on --evening             # just one card
+navig telegram briefings --morning --time 07:30   # move a card
+navig telegram briefings --days daily             # weekdays (default) | daily | 0,1,2…
+```
+
+Two cards in your language: the morning one (07:00 — yesterday's anchor + first moves)
+and the evening one (18:00 — what got done, tomorrow's #1, backups, quiet mode). The
+**Briefings** extension (`/extensions`) switches both off at once; the switches above
+pick one. Changes apply within a minute, no restart.
 
 ---
 

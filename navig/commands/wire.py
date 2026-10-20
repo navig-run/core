@@ -86,7 +86,7 @@ _SETTINGS_JSON = {
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "navig space current",
+                        "command": "navig space context --brief",
                     }
                 ]
             }

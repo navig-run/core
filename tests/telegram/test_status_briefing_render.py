@@ -78,3 +78,37 @@ async def test_briefing_names_the_host_and_trims_deck_buttons(monkeypatch):
     if shutil.which("systemctl") is None:
         assert "Daemon: <code>running" in text
         assert "status unavailable" not in text
+
+
+async def test_status_briefing_and_plans_sends_are_tagged_system(monkeypatch):
+    """The daily system sweep only removes what was tagged at send time —
+    an untagged card stays in the chat forever (incident 2026-10-13)."""
+    from navig.gateway.channels.telegram import TelegramChannel
+    from navig.telegram import chat_tidy
+
+    channel = TelegramChannel(bot_token="1:FAKE")
+    seen: list[tuple[str, str | None]] = []
+
+    async def _cap(chat_id, text, **kw):
+        seen.append(("status", chat_tidy._KIND.get()))
+        return {"message_id": 1}
+
+    async def _send(chat_id, text, **kw):
+        seen.append((kw.get("command", "send"), chat_tidy._KIND.get()))
+        return {"message_id": 1}
+
+    channel.send_command_output = _cap
+    channel.send_message = _send
+
+    token = chat_tidy._ROUTINE.set(False)
+    kind_token = chat_tidy._KIND.set("notice")
+    try:
+        await channel._handle_status(chat_id=1, user_id=2)
+        await channel._handle_briefing(chat_id=1, user_id=2, metadata={})
+        await channel._handle_plans_cmd(chat_id=1, user_id=2)
+    finally:
+        chat_tidy._KIND.reset(kind_token)
+        chat_tidy._ROUTINE.reset(token)
+
+    assert len(seen) == 3, f"expected all three cards to send, got {seen}"
+    assert [k for _, k in seen] == ["system", "system", "system"], seen

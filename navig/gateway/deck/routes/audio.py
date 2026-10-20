@@ -29,9 +29,24 @@ _AUDIO_BOOL_KEYS: frozenset[str] = frozenset({"auto", "active", "voice_replies_e
 _AUDIO_FLOAT_KEYS: frozenset[str] = frozenset({"speed"})
 
 
-def _resolve_user_id(request: "web.Request") -> int:
-    """Pull the user_id the auth middleware stamped onto the request."""
-    return int(request.get("deck_user_id", 0) or 0)
+def _resolve_user_id(request: "web.Request") -> int | None:
+    """The Telegram user whose AudioConfig this request reads/writes, or ``None``.
+
+    The bot loads AudioConfig by the sender's Telegram id. A desktop / Bearer request
+    carries no Telegram id — the auth middleware stamps a sentinel — so reading
+    ``deck_user_id`` directly made NAVIG OS read and write the voice settings of a user
+    that does not exist, while the bot kept speaking with the old ones. Resolve the
+    install's owner the same way the models and bot-preference routes do.
+    """
+    from navig.gateway.deck.routes.telegram_bot import resolve_owner_user_id
+
+    return resolve_owner_user_id(request)
+
+
+def _owner_unknown() -> "web.Response":
+    from navig.gateway.deck.routes.telegram_bot import _OWNER_UNKNOWN
+
+    return web.json_response({"ok": False, "error": _OWNER_UNKNOWN}, status=409)
 
 
 def _audio_catalog() -> dict[str, Any]:
@@ -70,6 +85,8 @@ def _audio_catalog() -> dict[str, Any]:
 async def handle_deck_audio_get(request: "web.Request") -> "web.Response":
     """GET /api/deck/audio — return the user's AudioConfig + provider catalog."""
     user_id = _resolve_user_id(request)
+    if user_id is None:
+        return _owner_unknown()
     try:
         from navig.gateway.channels.audio_menu.state import load_config
 
@@ -98,6 +115,8 @@ async def handle_deck_audio_post(request: "web.Request") -> "web.Response":
     keys are skipped silently. Returns the updated payload on success.
     """
     user_id = _resolve_user_id(request)
+    if user_id is None:
+        return _owner_unknown()
     try:
         body = await request.json()
     except Exception:

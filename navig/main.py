@@ -453,6 +453,9 @@ def _check_first_run() -> None:
                 show_banner=True,
                 respect_skip_env=True,
                 skip_if_configured=True,
+                # Someone's very first command: essentials + recommended only;
+                # optional integrations are listed under "Add later".
+                include_optional=False,
             )
     except Exception as exc:  # never crash main on onboarding failure
         _eprint(f"[dim]First-run setup skipped: {exc}[/dim]")
@@ -465,7 +468,9 @@ _failed_plugins: list[dict[str, str]] = []
 # ---------------------------------------------------------------------------
 # Single source of truth for all built-in (plugin-free) command names.
 # Rules:
-#   • Every command listed here skips plugin loading on startup (~110 ms saving).
+#   • Every command listed here skips plugin loading on startup (saves one
+#     plugin-discovery pass — UNMEASURED; the "~110 ms" this used to quote had
+#     no recorded benchmark, and the sub-50 ms claim next to it measured 80-90).
 #   • _suggest_did_you_mean() adds "plugin" and "help" on top of this set.
 # When you add a new built-in command, add it ONCE here.
 # ---------------------------------------------------------------------------
@@ -526,6 +531,7 @@ _BUILTIN_COMMANDS: frozenset[str] = frozenset({
     "cron",
     "doctor",
     "prompts",
+    "presets", "preset",
     "browser",
     "import",
     "dispatch",
@@ -555,6 +561,7 @@ _BUILTIN_COMMANDS: frozenset[str] = frozenset({
     "deck",
     "os",
     "portable",
+    "move",
     "system",
     "mount",
     "update",
@@ -700,9 +707,14 @@ def main() -> None:
         sys.argv = _normalize_help_compat_args(sys.argv)
 
         # Fast-path: handle --version / -v / --help / bare invocation WITHOUT
-        # importing config (pyyaml + the core.* managers) or the full CLI. This
-        # keeps `navig help` / `navig --version` on the sub-50ms lightweight-core
-        # path. Must run BEFORE first-run onboarding so these flags always work
+        # importing config (pyyaml + the core.* managers) or the full CLI. This keeps
+        # `navig help` / `navig --version` off the config and subsystem paths, and loads
+        # none of the command modules. It does NOT make them free: it reaches into
+        # navig.cli.registration, which executes navig/cli/__init__.py and its eager
+        # `import typer` — measured at 80 ms best / 90 ms median in-process for
+        # `navig help` (quiet machine, 2026-10-13). An earlier "sub-50ms" note here was
+        # wrong; see docs/architecture.md.
+        # Must run BEFORE first-run onboarding so these flags always work
         # on a fresh install on every platform.
         if _maybe_handle_fast_path(sys.argv):
             return
@@ -784,8 +796,12 @@ def main() -> None:
         if not skip_plugins:
             load_plugins_into_app(app)
 
-        # Run the CLI
-        app()
+        # Run the CLI. On Windows, Click glob-expands every argument itself and a long
+        # one (JS for `cdp eval`) could crash it — expand safely here and switch Click's
+        # own pass off (navig/platform/cli_args.py).
+        from navig.platform.cli_args import cli_args
+
+        app(args=cli_args(), windows_expand_args=False)
 
     except KeyboardInterrupt:
         # Record the cancel for the operation ledger BEFORE the process exits —

@@ -51,6 +51,13 @@ ALLOWED = {
         "a value rendered into a note template — a label, never compared",
     "navig/selfheal/git_manager.py":
         "a git BRANCH NAME (navig-selfheal/<date>-<hash>) — an identifier, never matched to a day",
+    "navig/store/os_devices.py":
+        "the remote-NAVIG-OS usage day — written and read only by OsDeviceStore, and UTC on "
+        "purpose: it meters Cloudflare's daily allowance, which resets at 00:00 UTC",
+    "navig/store/decide_usage.py":
+        "the decision model's (Clef) daily-cap day — computed only by usage_day(), written and "
+        "read only by the decider, and UTC on purpose: it meters Cloudflare's Workers AI daily "
+        "allowance, which resets at 00:00 UTC",
 }
 
 _UTC_NOW = ("utcnow", "now")

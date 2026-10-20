@@ -58,6 +58,10 @@ BROKER_REGISTER_FAILED = "broker_register_failed"
 DAEMON_DIED_UNGRACEFULLY = "daemon_died_ungracefully"
 DAEMON_ORPHAN_SHAPED = "daemon_orphan_shaped"
 SHARED_KEY_ROLLBACK_FAILED = "shared_key_rollback_failed"
+OS_REMOTE_BUDGET = "os_remote_budget"
+DECIDER_AUTH_FAILED = "decider_auth_failed"
+DECIDER_BUDGET = "decider_budget"
+RECALL_INGEST_FAILING = "recall_ingest_failing"
 
 # Human-readable, operator-facing summaries (doctor prints these, not the raw ids).
 DESCRIPTIONS: dict[str, str] = {
@@ -67,8 +71,9 @@ DESCRIPTIONS: dict[str, str] = {
         "and, before this, nobody outside the terminal was told"
     ),
     APPROVAL_ANSWERED_TOO_LATE: (
-        "you answered an approval AFTER it had already expired — your decision was "
-        "not applied. Re-run the action, or raise approval.timeout_seconds"
+        "you answered an approval that had already expired or been resolved (a later "
+        "tap, or the waiting turn ended) — your decision was not applied. Re-run the "
+        "action if it is still needed, or raise approval.timeout_seconds"
     ),
     BROKER_REGISTER_FAILED: (
         "the broker never learned this daemon's address, so the Mini App resolves to "
@@ -132,6 +137,27 @@ DESCRIPTIONS: dict[str, str] = {
         "a store could not be READ, so whatever runs on it is running on an EMPTY "
         "set — the daemon does not error, it simply matches nothing, which looks "
         "exactly like having nothing configured"
+    ),
+    OS_REMOTE_BUDGET: (
+        "remote NAVIG OS used up today's message budget, so new phone/browser sessions "
+        "are refused until tomorrow (UTC) — raise os.remote.daily_msg_budget if you "
+        "expect this much use; your Cloudflare free tier is what it protects"
+    ),
+    DECIDER_AUTH_FAILED: (
+        "Cloudflare refused the decision model (Clef) — your Cloudflare credential has no "
+        "Workers AI permission, so every decision fell back to the previous method. Re-run "
+        "`navig lighthouse login`, or add 'Workers AI: Read' to your API token, then "
+        "`navig decider test`"
+    ),
+    DECIDER_BUDGET: (
+        "the decision model (Clef) reached today's call cap, so decisions use the previous "
+        "method until tomorrow (UTC) — raise decide.daily_cap if you expect this much use; "
+        "your Cloudflare free tier is what it protects"
+    ),
+    RECALL_INGEST_FAILING: (
+        "Recall's background reading (monitor recall_ingest) failed several passes in a row, "
+        "so new conversations are not reaching the bank — run navig recall ingest to see the "
+        "error, and navig recall sources --errors for the sources it could not read"
     ),
 }
 

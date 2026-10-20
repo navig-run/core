@@ -74,3 +74,22 @@ def _outcomes_do_not_depend_on_machine_load(monkeypatch):
     for name in ("_INFO_TIMEOUT", "_COVER_TIMEOUT"):
         if isinstance(getattr(tiktok_actions, name, None), (int, float)):
             monkeypatch.setattr(tiktok_actions, name, _SUITE_TIMEOUT_S)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_deletion_state_files(tmp_path, monkeypatch):
+    """Per-test files for the two small deletion registries.
+
+    `deletions` notes the business messages NAVIG deletes itself (so its own
+    trigger words stay out of the digest) and the messages a Show posted (so they
+    can be cleared). Both live in the cache dir, which is shared across a test
+    session — so a test that ran the real role delete with connection `bc1` noted
+    `bc1:1`, and a LATER test's genuine deletion of message 1 was skipped as
+    "ours". Three business-flow tests failed that way, and only in a full run.
+    """
+    try:
+        from navig.telegram import deletions
+    except Exception:  # noqa: BLE001
+        return
+    monkeypatch.setattr(deletions, "_own_deletions_path", lambda: tmp_path / "own_deletions.json")
+    monkeypatch.setattr(deletions, "_reveals_path", lambda: tmp_path / "deletion_reveals.json")

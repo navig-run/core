@@ -267,6 +267,11 @@ class TaskExecutor:
                 achieved: bool = bool(reflection_data.get("achieved", True))
                 confidence: int = int(reflection_data.get("confidence", 100))
                 reflection_confidence = confidence
+                # Decision-model judge (shadow-only, background): the same question with a
+                # calibrated probability, compared with this self-assessment.
+                from navig.agent import judges
+
+                judges.goal_achieved(task.goal, step_summaries_and_results, achieved)
 
                 if not achieved and confidence < _REFLECTION_REMEDIATION_CONFIDENCE_THRESHOLD:
                     task.status = TaskStatus.EXECUTING

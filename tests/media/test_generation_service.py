@@ -28,7 +28,7 @@ def wired(tmp_path, monkeypatch):
     monkeypatch.setattr(svc, "get_generated_media", lambda: store)
 
     async def fake_run(modality, enriched_prompt, *, provider, size, kind,
-                       duration_s, n, seed, out_dir):
+                       duration_s, n, seed, out_dir, preset_system=None):
         objs = []
         for i in range(max(1, n) if modality == "image" else 1):
             p = Path(out_dir) / f"fake_{i}.bin"

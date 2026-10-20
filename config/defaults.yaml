@@ -317,6 +317,21 @@ verifier:
   # Optional explicit model override; empty = the configured small_talk/cheap tier.
   model: ""
 
+# Session goal loop — NAVIG OS injects a <goal_round> message each round and the
+# session keeps working the objective until it completes, blocks, or spends its
+# rounds. NOT standing goals (missions) — those are daemon/cron-scoped.
+goal:
+  enabled: true
+  # Round budget per goal; at 0 remaining the goal reports blocked ('round-limit')
+  # and the session keeps running. Read with coerce_int — `config set` stores strings.
+  max_rounds: 12
+  # A model-reported blocker is accepted only after the same condition persists
+  # this many consecutive goal rounds (mirrors the harness's 3-round threshold).
+  blocked_after_rounds: 3
+  # 'model' = the model may mark the goal complete/blocked via its goal tools;
+  # 'human' = read-only for the model; only the operator (UI/CLI) resolves it.
+  tool_policy: model
+
 # OAuth / authentication
 oauth:
   # Local redirect URI used by all OAuth flows
@@ -430,6 +445,9 @@ cost_tracker:
   # Keys are matched against the model string returned by the provider.
   # Pricing last updated 2025-01. Adjust to your contracted rates.
   model_pricing:
+    # ── Cloudflare Workers AI — Clef decision model (`navig decider`; input only) ─
+    "@cf/cloudflare/clef-flash": {input: 0.00009, output: 0.0, cache_read: 0.0}
+    "@cf/cloudflare/clef":       {input: 0.00024, output: 0.0, cache_read: 0.0}
     # ── OpenAI ────────────────────────────────────────────────────────────────
     gpt-4o:           {input: 0.0025,  output: 0.0100, cache_read: 0.00125}
     gpt-4o-mini:      {input: 0.000150, output: 0.000600, cache_read: 0.000075}
@@ -563,3 +581,30 @@ cloud:
   #   Example:  public_url: "https://navig.example.com"
   # See docs/CLOUD.md for the full VPS setup recipe.
   public_url: ""
+
+# Decision model — Cloudflare Clef via Workers AI (`navig decider`, navig/agent/decide.py).
+# Answers bounded questions (yes/no, one of named options, a level on a scale) with a
+# probability per option in ~40-200 ms. Runs on YOUR Cloudflare account — the one
+# connected for Lighthouse — and is OFF until you switch it on. Whenever it is off,
+# unsure or unavailable, every use decides the way it did before.
+decide:
+  enabled: false
+  model: clef-flash         # clef-flash (fast, ~40 ms) | clef (stronger, ~200 ms)
+  use:                      # on | shadow | off per use (effective only while enabled)
+    telegram_triage: on     # complexity tier of a Telegram message
+    inbox_sort: on          # wiki / hub category of a dropped file
+    inbox_space: on         # which of your spaces a file belongs in
+    guard_tool_call: on     # NAVIG OS Guarded mode: is this tool call risky? (only adds prompts)
+    # compare-only (shadow = Clef is compared with today's logic, which still decides):
+    telegram_brief: shadow       # one call per Telegram message: mode, depth, intents
+    judge_confirm: shadow        # yes / cancel replies, any language
+    judge_reply_quality: shadow  # does a reply answer the request?
+    judge_continuation: shadow   # continue / choice / wait / blocked / neutral
+    judge_action_safety: shadow  # is a proposed destructive action safe?
+    judge_goal: shadow           # was a multi-step task's goal achieved?
+  min_confidence: 0.5       # below this, the previous logic decides
+  timeout_ms: 1500
+  daily_cap: 2000           # calls per UTC day, all uses together; 0 = no cap
+  shadow: false             # true = call and LOG, but keep the previous logic deciding
+  redact: true              # strip emails / phone numbers / secrets before sending
+  account_id: ""            # Cloudflare account; empty = Lighthouse's

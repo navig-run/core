@@ -31,6 +31,11 @@ def _runner(monkeypatch, probe_rows, tiers=(), heads=()):
     and `probe_model` is stubbed as a backstop that FAILS LOUDLY if one is ever
     attempted.
     """
+    import tempfile
+
+    # Per-test config dir: the probe day is persisted, so a shared session-wide
+    # dir would let one test's probe make the next one skip.
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", tempfile.mkdtemp(prefix="navig_hb_probe_"))
     gateway = SimpleNamespace(
         config_manager=SimpleNamespace(global_config={"heartbeat": {"check_llm_modes": True}}),
         event_queue=None,
@@ -321,3 +326,110 @@ async def test_routes_and_heads_share_one_probe_cache(monkeypatch):
 
     assert seen["routes"] is not None
     assert seen["heads"] is seen["routes"], "the two probes used separate caches"
+
+
+async def test_a_rejected_key_names_the_reconnect_not_a_mode_change(monkeypatch):
+    """A 401 means the CREDENTIAL is broken, not the model: re-pointing the mode
+    (the old advice) discards a working route; the fix is to sign in again."""
+    monkeypatch.setattr("navig.providers.inference.reconnect_hint",
+                        lambda p: "navig connect login claude-max")
+    row = {**_row("coding", "auth"), "provider": "anthropic", "model": "claude-sonnet-4-6"}
+    runner = _runner(monkeypatch, [row, _row("research", "dead")])
+    result = _result()
+
+    await runner._maybe_probe_llm_modes(result)
+
+    by_mode = {("coding" if "'coding'" in i else "research"): i for i in result.issues_found}
+    assert by_mode["coding"].endswith("Fix: navig connect login claude-max")
+    assert "navig mode set research" in by_mode["research"]  # a dead MODEL still gets re-pointed
+
+
+async def test_a_restart_does_not_re_probe_the_same_day(monkeypatch):
+    """Measured ~19 gateway restarts in 24h, each re-running every probe call:
+    the once-a-day contract must survive a NEW runner (a restarted process)."""
+    calls = {"n": 0}
+
+    def counting_probe(*_a, **_kw):
+        calls["n"] += 1
+        # What the real probe does: each verdict persists in model_health. That is
+        # what makes a same-day re-probe after a restart pointless.
+        from navig.llm import model_health
+
+        model_health.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+        return [_row("research", "live")]
+
+    import navig.llm.liveness as liveness
+
+    first = _runner(monkeypatch, [])
+    monkeypatch.setattr(liveness, "probe_modes", counting_probe)
+    await first._maybe_probe_llm_modes(_result())
+
+    from navig.heartbeat.runner import HeartbeatConfig, HeartbeatRunner
+
+    restarted = HeartbeatRunner(first.gateway, HeartbeatConfig())   # same config dir
+    await restarted._maybe_probe_llm_modes(_result())
+    assert calls["n"] == 1, "a restart re-probed on the same day"
+
+
+async def test_a_failed_probe_does_not_mark_the_day_done(monkeypatch):
+    import navig.llm.liveness as liveness
+    from navig.heartbeat import runner as runner_mod
+
+    r = _runner(monkeypatch, [])
+
+    def broken(*_a, **_kw):
+        raise RuntimeError("router unavailable")
+
+    monkeypatch.setattr(liveness, "probe_modes", broken)
+    await r._maybe_probe_llm_modes(_result())
+    assert runner_mod._read_probe_day() is None   # the next beat/restart must retry
+
+
+# ── a wiped health cache is re-seeded the same day ───────────────────────────
+
+
+async def test_an_empty_health_cache_is_reprobed_despite_todays_marker(monkeypatch):
+    """The daily throttle assumed verdicts persist. A deleted model_health file left
+    the runtime fallback with no healthy stand-in until TOMORROW — re-probe once now."""
+    from datetime import date
+
+    import navig.llm.liveness as liveness
+    from navig.heartbeat import runner as runner_mod
+
+    calls = {"n": 0}
+
+    def counting_probe(*_a, **_kw):
+        calls["n"] += 1
+        return []
+
+    runner = _runner(monkeypatch, [])
+    monkeypatch.setattr(liveness, "probe_modes", counting_probe)
+    runner_mod._write_probe_day(date.today().isoformat())  # "already probed today"
+
+    await runner._maybe_probe_llm_modes(_result())
+    await runner._maybe_probe_llm_modes(_result())
+
+    assert calls["n"] == 1, "a wiped cache must be re-probed exactly once per process"
+
+
+async def test_a_populated_health_cache_keeps_the_daily_throttle(monkeypatch):
+    from datetime import date
+
+    import navig.llm.liveness as liveness
+    from navig.heartbeat import runner as runner_mod
+    from navig.llm import model_health
+
+    calls = {"n": 0}
+
+    def counting_probe(*_a, **_kw):
+        calls["n"] += 1
+        return []
+
+    runner = _runner(monkeypatch, [])
+    monkeypatch.setattr(liveness, "probe_modes", counting_probe)
+    runner_mod._write_probe_day(date.today().isoformat())
+    model_health.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+
+    await runner._maybe_probe_llm_modes(_result())
+
+    assert calls["n"] == 0

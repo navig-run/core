@@ -368,3 +368,76 @@ def test_stale_table_labels_a_never_worked_worktree(repo: Path) -> None:
     result = runner.invoke(repo_app, ["stale", "--repo", str(repo)])
     assert result.exit_code == 0, result.output
     assert "never worked" in result.output, result.output
+
+
+# ── an UNVERIFIABLE dir is kept, never deleted ───────────────────────────────
+#
+# `_git` reports a timeout (124), a vanished cwd (125) and any transient
+# failure as an ordinary non-zero result, and a non-zero `rev-parse` used to be
+# read as "plain leftover folder" — so deleting what could not be identified was
+# the DEFAULT path. Measured 2026-10-10: `prune --yes` deleted three dirs, two of
+# them another session's, and nothing could tell afterwards whether they held
+# uncommitted work.
+
+
+def _timeout_the_probe(monkeypatch, target: Path) -> None:
+    """Make `rev-parse` time out for ONE directory — a lock on that checkout.
+
+    Scoped to the target's cwd on purpose: `_require_root` also probes with
+    rev-parse, and failing it there makes prune refuse the whole run ("not a git
+    repository") instead of exercising the skip.
+    """
+    from navig.commands import repo as repo_mod
+
+    real_git = repo_mod._git
+    want = target.resolve()
+
+    def flaky(args, cwd, timeout=None):
+        try:
+            same = Path(cwd).resolve() == want
+        except OSError:
+            same = False
+        if args and args[0] == "rev-parse" and same:
+            return subprocess.CompletedProcess(args, 124, stdout="", stderr="timed out")
+        return real_git(args, cwd, timeout=timeout)
+
+    monkeypatch.setattr(repo_mod, "_git", flaky)
+
+
+def test_prune_keeps_a_dir_the_git_probe_could_not_read(repo: Path, monkeypatch) -> None:
+    # A marker whose gitdir still EXISTS: there is something there, we just could
+    # not read it. Deleting it on a timeout is the data-loss path.
+    d = _orphan_dir(repo, "uncertain")
+    (d / ".git").write_text(f"gitdir: {repo / '.git'}\n", encoding="utf-8")
+    _timeout_the_probe(monkeypatch, d)
+
+    result = runner.invoke(repo_app, ["prune", "--repo", str(repo), "--yes", "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.stdout)
+    assert d.is_dir(), "an unidentifiable directory was deleted"
+    assert any(
+        s["name"] == "uncertain" and "could not verify" in s["reason"] for s in data["skipped"]
+    ), data["skipped"]
+
+
+def test_prune_force_deletes_the_unverifiable_dir(repo: Path, monkeypatch) -> None:
+    d = _orphan_dir(repo, "uncertain")
+    (d / ".git").write_text(f"gitdir: {repo / '.git'}\n", encoding="utf-8")
+    _timeout_the_probe(monkeypatch, d)
+
+    result = runner.invoke(
+        repo_app, ["prune", "--repo", str(repo), "--yes", "--force", "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["removed"] == ["uncertain"]
+    assert not d.exists()
+
+
+def test_a_stale_marker_with_no_gitdir_stays_deletable(repo: Path) -> None:
+    # The COMMON leftover: `git worktree remove` + `prune` dropped the metadata
+    # and left the `.git` file behind. Refusing it would turn prune into a no-op.
+    d = _orphan_dir(repo, "stale", checkout=True)  # gitdir: /dangling (gone)
+    result = runner.invoke(repo_app, ["prune", "--repo", str(repo), "--yes", "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["removed"] == ["stale"]
+    assert not d.exists()

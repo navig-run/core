@@ -62,7 +62,7 @@ def _handler(channel):
     async def _answer(cb_id, text="", show_alert=False):
         h.answers.append(text)
 
-    async def _get_ai_response(prompt, user_id):
+    async def _get_ai_response(prompt, user_id, **kw):
         h.ai_calls += 1
         # Only the FIRST call is held open. A later one returns at once, so removing the
         # guard makes these tests FAIL on the counts rather than DEADLOCK on the gate --
@@ -165,7 +165,11 @@ def test_a_double_tap_on_ask_followup_runs_the_model_once():
 
     asyncio.run(run())
     assert h.ai_calls == 1, f"the model ran {h.ai_calls} times for one follow-up"
-    assert len(ch.messages) == 1, f"{len(ch.messages)} answers reached the chat, expected 1"
+    # A follow-up now opens with a "💭 <question>" bubble (edited into the answer on the
+    # real channel; this stub has no edit, so the answer arrives as its own message).
+    answers = [m for m in ch.messages if not m.startswith("💭")]
+    assert len(answers) == 1, f"{len(answers)} answers reached the chat, expected 1"
+    assert sum(m.startswith("💭") for m in ch.messages) == 1, "one tap, one thinking bubble"
     assert not h._jobs_inflight
 
 

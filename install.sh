@@ -8,6 +8,8 @@
 # Options:
 #   -v | --version <ver>   Pin version (e.g. 2.7.0)
 #   -a | --action <mode>   install (default) | uninstall | reinstall | repair
+#   -p | --profile <name>  Apply an installation profile after install
+#                          (cli | minimal | server | full)
 #   -y | --yes             Skip interactive prompts
 #        --verbose         Verbose output
 #        --dry-run         Preview only
@@ -16,6 +18,7 @@
 # Environment:
 #   NAVIG_VERSION    Pin version
 #   NAVIG_ACTION     install | uninstall | reinstall | repair  (repair = reinstall)
+#   NAVIG_PROFILE    Same as -p/--profile (for `curl | bash`, which takes no args)
 #   NO_COLOR         Disable color
 #   NAVIG_VERBOSE    Enable verbose (set to 1)
 
@@ -209,6 +212,12 @@ print_done() {
     printf "     %bnavig --version%b   confirm install\n"  "$_YLW" "$_RST"
     printf "     %bnavig --help%b      all commands\n"     "$_YLW" "$_RST"
     printf "     %bnavig init%b        first-time setup\n" "$_YLW" "$_RST"
+    if [ -n "${_PATH_ADDED:-}" ]; then
+        # `curl | bash` runs in a child: its PATH change never reaches the shell you typed
+        # in, so `navig` is "command not found" there until a new login reads the rc file.
+        printf "\n     %bThis shell does not see navig yet.%b Open a new one, or run:\n" "$_GRY" "$_RST"
+        printf "     %bexport PATH=\"%s:\$PATH\"%b\n" "$_YLW" "$_PATH_ADDED" "$_RST"
+    fi
     printf "\n"
 }
 
@@ -361,7 +370,7 @@ fix_path() {
     # Session
     case ":$PATH:" in
         *":$bin_dir:"*) ;;
-        *) export PATH="$bin_dir:$PATH" ;;
+        *) export PATH="$bin_dir:$PATH"; _PATH_ADDED="$bin_dir" ;;
     esac
     # Persist — tag lines with '# navig' so uninstall can remove them precisely
     for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
@@ -637,6 +646,7 @@ _actions_help() {
 # ── Argument defaults ─────────────────────────────────────────
 _VERSION="${NAVIG_VERSION:-}"
 _ACTION="${NAVIG_ACTION:-install}"
+_PROFILE="${NAVIG_PROFILE:-}"
 _YES=0
 _DRY_RUN=0
 _HELP=0
@@ -648,6 +658,8 @@ _parse_args() {
         case "$1" in
             -v|--version)    shift; _VERSION="${1:-}"  ;;
             -a|--action)     shift; _ACTION="${1:-}"   ;;
+            -p|--profile)    shift; _PROFILE="${1:-}"  ;;
+            --profile=*)     _PROFILE="${1#--profile=}" ;;
             -y|--yes)        _YES=1                     ;;
             --dry-run)       _DRY_RUN=1                 ;;
             --verbose|-V)    NAV_VERBOSE=1              ;;
@@ -668,6 +680,7 @@ show_usage() {
     printf "Options:\n"
     printf "  -v <ver>    Pin version\n"
     printf "  -a <mode>   %s  (repair = reinstall)\n" "$(_actions_help)"
+    printf "  -p <name>   Apply an installation profile after install (cli | minimal | server | full)\n"
     printf "  -y          Skip prompts\n"
     printf "  --verbose   Verbose output\n"
     printf "  --dry-run   Preview only\n"
@@ -704,6 +717,13 @@ main() {
     if [ "$_DRY_RUN" = "1" ]; then
         print_section "Dry run"
         row_ok "Action" "$_ACTION"
+        # Parsing only: the profile itself is validated and applied by
+        # `navig init --profile` (Python owns the valid-name list), which a
+        # dry run never reaches — so a bogus name previews, and fails loudly,
+        # nonzero, on a real run.
+        if [ -n "$_PROFILE" ]; then
+            row_ok "Profile" "$_PROFILE"
+        fi
         row_ok "Status" "Dry run complete"
         return
     fi
@@ -750,7 +770,7 @@ main() {
                 "Could not prepare the NAVIG runtime" \
                 "Failed to fetch uv or build the isolated Python $PYTHON_SERIES environment." \
                 "Check your network / proxy and re-run. Your system Python is never touched." \
-                "curl -fsSL https://navig.run/install.sh | sh"
+                "curl -fsSL https://navig.run/install.sh | bash"
             exit 1
         }
     fi
@@ -760,6 +780,9 @@ main() {
     print_section "Install"
     local spec="navig[interactive]"
     [ -n "$_VERSION" ] && spec="navig[interactive]==$_VERSION"
+    # NAVIG_INSTALL_SPEC: install THIS spec (a local wheel or path) instead of the PyPI
+    # release — how the clean-machine CI tier installs the tree under test.
+    [ -n "${NAVIG_INSTALL_SPEC:-}" ] && spec="$NAVIG_INSTALL_SPEC"
     row_step "navig" "installing $spec ..."
     if [ "$_DRY_RUN" != "1" ]; then
         install_navig_uv_pip "$spec" || {
@@ -802,8 +825,28 @@ main() {
         log_verbose "Wrote install marker: $HOME/.navig/install.marker"
         _write_terminal_json
 
-        # ── Daemon auto-start ────────────────────────────────────
-        if register_navig_daemon; then
+        # ── Daemon auto-start / installation profile ─────────────
+        # Without -p/--profile this branch is today's path, byte for byte.
+        # With one, the PROFILE owns service registration — its `daemon`
+        # manifest is applied by `navig init --profile` below (cli/minimal
+        # register nothing; server/full register with their flags) — so this
+        # script must not also run register_navig_daemon here. NAVIG_NO_DAEMON
+        # wins in BOTH paths: checked inside register_navig_daemon for the base
+        # path, and before the profile init runs below.
+        if [ -n "$_PROFILE" ]; then
+            if [ -n "${NAVIG_NO_DAEMON:-}" ]; then
+                row_warn "service" "skipped (NAVIG_NO_DAEMON)"
+            fi
+            if ! "$RUNTIME_VENV/bin/navig" init --profile "$_PROFILE"; then
+                print_failure \
+                    "installation profile failed" \
+                    "navig init --profile $_PROFILE exited non-zero (unknown profile, or a step failed)." \
+                    "Valid names are printed by init above; preview with the dry run." \
+                    "navig init --profile full --dry-run"
+                exit 1
+            fi
+            row_ok "profile" "$_PROFILE applied"
+        elif register_navig_daemon; then
             row_ok   "service" "auto-start enabled"
         else
             row_warn "service" "skipped — run 'navig service install' later"
@@ -811,31 +854,37 @@ main() {
         # ── Optional: fzf (best picker UI) ───────────────────────
         if ! command -v fzf > /dev/null 2>&1; then
             _fzf_installed=0
-            case "${OS_TYPE:-}" in
-                macos)
+            _as_root=""
+            if [ "$(id -u)" = "0" ]; then
+                _as_root=" "
+            elif command -v sudo > /dev/null 2>&1 && sudo -n true > /dev/null 2>&1; then
+                _as_root="sudo -n"
+            fi
+            case "${OS_PKG:-unknown}" in
+                brew)
                     if command -v brew > /dev/null 2>&1; then
                         row_step "fzf" "installing via brew..."
                         brew install fzf > /dev/null 2>&1 && _fzf_installed=1 || true
                     fi ;;
-                linux)
-                    if command -v apt-get > /dev/null 2>&1; then
-                        row_step "fzf" "installing via apt..."
-                        sudo apt-get install -y -qq fzf > /dev/null 2>&1 && _fzf_installed=1 || true
-                    elif command -v pacman > /dev/null 2>&1; then
-                        row_step "fzf" "installing via pacman..."
-                        sudo pacman -S --noconfirm --quiet fzf > /dev/null 2>&1 && _fzf_installed=1 || true
-                    elif command -v dnf > /dev/null 2>&1; then
-                        row_step "fzf" "installing via dnf..."
-                        sudo dnf install -y -q fzf > /dev/null 2>&1 && _fzf_installed=1 || true
+                apt|dnf|pacman)
+                    if [ -n "$_as_root" ]; then
+                        row_step "fzf" "installing via $OS_PKG..."
+                        case "$OS_PKG" in
+                            apt)    $_as_root apt-get install -y -qq fzf > /dev/null 2>&1 && _fzf_installed=1 || true ;;
+                            dnf)    $_as_root dnf install -y -q fzf > /dev/null 2>&1 && _fzf_installed=1 || true ;;
+                            pacman) $_as_root pacman -S --noconfirm --quiet fzf > /dev/null 2>&1 && _fzf_installed=1 || true ;;
+                        esac
                     fi ;;
             esac
             if [ "$_fzf_installed" = "1" ]; then
                 row_ok "fzf" "installed (best picker UI)"
             else
                 log_hint "fzf optional — install for the best picker UI:"
-                case "${OS_TYPE:-}" in
-                    macos)  log_hint "  brew install fzf" ;;
-                    linux)  log_hint "  sudo apt install fzf  (or pacman -S fzf / dnf install fzf)" ;;
+                case "${OS_PKG:-unknown}" in
+                    brew)   log_hint "  brew install fzf" ;;
+                    apt)    log_hint "  sudo apt install fzf" ;;
+                    dnf)    log_hint "  sudo dnf install fzf" ;;
+                    pacman) log_hint "  sudo pacman -S fzf" ;;
                     *)      log_hint "  https://github.com/junegunn/fzf#installation" ;;
                 esac
             fi

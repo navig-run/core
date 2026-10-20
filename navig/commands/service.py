@@ -339,6 +339,11 @@ def _resolved_daemon_components(
 
     cfg["telegram_bot"] = _pick("telegram_bot", bot, DEFAULT_DAEMON_CONFIG.get("telegram_bot", True))
     cfg["gateway"] = _pick("gateway", gateway, DEFAULT_DAEMON_CONFIG.get("gateway", False))
+    # `scheduler` is DEPRECATED and read by nothing: cron runs gateway-attached
+    # (NavigGateway._start_cron), and the supervised scheduler child was a
+    # no-op (python -m navig.scheduler.cron_service had no runner). The key is
+    # still written so existing configs, flags (`--scheduler`) and tests keep
+    # round-tripping unchanged — entry.py simply ignores it.
     cfg["scheduler"] = _pick("scheduler", scheduler, DEFAULT_DAEMON_CONFIG.get("scheduler", False))
     cfg["health_port"] = _pick("health_port", health_port, DEFAULT_DAEMON_CONFIG.get("health_port", 0))
     return cfg
@@ -367,7 +372,9 @@ def service_install(
         None, "--gateway/--no-gateway", help="Include gateway server [default: keep current]"
     ),
     scheduler: bool | None = typer.Option(
-        None, "--scheduler/--no-scheduler", help="Include cron scheduler [default: keep current]"
+        None,
+        "--scheduler/--no-scheduler",
+        help="[deprecated, ignored] cron runs inside the gateway; kept for compatibility",
     ),
     health_port: int | None = typer.Option(
         None, "--health-port", help="TCP health-check port (0 = disabled)"
@@ -385,7 +392,7 @@ def service_install(
         navig service install --method systemd
         navig service install --method task
         navig service install --method nssm
-        navig service install --gateway --scheduler
+        navig service install --gateway
     """
     # Save config
     import json
@@ -406,17 +413,23 @@ def service_install(
     )
     bot = bool(cfg["telegram_bot"])
     gateway = bool(cfg["gateway"])
-    scheduler = bool(cfg["scheduler"])
     tmp_path = config_path.with_suffix(config_path.suffix + ".tmp")
     atomic_write_text(tmp_path, json.dumps(cfg, indent=2))
     os.replace(tmp_path, config_path)
+
+    if scheduler is not None:
+        # Explicitly requested a removed feature — say so instead of silently
+        # writing a key nothing reads (cron runs inside the gateway).
+        ch.warning(
+            "--scheduler is deprecated and ignored — cron runs inside the gateway "
+            "(NavigGateway starts it on gateway boot)."
+        )
 
     ch.info("Installing NAVIG daemon...")
     chosen = method or sm.detect_best_method()
     ch.console.print(f"  Method: {chosen.upper()}")
     ch.console.print(f"  Bot: {'yes' if bot else 'no'}")
     ch.console.print(f"  Gateway: {'yes' if gateway else 'no'}")
-    ch.console.print(f"  Scheduler: {'yes' if scheduler else 'no'}")
     ch.console.print()
 
     ok, msg = sm.install(method=chosen, start_now=not no_start)
@@ -520,6 +533,18 @@ def _launch_daemon(daemon: object) -> tuple[bool, str]:
                 "The scheduled task was told to run but no daemon appeared — "
                 "falling back to a direct spawn"
             )
+    if sys.platform.startswith("linux"):
+        from navig.daemon.service_manager import managed_systemd_unit, systemd_unit_action
+
+        unit = managed_systemd_unit()
+        if unit:
+            # No direct-spawn fallback here: a daemon started beside the unit is one
+            # systemd does not supervise, and it would fight the unit's next start.
+            ok, msg = systemd_unit_action(unit, "start")
+            if not ok:
+                ch.warning(f"systemd did not start {unit}: {msg}")
+                return False, f"systemd ({unit})"
+            return _wait_for_daemon(daemon, attempts=_TASK_BOOT_WAIT_S), f"systemd ({unit})"
     _spawn_daemon_direct()
     return _wait_for_daemon(daemon, attempts=_TASK_BOOT_WAIT_S), "direct spawn"
 
@@ -659,6 +684,11 @@ def service_start(
         navig service start --logs
     """
     from navig.daemon.supervisor import NavigDaemon
+    from navig.move.marker import moved_message, read_moved
+
+    if read_moved() is not None:
+        ch.error(moved_message())
+        raise typer.Exit(1)
 
     if NavigDaemon.is_running():
         pid = NavigDaemon.read_pid()
@@ -732,6 +762,9 @@ def service_start(
         if os.name == "nt":
             task_scheduler_enable()
         ch.info("Starting NAVIG daemon in background...")
+        from navig.daemon.restart_cause import record as _record_cause
+
+        _record_cause("service start")
         _started, _how = _launch_daemon(NavigDaemon)
         if _started:
             ch.success(f"Daemon started (pid={NavigDaemon.read_pid()}, via {_how})")
@@ -773,6 +806,24 @@ def service_stop(
         ch.info("Requesting elevation…")
         _report_elevated_and_exit(_relaunch_elevated(["service", "stop"]), "stopped")
 
+    from navig.daemon.service_manager import managed_systemd_unit
+
+    unit = managed_systemd_unit()
+    if unit:
+        # systemd owns this daemon. No stop flag: the daemon refuses to boot while it is
+        # set, so the unit's next start (at boot) would fail in a loop.
+        from navig.daemon.restart_cause import record as _record_cause
+        from navig.daemon.service_manager import systemd_unit_action
+
+        _record_cause("service stop")
+        ok, msg = systemd_unit_action(unit, "stop")
+        if not ok:
+            ch.error("Couldn't stop the daemon.", msg)
+            raise typer.Exit(1)
+        ch.success(f"Daemon stopped ({unit})")
+        ch.dim(f"It starts again at boot. To keep it off: sudo systemctl disable {unit}")
+        return
+
     import time
 
     from navig.daemon.service_manager import (
@@ -808,6 +859,9 @@ def service_stop(
     # which bypasses the supervisor's _shutdown() and leaves workers orphaned;
     # stop_running_daemon() uses taskkill which triggers the graceful exit path.
     ch.info(f"Stopping daemon (pid={pid})...")
+    from navig.daemon.restart_cause import record as _record_cause
+
+    _record_cause("service stop")
     if not NavigDaemon.stop_running_daemon():
         reason = _stop_failure_message()
         ch.error(f"Couldn't stop the daemon — {reason}")
@@ -863,6 +917,29 @@ def service_restart(
         ch.info("Requesting elevation…")
         _report_elevated_and_exit(_relaunch_elevated(["service", "restart"]), "restarted")
 
+    from navig.daemon.service_manager import managed_systemd_unit
+
+    unit = managed_systemd_unit()
+    if unit:
+        # One atomic `systemctl restart`, performed by systemd itself — outside the
+        # daemon's process tree, so it also survives being asked for from INSIDE it (the
+        # gateway's restart route runs this command as a child of the daemon).
+        from navig.daemon.restart_cause import record as _record_cause
+        from navig.daemon.service_manager import systemd_unit_action
+        from navig.daemon.supervisor import NavigDaemon
+
+        _record_cause("service restart")
+        ch.info(f"Restarting daemon via systemd ({unit})...")
+        ok, msg = systemd_unit_action(unit, "restart")
+        if not ok:
+            ch.error("Couldn't restart the daemon.", msg)
+            raise typer.Exit(1)
+        if _wait_for_daemon(NavigDaemon, attempts=_TASK_BOOT_WAIT_S):
+            ch.success(f"Daemon restarted (pid={NavigDaemon.read_pid()}, via systemd)")
+            return
+        ch.error("systemd restarted the unit but no daemon came up.", f"Check: journalctl -u {unit} -n 50")
+        raise typer.Exit(1)
+
     import time
 
     from navig.daemon.service_manager import (
@@ -877,6 +954,11 @@ def service_restart(
     # cannot respawn the daemon while we are mid-restart (Windows only).
     if os.name == "nt":
         task_scheduler_disable()  # silent if task not installed
+
+    # Name this restart on the next boot line (chains onto a fresh api/route intent).
+    from navig.daemon.restart_cause import record as _record_cause
+
+    _record_cause("service restart")
 
     if NavigDaemon.is_running():
         ch.info("Stopping daemon...")

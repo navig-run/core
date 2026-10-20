@@ -50,7 +50,7 @@ class RuntimeStore(BaseStore):
         store.add_interaction(role="user", content="Deploy the app")
     """
 
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 4
     PRAGMAS = {"cache_size": -8000}  # 8 MB
 
     def __init__(self, db_path: Path | None = None):
@@ -129,7 +129,12 @@ class RuntimeStore(BaseStore):
                 created_at  TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
                 completed   INTEGER DEFAULT 0,
                 retry_count INTEGER DEFAULT 0,
-                failed_at   TEXT
+                failed_at   TEXT,
+                -- v3: deliver into a Telegram Business chat (its business_connection_id)
+                -- instead of a plain chat; NULL = the ordinary send path.
+                bcid        TEXT,
+                -- v3: which process is delivering this row right now. See claim_reminder.
+                claimed_at  TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_reminders_due
                 ON reminders (remind_at) WHERE completed = 0;
@@ -144,7 +149,10 @@ class RuntimeStore(BaseStore):
                 persona         TEXT,
                 started_at      TEXT,
                 context         TEXT,
-                last_active_at  TEXT
+                last_active_at  TEXT,
+                -- 1 = the user CHOSE this persona (switch_persona). 0 = it was only
+                -- ever written as a side effect of an unrelated AI-state update.
+                persona_explicit INTEGER DEFAULT 0
             );
 
             -- TTL cache
@@ -204,6 +212,50 @@ class RuntimeStore(BaseStore):
                 conn.execute(sql)
             except sqlite3.OperationalError:
                 pass  # column already exists on this deployment
+
+    def _migrate_v2_to_v3(self, conn: sqlite3.Connection) -> None:
+        """Add the business-chat target and the delivery claim. Each ALTER guarded:
+        `_create_schema` runs first, so on an opened database the columns may exist."""
+        for sql in (
+            "ALTER TABLE reminders ADD COLUMN bcid TEXT",
+            "ALTER TABLE reminders ADD COLUMN claimed_at TEXT",
+        ):
+            try:
+                conn.execute(sql)
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise
+
+    def _migrate_v3_to_v4(self, conn: sqlite3.Connection) -> None:
+        """Add ai_state.persona_explicit; un-invent the incidental "assistant" persona.
+
+        Every unrelated AI-state write (continuation pause, auto-reply toggles…)
+        used to save ``state.get("persona") or "assistant"``, so users who never
+        picked a persona ended up on "assistant" instead of the NAVIG default.
+        Those rows carry no explicit choice, so they go back to "default". The
+        schema-version marker makes this run exactly once.
+        """
+        try:
+            conn.execute("ALTER TABLE ai_state ADD COLUMN persona_explicit INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # column already exists on this deployment
+        self._reset_incidental_assistant_persona(conn)
+
+    @staticmethod
+    def _reset_incidental_assistant_persona(conn: sqlite3.Connection) -> int:
+        """``persona='assistant'`` with no explicit choice → ``'default'``. Idempotent."""
+        cur = conn.execute(
+            "UPDATE ai_state SET persona = 'default' "
+            "WHERE persona = 'assistant' AND COALESCE(persona_explicit, 0) = 0"
+        )
+        changed = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+        if changed:
+            logger.info(
+                "Reset %d incidental 'assistant' persona(s) to the NAVIG default "
+                "(never explicitly chosen)",
+                changed,
+            )
+        return changed
 
     # ── Legacy migration ──────────────────────────────────────
 
@@ -288,6 +340,9 @@ class RuntimeStore(BaseStore):
                                 )
                             except sqlite3.IntegrityError:
                                 pass  # duplicate row; skip
+                        if table == "ai_state":
+                            # Legacy rows predate persona_explicit — same reset as v3→v4.
+                            self._reset_incidental_assistant_persona(conn)
         finally:
             src.close()
 
@@ -474,8 +529,13 @@ class RuntimeStore(BaseStore):
         chat_id: int,
         message: str,
         remind_at: datetime,
+        *,
+        bcid: str | None = None,
     ) -> int:
         """Create a reminder. Returns the row id.
+
+        ``bcid`` (a Telegram business_connection_id) makes the poller deliver into that
+        Business chat rather than a plain chat.
 
         ``remind_at`` is normalized to the canonical UTC ``…Z`` string via :func:`_to_utc_iso`
         so it sorts correctly against ``_utcnow()`` (the readers use a plain string compare). A
@@ -485,10 +545,10 @@ class RuntimeStore(BaseStore):
         """
         cursor = self._write(
             """
-            INSERT INTO reminders (user_id, chat_id, message, remind_at, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO reminders (user_id, chat_id, message, remind_at, created_at, bcid)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (user_id, chat_id, message, _to_utc_iso(remind_at), _utcnow()),
+            (user_id, chat_id, message, _to_utc_iso(remind_at), _utcnow(), bcid or None),
         )
         return cursor.lastrowid  # type: ignore[return-value]
 
@@ -500,17 +560,48 @@ class RuntimeStore(BaseStore):
         )
         return [dict(r) for r in rows]
 
-    def get_user_reminders(self, user_id: int) -> list[dict[str, Any]]:
-        """Active reminders for a user."""
+    def get_user_reminders(self, user_id: int, limit: int = 20) -> list[dict[str, Any]]:
+        """Active reminders for a user, soonest first."""
         rows = self._read_all(
             """
             SELECT * FROM reminders
             WHERE user_id = ? AND completed = 0 AND remind_at > ?
-            ORDER BY remind_at LIMIT 20
+            ORDER BY remind_at LIMIT ?
             """,
-            (user_id, _utcnow()),
+            (user_id, _utcnow(), max(1, int(limit))),
         )
         return [dict(r) for r in rows]
+
+    def get_reminder(self, reminder_id: int) -> dict[str, Any] | None:
+        row = self._read_one("SELECT * FROM reminders WHERE id = ?", (int(reminder_id),))
+        return dict(row) if row else None
+
+    def list_upcoming(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Every pending reminder, any user, soonest first — the Planner's view."""
+        rows = self._read_all(
+            "SELECT * FROM reminders WHERE completed = 0 AND remind_at > ?"
+            " ORDER BY remind_at LIMIT ?",
+            (_utcnow(), max(1, int(limit))),
+        )
+        return [dict(r) for r in rows]
+
+    def claim_reminder(self, reminder_id: int, *, stale_seconds: int = 300) -> bool:
+        """Take the right to deliver this row. True for exactly ONE caller.
+
+        Two gateway processes poll the same table. Without a claim both read a due row
+        before either marks it complete, and the ping goes out twice — tolerable in
+        the operator's own DM, not in a client's Business chat. A claim older than
+        ``stale_seconds`` belongs to a process that died mid-send and may be retaken.
+        """
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=stale_seconds)).strftime(
+            "%Y-%m-%dT%H:%M:%S.%f"
+        )[:-3] + "Z"
+        cursor = self._write(
+            "UPDATE reminders SET claimed_at = ?"
+            " WHERE id = ? AND completed = 0 AND (claimed_at IS NULL OR claimed_at < ?)",
+            (_utcnow(), reminder_id, cutoff),
+        )
+        return cursor.rowcount == 1
 
     def complete_reminder(self, reminder_id: int) -> None:
         self._write("UPDATE reminders SET completed = 1 WHERE id = ?", (reminder_id,))
@@ -534,7 +625,8 @@ class RuntimeStore(BaseStore):
             """
             UPDATE reminders
             SET retry_count = retry_count + 1,
-                remind_at   = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ? || ' seconds')
+                remind_at   = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ? || ' seconds'),
+                claimed_at  = NULL
             WHERE id = ?
             """,
             (str(reschedule_seconds), reminder_id),
@@ -566,6 +658,7 @@ class RuntimeStore(BaseStore):
             "chat_id": row["chat_id"],
             "mode": row["mode"],
             "persona": row["persona"],
+            "persona_explicit": bool(row["persona_explicit"]) if "persona_explicit" in keys else False,
             "started_at": row["started_at"],
             "context": json.loads(row["context"]) if row["context"] else None,
             "last_active_at": row["last_active_at"] if "last_active_at" in keys else None,
@@ -595,17 +688,28 @@ class RuntimeStore(BaseStore):
         mode: str,
         persona: str | None = None,
         context: dict | None = None,
+        persona_explicit: bool | None = None,
     ) -> None:
+        """Upsert a user's AI state.
+
+        ``persona=None`` keeps the stored persona (an unrelated mode/context update
+        must never change who the agent is), and ``persona_explicit=None`` keeps the
+        stored "the user chose this" flag. Only :func:`navig.personas.store.set_active_persona`
+        records an explicit choice.
+        """
         now = _utcnow()
+        explicit = None if persona_explicit is None else int(bool(persona_explicit))
         self._write(
             """
             INSERT INTO ai_state
-                (user_id, chat_id, mode, persona, started_at, context, last_active_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (user_id, chat_id, mode, persona, started_at, context, last_active_at,
+                 persona_explicit)
+            VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, 0))
             ON CONFLICT(user_id) DO UPDATE SET
                 chat_id        = excluded.chat_id,
                 mode           = excluded.mode,
-                persona        = excluded.persona,
+                persona        = COALESCE(?, ai_state.persona),
+                persona_explicit = COALESCE(?, ai_state.persona_explicit),
                 started_at     = CASE
                     WHEN excluded.mode = 'active' AND ai_state.mode != 'active'
                     THEN excluded.started_at ELSE ai_state.started_at END,
@@ -620,6 +724,9 @@ class RuntimeStore(BaseStore):
                 now,
                 json.dumps(context) if context else None,
                 now,  # always touch last_active_at on every set_ai_state call
+                explicit,
+                persona,
+                explicit,
             ),
         )
 

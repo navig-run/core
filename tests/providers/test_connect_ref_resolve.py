@@ -14,7 +14,7 @@ from navig.providers.connection_types import ConnectionError as ConnError
 def _conns():
     return [
         {"connection_id": "abc12345-aaaa", "name": "Claude (Pro/Max subscription)"},
-        {"connection_id": "def67890-bbbb", "name": "Claude — cybesis@gmail.com"},
+        {"connection_id": "def67890-bbbb", "name": "Claude — studio@example.com"},
         {"connection_id": "abcffff0-cccc", "name": "OpenAI"},
     ]
 
@@ -52,3 +52,47 @@ def test_no_match_raises():
 def test_empty_raises():
     with pytest.raises(ConnError):
         cc._resolve_connection_ref("   ")
+
+
+# ── `navig connect list` footer / ID column ────────────────────────────────
+
+
+def test_short_ref_keeps_configured_ids_whole_and_resolvable(monkeypatch):
+    # `configured:groq`[:8] == "configur" — shared by every BYOK row, so it was
+    # an ID column you could not type back. The shown ref must resolve.
+    rows = [
+        {"connection_id": "configured:groq", "name": "Groq"},
+        {"connection_id": "configured:openai", "name": "OpenAI"},
+        {"connection_id": "223aafe7-1111", "name": "Claude — a@b.c"},
+    ]
+    monkeypatch.setattr(cc, "list_connections", lambda: rows)
+    for r in rows:
+        assert cc._resolve_connection_ref(cc._short_ref(r["connection_id"])) == r["connection_id"]
+    assert cc._short_ref("223aafe7-1111") == "223aafe7"
+
+
+def test_next_steps_names_the_reconnect_command_for_broken_rows():
+    rows = [
+        {"connection_id": "a", "template_id": "claude-max", "ui_state": "needs_reauth"},
+        {"connection_id": "b", "template_id": "claude-max", "ui_state": "needs_reauth"},
+        {"connection_id": "c", "template_id": "groq", "ui_state": "ready"},
+    ]
+    text = "\n".join(cc._next_steps(rows, default_id="a"))
+    assert "reconnect claude-max: [bold]navig connect login claude-max" in text
+    assert text.count("reconnect claude-max") == 1  # one line per template, not per row
+    assert "reconnect claude-max" in text
+    assert "navig connect default <id>" in text
+    assert "no default yet" not in text
+
+
+def test_next_steps_flags_a_missing_default():
+    rows = [{"connection_id": "c", "template_id": "groq", "ui_state": "ready"}]
+    text = "\n".join(cc._next_steps(rows, default_id=None))
+    assert "no default yet" in text
+    assert "reconnect" not in text
+
+
+def test_next_steps_warns_when_the_default_itself_is_broken():
+    rows = [{"connection_id": "a", "template_id": "claude-max", "ui_state": "needs_reauth"}]
+    assert "default needs reauth" in "\n".join(cc._next_steps(rows, default_id="a"))
+

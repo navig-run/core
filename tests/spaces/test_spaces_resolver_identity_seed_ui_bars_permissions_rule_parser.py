@@ -112,8 +112,11 @@ class TestDiscoverSpacePaths:
     def test_discovers_global_spaces(self, tmp_path: Path) -> None:
         from navig.spaces.resolver import discover_space_paths
         global_spaces = tmp_path / "config" / "spaces"
+        # A child of the global root must BE a space: the legacy markdown shape
+        # `_ensure_default_space` writes, or a `.navig/` workshop.
         (global_spaces / "default").mkdir(parents=True)
-        (global_spaces / "career").mkdir(parents=True)
+        (global_spaces / "default" / "index.md").write_text("# default\n", encoding="utf-8")
+        (global_spaces / "career" / ".navig" / "plans").mkdir(parents=True)
         fake_cwd = tmp_path / "workdir"
         fake_cwd.mkdir()
         with patch("navig.spaces.resolver.paths.config_dir", return_value=tmp_path / "config"):
@@ -140,9 +143,12 @@ class TestDiscoverSpacePaths:
 class TestGetDefaultSpace:
     def test_returns_default_without_env(self) -> None:
         from navig.spaces.resolver import get_default_space
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("NAVIG_SPACE", None)
-            result = get_default_space()
+        # No active space anywhere → the literal fallback (get_default_space
+        # consults resolve_active_space since the Phase C active-space fix).
+        with patch("navig.commands.space.resolve_active_space", return_value=None):
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("NAVIG_SPACE", None)
+                result = get_default_space()
         assert result == "default"
 
     def test_respects_navig_space_env(self) -> None:

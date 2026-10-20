@@ -107,7 +107,7 @@ def test_total_failure_exits_non_zero(monkeypatch) -> None:
     from navig.commands import notify as cmd
 
     async def _dispatch(*_a, **_k):
-        return {"channels": [{"name": "sms", "ok": False}]}
+        return {"channels": [{"channel": "sms", "ok": False}]}
 
     monkeypatch.setattr("navig.notify.router.dispatch", _dispatch)
     monkeypatch.setattr(cmd.ch, "warning", lambda *a, **k: None)
@@ -126,7 +126,7 @@ def test_a_partial_send_succeeds(monkeypatch) -> None:
     from navig.commands import notify as cmd
 
     async def _dispatch(*_a, **_k):
-        return {"channels": [{"name": "telegram", "ok": True}, {"name": "sms", "ok": False}]}
+        return {"channels": [{"channel": "telegram", "ok": True}, {"channel": "sms", "ok": False}]}
 
     monkeypatch.setattr("navig.notify.router.dispatch", _dispatch)
     monkeypatch.setattr(cmd.ch, "success", lambda *a, **k: None)

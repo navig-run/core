@@ -14,6 +14,7 @@ from typing import Any
 
 import yaml
 
+from navig.core.host_secrets import resolve_host_secrets, secrets_for_storage
 from navig.core.protocols import HostConfigProvider as ConfigProvider
 from navig.core.yaml_io import atomic_write_yaml
 
@@ -223,6 +224,14 @@ class HostManager:
                     with open(host_file, encoding="utf-8") as f:
                         config = yaml.safe_load(f)
 
+                # Route vault refs (ssh_password_ref / database.*_ref) back to their
+                # original keys BEFORE the dict leaves the loader — the single
+                # compatibility shim that keeps every reader (discovery, connection
+                # pool, db/host/server commands, deck routes) seeing the shape it
+                # always had. Legacy plaintext resolves unchanged, no vault touched.
+                # See navig.core.host_secrets module docstring.
+                config = resolve_host_secrets(config)
+
                 # Expand user paths
                 if "ssh_key" in config and config["ssh_key"]:
                     config["ssh_key"] = os.path.expanduser(config["ssh_key"])
@@ -244,6 +253,8 @@ class HostManager:
                 else:
                     with open(legacy_file, encoding="utf-8") as f:
                         config = yaml.safe_load(f)
+
+                config = resolve_host_secrets(config)
 
                 if "ssh_key" in config and config["ssh_key"]:
                     config["ssh_key"] = os.path.expanduser(config["ssh_key"])
@@ -285,10 +296,17 @@ class HostManager:
             config["metadata"] = {}
         config["metadata"]["last_updated"] = datetime.now(timezone.utc).isoformat()
 
+        # Write-side choke point: move any plaintext host secret into the vault and
+        # persist ONLY the *_ref. Runs BEFORE the file is touched — if the vault is
+        # unavailable this raises HostSecretError and the existing YAML (plaintext
+        # or not) is left exactly as it was; we never silently downgrade to writing
+        # the password in the clear. See navig.core.host_secrets.
+        to_write = secrets_for_storage(config, host_name)
+
         # Ensure hosts directory exists
         host_file.parent.mkdir(parents=True, exist_ok=True)
 
-        atomic_write_yaml(config, host_file, allow_unicode=True)
+        atomic_write_yaml(to_write, host_file, allow_unicode=True)
 
         if self._config.verbose:
             from navig import console_helper as ch

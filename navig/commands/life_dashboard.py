@@ -203,7 +203,7 @@ def _schedule_panel(all_jobs: list[dict]) -> Panel:
 def _space_panel(space_name: str, completion: float | None) -> Panel:
     pct_str = f" — {completion:.0f}% done" if completion is not None else ""
     body = Text(f"Space: {space_name}{pct_str}\n", style="bold cyan")
-    body.append("navig space use <name>  ·  navig spaces list", style="dim")
+    body.append("navig space use <name>  ·  navig space list", style="dim")
     return Panel(body, title="[bold]🗂  Context[/bold]", border_style="cyan", padding=(0, 1))
 
 

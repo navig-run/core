@@ -29,7 +29,8 @@ def _init_pyautogui():
             _pyautogui.PAUSE = 0.1
         except ImportError as _exc:
             raise ImportError(
-                "pyautogui not installed. Install with: pip install pyautogui"
+                "pyautogui not installed. Install the desktop extra: "
+                "pip install 'navig[desktop]'"
             ) from _exc
 
     if _PIL is None:

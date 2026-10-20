@@ -28,8 +28,13 @@ pytestmark = pytest.mark.integration
 
 # ─────────────────────────── helpers ────────────────────────────────
 
+# require_bearer_auth fails closed (503) when the gateway has no token, so the default
+# gateway carries one and TestClient sends it as a session-wide default header.
+_TEST_TOKEN = "test-token"
+_AUTH = {"Authorization": f"Bearer {_TEST_TOKEN}"}
 
-def _build_gateway(*, auth_token: str | None = None):
+
+def _build_gateway(*, auth_token: str | None = _TEST_TOKEN):
     gw = MagicMock()
     gw.config = SimpleNamespace(auth_token=auth_token)
     gw.policy_check = AsyncMock(return_value=None)
@@ -90,7 +95,7 @@ async def test_list_nodes_empty():
 
     gw = _build_gateway()
     app = _build_app(gw)
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         r = await client.get("/runtime/nodes")
         assert r.status == 200
         body = await r.json()
@@ -106,7 +111,7 @@ async def test_register_and_list_node():
     gw = _build_gateway()
     app = _build_app(gw)
     payload = _node_payload(node_id="node-abc")
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         # Register
         r = await client.post("/runtime/nodes", json=payload)
         assert r.status == 201
@@ -129,7 +134,7 @@ async def test_get_node_found_and_not_found():
     gw = _build_gateway()
     app = _build_app(gw)
     payload = _node_payload(node_id="node-xyz")
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         await client.post("/runtime/nodes", json=payload)
 
         r = await client.get("/runtime/nodes/node-xyz")
@@ -150,7 +155,7 @@ async def test_register_node_bad_json():
 
     gw = _build_gateway()
     app = _build_app(gw)
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         # Send malformed bytes
         r = await client.post(
             "/runtime/nodes",
@@ -167,7 +172,7 @@ async def test_get_trust_score():
     gw = _build_gateway()
     app = _build_app(gw)
     payload = _node_payload(node_id="node-trust")
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         await client.post("/runtime/nodes", json=payload)
         r = await client.get("/runtime/nodes/node-trust/trust")
         assert r.status == 200
@@ -183,7 +188,7 @@ async def test_get_trust_node_not_found():
 
     gw = _build_gateway()
     app = _build_app(gw)
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         r = await client.get("/runtime/nodes/ghost/trust")
         assert r.status == 404
 
@@ -200,7 +205,7 @@ async def test_create_and_list_mission():
     node_payload = _node_payload(node_id="n1")
     mission_payload = _mission_payload("n1", mission_id="m1")
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         await client.post("/runtime/nodes", json=node_payload)
 
         r = await client.post("/runtime/missions", json=mission_payload)
@@ -223,7 +228,7 @@ async def test_list_missions_filter_by_node():
     gw = _build_gateway()
     app = _build_app(gw)
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="nA"))
         await client.post("/runtime/nodes", json=_node_payload(node_id="nB"))
         await client.post("/runtime/missions", json=_mission_payload("nA", mission_id="mA1"))
@@ -246,7 +251,7 @@ async def test_get_mission_found_and_not_found():
     gw = _build_gateway()
     app = _build_app(gw)
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="n2"))
         await client.post("/runtime/missions", json=_mission_payload("n2", mission_id="m2"))
 
@@ -265,7 +270,7 @@ async def test_advance_mission_start():
     gw = _build_gateway()
     app = _build_app(gw)
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="n3"))
         await client.post("/runtime/missions", json=_mission_payload("n3", mission_id="m3"))
 
@@ -284,7 +289,7 @@ async def test_advance_mission_cancel_from_queued():
     gw = _build_gateway()
     app = _build_app(gw)
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="nC"))
         await client.post("/runtime/missions", json=_mission_payload("nC", mission_id="mC"))
 
@@ -308,7 +313,7 @@ async def test_advance_mission_retry_after_failure():
     gw = _build_gateway()
     app = _build_app(gw)
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="nR"))
         await client.post("/runtime/missions", json=_mission_payload("nR", mission_id="mR"))
         await client.post("/runtime/missions/mR/advance", json={"action": "start"})
@@ -332,7 +337,7 @@ async def test_advance_mission_invalid_action():
     gw = _build_gateway()
     app = _build_app(gw)
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="n4"))
         await client.post("/runtime/missions", json=_mission_payload("n4", mission_id="m4"))
 
@@ -349,7 +354,7 @@ async def test_advance_mission_missing_action():
     gw = _build_gateway()
     app = _build_app(gw)
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="n5"))
         await client.post("/runtime/missions", json=_mission_payload("n5", mission_id="m5"))
 
@@ -366,7 +371,7 @@ async def test_advance_mission_not_found():
     gw = _build_gateway()
     app = _build_app(gw)
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         r = await client.post("/runtime/missions/ghost/advance", json={"action": "start"})
         assert r.status == 404
 
@@ -378,7 +383,7 @@ async def test_complete_mission_success():
     gw = _build_gateway()
     app = _build_app(gw)
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="n6"))
         await client.post("/runtime/missions", json=_mission_payload("n6", mission_id="m6"))
         # advance to running first
@@ -403,7 +408,7 @@ async def test_complete_mission_failure():
     gw = _build_gateway()
     app = _build_app(gw)
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="n7"))
         await client.post("/runtime/missions", json=_mission_payload("n7", mission_id="m7"))
         await client.post("/runtime/missions/m7/advance", json={"action": "start"})
@@ -427,7 +432,7 @@ async def test_list_receipts_empty():
     gw = _build_gateway()
     app = _build_app(gw)
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         r = await client.get("/runtime/receipts")
         assert r.status == 200
         body = await r.json()
@@ -441,7 +446,7 @@ async def test_receipt_created_after_complete():
     gw = _build_gateway()
     app = _build_app(gw)
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="n8"))
         await client.post("/runtime/missions", json=_mission_payload("n8", mission_id="m8"))
         await client.post("/runtime/missions/m8/advance", json={"action": "start"})
@@ -468,7 +473,7 @@ async def test_get_receipt_not_found():
     gw = _build_gateway()
     app = _build_app(gw)
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         r = await client.get("/runtime/receipts/nonexistent-receipt")
         assert r.status == 404
         b = await r.json()
@@ -482,7 +487,7 @@ async def test_list_receipts_filter_by_mission():
     gw = _build_gateway()
     app = _build_app(gw)
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="n9"))
         for mid in ("mX", "mY"):
             await client.post("/runtime/missions", json=_mission_payload("n9", mission_id=mid))
@@ -505,7 +510,7 @@ async def test_store_stats():
     gw = _build_gateway()
     app = _build_app(gw)
 
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         await client.post("/runtime/nodes", json=_node_payload(node_id="s1"))
         await client.post("/runtime/missions", json=_mission_payload("s1", mission_id="sm1"))
 
@@ -528,6 +533,7 @@ async def test_auth_required_when_token_set():
     gw = _build_gateway(auth_token="secret-token")
     app = _build_app(gw)
 
+    # No session-wide default header here: this test pins the unauthenticated caller.
     async with TestClient(TestServer(app)) as client:
         # No auth header → 401
         r = await client.get("/runtime/nodes")
@@ -560,7 +566,7 @@ async def test_route_mutations_survive_restart():
     store_dir = get_runtime_store()._dir
     gw = _build_gateway()
     app = _build_app(gw)
-    async with TestClient(TestServer(app)) as client:
+    async with TestClient(TestServer(app), headers=_AUTH) as client:
         r = await client.post("/runtime/nodes", json=_node_payload(node_id="node-persist"))
         assert r.status == 201
         r = await client.post(

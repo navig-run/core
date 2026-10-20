@@ -2,7 +2,7 @@ schema_version: "1.0"
 slug: sentinel
 name: Sentinel — Forensic Debugger
 version: "1.0.0"
-author: navig-community
+author: navig-registry
 archetype: sentinel
 description: >
   The forensic bug-debugger persona. X-Ray Logic Vision: traces every assumption to its

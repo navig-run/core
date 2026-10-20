@@ -124,18 +124,43 @@ def test_windows_matches_the_live_console_code_page() -> None:
 def test_end_to_end_against_a_real_console_tool() -> None:
     """The whole class in one assertion: ANSI mode and console mode disagree, and the
     console-mode read is the one that round-trips back to the bytes the tool emitted."""
+    import ctypes
+
+    k32 = ctypes.windll.kernel32
     argv = ["whoami", "/groups"]
+    # The page must be the SAME one from before the child to after the read: `raw` is only
+    # evidence about the page it was written under. Reproduced 2026-09-27, byte-for-byte
+    # the full-suite failure — another worker's install test sets 65001 (see
+    # tests/install/test_install_scripts.py::_restore_console_code_page), `whoami` writes
+    # UTF-8, that worker's teardown restores 866, and re-encoding through 866 yields
+    # a single-byte 0x80 where raw holds the UTF-8 lead byte 0xD0. Both sides are right
+    # about different consoles; the premise broke, not the code.
+    cp_before = k32.GetConsoleOutputCP()
     try:
         raw = subprocess.run(argv, capture_output=True, timeout=30).stdout
     except (OSError, subprocess.SubprocessError):  # pragma: no cover - tool absent
         pytest.skip("whoami unavailable")
+    cp_after_child = k32.GetConsoleOutputCP()
     if not any(b > 127 for b in raw):
         pytest.skip("this Windows install reports ASCII-only group names")
 
     # Same moment for both sides — see test_windows_matches_the_live_console_code_page.
     console_encoding.cache_clear()
     decoded = decode_console_output(raw)
-    assert decoded.encode(console_encoding(), errors="replace") == raw
+    encoding = console_encoding()
+    cp_at_read = k32.GetConsoleOutputCP()
+
+    # Sampled around the CHILD, not only at the end: the flip is TRANSIENT, so comparing
+    # just the first and last reads sees 866 both times and reports a broken premise as a
+    # failure.
+    if len({cp_before, cp_after_child, cp_at_read}) != 1:
+        pytest.skip(
+            f"the console code page moved while this test ran ({cp_before} -> "
+            f"{cp_after_child} -> {cp_at_read}); raw was written under one page and "
+            "re-encoded through another, which is not evidence either way"
+        )
+
+    assert decoded.encode(encoding, errors="replace") == raw
 
     import locale
 

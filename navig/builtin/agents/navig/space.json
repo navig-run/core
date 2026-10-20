@@ -3,7 +3,7 @@
   "kind": "agent",
   "version": "1.0.0",
   "name": "NAVIG",
-  "description": "The Living Octopus-Mind — default NAVIG agent personality and behavior definitions",
+  "description": "The Navigator — default NAVIG agent personality and behavior definitions",
   "tier": "system",
   "files": {
     "soul": "soul.md",

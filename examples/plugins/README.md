@@ -1,8 +1,9 @@
-# Plugin Examples — Moved to navig-community
+# Plugin Examples — the registry
 
-Plugin examples now live in the community repository:
+Plugin examples live in the registry, which is the source of truth in this repository:
 
-**New model:** [`navig-community/examples/hello-app/`](https://github.com/navig-run/community/tree/main/examples/hello-app)
+**Model:** [`registry/examples/hello-app/`](../../../registry/examples/hello-app/) (exported to the public
+`navig-run/registry`). The SDK is [`registry/sdk/`](../../../registry/sdk/).
 
 The old Typer-based plugin model (which imported from `navig.plugins.*` internals) has been retired.
 Use the new decoupled model — `plugin.json` + `handler.py` + plain `handle()` functions.
@@ -29,4 +30,4 @@ npm install navig-sdk     # TypeScript / Node.js
 ```
 
 - [SDK docs](../../sdk/README.md)
-- [Community repo](https://github.com/navig-run/community)
+- [Registry](../../../registry/README.md)

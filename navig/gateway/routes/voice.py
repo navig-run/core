@@ -47,6 +47,30 @@ PENDING_WAKES: deque[WakeWordDetection] = deque(maxlen=10)
 # ---------------------------------------------------------------------------
 
 
+def _refuse_untrusted(r, gw):  # noqa: ANN001, ANN202
+    """403 unless the caller is this machine's own client or holds the gateway token.
+
+    These routes used to answer anyone: a website could fire a ``text/plain`` POST at
+    ``127.0.0.1`` (a CORS "simple" request needs no preflight) and spend the operator's
+    TTS credits, and a relayed/tunneled request reached them too. The rule is the deck's
+    local-desktop rule — loopback, and a browser Origin that is this machine's UI or an
+    installed extension, never a website — plus the gateway bearer token for a remote
+    caller. Echo's Rust bridge is local and sends no Origin, so it is unaffected.
+    """
+    from navig.gateway.deck.auth import is_trusted_local_caller  # noqa: PLC0415
+
+    if is_trusted_local_caller(r):
+        return None
+    _, json_error_response, require_bearer_auth = _route_helpers()
+    if gw is not None and require_bearer_auth(r, gw) is None:
+        return None
+    return json_error_response(
+        "Voice routes accept only this machine's NAVIG apps or the gateway token",
+        status=403,
+        code="forbidden",
+    )
+
+
 def _route_helpers():
     """Return (json_ok, json_error_response, require_bearer_auth) lazily."""
     from navig.gateway.routes.common import (  # noqa: PLC0415
@@ -76,9 +100,9 @@ def register(app, gateway):
 
 def _transcribe(gw):
     async def h(r):  # type: aiohttp.web.Request  # noqa: ANN001
-        # Allow anonymous local access; Rust bridge is expected to send the token.
-        _, _, require_bearer_auth = _route_helpers()
-        _auth = require_bearer_auth(r, gw, allow_anonymous=True)
+        denied = _refuse_untrusted(r, gw)
+        if denied is not None:
+            return denied
         reader = await r.multipart()
         audio_bytes = None
         is_voice = False
@@ -157,18 +181,43 @@ def _transcribe(gw):
 
 def _synthesize(gw):
     async def h(r):  # type: aiohttp.web.Request
-        data = await r.json()
+        denied = _refuse_untrusted(r, gw)
+        if denied is not None:
+            return denied
+        try:
+            data = await r.json()
+        except Exception:  # noqa: BLE001 — malformed JSON is a 400, not a 500
+            data = None
+        if not isinstance(data, dict):
+            _, json_error_response, _ = _route_helpers()
+            return json_error_response("Body must be a JSON object", status=400, code="bad_request")
         text = data.get("text")
         if not text:
             _, json_error_response, _ = _route_helpers()
             return json_error_response("Missing 'text'", status=400, code="bad_request")
 
         try:
+            # The real package, like the deck route: `navig.voice.catalog`'s shim
+            # populates its attributes dynamically, so nothing can verify the names
+            # statically (check_module_attrs flags them). Both raise ImportError
+            # without the plugin — the 503 below is unchanged.
+            from navig_audio.voice import catalog as vc  # noqa: PLC0415
+
             from navig.voice.tts import get_tts  # noqa: PLC0415
 
             json_ok, json_error_response, _ = _route_helpers()
+            # The voice policy decides HERE, server-side — this endpoint used to ignore
+            # it and always sent text to the default cloud engine, so `offline` still
+            # burned the operator's text out through Edge. Now: route() resolves the
+            # provider (offline → on-device only, else a 422 naming why), and the chosen
+            # provider is PINNED into synthesize() — no default fallback chain behind it.
+            try:
+                requested = vc.parse_provider(data.get("provider"))
+                chosen = vc.route(requested, _voice_policy())
+            except vc.RoutingError as exc:
+                return json_error_response(str(exc), status=422, code="provider_unavailable")
             tts = get_tts()
-            result = await tts.synthesize(text)
+            result = await tts.synthesize(text, provider=chosen.provider)
             if not result.success or not result.audio_path:
                 return json_error_response(
                     "TTS returned no audio",
@@ -184,8 +233,11 @@ def _synthesize(gw):
                 {
                     "audio_b64": b64,
                     "provider": (
-                        result.provider.value if result.provider else tts.config.provider.value
+                        result.provider.value if result.provider else chosen.provider.value
                     ),
+                    # The real container of audio_b64: "wav" from the on-device engine,
+                    # "mp3" everywhere else — a caller must not have to guess.
+                    "format": getattr(result, "format", "mp3") or "mp3",
                 }
             )
         except ImportError:
@@ -207,8 +259,19 @@ def _synthesize(gw):
     return h
 
 
+def _voice_policy() -> str:
+    """The operator's ``voice.policy`` (``auto`` when absent or unrecognised)."""
+    from navig.config import get_config_manager
+
+    pol = str(get_config_manager().get("voice.policy", "auto") or "auto").strip().lower()
+    return pol if pol in ("auto", "free", "premium", "offline") else "auto"
+
+
 def _poll_wake(gw):
     async def h(r):  # type: aiohttp.web.Request
+        denied = _refuse_untrusted(r, gw)
+        if denied is not None:
+            return denied
         json_ok, _, _ = _route_helpers()
         # Pop the oldest wake if any
         if PENDING_WAKES:
@@ -246,6 +309,9 @@ def _events(gw):
 
         from navig.gateway.routes.common import _get_web  # noqa: PLC0415
 
+        denied = _refuse_untrusted(r, gw)
+        if denied is not None:
+            return denied
         _web = _get_web()
         # CORS headers added pre-prepare() because StreamResponse flushes
         # headers on prepare(), before the middleware can patch them. Uses

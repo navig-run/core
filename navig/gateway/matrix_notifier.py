@@ -118,6 +118,7 @@ class MatrixNotifier(ChannelNotifier):
         title: str,
         message: str,
         priority: NotificationPriority = NotificationPriority.HIGH,
+        keyboard: list[list[dict]] | None = None,  # noqa: ARG002 — Matrix has no inline buttons
     ) -> bool:
         notif = Notification(
             type="alert",

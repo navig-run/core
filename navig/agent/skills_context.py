@@ -23,6 +23,24 @@ Skill file format (any ``*.md`` file)::
 Files *without* frontmatter are still loaded — the filename (stem) becomes
 the skill name, and activation rules default to empty (manual-only).
 
+Per-language keyword packs — ``activation_keywords_<lang>`` (``ru``, ``fr``, …)::
+
+    activation_keywords: [music, jingle]            # English: plain substrings, unchanged
+    activation_keywords_ru: [музык, джингл]          # Russian stems
+    activation_keywords_fr: [musique, bruitage]      # French
+
+Activation is a lexical match over the user's message, so an English-only list never
+loads a skill for someone who writes Russian or French. Pack entries differ from the
+English list in three deliberate ways: they match at a **word start** (so the stem
+``музык`` covers музыка/музыку/музыки without firing inside ``немузыкальный``, and a
+short Latin stem cannot hide in the middle of an unrelated word); both sides are
+**folded** (``ё``→``е``, Latin accents dropped — people on a phone write "temnuyu",
+"genere", "boite"); and every pack is scored on every message, since the language of a
+message is not known. An entry of 3 characters or fewer is an acronym (``обс``, ``obs``)
+and matches as a whole word. Keep Latin stems distinctive: a word that is ALSO common
+English (``resume`` = CV) needs a phrase (``resume cet``), because packs score on
+English messages too.
+
 Integration:
     The agent calls ``SkillsContext.activate()`` each turn with the current file
     paths and user message, then renders the matches with
@@ -38,7 +56,10 @@ Integration:
 from __future__ import annotations
 
 import fnmatch
+import functools
 import logging
+import re
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -82,6 +103,67 @@ _DESCRIPTION_STOPWORDS = frozenset(
 )
 
 
+_LANG_PACK_KEY = re.compile(r"^activation_keywords_([a-z]{2,3})$")
+
+
+def _fold(text: str) -> str:
+    """Lowercase and fold the spellings people type interchangeably.
+
+    ``ё`` → ``е`` (Russian), and combining marks dropped from LATIN letters only
+    (``é``/``è``/``î`` → ``e``/``i``). Cyrillic is deliberately not decomposed: NFD
+    turns ``й`` into ``и`` + a mark, and stripping the mark would conflate two different
+    letters (``майн`` would match ``мина``).
+
+    Also: a hyphen is a space (French attaches clitics with one — ``résume-moi``,
+    ``télécharge-moi`` — and ``rendez-vous`` is typed both ways), and the typographic
+    apostrophes phones insert (``’`` ``‘``) become ``'`` so ``l’agenda`` matches
+    ``l'agenda``. Whitespace is collapsed so those substitutions can't leave gaps.
+    """
+    out: list[str] = []
+    text = text.lower().replace("’", "'").replace("‘", "'").replace("-", " ")
+    text = " ".join(text.split())
+    for ch in text:
+        if "Ѐ" <= ch <= "ӿ":
+            out.append("е" if ch == "ё" else ch)
+        else:
+            out.extend(
+                c for c in unicodedata.normalize("NFD", ch) if unicodedata.category(c) != "Mn"
+            )
+    return "".join(out)
+
+
+#: At or below this many characters a pack keyword is an acronym (``обс``, ``obs``,
+#: ``son``), not a stem, and must match as a WHOLE word — ``обс`` would otherwise fire
+#: inside ``обсудим`` ("let's discuss") and ``obs`` inside ``observe``.
+_WHOLE_WORD_MAX_LEN = 3
+
+
+@functools.lru_cache(maxsize=2048)
+def _stem_pattern(keyword: str) -> re.Pattern[str] | None:
+    """Pattern for one pack keyword (folded), or ``None`` if it is empty.
+
+    Anchored at a word start; additionally anchored at the word END when the keyword is
+    an acronym (``_WHOLE_WORD_MAX_LEN`` characters or fewer). Longer entries are stems
+    on purpose: ``музык`` must cover музыка/музыку/музыки.
+    """
+    folded = _fold(keyword).strip()
+    if not folded:
+        return None
+    tail = r"(?!\w)" if len(folded) <= _WHOLE_WORD_MAX_LEN else ""
+    return re.compile(r"(?<!\w)" + re.escape(folded) + tail)
+
+
+def _localized_hits(skill: "ContextSkill", msg_folded: str) -> int:
+    """How many per-language pack keywords occur in the (already folded) message."""
+    hits = 0
+    for words in skill.localized_keywords.values():
+        for word in words:
+            pattern = _stem_pattern(word)
+            if pattern is not None and pattern.search(msg_folded):
+                hits += 1
+    return hits
+
+
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
@@ -99,6 +181,9 @@ class ContextSkill:
         priority:            Static priority bonus (higher = more important).
         source:              ``"project"`` or ``"global"``.
         file_path:           Absolute path to the skill file on disk.
+        localized_keywords:  Per-language packs (``{"ru": [...], "fr": [...]}``) from
+                             ``activation_keywords_<lang>`` — see the module docstring
+                             for how they differ from ``activation_keywords``.
     """
 
     name: str
@@ -109,6 +194,7 @@ class ContextSkill:
     priority: int = 0
     source: str = "project"  # "project" | "global"
     file_path: str = ""
+    localized_keywords: dict[str, list[str]] = field(default_factory=dict)
 
     # -- helpers --------------------------------------------------------------
 
@@ -174,6 +260,16 @@ def _parse_skill_file(path: Path, source: str) -> ContextSkill | None:
             return [v.strip() for v in val.split(",") if v.strip()]
         return []
 
+    # `activation_keywords_<lang>`: a 2-3 letter code only, so a typo like
+    # `activation_keywords_english` is ignored instead of becoming a pack no one matches.
+    localized: dict[str, list[str]] = {}
+    for key in fm:
+        m = _LANG_PACK_KEY.match(str(key))
+        if m:
+            words = [w for w in _str_list(str(key)) if w.strip()]
+            if words:
+                localized[m.group(1)] = words
+
     return ContextSkill(
         # SKILL.md files live at <id>/SKILL.md → fall back to the folder name
         # (like the canonical loader), not the literal stem "SKILL".
@@ -186,6 +282,7 @@ def _parse_skill_file(path: Path, source: str) -> ContextSkill | None:
         priority=int(fm.get("priority", 0)),
         source=source,
         file_path=str(path),
+        localized_keywords=localized,
     )
 
 
@@ -310,6 +407,7 @@ class SkillsContext:
         # Tokenize once (hoisted out of the per-skill scorer) for whole-word
         # description matching.
         msg_words = {w.strip(".,;:!?()[]'\"") for w in msg_lower.split()}
+        msg_folded = _fold(msg_lower)  # once per turn, not once per skill
 
         scored: list[tuple[ContextSkill, int]] = []
 
@@ -323,7 +421,9 @@ class SkillsContext:
                 scored.append((skill, 10_000))
                 continue
 
-            score = _compute_activation_score(skill, current_files, msg_lower, msg_words)
+            score = _compute_activation_score(
+                skill, current_files, msg_lower, msg_words, msg_folded
+            )
             if score > 0:
                 scored.append((skill, score))
 
@@ -486,6 +586,7 @@ def _compute_activation_score(
     current_files: list[str],
     msg_lower: str,
     msg_words: set[str] | None = None,
+    msg_folded: str | None = None,
 ) -> int:
     """Compute how relevant *skill* is given current context.
 
@@ -505,10 +606,16 @@ def _compute_activation_score(
                 score += PATH_MATCH_SCORE
                 break  # one match per pattern is enough
 
-    # Keyword matching
+    # Keyword matching — English list: plain case-insensitive substrings, unchanged.
     for keyword in skill.activation_keywords:
         if keyword.lower() in msg_lower:
             score += KEYWORD_MATCH_SCORE
+
+    # Per-language packs — word-start anchored, folded on both sides, same weight.
+    if skill.localized_keywords:
+        if msg_folded is None:
+            msg_folded = _fold(msg_lower)
+        score += _localized_hits(skill, msg_folded) * KEYWORD_MATCH_SCORE
 
     # Description matching — a Claude-Code SKILL.md declares *when* to use it via
     # a free-text `description` ("Use when the user wants to edit a video…"),

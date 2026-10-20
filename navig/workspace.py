@@ -282,7 +282,7 @@ class WorkspaceManager:
         """
         identity = {
             "name": "NAVIG",
-            "emoji": "�",
+            "emoji": "🧭",
             "personality": "vigilant, decisive, protective",
         }
 

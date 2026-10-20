@@ -180,3 +180,168 @@ def test_install_ps1_invalid_action_exits_nonzero(pwsh_cmd):
     assert any(
         keyword in combined.lower() for keyword in ("unsupported", "unknown", "invalid", "bogus")
     ), f"Expected error context in output, got:\n{combined}"
+
+
+# ---------------------------------------------------------------------------
+# -p/--profile: the Gate 2 installation-profile flag
+# ---------------------------------------------------------------------------
+
+
+def _install_sh_taglines() -> list[str]:
+    """The random taglines install.sh picks from — the one line that varies run to run."""
+    import re
+
+    src = INSTALL_SH.read_text(encoding="utf-8")
+    block = re.search(r"_TAGLINES=\((.*?)\)", src, re.S)
+    assert block, "install.sh _TAGLINES block not found — normalizer is out of date"
+    return re.findall(r'"([^"]+)"', block.group(1))
+
+
+def _normalize_dry_run(stdout: str) -> list[str]:
+    """stdout without the randomly-chosen tagline line, otherwise untouched."""
+    taglines = _install_sh_taglines()
+    return [line for line in stdout.splitlines() if not any(t in line for t in taglines)]
+
+
+def test_install_sh_profile_flag_parses_in_dry_run(bash_cmd):
+    """`--dry-run -p server` previews the profile and touches nothing."""
+    if not bash_cmd:
+        pytest.skip("bash not found")
+    result = run_cmd([bash_cmd, "install.sh", "--dry-run", "-p", "server"])
+    assert result.returncode == 0, (
+        f"dry run with -p must exit 0:\n{result.stderr}\n{result.stdout}"
+    )
+    assert "Profile" in result.stdout and "server" in result.stdout
+    assert "Dry run complete" in result.stdout
+
+
+def test_install_sh_without_profile_is_unchanged(bash_cmd):
+    """No -p → today's output; adding -p adds EXACTLY the one profile row.
+
+    That is the byte-identical default path, asserted from the only surface a
+    user sees: strip the randomly-chosen tagline (the sole line that differs
+    between any two runs), and the two runs must be line-for-line equal once
+    the single Profile row is removed.
+    """
+    if not bash_cmd:
+        pytest.skip("bash not found")
+    base = run_cmd([bash_cmd, "install.sh", "--dry-run"])
+    with_profile = run_cmd([bash_cmd, "install.sh", "--dry-run", "-p", "server"])
+    assert base.returncode == 0 and with_profile.returncode == 0
+
+    base_lines = _normalize_dry_run(base.stdout)
+    profile_lines = _normalize_dry_run(with_profile.stdout)
+
+    added = [line for line in profile_lines if line not in base_lines]
+    assert len(added) == 1, f"-p must add exactly one row, added: {added}"
+    assert "Profile" in added[0] and "server" in added[0], added[0]
+
+    without_profile_row = list(profile_lines)
+    without_profile_row.remove(added[0])
+    assert without_profile_row == base_lines, (
+        "the default (no -p) dry-run path must be unchanged:\n"
+        f"only-in-base: {[l for l in base_lines if l not in without_profile_row]}\n"
+        f"only-in-profile: {[l for l in without_profile_row if l not in base_lines]}"
+    )
+
+
+def test_install_sh_parse_args_profile_forms(bash_cmd):
+    """Parse the flag through sourcing with the entry guard — no installer runs.
+
+    Covers every accepted spelling plus the default and the NAVIG_PROFILE env
+    form (the `curl | bash` one-liner passes no argv).
+    """
+    if not bash_cmd:
+        pytest.skip("bash not found")
+
+    probe = (
+        "set -e\n"
+        "export NAVIG_INSTALL_SH_NO_RUN=1\n"
+        "export NAVIG_PROFILE=envprofile\n"
+        ". ./install.sh\n"
+        "printf 'ENV=[%s]\\n' \"$_PROFILE\"\n"
+        "unset NAVIG_PROFILE\n"
+        "export NAVIG_INSTALL_SH_NO_RUN=1\n"
+        ". ./install.sh\n"
+        "printf 'DEFAULT=[%s]\\n' \"$_PROFILE\"\n"
+        "_PROFILE=\"\"\n"
+        "_parse_args -p server\n"
+        "printf 'SHORT=[%s]\\n' \"$_PROFILE\"\n"
+        "_PROFILE=\"\"\n"
+        "_parse_args --profile minimal\n"
+        "printf 'LONG=[%s]\\n' \"$_PROFILE\"\n"
+        "_PROFILE=\"\"\n"
+        "_parse_args --profile=full\n"
+        "printf 'EQ=[%s]\\n' \"$_PROFILE\"\n"
+        "_PROFILE=\"sentinel\"\n"
+        "_parse_args -y\n"
+        "printf 'PRESERVED=[%s]\\n' \"$_PROFILE\"\n"
+    )
+    result = run_cmd([bash_cmd, "-c", probe])
+    assert result.returncode == 0, (
+        f"probe failed:\n{result.stderr}\n{result.stdout}"
+    )
+    out = result.stdout
+    assert "ENV=[envprofile]" in out, out
+    assert "DEFAULT=[]" in out, out  # no -p and no env → no profile (today's path)
+    assert "SHORT=[server]" in out, out
+    assert "LONG=[minimal]" in out, out
+    assert "EQ=[full]" in out, out
+    assert "PRESERVED=[sentinel]" in out, out  # other flags leave _PROFILE alone
+
+
+def test_install_sh_usage_documents_the_profile_flag(bash_cmd):
+    if not bash_cmd:
+        pytest.skip("bash not found")
+    result = run_cmd([bash_cmd, "install.sh", "-h"])
+    assert result.returncode == 0
+    assert "-p <name>" in result.stdout
+    assert "cli | minimal | server | full" in result.stdout
+
+
+def test_install_sh_profile_branch_keeps_the_base_daemon_path():
+    """Structure guard: without -p the script still reaches register_navig_daemon.
+
+    The behavioural proof is test_install_sh_without_profile_is_unchanged; this
+    pins the dispatch itself, which a dry run never executes.
+    """
+    src = INSTALL_SH.read_text(encoding="utf-8")
+    assert 'if [ -n "$_PROFILE" ]; then' in src
+    assert "elif register_navig_daemon; then" in src
+    # The profile init must live inside the profile branch only.
+    profile_branch = src.split('if [ -n "$_PROFILE" ]; then', 1)[1]
+    assert 'navig" init --profile "$_PROFILE"' in profile_branch.split("elif", 1)[0]
+
+
+def test_install_ps1_profile_flag_dry_run(pwsh_cmd):
+    """`-Profile server -DryRun` previews the profile and touches nothing."""
+    if not pwsh_cmd:
+        pytest.skip("powershell not found")
+    result = run_cmd(
+        [
+            pwsh_cmd,
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            "install.ps1",
+            "-Profile",
+            "server",
+            "-DryRun",
+        ]
+    )
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, f"ps1 dry run with -Profile failed:\n{combined}"
+    assert "installation profile: server" in combined.lower(), combined
+    assert "Dry run complete" in combined
+
+
+def test_install_ps1_without_profile_has_no_profile_row(pwsh_cmd):
+    if not pwsh_cmd:
+        pytest.skip("powershell not found")
+    result = run_cmd(
+        [pwsh_cmd, "-NoProfile", "-NonInteractive", "-File", "install.ps1", "-DryRun"]
+    )
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "installation profile" not in combined.lower(), combined
+    assert "Dry run complete" in combined

@@ -1,0 +1,18 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: text/style/plain-technical
+name: Plain Technical
+tool: text
+layer: style
+category: Writing style
+tags:
+- technical
+- docs
+description: Clear, direct technical writing for documentation and reports.
+instructions: Write plainly and precisely. Short sentences, active voice, concrete examples. Define a
+  term once, then use it consistently.
+avoid:
+- marketing language
+- filler
+- unexplained acronyms

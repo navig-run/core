@@ -21,7 +21,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 from pathlib import Path
+from typing import Any
 
 from navig.inbox.extract_hook import content_for_classify
 
@@ -294,6 +296,19 @@ def _route_file(
     }
 
 
+_URL_FRONTMATTER = re.compile(r"(?m)^url:\s*[\"']?(\S+?)[\"']?\s*$")
+_URL_SOURCE_LINE = re.compile(r"(?m)^Source:\s*(https?://\S+)")
+
+
+def _url_of(content: str) -> str | None:
+    """The page a capture came from — `url:` (v1 frontmatter) or `Source:` (legacy)."""
+    if not content:
+        return None
+    head = content[:4000]
+    m = _URL_FRONTMATTER.search(head) or _URL_SOURCE_LINE.search(head)
+    return m.group(1) if m else None
+
+
 def _decision_dict(d) -> dict:
     return {
         "category": d.category,
@@ -346,6 +361,11 @@ async def handle_deck_inbox_list(request: "web.Request") -> "web.Response":
                     "created_at": f.stat().st_mtime,
                     "filename": f.name,
                     "source_path": str(f),
+                    # Dup keys for triage: the cheap hash of what the classifier read
+                    # (full text for text captures, the filename stub otherwise) and the
+                    # captured page — group by url first, hash second.
+                    "content_hash": hashlib.sha256(content.encode()).hexdigest()[:16],
+                    "url": _url_of(content),
                     "source_type": "file",
                     "status": "pending",
                     "space": space,
@@ -382,6 +402,8 @@ async def handle_deck_inbox_list(request: "web.Request") -> "web.Response":
                     "source_path": ev.source_path,
                     "source_type": ev.source_type,
                     "status": ev.status,
+                    "content_hash": ev.content_hash,
+                    "url": None,  # history keeps the hash, not the captured text
                     "decision": _decision_dict(latest) if latest else None,
                 })
         except Exception:
@@ -624,33 +646,43 @@ async def handle_deck_inbox_upload(request: "web.Request") -> "web.Response":
 async def handle_deck_inbox_capture(request: "web.Request") -> "web.Response":
     """Capture a page / selection / link / signal into the inbox (PRODUCER path).
 
-    Body (JSON): ``{type?, url?, title?, content?, selection?, space?}``. Writes a
-    markdown note into the inbox folder where the normal scan/route pipeline picks
-    it up. Used by the browser extension's "Send to NAVIG inbox" and by signals.
+    Body (JSON), legacy: ``{type?, url?, title?, content?, selection?, space?}`` — written as
+    a plain markdown note, exactly as before. **Navig Capture v1** (``navig.inbox.capture_v1``)
+    adds ``{v: 1, kind, project?, hint?, note?, id?, meta: {site, conversation_id,
+    message_ids, role, images}, client: {id, version}, captured_at}``; the note then carries
+    YAML frontmatter and, when Recall is enabled, is indexed at once (``recall`` in the
+    answer) so ``navig recall search`` finds it. A repeat of a v1 ``id`` (an offline queue
+    retrying after a lost answer) returns the note already written instead of a copy.
+    Content is capped at 2 MB (413). Used by the Dock and by signals.
     """
+    from navig.inbox import capture_v1
+
     try:
         body = await request.json()
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
+        if getattr(exc, "status", None) == 413:  # over the server's own body cap: never an empty note
+            return _err("capture is larger than this NAVIG accepts", 413)
         body = {}
+    try:
+        cap = capture_v1.parse_body(body)
+    except capture_v1.CaptureError as exc:
+        return _err(str(exc), exc.status)
+    space = body.get("space") if isinstance(body, dict) else None
+    note = capture_v1.render_note(cap)
+    kind = cap.kind
+    title = cap.title
 
-    kind = (body.get("type") or "page").strip()
-    url = (body.get("url") or "").strip()
-    title = (body.get("title") or url or "Captured item").strip()
-    content = (body.get("content") or body.get("selection") or "").strip()
-    space = body.get("space")
-
-    lines = [f"# {title}", ""]
-    if url:
-        lines += [f"Source: {url}", ""]
-    if content:
-        lines.append(content)
-    note = "\n".join(lines) + "\n"
-
-    slug = "".join(c if c.isalnum() or c in "-_" else "-" for c in title.lower())[:48].strip("-") or "capture"
+    slug = capture_v1.slug_for(title)
     dest = _upload_dest(space)
     try:
         dest.mkdir(parents=True, exist_ok=True)
-        target = _unique_path(dest, f"{slug}.md")
+        if cap.is_v1:
+            target = dest / f"{slug}--{cap.id}.md"
+            if target.exists():
+                return _ok({"captured": True, "duplicate": True, "path": str(target), "type": kind,
+                            "space": space, "id": cap.id, "v": cap.v})
+        else:
+            target = _unique_path(dest, f"{slug}.md")
         from navig.core.yaml_io import atomic_write_text
 
         atomic_write_text(target, note)
@@ -663,7 +695,7 @@ async def handle_deck_inbox_capture(request: "web.Request") -> "web.Response":
         InboxStore().insert_event(
             InboxEvent(
                 source_path=str(target),
-                source_type="url" if url else "capture",
+                source_type="url" if cap.url else "capture",
                 filename=target.name,
                 size_bytes=len(note.encode()),
                 status="pending",
@@ -673,7 +705,28 @@ async def handle_deck_inbox_capture(request: "web.Request") -> "web.Response":
         logger.debug("capture event insert failed", exc_info=True)
 
     await _emit_inbox_event(request, "inbox_captured", {"title": title, "type": kind, "dest": str(target)})
-    return _ok({"captured": True, "path": str(target), "type": kind, "space": space})
+    out: dict[str, Any] = {"captured": True, "path": str(target), "type": kind, "space": space}
+    if cap.is_v1:
+        out.update(id=cap.id, v=cap.v, project=cap.project)
+        out["recall"] = await asyncio.to_thread(_recall_index_capture, target)
+    return _ok(out)
+
+
+def _recall_index_capture(path: Path) -> dict[str, Any]:
+    """Index one v1 capture into Recall now, so it is searchable at once. Only when the
+    operator turned Recall on (``navig recall enable``) — capture alone never opts in."""
+    try:
+        from navig.config import get_config_manager
+        from navig.core.coerce import coerce_bool
+
+        if not coerce_bool(get_config_manager().get("recall.read_local"), default=False):
+            return {"indexed": False, "reason": "recall is off (navig recall enable)"}
+        from navig.recall.sources.capture import ingest_file
+
+        return ingest_file(path)
+    except Exception as exc:  # noqa: BLE001 — the note is written; indexing retries on the next ingest
+        logger.warning("recall: indexing the capture failed: %s", type(exc).__name__)
+        return {"indexed": False, "error": type(exc).__name__}
 
 
 async def handle_deck_extract_mode_get(request: "web.Request") -> "web.Response":

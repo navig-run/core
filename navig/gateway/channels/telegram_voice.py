@@ -633,6 +633,8 @@ class TelegramVoiceMixin:
         """Synthesize *text* to audio and send as a Telegram voice message.
 
         Dispatch order (provider-aware):
+          mimo         → Xiaomi MiMo TTS (official; free in promo; vault MIMO key)
+          openrouter   → OpenRouter Fish Audio S2.1  (vault OPENROUTER key; free model)
           deepgram      → Deepgram TTS API  (DEEPGRAM_API_KEY required)
           google_cloud  → Google Cloud TTS  (GOOGLE_APPLICATION_CREDENTIALS required)
           openai        → OpenAI TTS        (OPENAI_API_KEY required)
@@ -703,6 +705,69 @@ class TelegramVoiceMixin:
                 )
             except Exception as exc:
                 logger.warning("Google Cloud TTS failed, falling back to Edge TTS: %s", exc)
+                provider = "auto"
+
+        # ── Xiaomi MiMo TTS (official, free in promo; vault key) ─────────────
+        # Tried FIRST inside "auto" when keyed — the operator's chosen primary
+        # voice (measured live 2026-10-13). An explicit "mimo" selection falls
+        # back to Edge on failure, the contract every branch here honors.
+        _mimo_keyed = False
+        try:
+            from navig.voice.tts import TTS as _TTM
+
+            _mimo_keyed = bool(_TTM._resolve_api_key("mimo", "MIMO_API_KEY"))
+        except Exception:  # noqa: BLE001
+            _mimo_keyed = False
+        if provider == "mimo" or (provider == "auto" and _mimo_keyed):
+            try:
+                from navig.voice.tts import TTSConfig as _TCM
+                from navig.voice.tts import TTSProvider as _TPM
+
+                tts = _TTM(_TCM(provider=_TPM.MIMO, fallback_providers=[]))
+                result = await tts.synthesize(text[:4000])
+                if result.success and result.audio_path:
+                    sent = await self._send_voice_file(
+                        chat_id, str(result.audio_path), title=title, performer="NAVIG AI"
+                    )
+                    if sent:
+                        return True
+                    logger.warning("MiMo TTS: audio generated but voice send failed")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("MiMo TTS failed: %s", exc)
+            if provider == "mimo":
+                logger.warning("MiMo TTS failed, falling back to Edge TTS")
+                provider = "auto"
+
+        # ── OpenRouter Fish Audio (free model; vault key) ──────────────────
+        # Tried before the paid providers inside "auto" when the operator holds
+        # an OpenRouter key (the standard keyed-first rule — this one is just
+        # also the cheapest). An explicit "openrouter" selection falls back to
+        # Edge on failure, the same contract every branch here honors.
+        _or_keyed = False
+        try:
+            from navig.voice.tts import TTS as _TT
+
+            _or_keyed = bool(_TT._resolve_api_key("openrouter", "OPENROUTER_API_KEY"))
+        except Exception:  # noqa: BLE001
+            _or_keyed = False
+        if provider == "openrouter" or (provider == "auto" and _or_keyed):
+            try:
+                from navig.voice.tts import TTSConfig as _TC
+                from navig.voice.tts import TTSProvider as _TP
+
+                tts = _TT(_TC(provider=_TP.OPENROUTER, fallback_providers=[]))
+                result = await tts.synthesize(text[:4000])
+                if result.success and result.audio_path:
+                    sent = await self._send_voice_file(
+                        chat_id, str(result.audio_path), title=title, performer="NAVIG AI"
+                    )
+                    if sent:
+                        return True
+                    logger.warning("OpenRouter TTS: audio generated but voice send failed")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("OpenRouter TTS failed: %s", exc)
+            if provider == "openrouter":
+                logger.warning("OpenRouter TTS failed, falling back to Edge TTS")
                 provider = "auto"
 
         # ── OpenAI TTS ────────────────────────────────────────────────────────

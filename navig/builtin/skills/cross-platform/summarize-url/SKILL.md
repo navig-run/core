@@ -3,7 +3,7 @@ name: summarize-url
 description: Summarize web pages, articles, YouTube videos, and documents using AI
 user-invocable: true
 navig-commands:
-  - navig ai ask "summarize {url}"
+  - navig ask "summarize {url}"
 requires:
   - curl (for fetching web content)
   - navig ai (for AI-powered summarization)
@@ -29,7 +29,7 @@ NAVIG uses its built-in AI to process and summarize content. This works on your 
 **User says:** "Summarize this: https://example.com/article"
 
 ```bash
-navig ai ask "Summarize this article: {url}"
+navig ask "Summarize this article: {url}"
 ```
 
 **Response format:**
@@ -49,7 +49,7 @@ Key points:
 **User says:** "What's this video about? https://youtu.be/..."
 
 ```bash
-navig ai ask "Summarize this YouTube video: {url}"
+navig ask "Summarize this YouTube video: {url}"
 ```
 
 ### Summarize Server Logs
@@ -60,7 +60,7 @@ navig ai ask "Summarize this YouTube video: {url}"
 navig host use {host}
 navig run "tail -200 /var/log/nginx/error.log"
 # Then feed output to AI
-navig ai ask "Summarize these error patterns: {log_output}"
+navig ask "Summarize these error patterns: {log_output}"
 ```
 
 **Response format:**
@@ -84,7 +84,7 @@ Found 3 error patterns in last 200 lines:
 **User says:** "TLDR of this document"
 
 ```bash
-navig ai ask "Summarize this document: $(cat {file})"
+navig ask "Summarize this document: $(cat {file})"
 ```
 
 ## Tips

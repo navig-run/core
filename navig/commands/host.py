@@ -893,6 +893,29 @@ def clone_host(options: dict[str, Any]) -> None:
         raise typer.Exit(1) from e
 
 
+def _test_with_stored_password(host_name: str, host_config: dict, *, silent: bool) -> None:
+    """`host test` for a password host: the same paramiko path real commands take.
+
+    Raises RuntimeError on failure; the password itself is never printed.
+    """
+    from navig.discovery import ServerDiscovery
+
+    if not silent:
+        ch.dim("Auth: stored password (resolved from the vault when it is a ref)")
+    ok, out, err = ServerDiscovery(host_config)._execute_ssh('echo "Connection successful"')
+    if ok and "Connection successful" in out:
+        if not silent:
+            ch.success(f"SSH connection to '{host_name}' successful (password auth)!")
+        return
+    error_msg = (err or "no response").strip()
+    if not silent:
+        ch.error("SSH connection failed (password auth)", error_msg)
+        if "Authentication failed" in error_msg or "Permission denied" in error_msg:
+            ch.dim("\n💡 The stored password was rejected — update it:")
+            ch.dim(f"  navig vault set vault://hosts/{host_name}/ssh")
+    raise RuntimeError(f"SSH connection failed: {error_msg}")
+
+
 def test_host(options: dict[str, Any]) -> None:
     """Test host connectivity.
 
@@ -962,6 +985,14 @@ def test_host(options: dict[str, Any]) -> None:
             if not silent:
                 ch.error("Local host test failed", str(e))
             raise RuntimeError(f"Local host test failed: {e}") from e
+
+    # A host with a stored password (plaintext or a vault ref, resolved above) is reached
+    # by every real command through paramiko WITH that password (discovery._execute_ssh).
+    # The OpenSSH probe below runs BatchMode=yes with keys only, so for such a host it
+    # tested a path nothing uses and reported a working host as broken.
+    if host_config.get("ssh_password"):
+        _test_with_stored_password(host_name, host_config, silent=silent)
+        return
 
     # Build SSH command — resolve full path on Windows to avoid FileNotFoundError
     # Note: 32-bit Python on 64-bit Windows has System32→SysWOW64 redirection,

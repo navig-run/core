@@ -17,6 +17,14 @@ import pytest
 from navig.spaces import habit_tracker, journal
 from navig.telegram import habit_actions
 
+
+@pytest.fixture(autouse=True)
+def _english_copy(monkeypatch):
+    """This file asserts the English copy. The wording is localized off the one
+    global language, so the operator's own `user.language` (or a test that set it
+    first in this worker) changes every string here. Pin it."""
+    monkeypatch.setattr("navig.core.language.resolve_language", lambda *a, **k: "en")
+
 DAY = "2026-08-26"
 CHAT = -777
 
@@ -263,3 +271,19 @@ class TestGatewayCapture:
         habit_tracker.remember_target(CHAT, tracker)
 
         assert self._handler(channel)("three lines", 909) is False
+
+
+class _GatewayShapedChannel(FakeChannel):
+    """The real gateway: `_api_call` returns the Message, not the {ok, result} envelope."""
+
+    async def _api_call(self, method, payload):
+        self.calls.append((method, payload))
+        return {"message_id": self.message_id}
+
+
+def test_the_journal_prompt_id_is_recorded_from_the_gateway_shape():
+    """Read off the envelope shape, the id was always None — and the reply check,
+    which needs it, never accepted a journal entry."""
+    ch = _GatewayShapedChannel(message_id=4242)
+    asyncio.run(habit_actions.ask_for_journal(ch, -999, "2026-10-09"))
+    assert habit_tracker.journal_prompt(-999) == ("2026-10-09", 4242)

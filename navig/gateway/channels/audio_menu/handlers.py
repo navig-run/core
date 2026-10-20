@@ -216,6 +216,8 @@ async def handle_audio_callback(
                 "edge": "edge",
                 "deepgram": "deepgram",
                 "google_cloud": "google_cloud",
+                "openrouter": "openrouter",
+                "mimo": "mimo",
             }
             try:
                 from navig.gateway.channels.telegram_sessions import get_session_manager

@@ -306,8 +306,11 @@ class NavigDbQueryTool(BaseTool):
             await self._emit(on_status, "query", f"{database}@{host_name}", 10)
 
             from navig.commands.db import _build_db_command
-            cmd = _build_db_command(db_type, sql, "root", db_password, database, None)
-            ok, stdout, stderr = await _run_sync(discovery._execute_ssh, cmd)
+            cmd, stdin = _build_db_command(db_type, sql, "root", db_password, database, None)
+            if stdin is None:
+                ok, stdout, stderr = await _run_sync(discovery._execute_ssh, cmd)
+            else:
+                ok, stdout, stderr = await _run_sync(discovery._execute_ssh, cmd, stdin=stdin)
 
             output_parts = []
             if stdout:
@@ -355,7 +358,6 @@ class NavigDbDumpTool(BaseTool):
             db_type = args.get("db_type", "mysql")
             # db_password is injected from vault at dispatch time (F-17).
             db_password = args.get("db_password") or None
-            pw_flag = f"-p{shlex.quote(db_password)}" if db_password else ""
             host_name, host_config = _resolve_host()
             discovery = _get_discovery(host_config)
             await self._emit(on_status, "dump", f"{database}@{host_name} → {output_path}", 10)
@@ -363,7 +365,7 @@ class NavigDbDumpTool(BaseTool):
             # Build dump command
             out_safe = shlex.quote(output_path)
             if db_type in ("mysql", "mariadb"):
-                cmd = f"mysqldump -u root {pw_flag} {shlex.quote(database)}".strip()
+                cmd = f"mysqldump -u root {shlex.quote(database)}"
             else:
                 cmd = f"pg_dump -U postgres {shlex.quote(database)}"
 
@@ -379,7 +381,14 @@ class NavigDbDumpTool(BaseTool):
             else:
                 cmd = f"{cmd} > {out_safe}"
 
-            ok, stdout, stderr = await _run_sync(discovery._execute_ssh, cmd)
+            # The password travels on stdin into MYSQL_PWD/PGPASSWORD, never argv.
+            from navig.commands.db import _with_db_password
+
+            cmd, stdin = _with_db_password(cmd, db_type, db_password)
+            if stdin is None:
+                ok, stdout, stderr = await _run_sync(discovery._execute_ssh, cmd)
+            else:
+                ok, stdout, stderr = await _run_sync(discovery._execute_ssh, cmd, stdin=stdin)
             return ToolResult(
                 name=self.name,
                 success=ok,

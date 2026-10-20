@@ -23,6 +23,15 @@ be absent from this interpreter — measured twice while writing this:
 Flagging either would be reporting an environment fact as a code defect. Dropping the
 "unknown group" class costs nothing here: all four real defects were wrong VERBS or wrong
 FLAGS under a group that does resolve, which is exactly the environment-independent half.
+
+⚠ THE INSTALLED APP CAN ALSO BE STALE — the second half of the same environment fact, and
+the one that lands with EVERY branch that adds a verb: the editable installs point at the
+MAIN checkout, so `navig pipeline cast` on a feature branch resolves the group (installed,
+older) and then misses the new verb, and a new flag is "rejected" by the older click
+command. So the committed `core/generated/commands.json` — the tree's own manifest, kept
+fresh by the manifest-freshness gate — decides whenever the installed app disagrees with
+it. Real advice a missing from BOTH still fails: `blackbox unseal` and `generate
+--modality` are not in the manifest either.
 """
 
 from __future__ import annotations
@@ -89,7 +98,10 @@ def _refs(text: str):
         for token in raw.split():
             if token.startswith("-"):
                 seen_flag = True
-                flags.append(token.split("=", 1)[0])
+                # `--` is the end-of-options separator (`navig pipeline cast -o x -- <cmd>`),
+                # not a flag a command could reject.
+                if token != "--":
+                    flags.append(token.split("=", 1)[0])
             elif seen_flag:
                 continue
             elif _NOT_A_VERB.match(token) or not re.fullmatch(r"[a-z][a-z0-9-]*", token):
@@ -110,6 +122,33 @@ def _resolve(root, words: list[str]):
             return None, words[i:]
         cur = nxt
     return cur, []
+
+
+_MANIFEST = None
+
+
+def _manifest() -> dict:
+    """path -> entry for the committed manifest (read once, tree-fresh by its own gate)."""
+    global _MANIFEST
+    if _MANIFEST is None:
+        import json
+
+        data = json.loads((_repo_root() / "core" / "generated" / "commands.json").read_text(encoding="utf-8"))
+        _MANIFEST = {c["path"]: c for c in data["commands"]}
+    return _MANIFEST
+
+
+def _manifest_entry(words: list[str]):
+    """Deepest manifest entry under `navig <words>` — the tree's verdict on this advice."""
+    for n in range(len(words), 0, -1):
+        entry = _manifest().get("navig " + " ".join(words[:n]))
+        if entry is not None:
+            return entry
+    return None
+
+
+def _manifest_flags(entry) -> set:
+    return {f for opt in entry.get("options") or [] for f in opt.get("flags") or []}
 
 
 def _referenced():
@@ -136,12 +175,21 @@ def test_plugin_advice_uses_real_verbs_and_flags(root) -> None:
         if _resolve(root, words[:1])[0] is None:
             continue  # group not registered in THIS interpreter — see the module docstring
         command, tail = _resolve(root, words)
+        entry = _manifest_entry(words)
         if command is None:
+            if entry is not None:
+                # installed app is older than this tree — the manifest is tree-fresh
+                rejected = [f for f in flags if f not in _manifest_flags(entry)]
+                if rejected:
+                    broken.append(f"{path.name}:{lineno} `navig {raw}` — rejects {rejected}")
+                continue
             broken.append(f"{path.name}:{lineno} `navig {raw}` — no verb `{tail[0]}`")
             continue
         accepted: set[str] = set()
         for param in command.get_params(click.Context(command)):
             accepted.update(getattr(param, "opts", []) or [])
+        if entry is not None:
+            accepted |= _manifest_flags(entry)  # a flag this branch just added
         rejected = [f for f in flags if f not in accepted]
         if rejected:
             broken.append(f"{path.name}:{lineno} `navig {raw}` — rejects {rejected}")

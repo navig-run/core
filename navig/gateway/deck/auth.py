@@ -11,7 +11,7 @@ import json
 import logging
 import time
 from typing import Any
-from urllib.parse import parse_qs, unquote
+from urllib.parse import unquote
 
 from navig.core.coerce import coerce_bool, coerce_id_rejects, coerce_id_set, coerce_int
 
@@ -149,13 +149,30 @@ def deck_auth_max_age() -> int:
     return coerce_int(_deck_config.get("auth_max_age"), 86400, minimum=60)
 
 
-# Fields Telegram EXCLUDES from the initData data-check-string before the HMAC.
-# `hash` has always been excluded; `signature` (an Ed25519 field for third-party
-# validation) was added in Bot API 8.0 (2024-11) and is now present in EVERY real
-# launch — it is not part of the bot-token HMAC input. Including it recomputes a
-# hash Telegram never produced, rejecting every genuine Mini App as "hash
-# mismatch". Spec: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
-_DCS_EXCLUDED_FIELDS = frozenset({"hash", "signature"})
+# Fields EXCLUDED from the data-check-string for the BOT-TOKEN HMAC: `hash` only.
+# ⚠ Do not add `signature`. Bot API 8.0 added it for the separate THIRD-PARTY
+# Ed25519 check, whose string excludes "hash and signature" — but Telegram computes
+# `hash` over every other field, `signature` included. Excluding it here (as #1567
+# did, verified only against initData forged with the same wrong rule) rejects
+# every genuine launch as "hash mismatch".
+# Spec: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+_DCS_EXCLUDED_FIELDS = frozenset({"hash"})
+
+
+def _parse_init_data(init_data: str) -> dict[str, str]:
+    """Split initData the way the spec does: `&` pairs, first `=`, ONE percent-decode.
+
+    `parse_qs` is subtly wrong here: it turns a literal `+` into a space, and the
+    old code then ran `unquote` over the already-decoded value a second time, so
+    any value holding `%` after the first decode was changed before hashing.
+    """
+    fields: dict[str, str] = {}
+    for pair in init_data.split("&"):
+        if not pair:
+            continue
+        key, _, value = pair.partition("=")
+        fields.setdefault(unquote(key), unquote(value))
+    return fields
 
 
 def validate_init_data(
@@ -190,20 +207,14 @@ def validate_init_data(
     # here too so the validator is correct no matter how a caller sourced max_age.
     max_age = coerce_int(max_age, 86400, minimum=60)
     try:
-        parsed = parse_qs(init_data, keep_blank_values=True)
-        received_hash = parsed.get("hash", [None])[0]
+        fields = _parse_init_data(init_data)
+        received_hash = fields.get("hash")
         if not received_hash:
             return _reject("initData carried no hash")
 
-        items = []
-        for key, values in parsed.items():
-            # Skip BOTH hash and signature — see _DCS_EXCLUDED_FIELDS. Excluding
-            # only `hash` here is what made every real (Bot API 8.0+) launch fail.
-            if key in _DCS_EXCLUDED_FIELDS:
-                continue
-            items.append(f"{key}={unquote(values[0])}")
-        items.sort()
-        data_check_string = "\n".join(items)
+        data_check_string = "\n".join(
+            f"{key}={fields[key]}" for key in sorted(fields) if key not in _DCS_EXCLUDED_FIELDS
+        )
 
         secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
         computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
@@ -213,13 +224,13 @@ def validate_init_data(
             # payload are indistinguishable here, and naming a guess misleads.
             return _reject("initData hash mismatch (wrong bot token, or tampered)")
 
-        auth_date = int(parsed.get("auth_date", [0])[0])
+        auth_date = int(fields.get("auth_date") or 0)
         age = int(time.time() - auth_date)
         if age > max_age:
             return _reject(f"initData stale (age={age}s > max={max_age}s) — reopen the Mini App")
 
-        user_str = parsed.get("user", [None])[0]
-        user = json.loads(unquote(user_str)) if user_str else None
+        user_str = fields.get("user")
+        user = json.loads(user_str) if user_str else None
 
         return {
             "user": user,
@@ -254,6 +265,11 @@ def _forwarded_client_ip(request: "web.Request") -> str | None:
     return None
 
 
+# Set by navig/cloud/uplink.py on every request Lighthouse relays in. Any request
+# carrying it came from outside this machine, whatever its socket address says.
+RELAY_VIA_HEADER = "X-Navig-Via"
+
+
 def _request_is_local(request: "web.Request") -> bool:
     """True only if the request genuinely originates from this machine.
 
@@ -264,6 +280,11 @@ def _request_is_local(request: "web.Request") -> bool:
     never masquerade as local — even though cloudflared connects to the daemon
     from 127.0.0.1.
     """
+    # Lighthouse replays remote requests into the gateway FROM 127.0.0.1, and the uplink
+    # stamps every one of them. Check it first: it is the rule that does not depend on
+    # which Cloudflare headers happened to survive the trip.
+    if request.headers.get(RELAY_VIA_HEADER):
+        return False
     # CF-Ray is only ever present on Cloudflare edge/tunnel traffic.
     if request.headers.get("CF-Ray"):
         return False
@@ -284,6 +305,14 @@ def is_local_request(request: "web.Request") -> bool:
     return _request_is_local(request)
 
 
+def is_trusted_local_caller(request: "web.Request") -> bool:
+    """Public name for :func:`_local_desktop_bypass`: a local request whose browser
+    Origin (if any) is this machine's own UI or an installed extension — never a
+    website. For routes outside ``/api/deck`` that must refuse a page's forged
+    cross-origin POST (the gateway's ``/api/voice/*``)."""
+    return _local_desktop_bypass(request)
+
+
 def _local_desktop_bypass(request: "web.Request") -> bool:
     """True when a genuinely-local request qualifies for the desktop bypass.
 
@@ -299,18 +328,24 @@ def _local_desktop_bypass(request: "web.Request") -> bool:
     (which always carries its own http(s) origin). The user's own installed
     browser extension (NAVIG Dock / web bar) reads its license/entitlement
     over loopback — the browser sets `chrome-extension://<id>` /
-    `moz-extension://<id>` only for genuine extension contexts, so those
-    origins are safe to trust local-only.
+    `moz-extension://<id>` only for genuine extension contexts.
+
+    That origin proves *an* extension, not *which* one: any extension the user
+    installed could otherwise call every deck route. Once the NAVIG Dock has paired
+    (``navig.dock.pairing``), only the paired extension id is trusted; before the
+    first pairing the old behaviour holds so an updated Dock can still pair itself.
     """
     if not _request_is_local(request):
         return False
     origin = request.headers.get("Origin", "")
+    if origin.startswith("chrome-extension://") or origin.startswith("moz-extension://"):
+        from navig.dock.pairing import extension_origin_trusted
+
+        return extension_origin_trusted(origin, request.path)
     return (
         not origin
         or origin.startswith("http://localhost:")
         or origin.startswith("http://127.0.0.1:")
-        or origin.startswith("chrome-extension://")
-        or origin.startswith("moz-extension://")
     )
 
 
@@ -336,6 +371,19 @@ def _get_user_id(request: "web.Request", bot_token: str = "") -> int | None:
             logger.debug("Deck API: valid Bearer token (api_key match)")
             return _DEV_BYPASS_SENTINEL
 
+    # Bearer = a BRAIN-LINK device token: another NAVIG OS the owner linked to this
+    # computer (navig.store.os_devices, kind "brain"). Accepted even under
+    # telegram_only, on purpose: that lock retires the deck KEY — one static secret
+    # shared by every surface — as a remote credential. A link token is per machine,
+    # minted only by a local-only action, revocable one machine at a time, and cut by
+    # the remote-access switch below. It counts as the operator (like the key), and the
+    # local-only routes still refuse it: it only ever arrives relayed.
+    if auth_header.startswith("Bearer "):
+        device_id = _brain_link_device(request, auth_header[7:].strip())
+        if device_id:
+            request["deck_brain_device"] = device_id
+            return _DEV_BYPASS_SENTINEL
+
     init_data = request.headers.get("X-Telegram-Init-Data", "")
     if init_data and token:
         reasons: list[str] = []
@@ -354,7 +402,7 @@ def _get_user_id(request: "web.Request", bot_token: str = "") -> int | None:
     # (`navig miniapp deploy` sets deck.telegram_only=true). Tunneled traffic
     # can never claim this path — see _local_desktop_bypass.
     if telegram_only:
-        if not _deck_config["dev_mode"] and _local_desktop_bypass(request):
+        if trusted_local_desktop(request):
             _log_local_bypass(request.headers.get("Origin", ""))
             return _DEV_BYPASS_SENTINEL
         return None
@@ -371,11 +419,74 @@ def _get_user_id(request: "web.Request", bot_token: str = "") -> int | None:
     # traffic (cloudflared connects from 127.0.0.1 too) — _local_desktop_bypass
     # refuses any request carrying edge/proxy headers, forcing tunneled callers
     # to present a real Bearer api_key or Telegram initData.
-    if not _deck_config["dev_mode"] and _local_desktop_bypass(request):
+    if trusted_local_desktop(request):
         _log_local_bypass(request.headers.get("Origin", ""))
         return _DEV_BYPASS_SENTINEL
 
     return None
+
+
+# last_seen is written at most once a minute per device — not on every deck call.
+_BRAIN_TOUCH_EVERY_S = 60.0
+_brain_touched: dict[str, float] = {}
+
+
+def _brain_link_device(request: "web.Request", bearer: str) -> str | None:
+    """The id of the live ``brain`` device holding *bearer*, or None.
+
+    None too when remote access is switched off (``os.remote.enabled``): the kill switch
+    has to cut a linked NAVIG OS as well as a paired phone. Never raises — an unreadable
+    store denies, it does not crash the auth middleware.
+    """
+    if not bearer or len(bearer) > 128:
+        return None
+    if not _remote_access_enabled(request):
+        return None
+    try:
+        from navig.store.os_devices import get_os_device_store
+
+        store = get_os_device_store()
+        device = store.device_for_token(bearer, kind="brain")
+        if device is None:
+            return None
+        now = time.monotonic()
+        if now - _brain_touched.get(device["id"], -_BRAIN_TOUCH_EVERY_S) >= _BRAIN_TOUCH_EVERY_S:
+            _brain_touched[device["id"]] = now
+            store.touch(device["id"])
+        return str(device["id"])
+    except Exception:  # noqa: BLE001 — deny, never 500
+        logger.warning("Deck API: brain-link token check failed", exc_info=True)
+        return None
+
+
+def _remote_access_enabled(request: "web.Request") -> bool:
+    """The live kill switch: the relay's in-memory flag when the gateway has one (it is
+    what ``PATCH /api/deck/os/remote`` flips), else the config value."""
+    try:
+        gw = request.app.get("gateway") or request.app.get("navig_gateway")
+        cm = getattr(gw, "cloud_manager", None) if gw is not None else None
+        relay = getattr(getattr(cm, "_uplink", None), "os_relay", None)
+        if relay is not None:
+            return bool(relay.enabled)
+        from navig.cloud.manager import _os_remote_enabled
+
+        return _os_remote_enabled()
+    except Exception:  # noqa: BLE001 — unknown is not "on"
+        return False
+
+
+def trusted_local_desktop(request: "web.Request") -> bool:
+    """The desktop exception, as ONE rule for every deck surface: a genuinely-local
+    request (never tunneled / relayed — see :func:`_local_desktop_bypass`) outside
+    dev_mode. It holds under ``telegram_only`` too, which locks out REMOTE
+    credentials, not the operator's own desktop.
+
+    The SSE route (``routes/events.py``) carried its own copy of the lockdown check
+    without this exception, so with ``telegram_only`` on, the desktop app's event
+    bridge got 401 on every reconnect and received no live event at all — the sale
+    ring, module refreshes, everything — while every REST call worked.
+    """
+    return not _deck_config["dev_mode"] and _local_desktop_bypass(request)
 
 
 if web:
@@ -452,4 +563,7 @@ if web:
             )
 
         request["deck_user_id"] = abs(user_id)  # store positive ID for handlers
+        # `abs(-1)` is 1, so a handler cannot tell "the local desktop / a Bearer key"
+        # from "Telegram user 1" by the id. Operator-only routes read this instead.
+        request["deck_auth_local"] = user_id == _DEV_BYPASS_SENTINEL
         return await handler(request)

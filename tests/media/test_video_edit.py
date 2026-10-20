@@ -22,8 +22,10 @@ import pytest
 from navig.media.video_edit import (
     VideoEditError,
     escape_filter_path,
+    excerpt,
     ffmpeg_available,
     join,
+    master,
     mix,
     probe,
     still,
@@ -510,3 +512,100 @@ class TestTimeoutScalesWithLength:
 
         budgets = [timeout_for(s) for s in (30, 120, 300, 600, 1200)]
         assert budgets == sorted(budgets)
+
+
+# ── excerpt / master: the video twins (plan-21 B0) ────────────────────────────
+#
+# audio_edit.excerpt writes WAV and audio_edit.normalize writes audio-only output —
+# both correct for their job, both traps the moment they are handed a finished cut.
+# These two are the video-side contract: BOTH streams survive, every time.
+
+def _av(path: Path, seconds: float, *, w: int = 640, h: int = 360, fps: int = 30) -> Path:
+    """A short clip WITH sound — _clip() alone is video-only."""
+    subprocess.run(
+        [shutil.which("ffmpeg"), "-nostdin", "-y", "-f", "lavfi",
+         "-i", f"testsrc=size={w}x{h}:rate={fps}:duration={seconds:g}",
+         "-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds:g}",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
+         "-shortest", str(path)],
+        capture_output=True, check=True,
+    )
+    return path
+
+
+def _streams(path: Path) -> set[str]:
+    out = subprocess.run(
+        [shutil.which("ffprobe"), "-v", "error", "-show_entries", "stream=codec_type",
+         "-of", "csv=p=0", str(path)],
+        capture_output=True, text=True, check=True,
+    )
+    return {line.strip() for line in out.stdout.splitlines() if line.strip()}
+
+
+def _lufs(path: Path) -> float:
+    out = subprocess.run(
+        [shutil.which("ffmpeg"), "-v", "info", "-i", str(path),
+         "-af", "ebur128=framelog=quiet", "-f", "null", "-"],
+        capture_output=True, text=True, check=False,
+    )
+    import re
+
+    m = re.search(r"I:\s*(-?[0-9.]+)\s*LUFS", out.stderr or "")
+    assert m, "ebur128 reported no integrated loudness"
+    return float(m.group(1))
+
+
+@requires_ffmpeg
+def test_excerpt_keeps_both_streams_and_the_asked_length(tmp_path: Path) -> None:
+    src = _av(tmp_path / "in.mp4", 3.0)
+    out = tmp_path / "cut.mp4"
+    res = excerpt(src, out, 0.5, 1.5)
+    assert res.path == out and out.is_file()
+    assert _streams(out) == {"video", "audio"}, "a cut of AV material must keep both streams"
+    info = probe(out)
+    assert abs(float(info["duration"]) - 1.0) <= 0.15
+    assert (info["width"], info["height"]) == (640, 360)
+
+
+@requires_ffmpeg
+def test_excerpt_bounds_are_named_before_ffmpeg_runs(tmp_path: Path) -> None:
+    src = _av(tmp_path / "in.mp4", 2.0)
+    with pytest.raises(VideoEditError, match="exceeds"):
+        excerpt(src, tmp_path / "a.mp4", 0.5, 9.0)
+    with pytest.raises(VideoEditError, match="empty"):
+        excerpt(src, tmp_path / "b.mp4", 1.5, 1.5)
+    with pytest.raises(VideoEditError, match="negative"):
+        excerpt(src, tmp_path / "c.mp4", -1.0, 1.0)
+
+
+@requires_ffmpeg
+def test_excerpt_honours_a_maxrate_cap(tmp_path: Path) -> None:
+    src = _av(tmp_path / "in.mp4", 2.0)
+    out = tmp_path / "capped.mp4"
+    excerpt(src, out, 0.0, 2.0, maxrate="1M")
+    assert out.is_file()
+    info = probe(out)
+    mbps = out.stat().st_size * 8 / float(info["duration"]) / 1_000_000
+    assert mbps <= 1.3, f"{mbps:.2f} Mbps — the cap must bind"
+
+
+@requires_ffmpeg
+def test_master_keeps_the_picture_and_lands_near_the_target(tmp_path: Path) -> None:
+    src = _av(tmp_path / "in.mp4", 3.0)
+    out = tmp_path / "mastered.mp4"
+    res = master(src, out, i=-14.0, tp=-1.0)
+    assert res.path == out and out.is_file()
+    assert _streams(out) == {"video", "audio"}, "stream copy must keep the picture"
+    info = probe(out)
+    assert (info["width"], info["height"]) == (640, 360)
+    assert abs(float(info["duration"]) - 3.0) <= 0.15
+    # Single-pass loudnorm: measured landing within 2 LU of the target is the
+    # contract; tighter numbers belong to the mastering chain, not the twin.
+    assert abs(_lufs(out) - (-14.0)) <= 2.0
+
+
+@requires_ffmpeg
+def test_master_refuses_a_file_with_no_audio(tmp_path: Path) -> None:
+    silent = _clip(tmp_path / "silent.mp4", 1.0)
+    with pytest.raises(VideoEditError, match="no audio"):
+        master(silent, tmp_path / "out.mp4")

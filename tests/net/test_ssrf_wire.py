@@ -258,19 +258,7 @@ async def test_browser_fetch_installs_guard_before_navigating(monkeypatch):
     assert calls[-1] == "stop"  # browser always torn down
 
 
-# ── ics_calendar (user-configured feed URL, followed with redirects) ────────
-
-
-async def test_ics_calendar_url_blocked(monkeypatch):
-    # Import BEFORE monkeypatching: navig.agent.proactive.__init__ instantiates a
-    # module-level ProactiveEngine() that reads the real config manager on import,
-    # so the fake CM must not be active yet.
-    from navig.agent.proactive.ics_calendar import ICSCalendarProvider
-
-    _patch_config(monkeypatch, {})
-    provider = ICSCalendarProvider(url="http://169.254.169.254/cal.ics")
-    # safe_fetch validates before any network I/O → blocked → graceful None
-    assert await provider._fetch_ics() is None
+# ── ics_calendar: moved with the code to plugins/navig-calendar/tests/test_ics_ssrf.py ──
 
 
 # ── web_fetch (shared sync fetcher: agent web tool, MCP tool, board items) ──

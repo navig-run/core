@@ -33,7 +33,9 @@ def confine_under(base: Path, rel: str | None) -> Path | None:
     return target if target.is_relative_to(root) else None
 
 
-async def run_on_host(host: str, command: str, timeout: float = 30.0) -> tuple[bool, str, str]:
+async def run_on_host(
+    host: str, command: str, timeout: float = 30.0, stdin: str | None = None
+) -> tuple[bool, str, str]:
     """Run a shell command on a CONFIGURED `host` via the project SSH executor, off the event loop.
 
     The ONE shared SSH runner for the deck routes — both ``remote._ssh`` and ``database._run_remote``
@@ -75,7 +77,12 @@ async def run_on_host(host: str, command: str, timeout: float = 30.0) -> tuple[b
     loop = asyncio.get_event_loop()
     try:
         result = await asyncio.wait_for(
-            loop.run_in_executor(None, lambda: disco._execute_ssh(command)),
+            loop.run_in_executor(
+                None,
+                (lambda: disco._execute_ssh(command))
+                if stdin is None
+                else (lambda: disco._execute_ssh(command, stdin=stdin)),
+            ),
             timeout=timeout,
         )
         if isinstance(result, tuple) and len(result) == 3:

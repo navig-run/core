@@ -1,0 +1,14 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: text/format/brief
+name: Brief
+tool: text
+layer: format
+category: Format
+description: 'A concise brief: title line plus a 2-3 sentence body.'
+params:
+  kind: brief
+tags:
+- format
+- brief

@@ -541,6 +541,137 @@ def clear_prompt(chat_id: int) -> None:
     _write_state(data)
 
 
+def take_weigh_prompt(chat_id: int, day: str | None = None) -> tuple[str, int] | None:
+    """Clear this chat's outstanding WEIGH prompt; return ``(day, message_id)``.
+
+    For a weight that arrived some other way (``/weigh 87.4``, ``navig body log
+    --weight``): the question is answered, so its ``force_reply`` box must not
+    keep re-arming. The caller deletes the message. A pending "note" prompt is
+    left alone — it is a different question. With *day*, only a prompt asking
+    about that day is taken (a back-filled weight does not answer today's).
+    """
+    data = _read_state()
+    entry = _chat_state(data, chat_id)
+    prompt = entry.get("prompt")
+    if not isinstance(prompt, dict) or prompt.get("kind") != "weigh":
+        return None
+    if day is not None and prompt.get("day") != day:
+        return None
+    entry.pop("prompt", None)
+    data[str(chat_id)] = entry
+    _write_state(data)
+    mid, day = prompt.get("message_id"), prompt.get("day")
+    if mid is None:
+        return None
+    return str(day or ""), int(mid)
+
+
+def chats_for_path(path: Path) -> list[int]:
+    """Chat ids whose check-ins write into *path*."""
+    try:
+        wanted = path.expanduser().resolve()
+    except OSError:
+        wanted = path
+    out: list[int] = []
+    for key, entry in _read_state().items():
+        if not isinstance(entry, dict) or not entry.get("path"):
+            continue
+        try:
+            same = Path(entry["path"]).expanduser().resolve() == wanted
+        except OSError:
+            same = Path(entry["path"]) == path
+        if same:
+            try:
+                out.append(int(key))
+            except ValueError:
+                continue
+    return out
+
+
+def mark_weigh_asked(chat_id: int, day: str) -> None:
+    """Record that the SCHEDULED weigh-in for *day* went out to *chat_id*.
+
+    Kept apart from the pending prompt, which is cleared the moment the question
+    is answered — "answered" must not read as "never asked", or a daemon restart
+    after the answer would ask again. Written BEFORE the send (see
+    ``body checkin``) so a run killed by its timeout after Telegram accepted the
+    message still blocks the scheduler's retry.
+    """
+    data = _read_state()
+    entry = _chat_state(data, chat_id)
+    entry["weigh_asked"] = day
+    data[str(chat_id)] = entry
+    _write_state(data)
+
+
+def unmark_weigh_asked(chat_id: int, day: str) -> None:
+    """Undo :func:`mark_weigh_asked` after a send that definitely failed."""
+    data = _read_state()
+    entry = _chat_state(data, chat_id)
+    if entry.get("weigh_asked") == day:
+        entry.pop("weigh_asked", None)
+        data[str(chat_id)] = entry
+        _write_state(data)
+
+
+def weigh_asked_on(chat_id: int) -> str | None:
+    """The day the scheduled weigh-in last went out to *chat_id*, or ``None``."""
+    value = _chat_state(_read_state(), chat_id).get("weigh_asked")
+    return str(value) if value else None
+
+
+def last_weighed(path: Path, on_or_before: date | None = None) -> date | None:
+    """The most recent day with a recorded weight, on or before *on_or_before*."""
+    points = series(path, "weight_kg")
+    if on_or_before is not None:
+        points = [p for p in points if p[0] <= on_or_before]
+    return points[-1][0] if points else None
+
+
+def remember_weekly_card(chat_id: int, message_id: int, day: str) -> None:
+    """Record which message IS this chat's weekly card.
+
+    Kept apart from :func:`last_card`, which the daily weigh-in overwrites every
+    morning: a treatment note answered the day after the card was sent must redraw
+    the CARD, not the weigh-in prompt that happens to be the latest message.
+    """
+    data = _read_state()
+    entry = _chat_state(data, chat_id)
+    entry["weekly_card"] = {"message_id": int(message_id), "day": day}
+    data[str(chat_id)] = entry
+    _write_state(data)
+
+
+def weekly_card(chat_id: int) -> tuple[int, str] | None:
+    """``(message_id, day)`` of this chat's weekly card, or ``None``."""
+    card = _chat_state(_read_state(), chat_id).get("weekly_card")
+    if not isinstance(card, dict):
+        return None
+    mid, day = card.get("message_id"), card.get("day")
+    if mid is None or not day:
+        return None
+    return int(mid), str(day)
+
+
+def claim_weekly_done(chat_id: int, day: str) -> bool:
+    """True the FIRST time this week's card is complete, False ever after.
+
+    The completion message is a notification, and it must fire once: reopening
+    the card to change one answer re-completes it, and the last piece can arrive
+    through either a tap or a typed note. Keyed on the card's day in the shared
+    state file rather than on anything in one process's memory — the gateway and
+    the worker both answer this chat.
+    """
+    data = _read_state()
+    entry = _chat_state(data, chat_id)
+    if entry.get("weekly_done") == day:
+        return False
+    entry["weekly_done"] = day
+    data[str(chat_id)] = entry
+    _write_state(data)
+    return True
+
+
 def confirm_value(chat_id: int, value: float) -> bool:
     """True when *value* repeats the one already pending confirmation.
 

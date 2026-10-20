@@ -8,6 +8,7 @@ This module provides comprehensive security management including:
 - Security updates checking
 - Connection auditing
 - Comprehensive security scans
+- Host-secret migration (plaintext host YAML passwords → the vault)
 
 Migrated from: security-manager.ps1 (400 lines)
 """
@@ -16,6 +17,7 @@ import ipaddress
 import json
 import re
 
+import typer
 from rich.progress import Progress
 from rich.table import Table
 
@@ -905,3 +907,222 @@ def check_secrets(options):
     console.print("  1. Use environment variables: api_key: ${OPENROUTER_API_KEY}")
     console.print("  2. Add to .gitignore if not already")
     console.print("  3. Rotate any exposed credentials immediately")
+
+
+# ============================================================================
+# HOST SECRET MIGRATION — plaintext host YAML passwords → the vault (Gate 0F)
+# ============================================================================
+
+
+def _print_secret_rows(title: str, rows: list[dict]) -> None:
+    """Render the migration table. Rows carry value LENGTHS, never values."""
+    table = Table(title=title)
+    table.add_column("Host", style="cyan", no_wrap=True)
+    table.add_column("Key", style="magenta", no_wrap=True)
+    table.add_column("Source file", style="dim")
+    table.add_column("Target ref", style="green")
+    table.add_column("Value length", justify="right", no_wrap=True)
+    for row in rows:
+        table.add_row(
+            str(row["host"]),
+            str(row["key"]),
+            str(row["file"]),
+            str(row["ref"]),
+            str(row["length"]),
+        )
+    console.print(table)
+
+
+def migrate_host_secrets(
+    options: dict | None = None,
+    *,
+    apply: bool = False,
+    rollback: bool = False,
+    purge_backups: bool = False,
+) -> int:
+    """Move plaintext host secrets (`ssh_password`, `database.*password`) to the vault.
+
+    Default is a DRY RUN: a table of Host | Key | Source file | Target ref |
+    Value length — the value itself is never printed. Exit 0.
+
+    ``--apply`` vaults each secret, writes ``<host>.yaml.bak.<timestamp>``
+    beside the file, then atomically rewrites the YAML with ``*_ref`` only.
+    ``--rollback`` restores the newest ``*.yaml.bak.*`` per host and refuses
+    (exit 1) when no backup exists.
+    ``--purge-backups`` deletes those backups — the last plaintext copies — but only
+    for hosts whose refs decrypt from the vault right now; any other backup is kept
+    and the run exits 1.
+
+    Returns the process exit code (0 ok · 1 refusal/failure · 2 bad usage).
+    """
+    options = options or {}
+    from navig.core.host_secrets import (  # noqa: PLC0415 — lazy, keeps startup fast
+        HostSecretError,
+        find_host_backups,
+        migrate_host_file,
+        purge_host_backups,
+        restore_host_backup,
+        scan_plaintext_host_secrets,
+    )
+
+    if sum((apply, rollback, purge_backups)) > 1:
+        console.print(
+            "[red]✗[/red] --apply, --rollback and --purge-backups are mutually exclusive"
+        )
+        return 2
+
+    config_manager = get_config_manager()
+    # Hosts load from EVERY config directory the loader merges — app-local + global,
+    # new `hosts/` + legacy `apps/` (HostManager.list_hosts). Scanning only the
+    # active scope's hosts_dir makes a run from inside a space report "nothing to
+    # migrate" while the global dir still holds plaintext. Scope the scan AND the
+    # rollback to the loader's real surface.
+    scope_dirs: list = []
+    for cd in config_manager.get_config_directories():
+        for sub in ("hosts", "apps"):
+            d = cd / sub
+            if d not in scope_dirs:
+                scope_dirs.append(d)
+    if not any(d.is_dir() for d in scope_dirs):
+        scope_dirs = [config_manager.hosts_dir]
+
+    if purge_backups:
+        purged: list = []
+        kept: list[tuple] = []
+        for d in scope_dirs:
+            p, k = purge_host_backups(d)
+            purged.extend(p)
+            kept.extend(k)
+        if not purged and not kept:
+            console.print("[green]✓[/green] No host-secret backups (*.yaml.bak.*) to purge.")
+            return 0
+        table = Table(title="Host-secret backups")
+        table.add_column("Backup", style="cyan", no_wrap=True)
+        table.add_column("Result")
+        for path in purged:
+            table.add_row(path.name, "[green]● deleted[/green]")
+        for path, reason in kept:
+            table.add_row(path.name, f"[yellow]○ kept — {reason}[/yellow]")
+        console.print(table)
+        if kept:
+            console.print(
+                f"[yellow]⚠[/yellow] {len(kept)} backup(s) kept: their host does not resolve "
+                "from the vault, so the backup is still the only usable copy. Fix the vault "
+                "(`navig vault list`) or roll back, then purge again."
+            )
+            return 1
+        console.print(
+            f"[green]✓[/green] {len(purged)} plaintext backup(s) deleted. Rollback is no "
+            "longer possible; the vault holds the only copy — keep a vault backup."
+        )
+        return 0
+
+    if rollback:
+        found: list[tuple] = []  # (scope_dir, host_file, backup_path)
+        for d in scope_dirs:
+            for host_file, backup in sorted(find_host_backups(d).items()):
+                found.append((d, host_file, backup))
+        if not found:
+            console.print(
+                "[red]✗[/red] No host-secret backups (*.yaml.bak.*) under "
+                + ", ".join(str(d) for d in scope_dirs)
+                + " — nothing to roll back"
+            )
+            return 1
+        table = Table(title="Restored host-secret backups")
+        table.add_column("Host file", style="cyan", no_wrap=True)
+        table.add_column("Restored from", style="dim")
+        for d, host_file, backup in found:
+            restore_host_backup(d, host_file, backup)
+            table.add_row(str(d / host_file), str(backup))
+        console.print(table)
+        console.print(
+            "[green]✓[/green] Rollback complete — plaintext is back in the YAML files "
+            "(the vaulted copies are left in place, harmlessly)."
+        )
+        return 0
+
+    rows: list[dict] = []
+    for d in scope_dirs:
+        rows.extend(scan_plaintext_host_secrets(d))
+    rows.sort(key=lambda r: (str(r["file"]), r["host"], r["key"]))
+    if not rows:
+        console.print("[green]✓[/green] No plaintext host secrets found — nothing to migrate.")
+        return 0
+
+    if not apply:
+        _print_secret_rows(
+            "Plaintext host secrets — DRY RUN (nothing written)", rows
+        )
+        console.print(
+            f"[dim]{len(rows)} secret(s) across {len({r['host'] for r in rows})} host(s) "
+            "would move to the vault. Run "
+            "`navig security migrate-host-secrets --apply` to migrate them.[/dim]"
+        )
+        return 0
+
+    done: list[dict] = []
+    for path in sorted({r["file"] for r in rows}):
+        try:
+            done.extend(migrate_host_file(path))
+        except HostSecretError as exc:
+            console.print(f"[red]✗[/red] {exc}")
+            console.print(
+                f"[dim]{len(done)} secret(s) migrated before the failure; "
+                f"{path.name} was left unchanged.[/dim]"
+            )
+            return 1
+        except OSError as exc:
+            console.print(f"[red]✗[/red] Cannot rewrite {path.name}: {type(exc).__name__}")
+            return 1
+    _print_secret_rows(f"Migrated to the vault ({len(done)} secret(s))", done)
+    console.print(
+        "[green]✓[/green] Host YAML now stores *_ref only; each original file kept a "
+        "*.yaml.bak.<timestamp> backup. Roll back with "
+        "`navig security migrate-host-secrets --rollback`."
+    )
+    console.print(
+        "[dim]Those backups hold the plaintext. Once `navig host test <name>` passes, "
+        "delete them with `navig security migrate-host-secrets --purge-backups`.[/dim]"
+    )
+    return 0
+
+
+# `navig security …` — the top-level group. Registered lazily through
+# navig.cli.registration._EXTERNAL_CMD_MAP; `navig host security …` (host.py)
+# stays the remote-audit surface it always was.
+security_app = typer.Typer(
+    name="security",
+    help="Security management — host-secret migration and local audits.",
+    invoke_without_command=True,
+    no_args_is_help=True,
+)
+
+
+@security_app.callback()
+def security_callback(ctx: typer.Context):
+    """Local security operations — run without a subcommand for the help."""
+    if ctx.invoked_subcommand is None:
+        raise typer.Exit()
+
+
+@security_app.command("migrate-host-secrets")
+def security_migrate_host_secrets(
+    apply: bool = typer.Option(
+        False, "--apply", help="Vault the secrets and rewrite the host YAML (default: dry run)"
+    ),
+    rollback: bool = typer.Option(
+        False, "--rollback", help="Restore the newest *.yaml.bak.* per host"
+    ),
+    purge_backups: bool = typer.Option(
+        False,
+        "--purge-backups",
+        help="Delete the plaintext *.yaml.bak.* backups of hosts that resolve from the vault",
+    ),
+):
+    """Move plaintext host passwords into the vault (dry run unless --apply)."""
+    code = migrate_host_secrets(
+        {}, apply=apply, rollback=rollback, purge_backups=purge_backups
+    )
+    if code:
+        raise typer.Exit(code)

@@ -1,0 +1,19 @@
+# Builtin NAVIG preset — read-only. Edit it from NAVIG to save your own override.
+format_version: 1
+version: 1
+id: image/style/retro-futurism
+name: Retro-Futurism
+tool: image
+layer: style
+category: Visual style
+tags:
+- style
+description: 1960s-70s retro-futurist illustration.
+params:
+  art_direction: 1960s-70s retro-futurist illustration, streamlined chrome and atomic-age shapes
+  mood: optimistic, space-age
+  lighting: bright even studio light
+  composition: clean, iconic, centred
+  aspect: '4:3'
+  quality: high
+  negative: grime, dystopian decay
