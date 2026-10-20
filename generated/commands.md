@@ -1,6 +1,6 @@
 # NAVIG Command Reference
 
-_Generated 2026-10-19T22:29:39.517021+00:00_
+_Generated 2026-10-20T00:15:20.965117+00:00_
 
 ## `navig action add`
 **Status:** `stable` · **Since:** 
@@ -11467,6 +11467,14 @@ Hide a conversation from automatic selection (its remote history is untouched).
 navig perplexity threads archive
 ```
 
+## `navig perplexity threads delete`
+**Status:** `stable` · **Since:** 
+Delete delegated conversations from the app AND the registry.
+**Examples:**
+```sh
+navig perplexity threads delete
+```
+
 ## `navig perplexity threads list`
 **Status:** `stable` · **Since:** 
 Conversations this machine has delegated, newest first.
@@ -11475,12 +11483,28 @@ Conversations this machine has delegated, newest first.
 navig perplexity threads list
 ```
 
+## `navig perplexity threads prune`
+**Status:** `stable` · **Since:** 
+Delete the conversations this agent session (or a project) left behind.
+**Examples:**
+```sh
+navig perplexity threads prune
+```
+
 ## `navig perplexity threads resume`
 **Status:** `stable` · **Since:** 
 Reopen a registry thread in the app (and mark it active).
 **Examples:**
 ```sh
 navig perplexity threads resume
+```
+
+## `navig perplexity threads sessions`
+**Status:** `stable` · **Since:** 
+Which agent sessions left conversations behind, and how many.
+**Examples:**
+```sh
+navig perplexity threads sessions
 ```
 
 ## `navig perplexity threads show`
@@ -12331,6 +12355,22 @@ Have I asked this before? Earlier questions, the answers that followed, and deci
 navig recall ask
 ```
 
+## `navig recall changes`
+**Status:** `stable` · **Since:** 
+Recent commits of a project, each joined to the sessions and records it explains.
+**Examples:**
+```sh
+navig recall changes
+```
+
+## `navig recall conflicts`
+**Status:** `stable` · **Since:** 
+Recorded contradictions — opposed user verdicts on one subject, or claims verify disproved.
+**Examples:**
+```sh
+navig recall conflicts
+```
+
 ## `navig recall decisions`
 **Status:** `stable` · **Since:** 
 Decisions — your answers to structured questions, and audited decisions with reversals.
@@ -12403,6 +12443,14 @@ Forgotten ideas — not rejected, no implementation found, oldest first.
 navig recall forgotten
 ```
 
+## `navig recall history`
+**Status:** `stable` · **Since:** 
+What happened to one file, plan or commit: sessions, commits and records, merged.
+**Examples:**
+```sh
+navig recall history
+```
+
 ## `navig recall ideas`
 **Status:** `stable` · **Since:** 
 Ideas — including the audit's recovered, never-built ones.
@@ -12425,6 +12473,14 @@ Link a session to a file, plan or commit by hand (kept across reindex).
 **Examples:**
 ```sh
 navig recall link
+```
+
+## `navig recall migrate`
+**Status:** `stable` · **Since:** 
+Import a legacy changelog into Recall — dry-run by default, verify before any retire.
+**Examples:**
+```sh
+navig recall migrate
 ```
 
 ## `navig recall plans`
@@ -12513,6 +12569,22 @@ Vocabulary — names and terms coined, adopted or rejected (with the reason).
 **Examples:**
 ```sh
 navig recall terms
+```
+
+## `navig recall trace`
+**Status:** `stable` · **Since:** 
+One commit or one session → the other side: sessions ↔ commits ↔ files ↔ records.
+**Examples:**
+```sh
+navig recall trace
+```
+
+## `navig recall unfinished`
+**Status:** `stable` · **Since:** 
+Plans and tasks nothing has verified yet (display-only — it never starts anything).
+**Examples:**
+```sh
+navig recall unfinished
 ```
 
 ## `navig recall unlink`

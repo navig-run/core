@@ -82,11 +82,11 @@ def register(app: web.Application, gateway: NavigGateway) -> None:
     """Register LLM endpoints."""
     app.router.add_post("/llm/chat", _chat(gateway))
     app.router.add_post("/llm/re-detect", _re_detect(gateway))
-    app.router.add_post("/llm/providers/register", _register_provider())
-    app.router.add_post("/llm/providers/unregister", _unregister_provider())
-    app.router.add_get("/llm/providers", _list_providers())
+    app.router.add_post("/llm/providers/register", _register_provider(gateway))
+    app.router.add_post("/llm/providers/unregister", _unregister_provider(gateway))
+    app.router.add_get("/llm/providers", _list_providers(gateway))
     # Synapse: missed-message recovery endpoint
-    app.router.add_get("/sync", _sync())
+    app.router.add_get("/sync", _sync(gateway))
 
 
 def _chat(gw: NavigGateway):
@@ -263,10 +263,20 @@ def _re_detect(gw: NavigGateway):
     return handler
 
 
-def _register_provider():
-    """POST /llm/providers/register — register a dynamic LLM provider."""
+def _register_provider(gw: NavigGateway):
+    """POST /llm/providers/register — register a dynamic LLM provider.
+
+    Admin bearer: this route points the daemon's outbound LLM calls at a URL
+    of the caller's choosing, so an unauthenticated POST is an SSRF/LLM-hijack
+    primitive (whoever answers gets the operator's prompts and provider keys
+    on the next chat). No live in-repo caller — core reads `bridge-grid.json`
+    from disk; only the archived VS Code extension ever posted here.
+    """
 
     async def handler(request: web.Request) -> web.Response:
+        auth = require_bearer_auth(request, gw)
+        if auth is not None:
+            return auth
         try:
             from navig.providers.bridge_registry import get_bridge_registry
 
@@ -299,10 +309,18 @@ def _register_provider():
     return handler
 
 
-def _unregister_provider():
-    """POST /llm/providers/unregister — unregister a dynamic LLM provider."""
+def _unregister_provider(gw: NavigGateway):
+    """POST /llm/providers/unregister — unregister a dynamic LLM provider.
+
+    Admin bearer for the same reason as register: dropping every provider
+    makes the daemon fail closed on its next LLM call, which is a denial of
+    the agent the operator is running.
+    """
 
     async def handler(request: web.Request) -> web.Response:
+        auth = require_bearer_auth(request, gw)
+        if auth is not None:
+            return auth
         try:
             from navig.providers.bridge_registry import get_bridge_registry
 
@@ -320,10 +338,16 @@ def _unregister_provider():
     return handler
 
 
-def _list_providers():
-    """GET /llm/providers — list all dynamically registered providers."""
+def _list_providers(gw: NavigGateway):
+    """GET /llm/providers — list all dynamically registered providers.
+
+    Admin bearer: the answer names every LLM endpoint the daemon talks to.
+    """
 
     async def handler(request: web.Request) -> web.Response:
+        auth = require_bearer_auth(request, gw)
+        if auth is not None:
+            return auth
         from navig.providers.bridge_registry import get_bridge_registry
 
         providers = get_bridge_registry().all()
@@ -338,7 +362,7 @@ def _list_providers():
     return handler
 
 
-def _sync():
+def _sync(gw: NavigGateway):
     """
     GET /sync?after=<uuid>
 
@@ -354,6 +378,9 @@ def _sync():
     """
 
     async def handler(request: web.Request) -> web.Response:
+        auth = require_bearer_auth(request, gw)
+        if auth is not None:
+            return auth
         after_id = request.rel_url.query.get("after", "").strip()
         if not after_id:
             return json_error_response(

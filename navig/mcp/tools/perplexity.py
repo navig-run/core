@@ -90,9 +90,16 @@ def _tool_perplexity_write(server: Any, args: dict[str, Any]) -> Any:  # noqa: A
 
 def _tool_perplexity_threads(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
     try:
+        from navig_perplexity.engine import (
+            DelegationError,
+            forget,
+            prune_conversations,
+            session_identity,
+        )
         from navig_perplexity.threads import Registry, ThreadError
     except ImportError:
         return _missing()
+
     action = str(args.get("action") or "list").strip().lower()
     registry = Registry()
     try:
@@ -105,6 +112,40 @@ def _tool_perplexity_threads(server: Any, args: dict[str, Any]) -> Any:  # noqa:
                     limit=int(args.get("limit") or 20),
                 ),
             }
+        if action == "sessions":
+            return {"ok": True, "current": session_identity(),
+                    "sessions": registry.session_summary()}
+        if action == "delete":
+            alias = str(args.get("alias") or "").strip()
+            if not alias:
+                return {"ok": False, "error": "action 'delete' needs an alias"}
+            if not bool(args.get("confirm", False)):
+                return {
+                    "ok": False,
+                    "error": "deleting a conversation is destructive: pass confirm=true",
+                    "preview": registry.get(alias).as_dict(),
+                }
+            result = forget([registry.get(alias)], remote=not bool(args.get("registry_only", False)))
+            return {"ok": result["success"], **result}
+        if action == "prune":
+            scope: dict[str, Any] = {}
+            if args.get("session"):
+                scope["session"] = str(args["session"])
+            if args.get("project"):
+                scope["project"] = str(args["project"])
+            if args.get("older_than_seconds"):
+                scope["older_than_s"] = float(args["older_than_seconds"])
+            if args.get("title"):
+                scope["title_like"] = str(args["title"])
+            if not scope:
+                scope["session"] = session_identity()
+            preview = bool(args.get("dry_run", True)) or not bool(args.get("confirm", False))
+            result = prune_conversations(
+                remote=not bool(args.get("registry_only", False)),
+                dry_run=preview,
+                **scope,
+            )
+            return {"ok": True, **result}
         alias = str(args.get("alias") or "").strip()
         if not alias:
             return {"ok": False, "error": f"action {action!r} needs an alias"}
@@ -116,8 +157,14 @@ def _tool_perplexity_threads(server: Any, args: dict[str, Any]) -> Any:  # noqa:
             thread = registry.get(alias)
             return {"ok": True, "thread": registry.resume(alias).as_dict(),
                     "note": "" if thread.remote_id else "this thread has no app id yet"}
-        return {"ok": False, "error": f"unknown action {action!r} (list, show, resume, archive)"}
+        return {
+            "ok": False,
+            "error": f"unknown action {action!r} "
+                     "(list, show, resume, archive, delete, prune, sessions)",
+        }
     except ThreadError as exc:
+        return _failed(exc)
+    except DelegationError as exc:
         return _failed(exc)
 
 
@@ -170,12 +217,25 @@ def _tool_perplexity_status(server: Any, args: dict[str, Any]) -> Any:  # noqa: 
 _THREADS_SCHEMA = {
     "type": "object",
     "properties": {
-        "action": {"type": "string", "enum": ["list", "show", "resume", "archive"],
-                   "default": "list", "description": "What to do with the registry."},
-        "alias": {"type": "string", "description": "Conversation alias (show/resume/archive)."},
+        "action": {
+            "type": "string",
+            "enum": ["list", "show", "resume", "archive", "delete", "prune", "sessions"],
+            "default": "list",
+            "description": "What to do with the registry. 'delete'/'prune' need confirm=true.",
+        },
+        "alias": {"type": "string", "description": "Conversation alias (show/resume/archive/delete)."},
         "project": {"type": "string", "description": "Only conversations for this project."},
         "all": {"type": "boolean", "default": False, "description": "Include archived ones."},
         "limit": {"type": "integer", "default": 20, "description": "How many to return."},
+        "session": {"type": "string", "description": "Only conversations left by this agent session."},
+        "older_than_seconds": {"type": "number", "description": "Only ones last used longer ago than this."},
+        "title": {"type": "string", "description": "Only conversations whose title contains this."},
+        "confirm": {"type": "boolean", "default": False,
+                    "description": "Required for delete/prune: they remove the app's history."},
+        "dry_run": {"type": "boolean", "default": True,
+                    "description": "prune previews unless confirm is also true."},
+        "registry_only": {"type": "boolean", "default": False,
+                          "description": "Forget the row but keep the app's conversation."},
     },
     "required": [],
 }
@@ -243,8 +303,10 @@ def register(server: Any) -> None:
             "name": "perplexity_threads",
             "description": (
                 "The persistent conversation registry: list delegated conversations, show one, "
-                "resume it in the app, or archive it so it is not picked automatically. A "
-                "conversation survives an agent restart — continue it with perplexity_ask thread=<alias>."
+                "resume it in the app, archive it, or clean up. A conversation survives an agent "
+                "restart — continue it with perplexity_ask thread=<alias>. Cleanup: action=prune "
+                "deletes this session's conversations from the app's history too (confirm=true), "
+                "action=sessions shows which sessions left conversations behind."
             ),
             "inputSchema": _THREADS_SCHEMA,
         },

@@ -170,6 +170,40 @@ async def test_loopback_requester_is_lan():
     assert b"fleet-tok" in resp.body
 
 
+@pytest.mark.parametrize(
+    "marker",
+    ["CF-Ray", "X-Navig-Via"],
+    ids=["cloudflare-tunnel", "lighthouse-replay"],
+)
+async def test_tunneled_request_from_loopback_gets_no_bootstrap(marker):
+    """A tunnel terminates on this machine, so `remote` is 127.0.0.1 — and the
+    LAN check alone would hand it the mesh_token.
+
+    Cloudflare stamps CF-Ray on everything it proxies and the lighthouse
+    replay stamps X-Navig-Via; neither can be stripped by the caller, so either
+    one means "not a LAN peer" no matter what the socket address says.
+    """
+    from navig.gateway.routes import install as install_routes
+
+    handler = install_routes._config(_gw())
+    req = SimpleNamespace(remote="127.0.0.1", headers={marker: "present"})
+    resp = await handler(req)
+    assert resp.status == 403
+    body = json.loads(resp.body)
+    assert body["error_code"] == "not_lan"
+    assert "fleet-tok" not in resp.body.decode()
+
+
+async def test_plain_loopback_with_headers_is_still_lan():
+    """The marker is what refuses — not having headers at all (native, curl)."""
+    from navig.gateway.routes import install as install_routes
+
+    handler = install_routes._config(_gw())
+    req = SimpleNamespace(remote="127.0.0.1", headers={})
+    resp = await handler(req)
+    assert resp.status == 200
+
+
 # ── /mesh/ping: the joiner's credential ──────────────────────────────────────
 
 

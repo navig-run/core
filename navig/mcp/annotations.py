@@ -244,6 +244,17 @@ PARAM_DESCRIPTIONS: dict[str, dict[str, str]] = {
         "before": "Conversation turns to include before the cited message (default 3)",
         "after": "Conversation turns to include after the cited message (default 3)",
     },
+    # The Perplexity delegation tools ship every parameter documented except the mode
+    # selector, which is the one a caller is most likely to guess wrong. Found by the
+    # definition budget (2 tools hid a parameter); the enum is the tool's, the wording here.
+    "perplexity_ask": {
+        "mode": "Which Perplexity mode to use: 'auto' lets the app guide it, or force "
+        "'search', 'research' or 'computer'.",
+    },
+    "perplexity_write": {
+        "mode": "Which Perplexity mode to use: 'auto' lets the app guide it, or force "
+        "'search', 'research' or 'computer'.",
+    },
     "cdp_screenshot": {
         "full_page": "Capture the whole scrollable page instead of just the viewport",
         "as_base64": "Return base64 image data instead of writing a file",

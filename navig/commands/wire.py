@@ -119,6 +119,10 @@ def wire_command(
     no_register: bool = typer.Option(
         False, "--no-register", help="Skip adding the workshop to the spaces registry."
     ),
+    recall: bool = typer.Option(
+        False, "--recall",
+        help="Opt in now: enable Recall reading and ingest this folder's sessions (bounded).",
+    ),
 ) -> None:
     """Wire a folder into the agent ecosystem (workshop + .claude capability links)."""
     from navig.commands.mount import _create_junction, _remove_junction  # noqa: PLC0415
@@ -250,6 +254,23 @@ def wire_command(
         except Exception:  # noqa: BLE001
             pass
 
+    # ── Optional Recall opt-in (default OFF — the flag IS the consent) ─────────
+    if recall and not dry_run:
+        try:
+            from navig.config import get_config_manager  # noqa: PLC0415
+            from navig.recall.ingest import Ingestor  # noqa: PLC0415
+
+            get_config_manager().set_global("recall.read_local", True)
+            rep = Ingestor().run(project=name)
+            note = (f"recall enabled + {rep.sources_read} source(s), "
+                    f"{rep.turns_added} turn(s) indexed")
+            if rep.errors:
+                note += f" ({len(rep.errors)} source error(s) — navig recall sources --errors)"
+            actions.append(note)
+        except Exception as exc:  # noqa: BLE001 — a recall hiccup never fails the wiring
+            actions.append(f"⚠ recall import failed ({type(exc).__name__}: {exc}) — "
+                           f"retry: navig recall ingest --project {name}")
+
     # ── Report ────────────────────────────────────────────────────────────────
     if dry_run:
         ch.info(f"dry-run · navig wire {target}")
@@ -262,3 +283,6 @@ def wire_command(
     for a in actions:
         ch.info(f"  · {a}")
     ch.info("Capabilities under .claude/ are live links — edit in .navig/ or .claude/, both update.")
+    if not recall and not dry_run and not no_register:
+        ch.dim(f"next: index this folder's history — navig recall ingest --project {name}"
+               f"   (or re-run: navig wire --recall)")

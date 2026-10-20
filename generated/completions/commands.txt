@@ -1430,8 +1430,11 @@ navig perplexity open
 navig perplexity selftest
 navig perplexity status
 navig perplexity threads archive
+navig perplexity threads delete
 navig perplexity threads list
+navig perplexity threads prune
 navig perplexity threads resume
+navig perplexity threads sessions
 navig perplexity threads show
 navig perplexity threads sidebar
 navig perplexity write
@@ -1538,6 +1541,8 @@ navig quickstart
 navig radar add
 navig radar list
 navig recall ask
+navig recall changes
+navig recall conflicts
 navig recall decisions
 navig recall disable
 navig recall enable
@@ -1547,9 +1552,11 @@ navig recall extract
 navig recall features
 navig recall findings
 navig recall forgotten
+navig recall history
 navig recall ideas
 navig recall ingest
 navig recall link
+navig recall migrate
 navig recall plans
 navig recall questions
 navig recall reindex
@@ -1561,6 +1568,8 @@ navig recall sources
 navig recall status
 navig recall tables
 navig recall terms
+navig recall trace
+navig recall unfinished
 navig recall unlink
 navig recall verify
 navig receipt list

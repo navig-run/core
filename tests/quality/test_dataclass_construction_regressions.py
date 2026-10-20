@@ -74,6 +74,11 @@ def test_linux_get_window_info_returns_windowinfo(monkeypatch):
 
 def test_linux_get_all_windows_returns_windowinfo(monkeypatch):
     adapter = LinuxAdapter()
+    # The session probe is a capability check, not the code path under test: on Windows or a
+    # Wayland session `get_all_windows()` correctly answers no windows at all, which would make
+    # this guard pass or fail depending on the host. Pin an X11 session with xdotool instead.
+    monkeypatch.setattr(adapter, "_session", "x11")
+    monkeypatch.setattr(adapter, "_has_xdotool", True)
     # `wmctrl -lG` style: id desktop x y w h host title
     line = "0x1 0 10 20 800 600 host My Title"
     monkeypatch.setattr(adapter, "_run_command", lambda *a, **k: _ok(line))

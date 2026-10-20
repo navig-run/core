@@ -275,6 +275,8 @@ def init_app(options: dict[str, Any]) -> None:
             ch.info("  2. Add apps to hosts: navig app add <name>")
             ch.info("  3. All configs will be stored in .navig/ (not ~/.navig/)")
             ch.info("  4. Add .navig/ to .gitignore if it contains sensitive data")
+            ch.info("  5. Index this folder's history: navig wire --recall  "
+                    "(or navig recall ingest once wired)")
             ch.newline()
             ch.dim("Note: App-specific configs take precedence over global configs")
 

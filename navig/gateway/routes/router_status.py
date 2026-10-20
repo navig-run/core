@@ -3,12 +3,21 @@ Router status HTTP route for the NAVIG gateway.
 
 Exposes ``/router/status`` returning the unified router's health,
 available providers, active provider, and recent trace summaries.
+
+Auth: admin bearer, like every other gateway route that answers with
+internal state. These three carried none, so any local process — and, before
+the embedded gateway's CORS was fixed, any web page — could read the provider
+inventory and classify input through the operator's own router. No in-repo
+caller ever sent them a credential (the archived VS Code extension did, and is
+not shipped), so the gate breaks nothing.
 """
 
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
+
+from navig.gateway.routes.common import require_bearer_auth
 
 if TYPE_CHECKING:
     from aiohttp import web
@@ -86,8 +95,38 @@ async def _router_detect(request: web.Request) -> web.Response:
         return _web.json_response({"error": str(e)}, status=500)
 
 
+def _status(gw: NavigGateway):
+    async def handler(request: web.Request) -> web.Response:
+        auth = require_bearer_auth(request, gw)
+        if auth is not None:
+            return auth
+        return await _router_status(request)
+
+    return handler
+
+
+def _traces(gw: NavigGateway):
+    async def handler(request: web.Request) -> web.Response:
+        auth = require_bearer_auth(request, gw)
+        if auth is not None:
+            return auth
+        return await _router_traces(request)
+
+    return handler
+
+
+def _detect(gw: NavigGateway):
+    async def handler(request: web.Request) -> web.Response:
+        auth = require_bearer_auth(request, gw)
+        if auth is not None:
+            return auth
+        return await _router_detect(request)
+
+    return handler
+
+
 def register(app: web.Application, gateway: NavigGateway) -> None:
-    """Register router status routes."""
-    app.router.add_get("/router/status", _router_status)
-    app.router.add_get("/router/traces", _router_traces)
-    app.router.add_post("/router/detect", _router_detect)
+    """Register router status routes (admin bearer on all three)."""
+    app.router.add_get("/router/status", _status(gateway))
+    app.router.add_get("/router/traces", _traces(gateway))
+    app.router.add_post("/router/detect", _detect(gateway))

@@ -1857,7 +1857,8 @@ def _phase_title(space_dir: Path) -> str | None:
 
 
 def _context_brief(space_dir: Path, own_id: str) -> str:
-    """The SessionStart index: header, one line per edge, one count line. ≤10 lines.
+    """The SessionStart index: header, one line per edge, one count line. ≤10 lines
+    (≤13 with the optional ``recall.session_brief`` section).
 
     Pure render over the two shared readers (``related_graph`` + ``gather_linked``);
     raises only if they do — the ``--brief`` caller catches and falls back, because
@@ -1897,7 +1898,25 @@ def _context_brief(space_dir: Path, own_id: str) -> str:
         )
     else:
         lines.append(f"  context: no relations yet — navig space link {own_id} <space>")
-    return "\n".join(lines[:10])
+
+    # Recall context (recall.session_brief, default off) — its OWN fail-open guard: a
+    # broken or disabled bank must cost this section only, never the relations brief.
+    try:
+        from navig.config import get_config_manager  # noqa: PLC0415
+        from navig.core.coerce import coerce_bool  # noqa: PLC0415
+
+        if coerce_bool(get_config_manager().get("recall.session_brief"), default=False):
+            from navig.recall import query as _rq  # noqa: PLC0415
+            from navig.recall.projects import project_for_path  # noqa: PLC0415
+
+            block = _rq.session_brief(project_for_path(str(space_dir)).id, budget=400)
+            if block:
+                lines.append("  recall:")
+                lines.extend(block.splitlines())
+    except Exception:  # noqa: BLE001 — section-level survival, not diagnosis
+        pass
+    # ≤10 relation lines, +≤3 recall lines when enabled
+    return "\n".join(lines[:13])
 
 
 @space_app.command("related")

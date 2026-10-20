@@ -282,8 +282,11 @@ async def test_mesh_scan_announces_and_returns_snapshot(workspace, monkeypatch):
     assert data["peers"][0]["node_id"] == "navig-linux-peer"
 
 
-async def test_root_mesh_scan_graceful_without_discovery(workspace):
+async def test_root_mesh_scan_graceful_without_discovery(workspace, monkeypatch):
     """Gateway-root POST /mesh/discovery/scan: mesh disabled → 200 scanning:false."""
+    # The root route is admin-bearer gated (test_root_mesh_scan_needs_the_admin_bearer
+    # pins that); these assert the behaviour BEYOND the gate.
+    monkeypatch.setattr(mesh_root_routes, "require_bearer_auth", lambda *_a, **_k: None)
     gw = SimpleNamespace(storage_dir=None)  # no _mesh_discovery attribute at all
     app = web.Application()
     app.router.add_post("/mesh/discovery/scan", mesh_root_routes._scan(gw))
@@ -294,8 +297,34 @@ async def test_root_mesh_scan_graceful_without_discovery(workspace):
     assert data == {"scanning": False, "reason": "mesh not running"}
 
 
+async def test_root_mesh_scan_needs_the_admin_bearer(workspace):
+    """Gateway-root scan is gated: no credential → 401, no token configured → 503.
+
+    It forces a multicast announce and answers with the peer registry, so it is
+    operator-only — unlike the deck alias, which the deck auth middleware covers.
+    """
+    app = web.Application()
+
+    gw_with_token = SimpleNamespace(
+        storage_dir=None, config=SimpleNamespace(auth_token="s3cret-token")
+    )
+    app.router.add_post("/mesh/discovery/scan", mesh_root_routes._scan(gw_with_token))
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.post("/mesh/discovery/scan")
+        assert resp.status == 401
+
+    app_no_token = web.Application()
+    app_no_token.router.add_post(
+        "/mesh/discovery/scan", mesh_root_routes._scan(SimpleNamespace(storage_dir=None))
+    )
+    async with TestClient(TestServer(app_no_token)) as client:
+        resp = await client.post("/mesh/discovery/scan")
+        assert resp.status == 503
+
+
 async def test_root_mesh_scan_announces_live_instance(workspace, monkeypatch):
     """Gateway-root scan drives the LIVE gw._mesh_discovery, not a throwaway."""
+    monkeypatch.setattr(mesh_root_routes, "require_bearer_auth", lambda *_a, **_k: None)
     # The root module binds get_registry at import — patch its own reference.
     monkeypatch.setattr(
         mesh_root_routes, "get_registry", lambda *_a, **_k: _StubRegistry()

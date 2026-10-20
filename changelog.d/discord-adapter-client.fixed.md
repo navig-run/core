@@ -1,1 +1,0 @@
-- **Outbound Discord messages work.** The Discord messaging adapter waited for a bot client that nothing ever gave it, so every send failed with "Call set_client()". It now uses the running NAVIG Discord bot.

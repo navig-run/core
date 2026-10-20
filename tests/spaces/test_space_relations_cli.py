@@ -174,7 +174,8 @@ def test_context_brief_is_short_and_shows_edges(_own_registry):
     res = runner.invoke(space_app, ["context", "alpha", "--brief"])
     assert res.exit_code == 0, res.stdout
     lines = [ln for ln in res.stdout.splitlines() if ln.strip()]
-    assert len(lines) <= 10, f"brief too long ({len(lines)} lines):\n{res.stdout}"
+    # ≤10 relation lines, +≤3 only when the opt-in recall.session_brief section is on
+    assert len(lines) <= 13, f"brief too long ({len(lines)} lines):\n{res.stdout}"
     assert any(ln.startswith("Active space: alpha") for ln in lines)
     assert any("● beta" in ln and "1 file(s)" in ln for ln in lines)
     assert "context:" in res.stdout

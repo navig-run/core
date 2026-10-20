@@ -172,6 +172,57 @@ class TestPostHelper:
             with pytest.raises(SystemExit):
                 _flux._post("/mesh/discovery/scan", {})
 
+    def test_post_carries_the_admin_bearer(self):
+        """`/mesh/target` and `/mesh/discovery/scan` now require it — the CLI must send it.
+
+        Without this the one live caller answered 401 and `navig flux scan`
+        reported a scan the gateway had refused.
+        """
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"queued": True}
+        mock_resp.raise_for_status = MagicMock()
+
+        with (
+            patch.object(_flux, "httpx") as mock_httpx,
+            patch.object(
+                _flux,
+                "_auth_headers",
+                return_value={"Authorization": "Bearer tok", "X-Actor": "navig-cli"},
+            ),
+        ):
+            _flux._HTTPX = True
+            mock_httpx.post.return_value = mock_resp
+            _flux._post("/mesh/target", {"node_id": "peer-1"})
+
+        headers = mock_httpx.post.call_args.kwargs["headers"]
+        assert headers["Authorization"] == "Bearer tok"
+        assert headers["X-Actor"] == "navig-cli"
+
+    def test_get_carries_the_admin_bearer(self):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {}
+        mock_resp.raise_for_status = MagicMock()
+
+        with (
+            patch.object(_flux, "httpx") as mock_httpx,
+            patch.object(_flux, "_auth_headers", return_value={"Authorization": "Bearer tok"}),
+        ):
+            _flux._HTTPX = True
+            mock_httpx.get.return_value = mock_resp
+            _flux._get("/mesh/peers")
+
+        assert mock_httpx.get.call_args.kwargs["headers"]["Authorization"] == "Bearer tok"
+
+    def test_clear_sends_the_bearer_on_delete(self):
+        with (
+            patch.object(_flux, "httpx") as mock_httpx,
+            patch.object(_flux, "_auth_headers", return_value={"Authorization": "Bearer tok"}),
+        ):
+            _flux._HTTPX = True
+            _flux.clear()
+
+        assert mock_httpx.delete.call_args.kwargs["headers"]["Authorization"] == "Bearer tok"
+
 
 # ---------------------------------------------------------------------------
 # peers command

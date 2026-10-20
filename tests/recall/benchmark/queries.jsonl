@@ -1,0 +1,10 @@
+{"id": "q01", "question": "which transport did we choose for obs", "search": "obs websocket transport", "gold": ["rk-bench-obs"]}
+{"id": "q02", "question": "what database backs the metadata store", "search": "postgres metadata store", "gold": ["rk-bench-pg"]}
+{"id": "q03", "question": "how does the telegram catalog read images", "search": "telegram catalog ocr images", "gold": ["rk-bench-ocr"]}
+{"id": "q04", "question": "where does lighthouse deploy the edge worker", "search": "lighthouse edge deploy worker", "gold": ["rk-bench-edge"]}
+{"id": "q05", "question": "what is the daily budget for extraction", "search": "extraction daily budget", "gold": ["rk-bench-budget"]}
+{"id": "q06", "question": "who owns the windows installer branding", "search": "windows installer branding anchor", "gold": ["rk-bench-installer"]}
+{"id": "q07", "question": "how do we keep bay pricing in parity", "search": "bay pricing parity stripe", "gold": ["rk-bench-pricing"]}
+{"id": "q08", "question": "which agents are in the fleet roster", "search": "fleetview agent roster", "gold": ["rk-bench-roster"]}
+{"id": "q09", "question": "what fonts does the tiktok pipeline use", "search": "tiktok pipeline fonts", "gold": ["rk-bench-fonts"]}
+{"id": "q10", "question": "what phase is the mesh network in", "search": "mesh lan phase", "gold": ["rk-bench-mesh"]}

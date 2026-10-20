@@ -23,7 +23,7 @@ from typing import Any
 
 from navig.recall import pass0
 from navig.recall.archive import Archive
-from navig.recall.model import Record, Turn
+from navig.recall.model import Evidence, Record, Turn
 from navig.recall.projects import ProjectResolver
 from navig.recall.redact import redact_secrets
 from navig.recall.session_links import DERIVED_RELS, LINKS_VERSION, links_from_meta
@@ -347,6 +347,124 @@ class Ingestor:
         rep.turns_added += len(self.store.add_turns(ref.source_id, new))
         self.store.upsert_source(row)
         rep.sources_read += 1
+
+    # ── One-off legacy changelog migration (the `migrate` command's engine) ──────
+
+    def import_changelog(self, project: str, path: str | Path, *, root: str | Path | None = None,
+                         apply: bool = False, retire: bool = False) -> dict[str, Any]:
+        """Parse → dry-run manifest, or backup + import + verify + (optional) retire.
+
+        Dry-run is the default: with ``apply=False`` nothing is written anywhere.
+        Raises ``ValueError`` when the file has content but no recognizable entries —
+        an unparsable source is never migrated and never retired. ``retire`` additionally
+        requires ``root`` (the consumer scan), a ``private_dev`` classification and a
+        clean scan; release notes are indexed but their file stays.
+        """
+        import json  # noqa: PLC0415
+        import shutil  # noqa: PLC0415
+
+        from navig.core.json_io import atomic_write_json  # noqa: PLC0415
+        from navig.recall import changelog as cl  # noqa: PLC0415
+        from navig.recall.model import canonical_key as _ck  # noqa: PLC0415
+        from navig.recall.sources import changelog as cl_src  # noqa: PLC0415
+
+        p = Path(path)
+        if not p.is_file():
+            raise FileNotFoundError(str(p))
+        raw = p.read_bytes()
+        digest16 = hashlib.sha256(raw).hexdigest()[:16]
+        entries = cl.parse(raw.decode("utf-8", errors="replace"))  # ValueError → abort
+        kind = cl.classify(entries)
+        sid = cl_src.source_id_for(project, p.name)
+        consumers = cl_src.find_consumers(Path(root), p.name) if root else []
+        manifest: dict[str, Any] = {
+            "project": project, "file": str(p), "filename": p.name, "sha256": digest16,
+            "classification": kind, "entries": len(entries),
+            "record_ids": [cl.record_id(project, p.name, e) for e in entries],
+            "consumers": consumers, "applied": False, "retired": False,
+            "retire_refused": "", "verify": None,
+        }
+        if not apply:
+            return manifest  # dry-run: zero writes
+
+        # 1. backup + import manifest (before the original is ever touched)
+        bdir = self.vault.root / ".migrations" / project
+        bdir.mkdir(parents=True, exist_ok=True)
+        backup = bdir / p.name
+        if backup.exists() and hashlib.sha256(backup.read_bytes()).hexdigest()[:16] != digest16:
+            backup.rename(bdir / f"{p.name}.{hashlib.sha256(backup.read_bytes()).hexdigest()[:16]}")
+        if not backup.exists():
+            shutil.copy2(p, backup)
+        manifest["backup"] = str(backup)
+        atomic_write_json({**manifest, "imported_at": _utcnow()},
+                          bdir / f"{p.name}.manifest.json")
+
+        # 2. source + turns + records (idempotent: same digest → already-imported short-circuit)
+        existing = self.store.get_source(sid)
+        already = existing is not None and existing.get("head_sha") == digest16
+        if not already:
+            turns = [_redacted(Turn(
+                msg_id=f"L{e.start}-{e.end}-{e.sha}", speaker="imported_doc", kind="doc",
+                ts=e.date, text=e.text,
+                meta={"title": e.title, "entry_sha": e.sha, "file_sha256": digest16},
+            )) for e in entries]
+            row = cl_src.source_row(project, p, digest16, len(entries),
+                                    {"kind": kind, "sha256": digest16})
+            row["updated_at"] = _utcnow()
+            self.archive.append(cl_src.ADAPTER, sid, turns, _archivable(row))
+            self.store.add_turns(sid, turns)
+            self.store.upsert_source(row)
+            for e in entries:
+                rid = cl.record_id(project, p.name, e)
+                body_lines = e.text.splitlines()[1:]
+                summary = next((ln.strip() for ln in body_lines if ln.strip() and not ln.startswith("#")),
+                               "")[:240]
+                rec = Record(
+                    id=rid, type="lore", title=e.title[:200], summary=summary, body=e.text,
+                    project=project, status="confirmed", status_basis="audit", endorsement="none",
+                    impl="unknown", confidence=0.8, canonical_key=_ck(e.title), tags=["changelog"],
+                    attrs={"source_file": p.name, "entry_lines": [e.start, e.end],
+                           "entry_sha": e.sha, "entry_date": e.date},
+                    created=e.date or _utcnow(), updated=e.date or _utcnow(),
+                    evidence=[Evidence(source_id=sid, msg_id=f"L{e.start}-{e.end}-{e.sha}",
+                                       speaker="imported_doc", excerpt=e.text[:300],
+                                       locator=json.dumps({"lines": [e.start, e.end],
+                                                           "file_sha256": digest16}))],
+                )
+                self.store.upsert_record(rec, path=str(self.vault.write(
+                    rec, existing=self.store.record_path(rid))))
+            manifest["applied"] = True
+        else:
+            manifest["applied"] = "unchanged"
+
+        # 3. verify against the ORIGINAL before anything may be retired
+        reread = p.read_bytes()
+        re_entries = cl.parse(reread.decode("utf-8", errors="replace"))
+        ok_digest = hashlib.sha256(reread).hexdigest()[:16] == digest16
+        ok_ids = [cl.record_id(project, p.name, e) for e in re_entries] == manifest["record_ids"]
+        known = self.store.known_msg_ids(sid)
+        ok_turns = all(f"L{e.start}-{e.end}-{e.sha}" in known for e in re_entries)
+        if not (ok_digest and ok_ids and ok_turns):
+            raise RuntimeError(f"changelog verification failed for {p} — nothing was retired")
+        manifest["verify"] = {"ok": True, "entries": len(re_entries), "digest": ok_digest,
+                              "records": ok_ids, "turns": ok_turns}
+
+        # 4. retire: private dev history only, only with a root to scan, only with no consumers
+        if retire:
+            if kind != "private_dev":
+                manifest["retire_refused"] = "release_notes — release documentation is kept"
+            elif not root:
+                manifest["retire_refused"] = "no project root given — consumer scan impossible"
+            elif consumers:
+                manifest["retire_refused"] = f"{len(consumers)} consumer(s) still reference it"
+            else:
+                p.unlink()  # verified backup with matching sha sits in bdir/
+                src_row = dict(self.store.get_source(sid) or {})
+                src_row.update({"meta": {**(src_row.get("meta") or {}),
+                                         "retired_at": _utcnow(), "backup": str(backup)}})
+                self.store.upsert_source(src_row)
+                manifest["retired"] = True
+        return manifest
 
     def _audit_records(self, root: Path, proj: str, rep: IngestReport) -> None:
         from navig.recall.sources import session_audit as sa  # noqa: PLC0415

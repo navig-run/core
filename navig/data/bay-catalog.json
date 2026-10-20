@@ -1,6 +1,6 @@
 {
-  "navigVersion": "3.27.1",
-  "sourceCommit": "78f79111a9",
+  "navigVersion": "3.27.6",
+  "sourceCommit": "89ccd72402",
   "generatedAt": "2026-10-19",
   "source": "local",
   "items": [
@@ -1217,7 +1217,7 @@
         "model": "free"
       },
       "install": "navig skill install github:navig-run/registry/ai-skills/tauri-desktop",
-      "readme": "# Tauri v2 desktop apps (navig editions)\r\n\r\nOne web frontend, one Rust backend, one native binary. This skill is the recognition and\r\nworkflow layer for navig's Tauri desktop editions. Deep IPC + permission internals live in\r\n[`references/ipc-and-permissions.md`](references/ipc-and-permissions.md) — pull it in when you\r\nadd a command, wire a window, or chase a permission-denied error.\r\n\r\n## Recognize it\r\n\r\n- A **`src-tauri/`** directory: `Cargo.toml`, `tauri.conf.json`, `src/main.rs` (+ usually `lib.rs`\r\n  and a fan of `*_cmd.rs` command modules — Anchor has `neuromancer_cmd.rs`, `command_center.rs`,\r\n  `tools_cmd.rs`, `tray.rs`, …).\r\n- `package.json` with `@tauri-apps/api` **^2** and `@tauri-apps/cli` **^2**.\r\n- A frontend at the repo root: `index.html`, `vite.config.ts`, `src/` (React 18 in Anchor/Echo).\r\n- **`src-tauri/capabilities/*.json`** — the v2 permission grants. If this folder exists, treat the\r\n  app as capability-gated (deny-by-default).\r\n\r\nThe three navig editions, so you scope to the right one:\r\n\r\n| App | Path | Identity | Frontend | Package mgr |\r\n|-----|------|----------|----------|-------------|\r\n| **Anchor** | `apps/anchor` | `dev.navig.anchor` — the Neuromancer AI text tool | Vite + React 18 | npm |\r\n| **Echo** | `apps/echo` | voice / inbox / chat | Vite + React | npm |\r\n| **OS** | `apps/os` | the Tauri super-app + browser sidecar | (dashboard) | **Bun** |\r\n\r\nAnchor and Echo share the **`shared-desktop`** Rust crate (keystroke layer, window helpers) — a\r\nchange there hits both; grep both before editing it.\r\n\r\n## Run it — read the scripts first, names drift\r\n\r\n```powershell\r\n# Anchor / Echo (npm). \"dev\" is FRONTEND-ONLY (a browser, no native shell):\r\nnpm run dev            # apps/anchor: node scripts/dev.mjs → Vite on :7174, pure UI work\r\nnpm run tauri:dev      # full app: builds frontend + Rust, hot-reloads — use for anything native\r\nnpm run tauri:build    # release: bundles the installer (.msi/.exe on Windows)\r\nnpm run build          # frontend production build (tsc && vite build) — feeds tauri:build\r\n\r\n# apps/os is Bun, not npm:\r\n#   bun install ; bun run tauri dev\r\n\r\n# Rust-only fast checks, from inside src-tauri/:\r\ncargo check            # type-check the backend without a full build\r\ncargo clippy           # lint\r\n```\r\n\r\nReach for `tauri:dev` whenever you touch a `#[tauri::command]`, a native plugin, or a window —\r\n`npm run dev` alone loads the UI in a plain browser where `invoke(...)` and native APIs don't exist.\r\n\r\n## Layout that matters\r\n\r\n- **`tauri.conf.json`** — `productName`/`identifier`, the `app.windows[]` array (Anchor runs **nine**\r\n  labelled windows: `palette`, `quickpaste`, `command`, `loupe`, `settings`, `consult`, `manager`,\r\n  `recbar`, `recframe`), the CSP under `app.security`, `bundle` (installer/MSIX metadata), and the\r\n  frontend hooks `build.beforeDevCommand` / `beforeBuildCommand` / `devUrl` / `frontendDist`.\r\n- **`capabilities/default.json`** — lists which **windows** get which **permissions**. This is the\r\n  gate: a native call that isn't granted here fails at runtime, and the Rust code is usually fine.\r\n- **`src/lib.rs`** — the `invoke_handler` registering every Rust command. New command → register here.\r\n- **Rust ↔ JS** — commands (`invoke(\"cmd\", args)` ⇄ `#[tauri::command]`) for request/response; events\r\n  (`emit` ⇄ `listen`) for streaming/async pushes.\r\n\r\n## Traps (navig-verified)\r\n\r\n- **Single-instance zombie.** Anchor/Echo load the `single-instance` plugin. A crashed or\r\n  still-running `tauri:dev` leaves a stray `NAVIG Anchor.exe` holding the lock and the dev port, so a\r\n  fresh run silently opens no window. Kill it first:\r\n  ```powershell\r\n  Get-Process \"NAVIG Anchor\" -ErrorAction SilentlyContinue | Stop-Process -Force\r\n  ```\r\n  Use the `productName` from `tauri.conf.json` as the process name. Do this any time \"tauri dev does\r\n  nothing.\"\r\n- **Capabilities deny by default.** A new command or plugin that \"doesn't work\" is almost always a\r\n  missing grant in `capabilities/default.json` — and for a **new window**, its label must be added to\r\n  that file's `windows` array or none of its permissions apply. See the references file.\r\n- **Two compilers, two failure shapes.** A Rust compile error aborts the whole `tauri:dev` even when\r\n  the frontend is clean. Read which half failed before debugging the wrong side.\r\n- **First release build is slow** (full Rust release compile) — not a hang.\r\n- **Keep JS and Rust versions in lockstep.** Bumping `@tauri-apps/*` npm packages without matching the\r\n  `tauri`/plugin crate versions in `Cargo.toml` produces IPC mismatches.\r\n- **CSP is real.** `app.security.csp` in `tauri.conf.json` blocks anything not allow-listed; a new\r\n  `connect-src`/`img-src` origin (e.g. a provider endpoint) must be added there.\r\n- **OS uses Bun.** Don't `npm install` in `apps/os` — it's excluded from the pnpm workspace and expects\r\n  `bun install`.\r\n\r\n## Ship (Anchor → Microsoft Store)\r\n\r\nAnchor packages as MSIX via `npm run store:msix` (dry run: `store:msix:dry`, wraps\r\n`scripts/create-msix.ps1`). Bundle identity, publisher, and the long description live in\r\n`tauri.conf.json` `bundle`. The remaining Store blockers are human-only (Partner Center, logos, WACK).",
+      "readme": "# Tauri v2 desktop apps (navig editions)\r\n\r\nOne web frontend, one Rust backend, one native binary. This skill is the recognition and\r\nworkflow layer for navig's Tauri desktop editions. Deep IPC + permission internals live in\r\n[`references/ipc-and-permissions.md`](references/ipc-and-permissions.md) — pull it in when you\r\nadd a command, wire a window, or chase a permission-denied error.\r\n\r\n## Recognize it\r\n\r\n- A **`src-tauri/`** directory: `Cargo.toml`, `tauri.conf.json`, `src/main.rs` (+ usually `lib.rs`\r\n  and a fan of `*_cmd.rs` command modules — Anchor has `text_actions_cmd.rs`, `command_center.rs`,\r\n  `tools_cmd.rs`, `tray.rs`, …).\r\n- `package.json` with `@tauri-apps/api` **^2** and `@tauri-apps/cli` **^2**.\r\n- A frontend at the repo root: `index.html`, `vite.config.ts`, `src/` (React 18 in Anchor/Echo).\r\n- **`src-tauri/capabilities/*.json`** — the v2 permission grants. If this folder exists, treat the\r\n  app as capability-gated (deny-by-default).\r\n\r\nThe three navig editions, so you scope to the right one:\r\n\r\n| App | Path | Identity | Frontend | Package mgr |\r\n|-----|------|----------|----------|-------------|\r\n| **Anchor** | `apps/anchor` | `dev.navig.anchor` — the Text Actions AI text tool | Vite + React 18 | npm |\r\n| **Echo** | `apps/echo` | voice / inbox / chat | Vite + React | npm |\r\n| **OS** | `apps/os` | the Tauri super-app + browser sidecar | (dashboard) | **Bun** |\r\n\r\nAnchor and Echo share the **`shared-desktop`** Rust crate (keystroke layer, window helpers) — a\r\nchange there hits both; grep both before editing it.\r\n\r\n## Run it — read the scripts first, names drift\r\n\r\n```powershell\r\n# Anchor / Echo (npm). \"dev\" is FRONTEND-ONLY (a browser, no native shell):\r\nnpm run dev            # apps/anchor: node scripts/dev.mjs → Vite on :7174, pure UI work\r\nnpm run tauri:dev      # full app: builds frontend + Rust, hot-reloads — use for anything native\r\nnpm run tauri:build    # release: bundles the installer (.msi/.exe on Windows)\r\nnpm run build          # frontend production build (tsc && vite build) — feeds tauri:build\r\n\r\n# apps/os is Bun, not npm:\r\n#   bun install ; bun run tauri dev\r\n\r\n# Rust-only fast checks, from inside src-tauri/:\r\ncargo check            # type-check the backend without a full build\r\ncargo clippy           # lint\r\n```\r\n\r\nReach for `tauri:dev` whenever you touch a `#[tauri::command]`, a native plugin, or a window —\r\n`npm run dev` alone loads the UI in a plain browser where `invoke(...)` and native APIs don't exist.\r\n\r\n## Layout that matters\r\n\r\n- **`tauri.conf.json`** — `productName`/`identifier`, the `app.windows[]` array (Anchor runs **nine**\r\n  labelled windows: `palette`, `quickpaste`, `command`, `loupe`, `settings`, `consult`, `manager`,\r\n  `recbar`, `recframe`), the CSP under `app.security`, `bundle` (installer/MSIX metadata), and the\r\n  frontend hooks `build.beforeDevCommand` / `beforeBuildCommand` / `devUrl` / `frontendDist`.\r\n- **`capabilities/default.json`** — lists which **windows** get which **permissions**. This is the\r\n  gate: a native call that isn't granted here fails at runtime, and the Rust code is usually fine.\r\n- **`src/lib.rs`** — the `invoke_handler` registering every Rust command. New command → register here.\r\n- **Rust ↔ JS** — commands (`invoke(\"cmd\", args)` ⇄ `#[tauri::command]`) for request/response; events\r\n  (`emit` ⇄ `listen`) for streaming/async pushes.\r\n\r\n## Traps (navig-verified)\r\n\r\n- **Single-instance zombie.** Anchor/Echo load the `single-instance` plugin. A crashed or\r\n  still-running `tauri:dev` leaves a stray `NAVIG Anchor.exe` holding the lock and the dev port, so a\r\n  fresh run silently opens no window. Kill it first:\r\n  ```powershell\r\n  Get-Process \"NAVIG Anchor\" -ErrorAction SilentlyContinue | Stop-Process -Force\r\n  ```\r\n  Use the `productName` from `tauri.conf.json` as the process name. Do this any time \"tauri dev does\r\n  nothing.\"\r\n- **Capabilities deny by default.** A new command or plugin that \"doesn't work\" is almost always a\r\n  missing grant in `capabilities/default.json` — and for a **new window**, its label must be added to\r\n  that file's `windows` array or none of its permissions apply. See the references file.\r\n- **Two compilers, two failure shapes.** A Rust compile error aborts the whole `tauri:dev` even when\r\n  the frontend is clean. Read which half failed before debugging the wrong side.\r\n- **First release build is slow** (full Rust release compile) — not a hang.\r\n- **Keep JS and Rust versions in lockstep.** Bumping `@tauri-apps/*` npm packages without matching the\r\n  `tauri`/plugin crate versions in `Cargo.toml` produces IPC mismatches.\r\n- **CSP is real.** `app.security.csp` in `tauri.conf.json` blocks anything not allow-listed; a new\r\n  `connect-src`/`img-src` origin (e.g. a provider endpoint) must be added there.\r\n- **OS uses Bun.** Don't `npm install` in `apps/os` — it's excluded from the pnpm workspace and expects\r\n  `bun install`.\r\n\r\n## Ship (Anchor → Microsoft Store)\r\n\r\nAnchor packages as MSIX via `npm run store:msix` (dry run: `store:msix:dry`, wraps\r\n`scripts/create-msix.ps1`). Bundle identity, publisher, and the long description live in\r\n`tauri.conf.json` `bundle`. The remaining Store blockers are human-only (Partner Center, logos, WACK).",
       "demoPrompts": [
         "run the desktop app",
         "add a Tauri command",
@@ -1999,6 +1999,33 @@
       "readme": "## Commands\n\n- `navig contacts`\n- `navig ct`\n\n## Install\n\n```\npip install navig-contacts\n```"
     },
     {
+      "slug": "navig-debrief",
+      "name": "Debrief",
+      "kind": "plugin",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "Visual debrief of a work session: timeline, tool mix, mind map, files and UI mockups rendered to one navigable HTML report, with PNG exports",
+      "description": "Visual debrief of a work session: timeline, tool mix, mind map, files and UI mockups rendered to one navigable HTML report, with PNG exports",
+      "tags": [
+        "pip",
+        "debrief"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "repository": "https://github.com/navig-run/plugins/tree/main/navig-debrief",
+      "install": "pip install navig-debrief",
+      "version": "0.1.0",
+      "commands": [
+        "navig debrief"
+      ],
+      "readme": "## Commands\n\n- `navig debrief`\n\n## Install\n\n```\npip install navig-debrief\n```"
+    },
+    {
       "slug": "navig-dedupe",
       "name": "Dedupe",
       "kind": "plugin",
@@ -2169,7 +2196,7 @@
       "repository": "https://github.com/navig-run/plugins/tree/main/navig-email",
       "status": "active",
       "install": "navig store install pip:navig-email",
-      "version": "0.4.0",
+      "version": "0.4.3",
       "commands": [
         "navig email"
       ],
@@ -3115,114 +3142,6 @@
       },
       "repository": "https://github.com/navig-run/registry/blob/main/library/apps/portfolio.yaml",
       "status": "active"
-    },
-    {
-      "slug": "navig-debrief",
-      "name": "Debrief",
-      "kind": "plugin",
-      "discoveryMode": "marketplace",
-      "acquisitionType": "installable",
-      "surfaces": [
-        "cli"
-      ],
-      "tagline": "Visual debrief of a work session: timeline, tool mix, mind map, files and mockups",
-      "description": "Visual debrief of a work session: timeline, tool mix, mind map, files and UI mockups rendered to one navigable HTML report, with PNG exports.",
-      "tags": [
-        "pip",
-        "debrief"
-      ],
-      "pricing": {
-        "model": "free"
-      },
-      "status": "active",
-      "repository": "https://github.com/navig-run/plugins/tree/main/navig-debrief",
-      "install": "pip install navig-debrief",
-      "version": "0.1.0",
-      "commands": [
-        "navig debrief"
-      ],
-      "readme": "## Commands\n\n- `navig debrief`\n\n## Install\n\n```\npip install navig-debrief\n```\n"
-    },
-    {
-      "slug": "navig-notes",
-      "name": "Notes",
-      "kind": "plugin",
-      "discoveryMode": "marketplace",
-      "acquisitionType": "installable",
-      "surfaces": [
-        "cli"
-      ],
-      "tagline": "Your web sticky notes: list, search, add and export",
-      "description": "navig notes -- your web sticky notes on this computer: the NAVIG Dock syncs every note you keep on a page, a site or everywhere, so you can list, search, add and export them from the command line, and NAVIG's Recall can find them (never sent to an AI unless you allow it).",
-      "tags": [
-        "pip",
-        "notes"
-      ],
-      "pricing": {
-        "model": "free"
-      },
-      "status": "active",
-      "repository": "https://github.com/navig-run/plugins/tree/main/navig-notes",
-      "install": "pip install navig-notes",
-      "version": "0.2.0",
-      "commands": [
-        "navig notes"
-      ],
-      "readme": "## Commands\n\n- `navig notes`\n\n## Install\n\n```\npip install navig-notes\n```\n"
-    },
-    {
-      "slug": "navig-obs",
-      "name": "OBS Studio",
-      "kind": "plugin",
-      "discoveryMode": "marketplace",
-      "acquisitionType": "installable",
-      "surfaces": [
-        "cli"
-      ],
-      "tagline": "Control OBS: scenes, sources, stream, recording and studio mode",
-      "description": "Control OBS Studio from navig — scenes, sources, streams, recording, studio mode, whole obs-websocket v5 surface — its own navig-obs command, and `navig obs` inside navig.",
-      "tags": [
-        "pip",
-        "obs"
-      ],
-      "pricing": {
-        "model": "free"
-      },
-      "status": "active",
-      "repository": "https://github.com/navig-run/plugins/tree/main/navig-obs",
-      "install": "pip install navig-obs",
-      "version": "0.6.0",
-      "commands": [
-        "navig obs"
-      ],
-      "readme": "## Commands\n\n- `navig obs`\n\n## Install\n\n```\npip install navig-obs\n```\n"
-    },
-    {
-      "slug": "navig-pentest",
-      "name": "Pentest",
-      "kind": "plugin",
-      "discoveryMode": "marketplace",
-      "acquisitionType": "installable",
-      "surfaces": [
-        "cli"
-      ],
-      "tagline": "Authorized-only offensive security: recon, ports and nuclei behind a written scope",
-      "description": "NAVIG Pentest — the authorized-only offensive-security toolkit: passive recon (RDAP/whois, DNS, crt.sh subdomains, HTTP fingerprint) plus gated active recon (port scan, subdomain probe, template checks) behind a written-authorization engagement gate. Wired into `navig pentest` (+ `navig-warroom` / `warroom-osint` conveniences).",
-      "tags": [
-        "pip",
-        "pentest"
-      ],
-      "pricing": {
-        "model": "free"
-      },
-      "status": "active",
-      "repository": "https://github.com/navig-run/plugins/tree/main/navig-pentest",
-      "install": "pip install navig-pentest",
-      "version": "0.1.0",
-      "commands": [
-        "navig pentest"
-      ],
-      "readme": "## Commands\n\n- `navig pentest`\n\n## Install\n\n```\npip install navig-pentest\n```\n"
     }
   ],
   "sections": [
@@ -4451,7 +4370,7 @@
             "model": "free"
           },
           "install": "navig skill install github:navig-run/registry/ai-skills/tauri-desktop",
-          "readme": "# Tauri v2 desktop apps (navig editions)\r\n\r\nOne web frontend, one Rust backend, one native binary. This skill is the recognition and\r\nworkflow layer for navig's Tauri desktop editions. Deep IPC + permission internals live in\r\n[`references/ipc-and-permissions.md`](references/ipc-and-permissions.md) — pull it in when you\r\nadd a command, wire a window, or chase a permission-denied error.\r\n\r\n## Recognize it\r\n\r\n- A **`src-tauri/`** directory: `Cargo.toml`, `tauri.conf.json`, `src/main.rs` (+ usually `lib.rs`\r\n  and a fan of `*_cmd.rs` command modules — Anchor has `neuromancer_cmd.rs`, `command_center.rs`,\r\n  `tools_cmd.rs`, `tray.rs`, …).\r\n- `package.json` with `@tauri-apps/api` **^2** and `@tauri-apps/cli` **^2**.\r\n- A frontend at the repo root: `index.html`, `vite.config.ts`, `src/` (React 18 in Anchor/Echo).\r\n- **`src-tauri/capabilities/*.json`** — the v2 permission grants. If this folder exists, treat the\r\n  app as capability-gated (deny-by-default).\r\n\r\nThe three navig editions, so you scope to the right one:\r\n\r\n| App | Path | Identity | Frontend | Package mgr |\r\n|-----|------|----------|----------|-------------|\r\n| **Anchor** | `apps/anchor` | `dev.navig.anchor` — the Neuromancer AI text tool | Vite + React 18 | npm |\r\n| **Echo** | `apps/echo` | voice / inbox / chat | Vite + React | npm |\r\n| **OS** | `apps/os` | the Tauri super-app + browser sidecar | (dashboard) | **Bun** |\r\n\r\nAnchor and Echo share the **`shared-desktop`** Rust crate (keystroke layer, window helpers) — a\r\nchange there hits both; grep both before editing it.\r\n\r\n## Run it — read the scripts first, names drift\r\n\r\n```powershell\r\n# Anchor / Echo (npm). \"dev\" is FRONTEND-ONLY (a browser, no native shell):\r\nnpm run dev            # apps/anchor: node scripts/dev.mjs → Vite on :7174, pure UI work\r\nnpm run tauri:dev      # full app: builds frontend + Rust, hot-reloads — use for anything native\r\nnpm run tauri:build    # release: bundles the installer (.msi/.exe on Windows)\r\nnpm run build          # frontend production build (tsc && vite build) — feeds tauri:build\r\n\r\n# apps/os is Bun, not npm:\r\n#   bun install ; bun run tauri dev\r\n\r\n# Rust-only fast checks, from inside src-tauri/:\r\ncargo check            # type-check the backend without a full build\r\ncargo clippy           # lint\r\n```\r\n\r\nReach for `tauri:dev` whenever you touch a `#[tauri::command]`, a native plugin, or a window —\r\n`npm run dev` alone loads the UI in a plain browser where `invoke(...)` and native APIs don't exist.\r\n\r\n## Layout that matters\r\n\r\n- **`tauri.conf.json`** — `productName`/`identifier`, the `app.windows[]` array (Anchor runs **nine**\r\n  labelled windows: `palette`, `quickpaste`, `command`, `loupe`, `settings`, `consult`, `manager`,\r\n  `recbar`, `recframe`), the CSP under `app.security`, `bundle` (installer/MSIX metadata), and the\r\n  frontend hooks `build.beforeDevCommand` / `beforeBuildCommand` / `devUrl` / `frontendDist`.\r\n- **`capabilities/default.json`** — lists which **windows** get which **permissions**. This is the\r\n  gate: a native call that isn't granted here fails at runtime, and the Rust code is usually fine.\r\n- **`src/lib.rs`** — the `invoke_handler` registering every Rust command. New command → register here.\r\n- **Rust ↔ JS** — commands (`invoke(\"cmd\", args)` ⇄ `#[tauri::command]`) for request/response; events\r\n  (`emit` ⇄ `listen`) for streaming/async pushes.\r\n\r\n## Traps (navig-verified)\r\n\r\n- **Single-instance zombie.** Anchor/Echo load the `single-instance` plugin. A crashed or\r\n  still-running `tauri:dev` leaves a stray `NAVIG Anchor.exe` holding the lock and the dev port, so a\r\n  fresh run silently opens no window. Kill it first:\r\n  ```powershell\r\n  Get-Process \"NAVIG Anchor\" -ErrorAction SilentlyContinue | Stop-Process -Force\r\n  ```\r\n  Use the `productName` from `tauri.conf.json` as the process name. Do this any time \"tauri dev does\r\n  nothing.\"\r\n- **Capabilities deny by default.** A new command or plugin that \"doesn't work\" is almost always a\r\n  missing grant in `capabilities/default.json` — and for a **new window**, its label must be added to\r\n  that file's `windows` array or none of its permissions apply. See the references file.\r\n- **Two compilers, two failure shapes.** A Rust compile error aborts the whole `tauri:dev` even when\r\n  the frontend is clean. Read which half failed before debugging the wrong side.\r\n- **First release build is slow** (full Rust release compile) — not a hang.\r\n- **Keep JS and Rust versions in lockstep.** Bumping `@tauri-apps/*` npm packages without matching the\r\n  `tauri`/plugin crate versions in `Cargo.toml` produces IPC mismatches.\r\n- **CSP is real.** `app.security.csp` in `tauri.conf.json` blocks anything not allow-listed; a new\r\n  `connect-src`/`img-src` origin (e.g. a provider endpoint) must be added there.\r\n- **OS uses Bun.** Don't `npm install` in `apps/os` — it's excluded from the pnpm workspace and expects\r\n  `bun install`.\r\n\r\n## Ship (Anchor → Microsoft Store)\r\n\r\nAnchor packages as MSIX via `npm run store:msix` (dry run: `store:msix:dry`, wraps\r\n`scripts/create-msix.ps1`). Bundle identity, publisher, and the long description live in\r\n`tauri.conf.json` `bundle`. The remaining Store blockers are human-only (Partner Center, logos, WACK).",
+          "readme": "# Tauri v2 desktop apps (navig editions)\r\n\r\nOne web frontend, one Rust backend, one native binary. This skill is the recognition and\r\nworkflow layer for navig's Tauri desktop editions. Deep IPC + permission internals live in\r\n[`references/ipc-and-permissions.md`](references/ipc-and-permissions.md) — pull it in when you\r\nadd a command, wire a window, or chase a permission-denied error.\r\n\r\n## Recognize it\r\n\r\n- A **`src-tauri/`** directory: `Cargo.toml`, `tauri.conf.json`, `src/main.rs` (+ usually `lib.rs`\r\n  and a fan of `*_cmd.rs` command modules — Anchor has `text_actions_cmd.rs`, `command_center.rs`,\r\n  `tools_cmd.rs`, `tray.rs`, …).\r\n- `package.json` with `@tauri-apps/api` **^2** and `@tauri-apps/cli` **^2**.\r\n- A frontend at the repo root: `index.html`, `vite.config.ts`, `src/` (React 18 in Anchor/Echo).\r\n- **`src-tauri/capabilities/*.json`** — the v2 permission grants. If this folder exists, treat the\r\n  app as capability-gated (deny-by-default).\r\n\r\nThe three navig editions, so you scope to the right one:\r\n\r\n| App | Path | Identity | Frontend | Package mgr |\r\n|-----|------|----------|----------|-------------|\r\n| **Anchor** | `apps/anchor` | `dev.navig.anchor` — the Text Actions AI text tool | Vite + React 18 | npm |\r\n| **Echo** | `apps/echo` | voice / inbox / chat | Vite + React | npm |\r\n| **OS** | `apps/os` | the Tauri super-app + browser sidecar | (dashboard) | **Bun** |\r\n\r\nAnchor and Echo share the **`shared-desktop`** Rust crate (keystroke layer, window helpers) — a\r\nchange there hits both; grep both before editing it.\r\n\r\n## Run it — read the scripts first, names drift\r\n\r\n```powershell\r\n# Anchor / Echo (npm). \"dev\" is FRONTEND-ONLY (a browser, no native shell):\r\nnpm run dev            # apps/anchor: node scripts/dev.mjs → Vite on :7174, pure UI work\r\nnpm run tauri:dev      # full app: builds frontend + Rust, hot-reloads — use for anything native\r\nnpm run tauri:build    # release: bundles the installer (.msi/.exe on Windows)\r\nnpm run build          # frontend production build (tsc && vite build) — feeds tauri:build\r\n\r\n# apps/os is Bun, not npm:\r\n#   bun install ; bun run tauri dev\r\n\r\n# Rust-only fast checks, from inside src-tauri/:\r\ncargo check            # type-check the backend without a full build\r\ncargo clippy           # lint\r\n```\r\n\r\nReach for `tauri:dev` whenever you touch a `#[tauri::command]`, a native plugin, or a window —\r\n`npm run dev` alone loads the UI in a plain browser where `invoke(...)` and native APIs don't exist.\r\n\r\n## Layout that matters\r\n\r\n- **`tauri.conf.json`** — `productName`/`identifier`, the `app.windows[]` array (Anchor runs **nine**\r\n  labelled windows: `palette`, `quickpaste`, `command`, `loupe`, `settings`, `consult`, `manager`,\r\n  `recbar`, `recframe`), the CSP under `app.security`, `bundle` (installer/MSIX metadata), and the\r\n  frontend hooks `build.beforeDevCommand` / `beforeBuildCommand` / `devUrl` / `frontendDist`.\r\n- **`capabilities/default.json`** — lists which **windows** get which **permissions**. This is the\r\n  gate: a native call that isn't granted here fails at runtime, and the Rust code is usually fine.\r\n- **`src/lib.rs`** — the `invoke_handler` registering every Rust command. New command → register here.\r\n- **Rust ↔ JS** — commands (`invoke(\"cmd\", args)` ⇄ `#[tauri::command]`) for request/response; events\r\n  (`emit` ⇄ `listen`) for streaming/async pushes.\r\n\r\n## Traps (navig-verified)\r\n\r\n- **Single-instance zombie.** Anchor/Echo load the `single-instance` plugin. A crashed or\r\n  still-running `tauri:dev` leaves a stray `NAVIG Anchor.exe` holding the lock and the dev port, so a\r\n  fresh run silently opens no window. Kill it first:\r\n  ```powershell\r\n  Get-Process \"NAVIG Anchor\" -ErrorAction SilentlyContinue | Stop-Process -Force\r\n  ```\r\n  Use the `productName` from `tauri.conf.json` as the process name. Do this any time \"tauri dev does\r\n  nothing.\"\r\n- **Capabilities deny by default.** A new command or plugin that \"doesn't work\" is almost always a\r\n  missing grant in `capabilities/default.json` — and for a **new window**, its label must be added to\r\n  that file's `windows` array or none of its permissions apply. See the references file.\r\n- **Two compilers, two failure shapes.** A Rust compile error aborts the whole `tauri:dev` even when\r\n  the frontend is clean. Read which half failed before debugging the wrong side.\r\n- **First release build is slow** (full Rust release compile) — not a hang.\r\n- **Keep JS and Rust versions in lockstep.** Bumping `@tauri-apps/*` npm packages without matching the\r\n  `tauri`/plugin crate versions in `Cargo.toml` produces IPC mismatches.\r\n- **CSP is real.** `app.security.csp` in `tauri.conf.json` blocks anything not allow-listed; a new\r\n  `connect-src`/`img-src` origin (e.g. a provider endpoint) must be added there.\r\n- **OS uses Bun.** Don't `npm install` in `apps/os` — it's excluded from the pnpm workspace and expects\r\n  `bun install`.\r\n\r\n## Ship (Anchor → Microsoft Store)\r\n\r\nAnchor packages as MSIX via `npm run store:msix` (dry run: `store:msix:dry`, wraps\r\n`scripts/create-msix.ps1`). Bundle identity, publisher, and the long description live in\r\n`tauri.conf.json` `bundle`. The remaining Store blockers are human-only (Partner Center, logos, WACK).",
           "demoPrompts": [
             "run the desktop app",
             "add a Tauri command",
@@ -5062,6 +4981,33 @@
           "readme": "## Commands\n\n- `navig contacts`\n- `navig ct`\n\n## Install\n\n```\npip install navig-contacts\n```"
         },
         {
+          "slug": "navig-debrief",
+          "name": "Debrief",
+          "kind": "plugin",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli"
+          ],
+          "tagline": "Visual debrief of a work session: timeline, tool mix, mind map, files and UI mockups rendered to one navigable HTML report, with PNG exports",
+          "description": "Visual debrief of a work session: timeline, tool mix, mind map, files and UI mockups rendered to one navigable HTML report, with PNG exports",
+          "tags": [
+            "pip",
+            "debrief"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "repository": "https://github.com/navig-run/plugins/tree/main/navig-debrief",
+          "install": "pip install navig-debrief",
+          "version": "0.1.0",
+          "commands": [
+            "navig debrief"
+          ],
+          "readme": "## Commands\n\n- `navig debrief`\n\n## Install\n\n```\npip install navig-debrief\n```"
+        },
+        {
           "slug": "navig-dedupe",
           "name": "Dedupe",
           "kind": "plugin",
@@ -5232,7 +5178,7 @@
           "repository": "https://github.com/navig-run/plugins/tree/main/navig-email",
           "status": "active",
           "install": "navig store install pip:navig-email",
-          "version": "0.4.0",
+          "version": "0.4.3",
           "commands": [
             "navig email"
           ],

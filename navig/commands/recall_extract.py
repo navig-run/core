@@ -263,13 +263,20 @@ def verify_cmd(
     from navig.recall.lifecycle import refresh as refresh_lifecycle  # noqa: PLC0415
 
     life = refresh_lifecycle(ing.store, project=proj, root=repo, vault=ing.vault)
+    # Fresh impl values can create a claimed-built-vs-not_found contradiction — record it.
+    from navig.recall import reconcile  # noqa: PLC0415
+
+    rec_res = reconcile.reconcile(ing.store, project=proj)
     if as_json:
-        ch.emit_json({"project": proj, "root": str(repo), "impl": counts, "lifecycle": life})
+        ch.emit_json({"project": proj, "root": str(repo), "impl": counts, "lifecycle": life,
+                      "reconcile": rec_res})
         return
     ch.success(f"Checked {sum(counts.values())} record(s) in {proj}: "
                + " · ".join(f"{k} {v}" for k, v in sorted(counts.items())))
     ch.dim(f"lifecycle re-derived: {life['checked']} checked · {life['changed']} updated "
            f"(git: {life['git']})")
+    if rec_res["found"]:
+        ch.warning(f"{rec_res['found']} contradiction(s) recorded — see: navig recall conflicts")
     ch.dim("see one: navig recall show <id>  (impl + the files that matched)")
 
 

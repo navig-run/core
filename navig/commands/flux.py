@@ -76,18 +76,35 @@ def _daemon_offline_msg() -> str:
     )
 
 
+def _auth_headers() -> dict:
+    """Bearer headers for the gateway's guarded routes.
+
+    `/mesh/target` and `/mesh/discovery/scan` require the admin token now
+    (they change where commands run / expose the peer registry), and this is
+    the "NAVIG CLI does this for you" half of `require_bearer_auth`. Returns
+    only `X-Actor` when no token is configured — the routes then answer 401
+    with the command that reads the token, instead of silently doing nothing.
+    """
+    from navig.gateway_client import gateway_request_headers
+
+    return gateway_request_headers()
+
+
 def _get(path: str) -> dict:
     if not _HTTPX:
         import urllib.request
 
         try:
-            with urllib.request.urlopen(f"{_gw()}{path}", timeout=_FLUX_READ_TIMEOUT) as r:
+            with urllib.request.urlopen(
+                urllib.request.Request(f"{_gw()}{path}", headers=_auth_headers()),
+                timeout=_FLUX_READ_TIMEOUT,
+            ) as r:
                 return json.loads(r.read())
         except OSError as e:
             typer.echo(_daemon_offline_msg(), err=True)
             raise SystemExit(1) from e
     try:
-        r = httpx.get(f"{_gw()}{path}", timeout=_FLUX_READ_TIMEOUT)
+        r = httpx.get(f"{_gw()}{path}", headers=_auth_headers(), timeout=_FLUX_READ_TIMEOUT)
         r.raise_for_status()
         return r.json()
     except httpx.ConnectError as _exc:
@@ -125,16 +142,17 @@ def _post(path: str, payload: dict) -> dict:
 
         try:
             data = json.dumps(payload).encode()
-            req = urllib.request.Request(
-                f"{_gw()}{path}", data=data, headers={"Content-Type": "application/json"}
-            )
+            headers = {"Content-Type": "application/json", **_auth_headers()}
+            req = urllib.request.Request(f"{_gw()}{path}", data=data, headers=headers)
             with urllib.request.urlopen(req, timeout=_FLUX_WRITE_TIMEOUT) as r:
                 return json.loads(r.read())
         except OSError as e:
             typer.echo(_daemon_offline_msg(), err=True)
             raise SystemExit(1) from e
     try:
-        r = httpx.post(f"{_gw()}{path}", json=payload, timeout=_FLUX_WRITE_TIMEOUT)
+        r = httpx.post(
+            f"{_gw()}{path}", json=payload, headers=_auth_headers(), timeout=_FLUX_WRITE_TIMEOUT
+        )
         r.raise_for_status()
         return r.json()
     except httpx.ConnectError as _exc:
@@ -287,11 +305,15 @@ def clear() -> None:
     """Clear the routing target — commands run locally."""
     try:
         if _HTTPX:
-            httpx.delete(f"{_gw()}/mesh/target", timeout=_FLUX_READ_TIMEOUT)
+            httpx.delete(
+                f"{_gw()}/mesh/target", headers=_auth_headers(), timeout=_FLUX_READ_TIMEOUT
+            )
         else:
             import urllib.request
 
-            req = urllib.request.Request(f"{_gw()}/mesh/target", method="DELETE")
+            req = urllib.request.Request(
+                f"{_gw()}/mesh/target", method="DELETE", headers=_auth_headers()
+            )
             urllib.request.urlopen(req, timeout=_FLUX_READ_TIMEOUT)
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical

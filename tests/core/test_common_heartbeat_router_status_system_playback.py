@@ -319,6 +319,67 @@ def test_router_status_register():
     assert "/router/traces" in routes
 
 
+# ── /router/* are admin-bearer gated (the three wrapped handlers) ─────────────
+#
+# They answered everyone before: provider inventory, route traces and a
+# classifier over the operator's own router, with no credential. The wrappers
+# are what `register()` wires; the `_router_*` bodies above stay ungated so the
+# tests that pin their behaviour keep testing exactly that.
+
+
+def _router_gw(token: str | None = "tok") -> MagicMock:
+    gw = MagicMock()
+    gw.config = MagicMock()
+    if token is None:
+        del gw.config.auth_token  # getattr(..., default=None) then reports no token
+    else:
+        gw.config.auth_token = token
+    return gw
+
+
+def _router_req(headers: dict | None = None, body: dict | None = None, query=None):
+    req = MagicMock()
+    req.query = query or {}
+    req.headers = dict(headers or {})
+    req.json = AsyncMock(return_value=body or {})
+    return req
+
+
+@pytest.mark.asyncio
+async def test_router_routes_refuse_a_request_with_no_credential():
+    import navig.gateway.routes.router_status as rs_routes
+
+    gw = _router_gw()
+    for build in (rs_routes._status, rs_routes._traces, rs_routes._detect):
+        resp = await build(gw)(_router_req(body={"text": "hi"}))
+        assert resp.status == 401, build.__qualname__
+
+
+@pytest.mark.asyncio
+async def test_router_routes_fail_closed_when_the_gateway_has_no_token():
+    import navig.gateway.routes.router_status as rs_routes
+
+    gw = _router_gw(token=None)
+    for build in (rs_routes._status, rs_routes._traces, rs_routes._detect):
+        resp = await build(gw)(_router_req(headers={"Authorization": "Bearer anything"}))
+        assert resp.status == 503, build.__qualname__
+
+
+@pytest.mark.asyncio
+async def test_router_status_passes_once_the_admin_bearer_is_present():
+    import navig.gateway.routes.router_status as rs_routes
+
+    mock_router = AsyncMock()
+    mock_status = MagicMock()
+    mock_status.to_dict.return_value = {"providers": ["openai"]}
+    mock_router.status.return_value = mock_status
+    with patch("navig.llm.routing.router.get_router", return_value=mock_router):
+        resp = await rs_routes._status(_router_gw())(
+            _router_req(headers={"Authorization": "Bearer tok"})
+        )
+    assert resp.status == 200
+
+
 # ---------------------------------------------------------------------------
 # navig/commands/system_cmd.py
 # ---------------------------------------------------------------------------

@@ -1,1 +1,0 @@
-- **telegram worker** now loads installed plugins before mounting the deck routes, so its listener serves the same plugin routes as the gateway child and plugin button callbacks (`mr:` …) are registered whichever process handles the update.

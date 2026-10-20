@@ -595,5 +595,312 @@ def unlink_cmd(
         ch.warning("Nothing was linked between them.")
         raise typer.Exit(1)
     ch.success(f"Removed {n} link(s).")
+
+
+# ── Provenance views: history · trace · changes · unfinished · conflicts ──────
+
+
+def _anchor_target(target: str) -> str:
+    """A typed relative path is anchored where the operator typed it; shas, session ids
+    and already-prefixed keys pass through to ``query_key`` untouched."""
+    from navig.platform.paths import resolve_user_path  # noqa: PLC0415
+    from navig.recall.session_links import is_commit_id, is_session_id  # noqa: PLC0415
+
+    t = (target or "").strip()
+    if t.startswith(("file:", "plan:", "commit:")) or is_commit_id(t) or is_session_id(t):
+        return t
+    return str(resolve_user_path(t))
+
+
+def _project_root(project: str | None) -> str | None:
+    """The project's folder for git lookups (None → git verdicts degrade to inferred)."""
+    if not project:
+        return None
+    try:
+        from navig.projects.model import resolve_project  # noqa: PLC0415
+
+        return str(resolve_project(project)[1])
+    except Exception:  # noqa: BLE001 — a project without a folder must not break the view
+        return None
+
+
+@recall_app.command("history")
+def history_cmd(
+    target: str = typer.Argument(..., help="A file path, a plan file, or a commit id."),
+    project: str = typer.Option(None, "--project", "-p"),
+    here: bool = typer.Option(False, "--here"),
+    keyword: str = typer.Option(None, "--keyword", "-k", help="Filter commits/records by substring."),
+    limit: int = typer.Option(30, "--limit", "-n"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """What happened to one file, plan or commit: sessions, commits and records, merged."""
+    from navig.recall import query as rq  # noqa: PLC0415
+
+    _require_enabled()
+    proj = _project(project, here)
+    try:
+        out = rq.history(_anchor_target(target), project=proj, limit=limit, keyword=keyword,
+                         root=_project_root(proj), store=_store())
+    except ValueError as exc:
+        ch.error(str(exc), "Name a file inside a registered project (navig space list), or a commit id.")
+        raise typer.Exit(2) from None
+    if as_json:
+        ch.emit_json(out)
+        return
+    if not out["timeline"]:
+        ch.info(f"Nothing recorded for {out['key']}.", "Read the sessions first: navig recall ingest")
+        return
+    t = _table(("When", {"no_wrap": True, "style": "dim"}), ("Kind", {"no_wrap": True}),
+               ("Ref", {"no_wrap": True}), ("Title", {}))
+    for e in out["timeline"]:
+        t.add_row((e["ts"] or "")[:16].replace("T", " ") or "—", e["kind"],
+                  str(e["ref"])[:12], _snip(e["title"], 80))
+    ch.console.print(t)
+    ch.dim(f"key: {out['key']} · open a record: navig recall show <id> · "
+           f"trace a session: navig recall trace <session-id>")
+
+
+@recall_app.command("trace")
+def trace_cmd(
+    ref: str = typer.Argument(..., help="A commit id (short or full) or a Claude session UUID."),
+    project: str = typer.Option(None, "--project", "-p"),
+    here: bool = typer.Option(False, "--here"),
+    limit: int = typer.Option(30, "--limit", "-n"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """One commit or one session → the other side: sessions ↔ commits ↔ files ↔ records."""
+    from navig.recall import query as rq  # noqa: PLC0415
+
+    _require_enabled()
+    proj = _project(project, here)
+    try:
+        out = rq.trace(ref, project=proj, limit=limit, root=_project_root(proj), store=_store())
+    except (ValueError, LookupError) as exc:
+        ch.error(str(exc))
+        raise typer.Exit(2) from None
+    if as_json:
+        ch.emit_json(out)
+        return
+    if out["kind"] == "session":
+        if out["commits"]:
+            t = _table(("Sha", {"no_wrap": True, "style": "bold"}),
+                       ("When", {"no_wrap": True, "style": "dim"}), ("Subject", {}))
+            for c in out["commits"]:
+                t.add_row(c["sha"][:12], (c.get("ts") or "")[:10] or "—",
+                          _snip(c.get("subject") or "(unverified sha)", 80))
+            ch.console.print(t)
+        ch.info(f"{len(out['files'])} file(s), {len(out['plans'])} plan(s), "
+                f"{len(out['records'])} record(s) in this session.",
+                "files: --json · record: navig recall show <id>")
+    else:
+        c = out["commit"]
+        ch.console.print(f"[bold]{c['sha']}  {_snip(c['subject'], 70) or '(unknown subject)'}[/bold]")
+        if not c["known"]:
+            ch.warning("git cannot see this sha (rebase/amended away?) — sessions below come from links alone.")
+        if out["sessions"]:
+            t = _table(("Session", {"no_wrap": True, "style": "bold"}), ("State", {"no_wrap": True}),
+                       ("Title", {}))
+            for s in out["sessions"]:
+                t.add_row(s["session_id"][:8], _STATE.get(s["state"], s["state"]), _snip(s["title"], 70))
+            ch.console.print(t)
+        ch.dim(f"{len(out['records'])} record(s) · resume a session: claude --resume <full id>")
+
+
+@recall_app.command("changes")
+def changes_cmd(
+    project: str = typer.Option(None, "--project", "-p"),
+    here: bool = typer.Option(False, "--here"),
+    since: int = typer.Option(90, "--since", help="Days of history."),
+    refresh: bool = typer.Option(False, "--refresh", help="Ask git for fresh observations first."),
+    limit: int = typer.Option(30, "--limit", "-n"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Recent commits of a project, each joined to the sessions and records it explains."""
+    from navig.recall import query as rq  # noqa: PLC0415
+
+    _require_enabled()
+    proj = _project(project, here)
+    if not proj:
+        ch.error("Name a project.", "navig recall changes -p <project>  ·  or --here")
+        raise typer.Exit(2)
+    try:
+        out = rq.changes(proj, root=_project_root(proj), since_days=since, limit=limit,
+                         refresh=refresh, store=_store())
+    except ValueError as exc:
+        ch.error(str(exc))
+        raise typer.Exit(2) from None
+    if as_json:
+        ch.emit_json(out)
+        return
+    if not out["commits"]:
+        ch.info(f"No commits observed for {proj} since {out['since']}.",
+                "Ask git: navig recall changes -p <proj> --refresh")
+        return
+    t = _table(("Sha", {"no_wrap": True, "style": "bold"}), ("When", {"no_wrap": True, "style": "dim"}),
+               ("Merged", {"no_wrap": True}), ("Subject", {}), ("Sess", {"no_wrap": True, "style": "dim"}))
+    for c in out["commits"]:
+        t.add_row(c["sha"][:12], (c.get("committer_ts") or "")[:10] or "—",
+                  {"yes": "[green]●[/green]", "no": "[yellow]◐[/yellow]"}.get(c.get("merged", ""), "[dim]?[/dim]"),
+                  _snip(c.get("subject", ""), 70), str(len(c["sessions"])))
+    ch.console.print(t)
+    ch.dim("trace one: navig recall trace <sha>  ·  fresh from git: --refresh")
+
+
+@recall_app.command("unfinished")
+def unfinished_cmd(
+    project: str = typer.Option(None, "--project", "-p"),
+    here: bool = typer.Option(False, "--here"),
+    limit: int = typer.Option(30, "--limit", "-n"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Plans and tasks nothing has verified yet (display-only — it never starts anything)."""
+    from navig.recall import query as rq  # noqa: PLC0415
+
+    _require_enabled()
+    proj = _project(project, here)
+    out = rq.unfinished(proj, limit=limit, store=_store())
+    if as_json:
+        ch.emit_json(out)
+        return
+    if not out["records"]:
+        ch.info("Nothing unfinished.", "Verify the code: navig recall verify -p <project>")
+        return
+    t = _table(("ID", {"no_wrap": True, "style": "bold"}), ("Type", {"no_wrap": True}),
+               ("Lifecycle", {"no_wrap": True}), ("Status", {"no_wrap": True}),
+               ("Updated", {"no_wrap": True, "style": "dim"}), ("Title", {}))
+    for r in out["records"]:
+        t.add_row(r["id"], r["type"], r.get("lifecycle", "unknown"),
+                  _chip(r["status"], r["status_basis"]),
+                  (r.get("updated") or "")[:10] or "—", _snip(r["title"], 70))
+    ch.console.print(t)
+    ch.dim(f"{out['count']} item(s) · open one: navig recall show <id> · "
+           f"verify: navig recall verify -p <proj or --here>")
+
+
+@recall_app.command("conflicts")
+def conflicts_cmd(
+    project: str = typer.Option(None, "--project", "-p"),
+    here: bool = typer.Option(False, "--here"),
+    refresh: bool = typer.Option(False, "--refresh", help="Re-derive lifecycles from git first."),
+    limit: int = typer.Option(30, "--limit", "-n"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Recorded contradictions — opposed user verdicts on one subject, or claims verify disproved."""
+    from navig.recall import query as rq  # noqa: PLC0415
+
+    _require_enabled()
+    proj = _project(project, here)
+    out = rq.conflicts(proj, limit=limit, refresh=refresh, root=_project_root(proj), store=_store())
+    if as_json:
+        ch.emit_json(out)
+        return
+    reviews = out["reviews"]
+    if not reviews:
+        ch.info("No recorded contradictions.", "Re-check now: navig recall conflicts --refresh")
+        return
+    t = _table(("Class", {"no_wrap": True}), ("Record A", {"style": "bold"}),
+               ("vs", {"no_wrap": True, "style": "dim"}), ("Record B", {}),
+               ("Project", {"no_wrap": True, "style": "dim"}))
+    for r in reviews:
+        t.add_row(r["class"], f"{r['a']['id']} {_snip(r['a']['title'], 40)}", "vs",
+                  (f"{r['b']['id']} {_snip(r['b']['title'], 40)}" if r.get("b") else "[dim]self[/dim]"),
+                  r["project"])
+    ch.console.print(t)
+    ch.dim(f"{len(reviews)} open · evidence: navig recall show <id> · "
+           f"rebuild from git: --refresh")
+
+
+@recall_app.command("migrate")
+def migrate_cmd(
+    file: str = typer.Argument(..., help="The legacy changelog file to import."),
+    project: str = typer.Option(..., "--project", "-p", help="Project to index it under."),
+    apply: bool = typer.Option(False, "--apply", help="Write the import (default: dry run, zero writes)."),
+    retire: bool = typer.Option(False, "--retire",
+                                 help="With --apply: move a PRIVATE dev changelog to its backup "
+                                      "after verification (consumers must be empty; release notes "
+                                      "are never retired)."),
+    delete_backup: bool = typer.Option(False, "--delete-backup",
+                                       help="IRREVERSIBLE: delete a verified backup (interactive; "
+                                            "type the path back to confirm)."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Import a legacy changelog into Recall — dry-run by default, verify before any retire."""
+
+    from navig.platform.paths import resolve_user_path  # noqa: PLC0415
+    from navig.recall.ingest import Ingestor  # noqa: PLC0415
+
+    _require_enabled()
+    path = resolve_user_path(file)
+    root = _project_root(project)
+    ing = Ingestor()
+    try:
+        out = ing.import_changelog(project, path, root=root, apply=apply, retire=retire)
+    except (FileNotFoundError, ValueError) as exc:
+        ch.error(str(exc))
+        raise typer.Exit(1) from None
+    except RuntimeError as exc:
+        ch.error(str(exc), "Fix the file (or the store) and re-run; the original is untouched.")
+        raise typer.Exit(1) from None
+
+    if delete_backup:
+        # The one irreversible step: runs only AFTER a verified import, is interactive
+        # and refuses under --json — the path must be typed back exactly.
+        if as_json or not apply:
+            ch.error("--delete-backup is interactive and runs with --apply.",
+                     "Run: navig recall migrate <file> -p <project> --apply --delete-backup")
+            raise typer.Exit(2)
+        if not out.get("verify", {}).get("ok"):
+            ch.error("Refusing to delete a backup without a verified import.")
+            raise typer.Exit(1)
+        bdir = ing.vault.root / ".migrations" / project
+        backup = bdir / path.name
+        if not backup.exists():
+            ch.error(f"No backup at {backup}", "Nothing to delete.")
+            raise typer.Exit(1)
+        typed = ch.console.input(f"Type the full path to delete [{backup}]: ").strip()
+        if typed != str(backup):
+            ch.error("Path did not match — nothing was deleted.")
+            raise typer.Exit(1)
+        (bdir / f"{path.name}.manifest.json").unlink(missing_ok=True)
+        backup.unlink(missing_ok=True)
+        out["backup_deleted"] = True
+
+    if as_json:
+        ch.emit_json(out)
+        return
+    head = f"{out['entries']} entr(ies) · {out['classification']} · sha256 {out['sha256'][:12]}"
+    if out["consumers"]:
+        head += f" · {len(out['consumers'])} consumer(s)"
+    if not apply:
+        ch.console.print(f"[bold]dry run[/bold] — {head}")
+        from navig.recall import changelog as cl  # noqa: PLC0415
+
+        t = _table(("Line", {"no_wrap": True}), ("Date", {"no_wrap": True, "style": "dim"}),
+                   ("Record id", {"no_wrap": True}), ("Title", {}))
+        for e in cl.parse(path.read_text(encoding="utf-8", errors="replace"))[:12]:
+            t.add_row(f"{e.start}-{e.end}", e.date or "—",
+                      cl.record_id(project, path.name, e), _snip(e.title, 70))
+        ch.console.print(t)
+        if out["consumers"]:
+            ch.warning("consumers still reference this file: " + ", ".join(out["consumers"][:5]))
+        ch.dim("nothing written — apply: navig recall migrate <file> -p <project> --apply")
+        return
+    ch.success(f"imported — {head}" + (" (already imported)" if out["applied"] == "unchanged" else ""))
+    if out.get("verify"):
+        ch.dim(f"verified: digest + {out['verify']['entries']} record id(s) + turns match the original")
+    if retire and out.get("retired"):
+        ch.success(f"retired: {path.name} → {out.get('backup', 'vault/.migrations')} (recoverable backup)")
+    elif retire and out.get("retire_refused"):
+        ch.warning(f"not retired: {out['retire_refused']}")
+    if delete_backup:
+        if out.get("backup_deleted"):
+            ch.success("backup deleted (irreversible).")
+        else:
+            ch.error("The backup was NOT deleted — this run stopped before the deletion step.",
+                     "Re-run the command; nothing was removed.")
+            raise typer.Exit(1)
+    ch.dim("search it: navig recall search \"<words>\"  ·  view: navig recall history <file>")
+
+
 # Extraction, evaluation, review and verification commands register on recall_app.
 from navig.commands import recall_extract  # noqa: E402,F401

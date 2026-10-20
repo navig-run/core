@@ -49347,6 +49347,53 @@
     },
     {
       "aliases": [],
+      "arguments": [
+        {
+          "name": "aliases",
+          "required": false,
+          "variadic": true
+        }
+      ],
+      "examples": [
+        "navig perplexity threads delete"
+      ],
+      "handler": "threads_delete",
+      "module": "navig_perplexity.commands.perplexity",
+      "options": [
+        {
+          "flags": [
+            "--title"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--registry-only"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--yes",
+            "-y"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig perplexity threads delete",
+      "since": "",
+      "status": "stable",
+      "summary": "Delete delegated conversations from the app AND the registry.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [],
       "examples": [
         "navig perplexity threads list"
@@ -49388,6 +49435,71 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig perplexity threads prune"
+      ],
+      "handler": "threads_prune",
+      "module": "navig_perplexity.commands.perplexity",
+      "options": [
+        {
+          "flags": [
+            "--session"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--project"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--older-than"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--title"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--registry-only"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--yes",
+            "-y"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig perplexity threads prune",
+      "since": "",
+      "status": "stable",
+      "summary": "Delete the conversations this agent session (or a project) left behind.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "alias",
@@ -49412,6 +49524,35 @@
       "since": "",
       "status": "stable",
       "summary": "Reopen a registry thread in the app (and mark it active).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig perplexity threads sessions"
+      ],
+      "handler": "threads_sessions",
+      "module": "navig_perplexity.commands.perplexity",
+      "options": [
+        {
+          "flags": [
+            "--limit",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig perplexity threads sessions",
+      "since": "",
+      "status": "stable",
+      "summary": "Which agent sessions left conversations behind, and how many.",
       "tags": []
     },
     {
@@ -52803,6 +52944,108 @@
       "aliases": [],
       "arguments": [],
       "examples": [
+        "navig recall changes"
+      ],
+      "handler": "changes_cmd",
+      "module": "navig.commands.recall",
+      "options": [
+        {
+          "flags": [
+            "--project",
+            "-p"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--here"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--since"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--refresh"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--limit",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig recall changes",
+      "since": "",
+      "status": "stable",
+      "summary": "Recent commits of a project, each joined to the sessions and records it explains.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig recall conflicts"
+      ],
+      "handler": "conflicts_cmd",
+      "module": "navig.commands.recall",
+      "options": [
+        {
+          "flags": [
+            "--project",
+            "-p"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--here"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--refresh"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--limit",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig recall conflicts",
+      "since": "",
+      "status": "stable",
+      "summary": "Recorded contradictions \u2014 opposed user verdicts on one subject, or claims verify disproved.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
         "navig recall decisions"
       ],
       "handler": "decisions_cmd",
@@ -53210,6 +53453,61 @@
     },
     {
       "aliases": [],
+      "arguments": [
+        {
+          "name": "target",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig recall history"
+      ],
+      "handler": "history_cmd",
+      "module": "navig.commands.recall",
+      "options": [
+        {
+          "flags": [
+            "--project",
+            "-p"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--here"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--keyword",
+            "-k"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--limit",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig recall history",
+      "since": "",
+      "status": "stable",
+      "summary": "What happened to one file, plan or commit: sessions, commits and records, merged.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [],
       "examples": [
         "navig recall ideas"
@@ -53323,6 +53621,59 @@
       "since": "",
       "status": "stable",
       "summary": "Link a session to a file, plan or commit by hand (kept across reindex).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "file",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig recall migrate"
+      ],
+      "handler": "migrate_cmd",
+      "module": "navig.commands.recall",
+      "options": [
+        {
+          "flags": [
+            "--project",
+            "-p"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--apply"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--retire"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--delete-backup"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig recall migrate",
+      "since": "",
+      "status": "stable",
+      "summary": "Import a legacy changelog into Recall \u2014 dry-run by default, verify before any retire.",
       "tags": []
     },
     {
@@ -53804,6 +54155,96 @@
       "since": "",
       "status": "stable",
       "summary": "Vocabulary \u2014 names and terms coined, adopted or rejected (with the reason).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "ref",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig recall trace"
+      ],
+      "handler": "trace_cmd",
+      "module": "navig.commands.recall",
+      "options": [
+        {
+          "flags": [
+            "--project",
+            "-p"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--here"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--limit",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig recall trace",
+      "since": "",
+      "status": "stable",
+      "summary": "One commit or one session \u2192 the other side: sessions \u2194 commits \u2194 files \u2194 records.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig recall unfinished"
+      ],
+      "handler": "unfinished_cmd",
+      "module": "navig.commands.recall",
+      "options": [
+        {
+          "flags": [
+            "--project",
+            "-p"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--here"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--limit",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig recall unfinished",
+      "since": "",
+      "status": "stable",
+      "summary": "Plans and tasks nothing has verified yet (display-only \u2014 it never starts anything).",
       "tags": []
     },
     {
@@ -58868,6 +59309,12 @@
         {
           "flags": [
             "--no-register"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--recall"
           ],
           "takes_value": false
         }
@@ -67804,6 +68251,12 @@
             "--no-register"
           ],
           "takes_value": false
+        },
+        {
+          "flags": [
+            "--recall"
+          ],
+          "takes_value": false
         }
       ],
       "path": "navig wire",
@@ -68127,7 +68580,7 @@
       "tags": []
     }
   ],
-  "generated_at": "2026-10-19T22:29:39.517021+00:00",
+  "generated_at": "2026-10-20T00:15:20.965117+00:00",
   "groups": {
     "action": "Manage quick actions (stored shortcuts)",
     "agent": "Manage autonomous agent mode",
@@ -68314,5 +68767,5 @@
     "wut": "Show what NAVIG thinks is happening (context snapshot)"
   },
   "schema_version": "1.0.0",
-  "total": 2003
+  "total": 2012
 }

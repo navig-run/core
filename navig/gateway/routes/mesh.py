@@ -441,9 +441,15 @@ def _set_target(gw: NavigGateway):
     Set the active routing target for this session.
     Body: { "node_id": "<node_id>" }
     The target is stored in-memory on the gateway (not persisted).
+
+    Admin bearer: rerouting the mesh moves where the operator's commands RUN.
+    One live caller — `navig flux target` — now sends it (gateway_request_headers).
     """
 
     async def h(r: web.Request) -> web.Response:
+        auth = require_bearer_auth(r, gw)
+        if auth is not None:
+            return auth
         try:
             body = await r.json()
         except Exception:
@@ -474,9 +480,16 @@ def _set_target(gw: NavigGateway):
 
 
 def _clear_target(gw: NavigGateway):
-    """Clear the active routing target — commands run locally."""
+    """Clear the active routing target — commands run locally.
+
+    Admin bearer (same route as set — see `_set_target`); `navig flux clear`
+    sends it.
+    """
 
     async def h(r: web.Request) -> web.Response:
+        auth = require_bearer_auth(r, gw)
+        if auth is not None:
+            return auth
         registry = get_registry(gw.storage_dir)
         registry.clear_target()  # type: ignore[attr-defined]
         logger.info("[mesh.routes] Routing target cleared")
@@ -500,9 +513,15 @@ def _scan(gw: NavigGateway):
 
     Degrades gracefully (Phase-1 rule): mesh disabled / loop not running →
     200 with ``scanning: false`` — never a hard failure.
+
+    Admin bearer: a forced announce is operator action, and the response
+    carries the peer registry. `navig flux scan` sends it.
     """
 
     async def h(r: web.Request) -> web.Response:
+        auth = require_bearer_auth(r, gw)
+        if auth is not None:
+            return auth
         discovery = getattr(gw, "_mesh_discovery", None)
         announced = False
         if discovery is not None:

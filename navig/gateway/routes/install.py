@@ -61,15 +61,43 @@ def register(app: web.Application, gateway: NavigGateway) -> None:
 # ─────────────────────────── helpers ─────────────────────────────────────────
 
 
+def _tunneled(request: web.Request) -> bool:
+    """True when this request arrived through a tunnel/replay, not from the LAN.
+
+    `request.remote` is the SOCKET peer, and a cloudflared quick tunnel
+    terminates on this machine — so a request from the public internet presents
+    as 127.0.0.1 and `ip_is_lan` waves it through to `/install/config` and the
+    mesh_token inside it. The same two markers the deck's local-desktop bypass
+    uses (`gateway/deck/auth.py::_request_is_local`) decide it: Cloudflare
+    stamps `CF-Ray` on everything it proxies and the lighthouse replay stamps
+    `X-Navig-Via`, neither of which a caller can strip on the way in.
+    """
+    headers = getattr(request, "headers", None) or {}
+    return bool(headers.get("CF-Ray") or headers.get("X-Navig-Via"))
+
+
 def _lan_only(request: web.Request) -> web.Response | None:
     """Refuse token-bearing bootstrap content to non-LAN requesters.
 
     Every route on this module embeds or returns the fleet-shared mesh_token,
     so every route inherits this gate. `ip_is_lan` accepts private + loopback
     (not link-local): a gateway accidentally exposed to the public internet
-    answers 403 here instead of handing out its join secret.
+    answers 403 here instead of handing out its join secret — and a tunneled
+    request (loopback peer, CF-Ray marker) is refused too, which is the shape
+    the LAN check alone could not see.
     """
     from navig.mesh.url_guard import ip_is_lan
+
+    if _tunneled(request):
+        logger.warning("[install] refused tunnel-forwarded bootstrap request")
+        return web.json_response(
+            {
+                "ok": False,
+                "error": "The join page is served on the LAN only",
+                "error_code": "not_lan",
+            },
+            status=403,
+        )
 
     remote = str(getattr(request, "remote", "") or "")
     if ip_is_lan(remote):

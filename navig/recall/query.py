@@ -253,6 +253,144 @@ def source_link(st: RecallStore, source_id: str, msg_id: str) -> str:
     return f"{url}#navig-msg={msg_id}" if url else ""
 
 
+# ── Provenance views (history/reconcile delegates — one impl behind every surface) ──
+
+
+def _visible(st: RecallStore, rows: list[dict[str, Any]], private: frozenset[str],
+             for_model: bool) -> list[dict[str, Any]]:
+    if not for_model or not private:
+        return rows
+    return _drop_private_records(st, rows, private)
+
+
+def history(target: str, *, project: str | None = None, keyword: str | None = None,
+            root: str | None = None, limit: int = 50, for_model: bool = False,
+            resolver: Any = None, store: RecallStore | None = None) -> dict[str, Any]:
+    """Sessions, commits and records for one target (see ``navig.recall.history``)."""
+    from navig.recall.history import history as _history  # noqa: PLC0415
+
+    st = _store(store)
+    out = _history(target, project=project, limit=limit, keyword=keyword, root=root,
+                   resolver=resolver, store=st)
+    if for_model:
+        priv = private_sources(st)
+        before = {r["id"] for r in out["records"]}
+        out["records"] = _visible(st, out["records"], priv, True)
+        after = {r["id"] for r in out["records"]}
+        out["timeline"] = [e for e in out["timeline"]
+                           if not (e["kind"] == "record" and e["ref"] in before - after)]
+    return out
+
+
+def trace(ref: str, *, project: str | None = None, root: str | None = None, limit: int = 50,
+          for_model: bool = False, store: RecallStore | None = None) -> dict[str, Any]:
+    """One commit or session → its edges (see ``navig.recall.history.trace``)."""
+    from navig.recall.history import trace as _trace  # noqa: PLC0415
+
+    st = _store(store)
+    out = _trace(ref, project=project, limit=limit, root=root, store=st)
+    if for_model:
+        out["records"] = _visible(st, out["records"], private_sources(st), True)
+    return out
+
+
+def changes(project: str | None, *, root: str | None = None, since_days: int = 90,
+            limit: int = 50, refresh: bool = False, for_model: bool = False,
+            store: RecallStore | None = None) -> dict[str, Any]:
+    """Recent commits of a project joined to sessions/records (``navig.recall.history``)."""
+    from navig.recall.history import changes as _changes  # noqa: PLC0415
+
+    st = _store(store)
+    out = _changes(project, root=root, since_days=since_days, limit=limit, refresh=refresh, store=st)
+    if for_model:
+        priv = private_sources(st)
+        for c in out["commits"]:
+            c["records"] = _visible(st, c["records"], priv, True)
+    return out
+
+
+def unfinished(project: str | None = None, *, limit: int = 30, for_model: bool = False,
+               store: RecallStore | None = None) -> dict[str, Any]:
+    """Plans/tasks nothing verified yet (``navig.recall.history``)."""
+    from navig.recall.history import unfinished as _unfinished  # noqa: PLC0415
+
+    st = _store(store)
+    out = _unfinished(project, limit=limit, store=st)
+    if for_model:
+        out["records"] = _visible(st, out["records"], private_sources(st), True)
+    return out
+
+
+def conflicts(project: str | None = None, *, limit: int = 50, reconcile_run: bool = True,
+              root: str | None = None, refresh: bool = False, for_model: bool = False,
+              store: RecallStore | None = None) -> dict[str, Any]:
+    """Recorded contradictions (``navig.recall.reconcile``); ``reconcile_run=False`` only reads."""
+    from navig.recall import reconcile  # noqa: PLC0415
+
+    st = _store(store)
+    life = None
+    if refresh:
+        from navig.recall.lifecycle import refresh as refresh_lifecycle  # noqa: PLC0415
+
+        life = refresh_lifecycle(st, project=project, root=root)
+    res = reconcile.reconcile(st, project=project) if reconcile_run else {"found": 0, "links": 0, "reviews": 0}
+    reviews = reconcile.open_reviews(st, project=project, limit=limit)
+    if for_model:
+        priv = private_sources(st)
+        ids = [i for r in reviews for i in ([r["a"]["id"]] + ([r["b"]["id"]] if r.get("b") else []))]
+        visible = {v["id"] for v in _drop_private_records(st, [{"id": i} for i in ids], priv)}
+        reviews = [r for r in reviews
+                   if r["a"]["id"] in visible and (not r.get("b") or r["b"]["id"] in visible)]
+    return {"reconcile": res, "reviews": reviews, "lifecycle": life}
+
+
+def session_brief(project: str | None, *, budget: int = 1500,
+                  store: RecallStore | None = None) -> str:
+    """A few lines of CURRENT context for SessionStart: the project's recent user
+    decisions, the unfinished count and the latest supersession.
+
+    Config-gated at the CALLER (``recall.session_brief``, default off); byte-bounded;
+    fail-open (any error → ``""`` — a broken bank must not break a session start);
+    zero LLM calls.
+    """
+    if not project:
+        return ""
+    st = _store(store)
+    try:
+        from navig.recall.history import UNFINISHED_LIFECYCLES, UNFINISHED_TYPES  # noqa: PLC0415
+
+        # The brief feeds MODEL context: every line passes the for_model filter —
+        # a below-agent chat's record never appears in a SessionStart section.
+        priv = private_sources(st)
+        lines: list[str] = []
+        decs = _drop_private_records(
+            st, st.list_records(rtype="decision", projects=[project], limit=50), priv)
+        mine = [r for r in decs if r.status_basis == "user" or r.endorsement != "none"][:3]
+        for r in mine:
+            title = " ".join((r.title or "").split())[:90]
+            lines.append(f"decision · {r.status}: {title}")
+        unfin = _drop_private_records(
+            st, st.records_by_lifecycle(UNFINISHED_LIFECYCLES, rtypes=UNFINISHED_TYPES,
+                                        projects=[project], limit=999), priv)
+        n = sum(1 for r in unfin if r.impl != "verified")
+        if n:
+            lines.append(f"unfinished: {n} plan/task(s) awaiting verification")
+        sup = _drop_private_records(
+            st, st.list_records(status="superseded", projects=[project], limit=1), priv)
+        if sup:
+            title = " ".join((sup[0].title or "").split())[:80]
+            lines.append(f"latest supersession: {title}")
+    except Exception:  # noqa: BLE001 — SessionStart must survive a broken bank
+        return ""
+    if not lines:
+        return ""
+    text = "\n".join(f"  {ln}" for ln in lines)
+    data = text.encode("utf-8")
+    if len(data) > budget:
+        text = data[:budget].decode("utf-8", errors="ignore") + "…"
+    return text
+
+
 def status(store: RecallStore | None = None) -> dict[str, Any]:
     """What is in the bank, whether reading is enabled, where it lives, and the projects."""
     from navig.recall.paths import recall_root  # noqa: PLC0415
@@ -265,6 +403,7 @@ def status(store: RecallStore | None = None) -> dict[str, Any]:
     return s
 
 
-__all__ = ["UNBUILT_IMPL", "VIEWS", "Scope", "ViewSpec", "ask", "cite", "excerpt", "is_enabled",
-           "private_sources", "record_detail", "record_row", "scope_for", "search", "source_link",
-           "status", "view"]
+__all__ = ["UNBUILT_IMPL", "VIEWS", "Scope", "ViewSpec", "ask", "changes", "cite", "conflicts",
+           "excerpt", "history", "is_enabled", "private_sources", "record_detail", "record_row",
+           "scope_for", "search", "session_brief", "source_link", "status", "trace", "unfinished",
+           "view"]
