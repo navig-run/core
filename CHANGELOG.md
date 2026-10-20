@@ -9,7 +9,102 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Do NOT add entries here by hand: drop a fragment in changelog.d/<slug>.<kind>.md (see changelog.d/README.md) -->
 <!-- and fold them in with `npm run changelog:assemble`. Direct edits of this block collide on every rebase. -->
 <!-- This file merges by UNION (.gitattributes): two branches inserting at the same line keep both entries on rebase. -->
-<!-- Run: git log v3.27.6..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+<!-- Run: git log v3.27.7..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+
+## [3.27.7] — 2026-10-20
+
+### Added
+- **Legacy changelogs migrate into Recall — dry-run first, verified before anything
+  retires.** `navig recall migrate <file> -p <project>` parses three real families
+  (dated dev entries, archived session addenda, Keep-a-Changelog release notes) into
+  content-addressed records with line-range locators. The default run writes nothing.
+  `--apply` backs the file up under `vault/.migrations/` (sha256 manifest), imports it,
+  then re-reads the ORIGINAL to verify digest + record ids + archived turns before
+  reporting — and only `--apply --retire` can move a file, only when it is private dev
+  history with zero consumers of its name. Release notes are indexed but never retired;
+  `--delete-backup` is interactive and typed-path (the one irreversible step).
+  Re-importing an unchanged file is a no-op (digest short-circuit).
+- **SessionStart can carry a bounded Recall brief** (`recall.session_brief`, default
+  off): recent user decisions, the unfinished count and the latest supersession, ≤1.5 KB,
+  fail-open, private-chat records filtered — riding the existing `navig space context
+  --brief` hook, so no new hook exists. `navig wire --recall` opts a new project in
+  (the flag is the consent); `wire`/`init` print the index-your-history next step.
+- **Recall now tracks what happened to a change, not only what was decided.** Schema v3
+  adds a delivery `lifecycle` on every record (`proposed · implemented_uncommitted ·
+  committed · merged · verified · deployed · failed · superseded · abandoned · unknown`) —
+  a separate axis from decision status and verification, derived deterministically in
+  `navig.recall.lifecycle` (git ancestor verdicts, explicit outcome events, verify results;
+  zero LLM calls; an assistant claim never yields an `observed` basis). Evidence carries an
+  exact `locator` (line range + file hash) for file-backed sources, and a metadata-only
+  `commits` cache (subject/author/dates/branch/file names — never diffs) backs provenance
+  queries. `navig recall verify` re-derives lifecycles after every run; existing banks
+  upgrade in place (`v2 → v3`, old rows default to `unknown`).
+- **Answer "what happened here?" from Recall: `navig recall history · trace · changes ·
+  unfinished · conflicts`.** `history <file|plan|sha>` merges the sessions, commits and
+  records behind one target into one timeline; `trace <sha|session>` walks the other side
+  of a commit or session edge; `changes -p <project> [--refresh]` lists recent commits
+  (git-observed into the metadata-only `commits` cache) joined to the sessions/records
+  they explain; `unfinished -p` lists plans/tasks nothing verified yet (display-only —
+  it never starts anything); `conflicts [--refresh]` runs the deterministic contradiction
+  producer (opposed user verdicts on one subject; claims verification disproved) and
+  lists open findings. All `--json`, all project-scoped, all zero-inference — and the
+  commit-prefix lookup now uses an indexed GLOB (measured 0.01 ms vs 10.8 ms scanned at
+  50k links), pinned by a latency + plan-shape benchmark in `tests/recall`.
+
+### Changed
+- **Session↔commit matching is prefix-symmetric, and agent worktrees belong to their
+  project.** `navig recall sessions --commit` now matches the full id the operator typed
+  in both directions (7-char id ↔ 12-char stored key and vice versa), instead of silently
+  truncating everything to 7 characters. `.navig_worktrees/<slug>/…` paths (the agent
+  isolation worktrees) now fold to their owning project for both project resolution and
+  session file keys — they previously resolved to no project at all — which bumps
+  `LINKS_VERSION` to 3 so stored links re-read once.
+- **`navig recall migrate` gained `--root`, and runtime logs are never consumers.**
+  `--root <folder>` scans a specific tree for file-name consumers — needed when a
+  worktree and the spaces registry disagree on which folder a project id resolves to
+  (duplicate-id registrations made the scan read the wrong checkout). The consumer scan
+  now also prunes `.navig/history/**`: the operation log ECHOES command paths (including
+  the migrated file's own) and must never block a retirement. Regression-tested both ways.
+
+### Fixed
+- **Every MCP definition now tells an agent what it returns and which sibling comes next.**
+  Batch 2 of the catalogue audit closes the definition-quality gap the first batch measured
+  (average 4.16/5 → **5.00/5**, 98 tools below the 4.5 target → **0**). Both catalogue-wide
+  findings of the published evaluation are now zero across the whole surface: tools naming no
+  sibling tool 93 → **0**, tools stating no result 72 → **0**, with no undocumented parameter
+  and no non-strict schema. The routing/result facts live in one table
+  (`navig/mcp/annotations.py:DESCRIPTION_HINTS`, 103 entries) and are appended idempotently,
+  so authored text is never replaced; the connector `_act` generator now routes to the read
+  verb the provider actually exposes (a search-only connector is never pointed at a fetch tool
+  that does not exist), and `dock_*` titles say what the verb does instead of echoing the raw
+  name. The 40-request tool-selection benchmark held at **0.800 top-1 / 0.950 top-3** — its
+  top-3 caught a first wording that was too long and the sentence was tightened rather than
+  the benchmark. New gate: `tests/quality/test_mcp_definition_target.py` fails if any
+  advertised tool scores below 4.5, if a definition carries a scored contradiction, if a
+  connector write routes at a sibling the catalogue does not serve, or if a hint names no
+  advertised tool (the `recall_tables` dead-config trap). The committed census was also stale
+  (152 tools at a revision that serves 154 — `perplexity_threads`/`perplexity_write` landed
+  after it was generated); regenerated.
+
+### Security
+- **The gateway's bearer-less routes now require the admin token.** `GET /router/status`,
+  `GET /router/traces`, `POST /router/detect`, `GET /llm/providers`,
+  `POST /llm/providers/register|unregister`, `GET /sync`, `POST|DELETE /mesh/target` and
+  `POST /mesh/discovery/scan` answered anyone — provider inventory, route traces, a
+  classifier over the operator's router, an SSRF-shaped "register an LLM URL the daemon
+  will call", and the two mesh routes that move where commands run. A caller survey found
+  no live in-repo client sending credentials to any of them (the archived VS Code
+  extension aside), so gating them breaks nothing: `navig flux` now sends the bearer via
+  `gateway_request_headers()` — previously it posted without one — and the route tests
+  assert the 401/503 as well as the behaviour behind it. Routes that *cannot* take header
+  auth yet (the memory-review page's inline `fetch`, `/api/events`' `EventSource`) keep
+  their current design and stay documented in SECURITY_CDP_AUDIT §4 F1.
+- **`/install/*` refuses tunneled requests, not just non-LAN ones.** The join flow hands
+  out the fleet `mesh_token` to any private/loopback peer — and a cloudflared tunnel
+  terminates on this machine, so a request from the public internet presents as
+  `127.0.0.1` and passed. It now also refuses on the two markers the deck's
+  local-desktop bypass already trusts (`CF-Ray`, `X-Navig-Via`), which a caller cannot
+  strip on the way in.
 
 ## [3.27.6] — 2026-10-19
 

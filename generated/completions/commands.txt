@@ -1423,6 +1423,10 @@ navig pentest wordlist
 navig pentest wpscan
 navig perplexity ask
 navig perplexity attach
+navig perplexity backend
+navig perplexity capabilities
+navig perplexity capture
+navig perplexity connectors
 navig perplexity model
 navig perplexity models
 navig perplexity new
@@ -1435,6 +1439,7 @@ navig perplexity threads list
 navig perplexity threads prune
 navig perplexity threads resume
 navig perplexity threads sessions
+navig perplexity threads set-lifecycle
 navig perplexity threads show
 navig perplexity threads sidebar
 navig perplexity write

@@ -43,7 +43,13 @@ def find_consumers(root: Path, filename: str) -> list[str]:
     root = Path(root)
     for dirpath, dirs, files in os.walk(root):
         rel = Path(dirpath).relative_to(root)
-        if len(rel.parts) >= _MAX_DEPTH:
+        rel_parts = rel.parts
+        # `.navig/history/**` is the runtime operation log — it ECHOES command paths
+        # (including this file's) and is never a document that depends on the file.
+        if ".navig" in rel_parts and rel_parts[rel_parts.index(".navig") + 1:][:1] == ("history",):
+            dirs.clear()
+            continue
+        if len(rel_parts) >= _MAX_DEPTH:
             dirs.clear()
             continue
         dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]

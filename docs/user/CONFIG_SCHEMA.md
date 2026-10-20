@@ -366,9 +366,9 @@ web:
     cache_ttl_minutes: 15            # Cache TTL for fetched content
 
   search:
-    enabled: true                    # Enable/disable web search
-    provider: brave                  # Search provider: brave, duckduckgo
-    api_key: null                    # Brave Search API key (from https://brave.com/search/api/)
+    enabled: true                    # Enable/disable web search (kill switch)
+    provider: auto                   # Search engine (see web.search.provider)
+    api_key: null                    # Legacy Brave key; prefer `navig vault set …`
     max_results: 10                  # Maximum search results
     cache_ttl_minutes: 15            # Cache TTL for search results
 
@@ -396,16 +396,37 @@ web:
 - **Default**: `50000`
 - **Description**: Maximum characters to extract from page content
 
+#### `web.search.enabled`
+- **Type**: Boolean (stored as a string by `navig config set` — readers must `coerce_bool`)
+- **Default**: `true`
+- **Description**: Kill switch for every web-search consumer (agent tools, MCP
+  `navig_web_search`, CLI `navig search`, Telegram, the deck `/api/deck/search`
+  proxy). `navig config set web.search.enabled false` turns search off; the deck
+  proxy then answers 403 and the OS Search-engine section shows "Off".
+
 #### `web.search.provider`
 - **Type**: String
-- **Default**: `brave`
-- **Options**: `brave`, `duckduckgo`
-- **Description**: Web search provider. Brave requires API key.
+- **Default**: `auto`
+- **Options**: `auto`, `deepseek_search` (alias `deepseek`), `tavily`, `brave`,
+  `serpapi`, `firecrawl`, `mojeek`, `duckduckgo`
+- **Description**: The web search engine. `auto` runs Firecrawl (when keyed),
+  then the keyed cascade DeepSeek Search → Tavily → Brave → SerpApi, then the
+  keyless Mojeek → DuckDuckGo fallback. `deepseek_search` is DeepSeek's Search
+  API (`POST /v1/tools/search`); its key lives in the vault under
+  `deepseek_search/api_key` — NOT under bare `deepseek`, which is the LLM key
+  namespace.
+- **Precedence**: CLI `--provider` (any value other than `auto`) >
+  `NAVIG_WEB_SEARCH_PROVIDER` env (known provider names only; `""`/`skip`/typos
+  are ignored) > `web.search.provider` > `auto`.
+- **UI**: NAVIG OS → Settings → Personalization → Search engine reads/writes
+  this key via `GET/POST /api/deck/search/status|config` — the same key every
+  consumer uses, so the surfaces cannot drift.
 
 #### `web.search.api_key`
 - **Type**: String
 - **Default**: `null`
-- **Description**: API key for Brave Search (get from https://brave.com/search/api/)
+- **Description**: Legacy Brave-only key slot. Prefer per-provider keys:
+  `navig vault set brave/api_key <key>`, `navig vault set deepseek_search/api_key <key>`, …
 
 ---
 

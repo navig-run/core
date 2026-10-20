@@ -2,9 +2,10 @@
 
 Provides web content fetching and search capabilities:
 - web_fetch: HTTP GET + HTML→markdown/text extraction
-- web_search: Firecrawl-first routing with Brave/Tavily keys, then keyless
-  Mojeek→DuckDuckGo fallback (Mojeek is the reliable no-key engine; DuckDuckGo's
-  keyless endpoints return HTTP 202 anti-bot challenges for flagged IPs)
+- web_search: unified provider routing — an explicit engine, or the auto
+  cascade Firecrawl → DeepSeek Search → Tavily → Brave → SerpApi (keyed) then
+  keyless Mojeek → DuckDuckGo fallback (Mojeek is the reliable no-key engine;
+  DuckDuckGo's keyless endpoints return HTTP 202 anti-bot challenges for flagged IPs)
 
 Modeled after advanced web tools implementation.
 """
@@ -18,6 +19,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+from .search_providers import (
+    KEYLESS_PROVIDERS,
+    SEARCH_CASCADE,
+    SEARCH_KEYED_CASCADE,
+    SEARCH_PROVIDER_LABELS,
+    SUPPORTED_SEARCH_PROVIDERS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +75,12 @@ DUCKDUCKGO_LITE_ENDPOINT = "https://lite.duckduckgo.com/lite/"
 MOJEEK_ENDPOINT = "https://www.mojeek.com/search"
 TAVILY_SEARCH_ENDPOINT = "https://api.tavily.com/search"
 SERPAPI_SEARCH_ENDPOINT = "https://serpapi.com/search.json"
+# DeepSeek Search API — POST JSON, Bearer auth, query 1-128 chars, count 1-50,
+# results carry title/url/snippet/summary/date/authority/rerank_score (verified
+# live 2026-10-20). The platform key is shared with the DeepSeek LLM API, but the
+# vault namespace here is deliberately `deepseek_search`, NOT bare `deepseek` —
+# bare `deepseek` is the LLM key namespace (vault.get_api_key("deepseek")).
+DEEPSEEK_SEARCH_ENDPOINT = "https://api.deepseek.com/v1/tools/search"
 
 _WEB_PROVIDER_ALIASES: dict[str, str] = {
     "": "auto",
@@ -88,9 +103,12 @@ _WEB_PROVIDER_ALIASES: dict[str, str] = {
     "serpapi": "serpapi",
     "serp": "serpapi",
     "google-serp": "serpapi",
+    "deepseek_search": "deepseek_search",
+    "deepseek": "deepseek_search",
 }
 
 _WEB_PROVIDER_ENV_VARS: dict[str, tuple[str, ...]] = {
+    "deepseek_search": ("DEEPSEEK_SEARCH_API_KEY",),
     "firecrawl": ("FIRECRAWL_API_KEY",),
     "brave": ("BRAVE_API_KEY",),
     "perplexity": ("PERPLEXITY_API_KEY", "PPLX_API_KEY"),
@@ -107,6 +125,15 @@ _WEB_PROVIDER_ENV_VARS: dict[str, tuple[str, ...]] = {
 # are legacy/alternate conventions kept for backward compatibility. (Omitting the
 # bare name is why the operator's real brave/tavily keys were never found.)
 _WEB_PROVIDER_VAULT_LABELS: dict[str, tuple[str, ...]] = {
+    # Search keys live in the `deepseek_search` namespace on purpose: bare
+    # "deepseek" resolves the LLM credential and must never feed search dispatch.
+    "deepseek_search": (
+        "deepseek_search",
+        "deepseek_search/api_key",
+        "deepseek/search_api_key",
+        "deepseek_search_api_key",
+        "web/deepseek_search_api_key",
+    ),
     "firecrawl": (
         "firecrawl",
         "FIRECRAWL_API_KEY",
@@ -999,6 +1026,92 @@ def _search_tavily(
         )
 
 
+def _search_deepseek(
+    query: str,
+    api_key: str,
+    count: int = 5,
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+) -> WebSearchResult:
+    """Search using the DeepSeek Search API (POST /v1/tools/search, Bearer auth).
+
+    Contract verified live 2026-10-20: query 1-128 chars, count 1-50, results
+    carry title/url/snippet/summary/date (+ authority/rerank_score). An empty
+    results list counts as failure so the auto cascade can fall through (Mojeek
+    precedent) — and empty responses are not billed.
+    """
+    try:
+        payload = {
+            "query": (query or "").strip()[:128],
+            "count": max(1, min(int(count), 50)),
+            "need_content": False,
+        }
+        if not payload["query"]:
+            return WebSearchResult(
+                success=False,
+                query=query,
+                provider="deepseek_search",
+                error="DeepSeek Search requires a non-empty query (1-128 chars).",
+            )
+
+        response = requests.post(
+            DEEPSEEK_SEARCH_ENDPOINT,
+            json=payload,
+            timeout=timeout_seconds,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+
+        if response.status_code == 401:
+            return WebSearchResult(
+                success=False,
+                query=query,
+                provider="deepseek_search",
+                error="DeepSeek Search API key is invalid or expired.",
+            )
+        if response.status_code != 200:
+            return WebSearchResult(
+                success=False,
+                query=query,
+                provider="deepseek_search",
+                error=(
+                    f"DeepSeek Search API error {response.status_code}: "
+                    f"{response.text[:500]}"
+                ),
+            )
+
+        data = response.json()
+        results = [
+            SearchResult(
+                title=item.get("title", ""),
+                url=item.get("url", ""),
+                snippet=str(item.get("snippet") or item.get("summary") or ""),
+                age=item.get("date") if isinstance(item.get("date"), str) else None,
+            )
+            for item in (data.get("results") or [])[: payload["count"]]
+            if item.get("url")
+        ]
+        if not results:
+            return WebSearchResult(
+                success=False,
+                query=query,
+                provider="deepseek_search",
+                error="DeepSeek Search returned no results.",
+            )
+        return WebSearchResult(
+            success=True, results=results, query=query, provider="deepseek_search"
+        )
+
+    except Exception as e:
+        return WebSearchResult(
+            success=False,
+            query=query,
+            provider="deepseek_search",
+            error=f"DeepSeek Search failed: {str(e)}",
+        )
+
+
 def _search_serpapi(
     query: str,
     api_key: str,
@@ -1139,6 +1252,133 @@ def _search_firecrawl(
         )
 
 
+def _resolve_vault_key(provider_name: str) -> str:
+    """Vault lookup for a provider's search key over ``_WEB_PROVIDER_VAULT_LABELS``.
+
+    Bare provider name first (see the comment on that table). Best-effort: a
+    vault that cannot open resolves to "" so dispatch falls through cleanly.
+    Guarded by ``vault_exists()`` — opening a vault CREATES it, and a key probe
+    must never be the reason an empty vault appears.
+    """
+    try:
+        from navig.vault import vault_exists
+        from navig.vault.core import get_vault, reveal_secret
+
+        if not vault_exists():
+            return ""
+        vault = get_vault()
+        for label in _WEB_PROVIDER_VAULT_LABELS.get(provider_name, ()):
+            # reveal_secret unwraps the SecretStr (the bare .strip() the old code
+            # used raised and was swallowed, silently discarding every vault key).
+            value = reveal_secret(vault, label)
+            if value:
+                return value
+    except Exception:
+        pass  # best-effort: vault unavailable, skip key resolution
+    return ""
+
+
+def resolve_provider_key(provider_name: str, search_cfg: dict[str, Any] | None = None) -> str:
+    """Resolve a provider's API key without caller context.
+
+    Same chain dispatch uses — vault → ``web.search.api_keys.<id>`` → legacy
+    ``web.search.api_key`` (Brave) → env — minus the explicit ``api_key``
+    argument only callers can supply. Status surfaces (deck ``/search/status``,
+    ``navig init status``) probe through THIS function so "has key" and "uses
+    key" can never drift apart.
+    """
+    import os
+
+    if search_cfg is None:
+        search_cfg = (get_web_config() or {}).get("search", {}) or {}
+
+    vault_value = _resolve_vault_key(provider_name)
+    if vault_value:
+        return vault_value
+
+    api_keys = search_cfg.get("api_keys") or {}
+    if isinstance(api_keys, dict):
+        candidate = str(api_keys.get(provider_name) or "").strip()
+        if candidate:
+            return candidate
+
+    if provider_name == "brave":
+        legacy_cfg = str(search_cfg.get("api_key") or "").strip()
+        if legacy_cfg:
+            return legacy_cfg
+
+    for env_name in _WEB_PROVIDER_ENV_VARS.get(provider_name, ()):
+        value = (os.environ.get(env_name) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def canonical_search_provider(name: str) -> str:
+    """Alias-normalize a provider name.
+
+    Known names normalize through ``_WEB_PROVIDER_ALIASES``; UNKNOWN names pass
+    through raw — a typo in config must surface in status/UI, not silently
+    collapse to ``auto``. (Dispatch's ``_norm_provider`` still collapses to
+    ``auto``: its job is to never fail a search over a bad name.)
+    """
+    raw = str(name or "").strip().lower()
+    return _WEB_PROVIDER_ALIASES.get(raw, raw)
+
+
+def effective_search_provider(
+    configured: str, environ: dict[str, str] | None = None
+) -> str:
+    """The configured engine with env override applied — ONE precedence rule.
+
+    ``NAVIG_WEB_SEARCH_PROVIDER`` beats ``web.search.provider`` (precedence:
+    CLI ``--provider`` non-auto > env > config > ``auto``), but ONLY when it
+    names a known provider: ``""``/unset and the onboarding ``skip`` sentinel
+    must never reach ``web_search()``. Callers with their own config snapshot
+    (``navig init status``) pass ``environ`` for testability.
+    """
+    import os
+
+    source = os.environ if environ is None else environ
+    env_provider = (source.get("NAVIG_WEB_SEARCH_PROVIDER") or "").strip().lower()
+    if env_provider and env_provider in _WEB_PROVIDER_ALIASES:
+        return _WEB_PROVIDER_ALIASES[env_provider]
+    return canonical_search_provider(str(configured or "auto"))
+
+
+def provider_status() -> dict[str, Any]:
+    """Authoritative web-search status for the OS Search-engine section.
+
+    Exposes key PRESENCE only — never key material. Keyless engines report
+    ``has_key=False`` (they need no key; consumers label them from the shared
+    ``KEYLESS_PROVIDERS`` set). ``provider`` is the configured engine after
+    alias-normalization; an unknown config value surfaces raw.
+    """
+    from navig.core.coerce import coerce_bool
+
+    cfg = get_web_config()
+    search_cfg = cfg.get("search", {}) if isinstance(cfg, dict) else {}
+    return {
+        "enabled": coerce_bool(search_cfg.get("enabled", True), default=True),
+        "provider": canonical_search_provider(
+            str(search_cfg.get("provider") or "auto")
+        ),
+        "providers": [
+            {
+                "id": pid,
+                "label": SEARCH_PROVIDER_LABELS.get(pid, pid),
+                "has_key": (
+                    False
+                    if pid in KEYLESS_PROVIDERS
+                    else bool(resolve_provider_key(pid, search_cfg))
+                ),
+            }
+            for pid in SUPPORTED_SEARCH_PROVIDERS
+        ],
+        "cascade": list(SEARCH_CASCADE),
+    }
+
+
 def web_search(
     query: str,
     count: int = 5,
@@ -1153,8 +1393,10 @@ def web_search(
     Args:
         query: Search query string
         count: Number of results to return (1-10)
-        provider: 'auto', 'mojeek', 'duckduckgo', 'brave', 'tavily', 'serpapi', or 'firecrawl'.
-            'auto' tries Firecrawl→Tavily→Brave→SerpApi (whichever are keyed), then
+        provider: 'auto', 'deepseek_search' (alias: 'deepseek'), 'firecrawl',
+            'tavily', 'brave', 'serpapi', 'mojeek', or 'duckduckgo'.
+            'auto' tries Firecrawl, then the keyed cascade
+            DeepSeek Search→Tavily→Brave→SerpApi (whichever are keyed), then
             keyless Mojeek→DuckDuckGo.
         api_key: API key for Brave Search (optional if BRAVE_API_KEY env var set)
         timeout_seconds: Request timeout
@@ -1197,29 +1439,10 @@ def web_search(
             result.cached = True
             return result
 
-    import os
-
     def _norm_provider(name: str) -> str:
         return _WEB_PROVIDER_ALIASES.get(str(name or "").strip().lower(), "auto")
 
-    def _resolve_vault_key(provider_name: str) -> str:
-        try:
-            from navig.vault.core import get_vault, reveal_secret
-
-            vault = get_vault()
-            for label in _WEB_PROVIDER_VAULT_LABELS.get(provider_name, ()):
-                # reveal_secret unwraps the SecretStr (the bare .strip() the old code
-                # used raised and was swallowed, silently discarding every vault key).
-                value = reveal_secret(vault, label)
-                if value:
-                    return value
-        except Exception:
-            pass  # best-effort: vault unavailable, skip key resolution
-        return ""
-
     def _resolve_key(provider_name: str, search_cfg: dict[str, Any]) -> str:
-        api_keys = search_cfg.get("api_keys") or {}
-
         explicit = (api_key or "").strip()
         # The explicit api_key is documented as the BRAVE key (and callers pass it as
         # such — e.g. the MCP tool forwards BRAVE_API_KEY). Honor it for Brave, and for
@@ -1228,27 +1451,7 @@ def web_search(
         # and silently masks the user's real vaulted per-provider keys.
         if explicit and provider_name in ("brave", requested_provider):
             return explicit
-
-        vault_value = _resolve_vault_key(provider_name)
-        if vault_value:
-            return vault_value
-
-        if isinstance(api_keys, dict):
-            candidate = str(api_keys.get(provider_name) or "").strip()
-            if candidate:
-                return candidate
-
-        if provider_name == "brave":
-            legacy_cfg = str(search_cfg.get("api_key") or "").strip()
-            if legacy_cfg:
-                return legacy_cfg
-
-        for env_name in _WEB_PROVIDER_ENV_VARS.get(provider_name, ()):
-            value = (os.environ.get(env_name) or "").strip()
-            if value:
-                return value
-
-        return ""
+        return resolve_provider_key(provider_name, search_cfg)
 
     cfg = get_web_config()
     search_cfg = cfg.get("search", {}) if isinstance(cfg, dict) else {}
@@ -1266,33 +1469,28 @@ def web_search(
 
         Cascades on *failure*, not just key presence — a keyed engine that errors
         (bad key, quota, network) falls through to the next instead of dead-ending.
-        Order favors grounding quality while respecting free-tier quotas: Tavily
+        Order (SEARCH_KEYED_CASCADE): DeepSeek Search (grounding + cheap) → Tavily
         (RAG-optimized) → Brave (large free tier) → SerpApi (Google, small quota,
         used last) → keyless Mojeek/DuckDuckGo.
         """
-        for prov, runner in (
-            ("tavily", lambda k: _search_tavily(query, k, count, timeout_seconds)),
-            ("brave", lambda k: _search_brave(query, k, count, timeout_seconds)),
-            ("serpapi", lambda k: _search_serpapi(query, k, count, timeout_seconds)),
-        ):
+        runners = {
+            "deepseek_search": lambda k: _search_deepseek(query, k, count, timeout_seconds),
+            "tavily": lambda k: _search_tavily(query, k, count, timeout_seconds),
+            "brave": lambda k: _search_brave(query, k, count, timeout_seconds),
+            "serpapi": lambda k: _search_serpapi(query, k, count, timeout_seconds),
+        }
+        for prov in SEARCH_KEYED_CASCADE:
             key = _resolve_key(prov, search_cfg)
             if not key:
                 continue
-            candidate = runner(key)
+            candidate = runners[prov](key)
             if candidate.success:
                 return candidate
             logger.debug("Keyed provider %s failed (%s); trying next", prov, candidate.error)
         return _search_keyless(query, count, timeout_seconds)
 
-    # Runtime engine supports Firecrawl, Brave, DuckDuckGo, Mojeek, Tavily, SerpApi.
-    if selected_provider not in (
-        "firecrawl",
-        "brave",
-        "duckduckgo",
-        "mojeek",
-        "tavily",
-        "serpapi",
-    ):
+    # Runtime engine set lives in one place: navig.tools.search_providers.
+    if selected_provider not in SUPPORTED_SEARCH_PROVIDERS:
         # Unknown/unsupported provider → best available keyed engine, else keyless.
         selected_provider = "auto-keyed"
         selected_key = ""
@@ -1304,6 +1502,22 @@ def web_search(
             if requested_provider == "firecrawl":
                 return result
             result = _best_keyed_or_keyless()
+    elif selected_provider == "deepseek_search":
+        if not selected_key:
+            # Deliberate deviation from the tavily/brave silent-keyless pattern:
+            # the explicitly configured engine must never silently answer as a
+            # different one — attribution stays honest (pinned by tests).
+            result = WebSearchResult(
+                success=False,
+                query=query,
+                provider="deepseek_search",
+                error=(
+                    "DeepSeek Search key not found — run: "
+                    "navig vault set deepseek_search/api_key <key>"
+                ),
+            )
+        else:
+            result = _search_deepseek(query, selected_key, count, timeout_seconds)
     elif selected_provider == "tavily":
         result = (
             _search_tavily(query, selected_key, count, timeout_seconds)
@@ -1567,6 +1781,13 @@ def get_web_config(config_manager=None) -> dict[str, Any]:
             section = web_config.get(key)
             if isinstance(section, dict):
                 defaults.update(section)
+
+    # NAVIG_WEB_SEARCH_PROVIDER is an explicit system-level override — re-apply
+    # it AFTER the config merge so a config.yaml value cannot shadow it
+    # (precedence: CLI --provider (non-auto) > env > config > "auto").
+    default_config["search"]["provider"] = effective_search_provider(
+        default_config["search"]["provider"]
+    )
 
     # Get API key from env if not in config
     if not default_config["search"]["api_key"]:

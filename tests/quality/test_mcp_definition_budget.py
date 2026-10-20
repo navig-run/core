@@ -25,12 +25,16 @@ from navig.mcp.catalogue_audit import SIBLING_TOOL, STATES_RESULT, counts, signa
 from navig.mcp_server import MCPProtocolHandler
 
 #: Ceilings as RATIOS, not absolute counts. The catalogue is not a fixed set: installed
-#: plugins and connectors add tools (this machine has 152; a build with the Perplexity
-#: delegation plugin has 154), so an absolute number is either too tight for one machine or
-#: toothless for another — measured: the same definitions give 71/152 = 0.467 and
-#: 72/154 = 0.468. A ratio is the invariant. Before the audit these were 111/152 and 88/152.
-MAX_NO_SIBLING_RATIO = 0.62  # measured 0.612 before the plugin set changed
-MAX_NO_RESULT_RATIO = 0.48  # measured 0.467
+#: plugins and connectors add tools (152 in the clean tree, 154 with the Perplexity
+#: delegation plugin), so an absolute number is either too tight for one machine or
+#: toothless for another. A ratio is the invariant: 71/152 = 0.467 and 72/154 = 0.468 are the
+#: same figure.
+#:
+#: After batch 2 both ratios are ZERO: every advertised tool names a sibling and states its
+#: result. The ceilings only move down; a new tool without routing or a result has to be a
+#: deliberate decision made in the same commit as the ceiling change, not drift.
+MAX_NO_SIBLING_RATIO = 0.0
+MAX_NO_RESULT_RATIO = 0.0
 
 #: Batch-1 tools: descriptions rebuilt from the handler in ``navig/mcp/annotations.py``.
 #: ``navig_list_databases`` is deliberately absent — it has no sibling tool to route to, and

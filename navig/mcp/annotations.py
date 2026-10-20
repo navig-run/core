@@ -86,10 +86,11 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "cdp_snapshot",
         "cdp_tabs",
         "cdp_targets",
-        # the Perplexity desktop app bridge — status/models only read the window;
+        # the Perplexity desktop app bridge — status/models/capabilities only read the window;
         # perplexity_ask sends a question (outbound) and perplexity_model changes a setting
         "perplexity_status",
         "perplexity_models",
+        "perplexity_capabilities",
         # Spaces — metadata and one file, read through the linked-context guard. The gate
         # still classifies navig_space_read as `moderate` because file content enters the
         # conversation; privacy is a reason to ask, not a reason to call a read destructive.
@@ -191,6 +192,7 @@ TITLE_OVERRIDES: dict[str, str] = {    "navig_run_command": "Run a NAVIG command
     "perplexity_write": "Perplexity: Write an article or copy",
     "perplexity_threads": "Perplexity: Conversations",
     "perplexity_status": "Perplexity: App status",
+    "perplexity_capabilities": "Perplexity: Capabilities",
     "desktop_powershell": "Desktop: Run PowerShell",
     "recall_ask": "Recall: Has the owner asked this before?",
     "memory_key_facts_remember": "Remember a key fact",
@@ -208,6 +210,19 @@ TITLE_OVERRIDES: dict[str, str] = {    "navig_run_command": "Run a NAVIG command
     "cdp_type": "CDP: Type text",
     "desktop_registry_set": "Desktop: Set a registry value",
     "desktop_registry_delete": "Desktop: Delete a registry value",
+    # The derivation for dock_* would be the raw name ("Dock status" IS "dock status"), so a
+    # client that renders the title shows nothing the name did not. These say what the verb
+    # does to the operator's browser.
+    "dock_status": "Dock connection status",
+    "dock_tabs": "List agent tabs",
+    "dock_open": "Open a tab",
+    "dock_release": "Release a tab",
+    "dock_snapshot": "Read a page snapshot",
+    "dock_text": "Read a page's text",
+    "dock_act": "Act in a page",
+    "dock_screenshot": "Screenshot a page",
+    "dock_console": "Read console messages",
+    "dock_network": "Read network requests",
 }
 
 
@@ -445,6 +460,450 @@ DESCRIPTION_OVERRIDES: dict[str, str] = {
 }
 
 
+#: One sentence appended to a tool's authored description when the definition does not
+#: already carry it — the batch-2 completion of the same two catalogue-wide findings the
+#: published evaluation named ("no selection guidance", "no output expectations").
+#:
+#: Batch 1 (``DESCRIPTION_OVERRIDES``) rewrote whole descriptions for the 19 worst tools;
+#: these 86 were *adequate* on purpose/identity/safety but silent about two facts an agent
+#: needs to choose and continue: which sibling does the next step, and what comes back. A
+#: sentence is appended rather than the whole text replaced because the authored text is
+#: accurate and often longer than any replacement — and appending is idempotent, so calling
+#: ``annotate_tools`` twice cannot accumulate prose.
+#:
+#: Rules for this table, because it reaches every client:
+#:
+#: * name a REAL sibling that exists in the same catalogue and does the step it claims;
+#: * state the actual result contract (the field names are the ones the handler returns);
+#: * never put a write verb in a read tool's hint — the definition scorer (and a reader)
+#:   treats "a read that advertises a write" as a contradiction even when it is only
+#:   routing; a read tool points at other reads.
+DESCRIPTION_HINTS: dict[str, str] = {
+    # ── cdp: every verb needs a page, and the next verb to call ──────────────────────
+    "cdp_targets": (
+        "Returns one entry per endpoint with its port, browser and page title; use cdp_tabs "
+        "or cdp_snapshot to attach."
+    ),
+    "cdp_launch": (
+        "Returns the debug port and profile it launched; call cdp_tabs then cdp_snapshot to "
+        "drive it, or use cdp_new for an isolated throwaway browser."
+    ),
+    "cdp_snapshot": (
+        "Returns the accessibility tree with numeric refs and the page identity; pass a ref "
+        "to cdp_click and use cdp_screenshot when pixels matter."
+    ),
+    "cdp_screenshot": (
+        "Returns the saved file path, or base64 data with as_base64=true; use cdp_snapshot "
+        "when you need refs rather than pixels."
+    ),
+    "cdp_scroll": (
+        "Returns the dispatch acknowledgement; then use cdp_snapshot to see what entered "
+        "the viewport."
+    ),
+    "cdp_login": (
+        "Returns the login status; use cdp_snapshot afterwards to confirm the authenticated "
+        "page."
+    ),
+    "cdp_inject": (
+        "Returns the registered script id; use cdp_eval for a one-shot evaluation instead."
+    ),
+    "cdp_tabs": (
+        "Returns every page's index, title and URL; pass a tab index to cdp_switch, or use "
+        "cdp_launched to see browsers NAVIG started."
+    ),
+    "cdp_switch": (
+        "Returns the active tab; later cdp_* calls act on it, so use cdp_snapshot next."
+    ),
+    "cdp_new": (
+        "Returns the new browser's debug port; use cdp_tabs then cdp_snapshot to drive it, "
+        "or cdp_launch to reuse a running app."
+    ),
+    "cdp_launched": (
+        "Returns each launched browser with its port and whether it is still live; pass a "
+        "port to cdp_stop to close it, or use cdp_tabs to inspect it."
+    ),
+    # Override-completed verbs whose authored text names the next verb but not a choice
+    # ("call cdp_snapshot afterwards" reads as a sequence, not as guidance between siblings).
+    "cdp_key": (
+        "Use cdp_click to focus the target before the chord, and cdp_snapshot to verify "
+        "what changed."
+    ),
+    "cdp_type": (
+        "Use cdp_click to focus the field before typing, and cdp_snapshot to confirm what "
+        "landed."
+    ),
+    "cdp_navigate": (
+        "Use cdp_snapshot after the load to see the rendered page, or cdp_tabs to check "
+        "where you ended up."
+    ),
+    # ── desktop: readers say what they return, and the sibling that acts on it ───────
+    "desktop_find": (
+        "Returns matching elements with name, control type and native handle; pass a handle "
+        "to desktop_click, or use desktop_tree to see the hierarchy."
+    ),
+    "desktop_tree": (
+        "Returns the element hierarchy with each node's name, type and handle; use "
+        "desktop_find to search it by name instead of reading every level."
+    ),
+    "desktop_clipboard_get": (
+        "Returns the clipboard text; use desktop_clipboard_set to put new text there."
+    ),
+    "desktop_clipboard_set": (
+        "Returns success; read it back with desktop_clipboard_get, and prefer desktop_type "
+        "when the text belongs in a UI field."
+    ),
+    "desktop_notify": (
+        "Returns success and the delivery method; use desktop_snapshot when you need to "
+        "confirm what is on screen."
+    ),
+    "desktop_powershell": (
+        "Returns stdout, stderr and the exit code; use desktop_filesystem for plain file "
+        "work and navig_run_command for read-only NAVIG verbs."
+    ),
+    "desktop_registry_get": (
+        "Returns the value, its type and path; use desktop_registry_list to enumerate "
+        "siblings and desktop_registry_set to change a value."
+    ),
+    "desktop_registry_delete": (
+        "Returns what was deleted (value or key); read it first with desktop_registry_get, "
+        "and use desktop_registry_set to change a value instead."
+    ),
+    "desktop_registry_list": (
+        "Returns subkeys and values with their types; use desktop_registry_get to read one "
+        "value and desktop_registry_set to change one."
+    ),
+    "desktop_process_kill": (
+        "Returns the terminated process's pid and name; use desktop_process_list to find the "
+        "pid first, and the graceful default unless it hangs."
+    ),
+    "desktop_process_list": (
+        "Use desktop_process_kill with a pid from this list to terminate one, and "
+        "desktop_snapshot when you need the window that owns it."
+    ),
+    "desktop_filesystem": (
+        "Returns the per-mode result (contents, entries, metadata or a success flag); use "
+        "desktop_powershell for shell features a mode cannot express."
+    ),
+    # Action verbs acknowledge the request; the desktop's state is verified with a reader.
+    # Each sentence is true of every backend: the client returns the agent's response dict,
+    # and a failure is `{"error": …}` (tests/mcp/test_mcp_tools_desktop.py pins the shape).
+    "desktop_click": (
+        "Returns the desktop agent's acknowledgement, or {error} with the reason; use "
+        "desktop_snapshot to verify what changed."
+    ),
+    "desktop_set_value": (
+        "Returns the desktop agent's acknowledgement, or {error} with the reason; use "
+        "desktop_snapshot to verify the new value."
+    ),
+    "desktop_ahk": (
+        "Returns the desktop agent's result for the script, or {error} with the reason; use "
+        "desktop_snapshot to see the effect."
+    ),
+    "desktop_type": (
+        "Returns the desktop agent's acknowledgement, or {error} with the reason; use "
+        "desktop_snapshot to confirm the text landed."
+    ),
+    "desktop_scroll": (
+        "Returns the desktop agent's acknowledgement, or {error} with the reason; use "
+        "desktop_snapshot to see what is now visible."
+    ),
+    "desktop_move": (
+        "Returns the desktop agent's acknowledgement, or {error} with the reason; use "
+        "desktop_click to actually click at the destination."
+    ),
+    "desktop_shortcut": (
+        "Returns the desktop agent's acknowledgement, or {error} with the reason; use "
+        "desktop_snapshot to verify the command took effect."
+    ),
+    "desktop_app": (
+        "Returns the launched, activated or resized window result, or {error} with the "
+        "reason; use desktop_snapshot to see the desktop afterwards."
+    ),
+    "desktop_multi_select": (
+        "Returns the desktop agent's acknowledgement, or {error} with the reason; use "
+        "desktop_snapshot to confirm the selection."
+    ),
+    "desktop_multi_edit": (
+        "Returns the desktop agent's acknowledgement, or {error} with the reason; use "
+        "desktop_snapshot to confirm the fields."
+    ),
+    "desktop_snapshot": (
+        "Returns cursor position, the open-window list, interactive elements and, with "
+        "use_vision=true, a screenshot; use desktop_click or desktop_type to act on what you see."
+    ),
+    # ── dock: the operator's own browser, and where cdp_* differs ───────────────────
+    "dock_status": (
+        "Returns connected/paused state and latency; call dock_tabs next to see the tabs you "
+        "may drive, and use cdp_targets for a separate debug browser."
+    ),
+    "dock_tabs": (
+        "Returns each tab's id, title, url and holder; pass a tab_id to dock_snapshot, and "
+        "use dock_open to add a tab. For a separate debug browser use cdp_tabs instead."
+    ),
+    "dock_open": (
+        "Returns the new tab_id; use dock_snapshot to read it, and pass the id to "
+        "dock_release when you are done. For a separate debug browser use cdp_new instead."
+    ),
+    "dock_release": (
+        "Returns ok; use dock_tabs to confirm the tab left the group, and dock_open when you "
+        "need a fresh tab. For a separate debug browser use cdp_stop to close it instead."
+    ),
+    "dock_snapshot": (
+        "Returns url, title, doc, rev and the element tree with [ref_N] handles; pass a ref "
+        "to dock_act, or use cdp_snapshot for a debug browser."
+    ),
+    "dock_text": (
+        "Returns the page's readable text; use dock_snapshot when you need refs to act on, or "
+        "cdp_snapshot for a debug browser."
+    ),
+    "dock_act": (
+        "Returns each step's result and the page outline afterwards; read refs with "
+        "dock_snapshot first, and use dock_text when only the words matter. For a "
+        "NAVIG-launched debug browser use cdp_click instead."
+    ),
+    "dock_screenshot": (
+        "Returns a JPEG with its width and height; use dock_snapshot when you need refs "
+        "rather than pixels, or cdp_screenshot for a debug browser."
+    ),
+    "dock_console": (
+        "Returns console entries and uncaught errors; use dock_act navigate reload to capture "
+        "load-time messages, and cdp_eval for a debug browser."
+    ),
+    "dock_network": (
+        "Returns the requests a tab made with secrets redacted; use dock_tabs first when you "
+        "have no tab_id, and cdp_targets for a debug browser."
+    ),
+    # ── navig inventory: list → details, and what a missing read means ──────────────
+    "navig_list_hosts": "Use navig_host_info for that host's settings and apps.",
+    "navig_host_info": (
+        "Returns the host's settings, paths and apps; use navig_list_hosts to find the name "
+        "and navig_app_info for one of its apps."
+    ),
+    "navig_list_apps": "Use navig_app_info for its config and paths.",
+    "navig_app_info": (
+        "Returns the app's config, paths and status; use navig_list_apps to find the name and "
+        "navig_host_info for its host."
+    ),
+    "navig_get_context": (
+        "Returns recent errors, active hosts and system state; use navig_list_hosts for the "
+        "inventory and navig_search_docs to look up a command."
+    ),
+    "navig_list_databases": (
+        "Returns one entry per configured connection without connecting; use navig_run_command "
+        "with a read-only db verb for details."
+    ),
+    "navig_search_docs": (
+        "Returns matching documentation passages with their source; use navig_read_wiki_page "
+        "for a full page and navig_search_wiki to search the wiki instead."
+    ),
+    "navig_web_fetch": (
+        "Returns the page content as markdown or text, truncated to max_chars; use "
+        "navig_web_search to find a URL and firecrawl_scrape for Firecrawl extraction."
+    ),
+    "navig_web_search": (
+        "Returns ranked results with titles, URLs and snippets; pass a result URL to "
+        "navig_web_fetch, and use firecrawl_search when Firecrawl is configured."
+    ),
+    # ── agent: status → goals → service, each naming the next verb ─────────────────
+    "navig_agent_status_get": (
+        "Returns mode, personality, workspace, PID and running state; use "
+        "navig_agent_service_status for the OS service and navig_agent_goal_list for its goals."
+    ),
+    "navig_agent_goal_list": (
+        "Returns each goal's id, state and progress; use navig_agent_goal_start or "
+        "navig_agent_goal_cancel on an id from this list."
+    ),
+    "navig_agent_goal_add": (
+        "Returns the new goal's id; use navig_agent_goal_cancel to stop it."
+    ),
+    "navig_agent_goal_start": (
+        "Returns the goal's new state; use navig_agent_goal_list to list goals and "
+        "navig_agent_goal_cancel to stop one."
+    ),
+    "navig_agent_goal_cancel": (
+        "Returns the cancelled goal; use navig_agent_goal_list to confirm and "
+        "navig_agent_goal_add to create a replacement."
+    ),
+    "navig_agent_remediation_list": (
+        "Returns the actions and log entries; use navig_agent_remediation_retry on a failed "
+        "action's id."
+    ),
+    "navig_agent_remediation_retry": (
+        "Returns the retry outcome; inspect failures with navig_agent_remediation_list and "
+        "diagnose patterns with navig_agent_learning_run."
+    ),
+    "navig_agent_component_restart": (
+        "Returns the queued action's id; use navig_agent_remediation_list to track it and "
+        "navig_agent_status_get to check the agent."
+    ),
+    "navig_agent_service_status": (
+        "Returns whether the service is installed and running; use "
+        "navig_agent_service_install or navig_agent_service_uninstall to change it."
+    ),
+    "navig_agent_service_install": (
+        "Returns the install result; use navig_agent_service_status to verify it and "
+        "navig_agent_service_uninstall to remove it."
+    ),
+    "navig_agent_service_uninstall": (
+        "Returns the uninstall result; use navig_agent_service_status to confirm and "
+        "navig_agent_service_install to restore it."
+    ),
+    # ── runtime: nodes → missions → receipts, and the score built from them ────────
+    "navig_runtime_list_nodes": (
+        "Use a node_id with navig_runtime_create_mission or navig_runtime_trust_score; each "
+        "row returned carries capabilities and last-seen state."
+    ),
+    "navig_runtime_list_missions": (
+        "Returns missions with their id, state and node; use navig_runtime_mission_action on "
+        "an id and navig_runtime_list_receipts for its evidence."
+    ),
+    "navig_runtime_mission_action": (
+        "Returns the mission with its new state; use navig_runtime_create_mission to create "
+        "and navig_runtime_list_receipts for its evidence."
+    ),
+    "navig_runtime_trust_score": (
+        "Returns the score with its components; use navig_runtime_list_nodes to list nodes "
+        "and navig_runtime_list_receipts to inspect the evidence."
+    ),
+    # ── bay / blocks: browse → show → apply, and never auto-run a block ────────────
+    "navig_bay_list": (
+        "Pass a slug to navig_bay_acquire, or use navig_block_list to see the blocks already "
+        "installed."
+    ),
+    "navig_bay_acquire": (
+        "Returns which action the item needs (installed, activate, apply, manual or locked); "
+        "use navig_bay_list first to find the slug."
+    ),
+    "navig_block_list": (
+        "Use navig_block_show for an id's spec, then navig_block_apply to run it."
+    ),
+    "navig_block_show": (
+        "Returns the spec's inputs, steps and verify criterion; pass the id to "
+        "navig_block_apply to run it, and use navig_block_list to find ids."
+    ),
+    "navig_block_apply": (
+        "Inspect the spec with navig_block_show first, then pass its step ids here; the "
+        "receipt says what each step did."
+    ),
+    # ── spaces: the provenance anchor, its graph, and one guarded read ─────────────
+    "navig_space_current": (
+        "Returns that anchor; use navig_space_related for its graph and navig_space_read for "
+        "one file."
+    ),
+    "navig_space_related": (
+        "Returns that graph; use navig_space_read to read a reachable file and "
+        "navig_space_context for the readable provenance set."
+    ),
+    "navig_space_context": (
+        "Returns those items and unavailable edges; use navig_space_read for one path and "
+        "navig_space_related for the graph."
+    ),
+    "navig_space_read": (
+        "Returns the file content, or the denial reason; use navig_space_context to find a "
+        "readable path and navig_space_related to see why an edge is unavailable."
+    ),
+    # ── firecrawl: search → scrape → crawl, and when the built-in fetch is cheaper ──
+    "firecrawl_scrape": (
+        "Returns markdown content and metadata for one URL, or several with crawl mode; use "
+        "firecrawl_crawl for multi-page discovery and firecrawl_search to find URLs."
+    ),
+    "firecrawl_crawl": (
+        "Returns crawl job metadata and the discovered pages; use firecrawl_scrape for one "
+        "page you already have, and firecrawl_search to find URLs."
+    ),
+    # ── memory: store → retrieve → stats (reads never advertise a write) ───────────
+    "memory_key_facts_remember": (
+        "Returns the stored fact's id and status; use memory_key_facts_retrieve to find it "
+        "later and memory_key_facts_update to supersede it."
+    ),
+    "memory_key_facts_retrieve": (
+        "Returns matching facts with id, content and score; use memory_key_facts_remember to "
+        "store a new one and memory_key_facts_stats for counts."
+    ),
+    "memory_key_facts_stats": (
+        "Returns counts for total, active, deleted and superseded facts; use "
+        "memory_key_facts_retrieve to list the active ones and memory_key_facts_forget to "
+        "retire one."
+    ),
+    "memory_key_facts_forget": (
+        "Use memory_key_facts_stats to confirm the count and memory_key_facts_retrieve to "
+        "check the fact no longer appears."
+    ),
+    # ── recall: every reader names the reader that goes deeper ─────────────────────
+    "recall_search": (
+        "Returns matching records with ids and citations; pass a record id to recall_get, or "
+        "use recall_source_excerpt to verify one citation."
+    ),
+    "recall_ask": (
+        "Returns earlier owner questions, replies and matching decisions with citations; use "
+        "recall_decisions for decisions alone and recall_get for one record in full."
+    ),
+    "recall_get": (
+        "Returns the full record with evidence, timeline and related records; use "
+        "recall_source_excerpt for the raw conversation around a citation and recall_related "
+        "for linked records."
+    ),
+    "recall_related": (
+        "Returns linked records with their relation and citations; pass an id to recall_get "
+        "for one in full, or recall_source_excerpt to check a citation."
+    ),
+    "recall_timeline": (
+        "Returns the append-only history of one record; use recall_get for the record itself "
+        "and recall_related for the records it links to."
+    ),
+    "recall_decisions": (
+        "Returns decisions newest first with citations; use recall_ask to find an earlier "
+        "question and recall_get for one decision in full."
+    ),
+    "recall_open_questions": (
+        "Returns unresolved questions and conflicts with citations; use recall_get for the "
+        "underlying record and recall_search to look for later resolution."
+    ),
+    "recall_forgotten_ideas": (
+        "Returns ideas with no evidence of being built, with citations; use recall_get for "
+        "the full idea and recall_search to widen the search."
+    ),
+    "recall_tables": (
+        "Returns the verbatim markdown tables with citations; use recall_get for the "
+        "surrounding record and recall_source_excerpt to see the table in context."
+    ),
+    "recall_source_excerpt": (
+        "Returns the conversation turns around a citation (before/after); use recall_get for "
+        "the record itself and recall_timeline for its history."
+    ),
+    "recall_ingest": (
+        "Returns per-source counts of conversations read and skipped; use recall_search "
+        "afterwards to query what was ingested and recall_tables for extracted tables."
+    ),
+    # ── perplexity: app state → models → ask/write, and the thread that continues it ─
+    "perplexity_status": (
+        "Returns whether the app is attachable, the open conversation and the selected model; "
+        "use perplexity_ask to delegate work and perplexity_models for the choices."
+    ),
+    "perplexity_models": (
+        "Returns each model with its routing traits and gated tiers; use perplexity_model "
+        "with a label, or let perplexity_ask route automatically."
+    ),
+    "perplexity_model": (
+        "Returns the selected model, or the current one when name is omitted; use "
+        "perplexity_models for the choices and perplexity_ask to run work with routing."
+    ),
+    "perplexity_threads": (
+        "Returns matching conversations with their alias and project; pass an alias to "
+        "perplexity_ask thread=<alias> to continue one, or use perplexity_status for the app "
+        "state."
+    ),
+    "perplexity_ask": (
+        "Returns the answer text with citation URLs and the thread alias; continue it with "
+        "perplexity_ask thread=<alias>, or use perplexity_write for publication-shaped content."
+    ),
+    "perplexity_write": (
+        "Returns the written content with citation URLs and the thread alias; use "
+        "perplexity_ask for research and analysis rather than finished copy."
+    ),
+}
+
+
 def title_for(name: str) -> str:
     """A human label for *name*, e.g. ``navig_list_hosts`` → ``List hosts``."""
     override = TITLE_OVERRIDES.get(name)
@@ -541,6 +1000,15 @@ def annotate_tools(tools: dict[str, dict[str, Any]], safety: dict[str, str] | No
         better = DESCRIPTION_OVERRIDES.get(name)
         if better and len(tool.get("description") or "") < len(better):
             tool["description"] = better
+
+        # Batch 2: append the routing/result fact the authored text lacks. Idempotent — a
+        # repeated annotate pass (a test fixture, a second registration) cannot accumulate
+        # prose — and it never replaces authored text, so nothing accurate is lost.
+        hint = DESCRIPTION_HINTS.get(name)
+        if hint:
+            description = (tool.get("description") or "").rstrip()
+            if hint not in description:
+                tool["description"] = f"{description} {hint}".strip()
 
         # Structured output: a client that understands `outputSchema` reads
         # `structuredContent` instead of re-parsing the text block. Declared only for

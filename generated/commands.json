@@ -49107,6 +49107,37 @@
         },
         {
           "flags": [
+            "--attach",
+            "-a"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--connector"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--lifecycle"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--backend"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--media"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
             "--json"
           ],
           "takes_value": false
@@ -49162,6 +49193,125 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig perplexity backend"
+      ],
+      "handler": "backend",
+      "module": "navig_perplexity.commands.perplexity",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig perplexity backend",
+      "since": "",
+      "status": "stable",
+      "summary": "Which transport a delegation would use, and what it can do.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig perplexity capabilities"
+      ],
+      "handler": "capabilities",
+      "module": "navig_perplexity.commands.perplexity",
+      "options": [
+        {
+          "flags": [
+            "--refresh"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig perplexity capabilities",
+      "since": "",
+      "status": "stable",
+      "summary": "What this build and account actually expose \u2014 modes, connectors, uploads, images.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig perplexity capture"
+      ],
+      "handler": "capture",
+      "module": "navig_perplexity.commands.perplexity",
+      "options": [
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--full-page"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--alias"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig perplexity capture",
+      "since": "",
+      "status": "stable",
+      "summary": "Copy the Perplexity window here \u2014 a PNG of the app, linked to its conversation.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig perplexity connectors"
+      ],
+      "handler": "connectors",
+      "module": "navig_perplexity.commands.perplexity",
+      "options": [
+        {
+          "flags": [
+            "--refresh"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig perplexity connectors",
+      "since": "",
+      "status": "stable",
+      "summary": "The app connectors this account can toggle for a request (--connector <name>).",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "name",
@@ -49203,6 +49353,12 @@
             "-c"
           ],
           "takes_value": false
+        },
+        {
+          "flags": [
+            "--backend"
+          ],
+          "takes_value": true
         },
         {
           "flags": [
@@ -49374,6 +49530,12 @@
         },
         {
           "flags": [
+            "--force"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
             "--yes",
             "-y"
           ],
@@ -49404,6 +49566,18 @@
         {
           "flags": [
             "--project"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--session"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--lifecycle"
           ],
           "takes_value": true
         },
@@ -49468,6 +49642,24 @@
         },
         {
           "flags": [
+            "--include-persistent"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--include-artifacts"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--force"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
             "--registry-only"
           ],
           "takes_value": false
@@ -49495,7 +49687,7 @@
       "path": "navig perplexity threads prune",
       "since": "",
       "status": "stable",
-      "summary": "Delete the conversations this agent session (or a project) left behind.",
+      "summary": "Delete the **temporary** conversations a session (or a project) left behind.",
       "tags": []
     },
     {
@@ -49553,6 +49745,39 @@
       "since": "",
       "status": "stable",
       "summary": "Which agent sessions left conversations behind, and how many.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "alias",
+          "required": true,
+          "variadic": false
+        },
+        {
+          "name": "lifecycle",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig perplexity threads set-lifecycle"
+      ],
+      "handler": "threads_set_lifecycle",
+      "module": "navig_perplexity.commands.perplexity",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig perplexity threads set-lifecycle",
+      "since": "",
+      "status": "stable",
+      "summary": "Classify a conversation, so cleanup knows whether it is scratch or a keeper.",
       "tags": []
     },
     {
@@ -49723,6 +49948,25 @@
             "--cross-project"
           ],
           "takes_value": false
+        },
+        {
+          "flags": [
+            "--attach",
+            "-a"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--lifecycle"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--backend"
+          ],
+          "takes_value": true
         },
         {
           "flags": [
@@ -53662,6 +53906,12 @@
             "--delete-backup"
           ],
           "takes_value": false
+        },
+        {
+          "flags": [
+            "--root"
+          ],
+          "takes_value": true
         },
         {
           "flags": [
@@ -68580,7 +68830,7 @@
       "tags": []
     }
   ],
-  "generated_at": "2026-10-20T00:15:20.965117+00:00",
+  "generated_at": "2026-10-20T04:09:15.488326+00:00",
   "groups": {
     "action": "Manage quick actions (stored shortcuts)",
     "agent": "Manage autonomous agent mode",
@@ -68767,5 +69017,5 @@
     "wut": "Show what NAVIG thinks is happening (context snapshot)"
   },
   "schema_version": "1.0.0",
-  "total": 2012
+  "total": 2017
 }

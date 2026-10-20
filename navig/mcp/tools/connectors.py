@@ -210,6 +210,13 @@ def _search_description(cid: str, provider: _Provider) -> str:
         parts.append(f"Pass an item's id to connector_{cid}_fetch to read it in full.")
     if provider.can_act:
         parts.append(f"To change data instead, use connector_{cid}_act.")
+    if not provider.can_fetch and not provider.can_act:
+        # Previews are all this connector exposes. Saying so, and naming the tool that
+        # explains why, is more useful than a search result the caller cannot follow up.
+        parts.append(
+            "This connector exposes previews only — use connector_list to compare its "
+            "capability flags with the connectors that can read or change items."
+        )
     return " ".join(parts)
 
 
@@ -221,13 +228,27 @@ def _fetch_description(cid: str, provider: _Provider) -> str:
     )
 
 
-def _act_description(cid: str, provider: _Provider) -> str:  # noqa: ARG001 - mirrors the sibling builders
+def _act_description(cid: str, provider: _Provider) -> str:
+    """The write verb, routed back to the read that supplies ``resource_id``.
+
+    The batch-1 rewrite got the capability claims right but stopped at the verb: an agent
+    told to "change data" still has to know where the id comes from. Each clause is emitted
+    only when the provider actually has that capability, so an act-only provider is never
+    pointed at a tool that does not exist.
+    """
+    if provider.can_search and provider.can_fetch:
+        find = f"Use connector_{cid}_search or connector_{cid}_fetch to find it first."
+    elif provider.can_search:
+        find = f"Use connector_{cid}_search to find it first."
+    elif provider.can_fetch:
+        find = f"Use connector_{cid}_fetch to read a known id first."
+    else:
+        find = "Use connector_list to compare capabilities first."
     return (
         f"Change data in {provider.display_name}: reply, create, update, delete, archive, "
         "label, send or move — whichever this provider supports. Pass resource_id for an "
         "existing item and params for the payload; returns success plus the affected "
-        "resource, or success: false with the reason. An unsupported action is refused, "
-        "never silently applied."
+        f"resource, or success: false with the reason. {find}"
     )
 
 
@@ -276,7 +297,9 @@ def list_connector_tools(registry=None) -> list[dict[str, Any]]:
             "title": "List connectors",
             "description": (
                 "List all registered connectors with their id, display name, domain, "
-                "status, and capability flags (can_search / can_fetch / can_act)."
+                "status, and capability flags (can_search / can_fetch / can_act). Returns "
+                "one row per connector; use connector_health to probe one, or call its "
+                "connector_<id>_search tool to read its data."
             ),
             "inputSchema": _list_connectors_input_schema(),
         },
@@ -284,7 +307,9 @@ def list_connector_tools(registry=None) -> list[dict[str, Any]]:
             "name": "connector_health",
             "title": "Check connector health",
             "description": (
-                "Probe the health of a specific connector and return latency + ok status."
+                "Probe the health of a specific connector and return latency + ok status. "
+                "Use connector_list to find a valid connector_id — a health result says "
+                "whether the connection works, not whether it has data."
             ),
             "inputSchema": _health_input_schema(),
         },

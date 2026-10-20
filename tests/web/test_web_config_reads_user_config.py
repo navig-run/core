@@ -19,7 +19,19 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from navig.tools.web import get_web_config
+
+
+@pytest.fixture(autouse=True)
+def _no_env_override(monkeypatch):
+    """Deterministic across machines: the env override tests set their own values.
+
+    ``NAVIG_WEB_SEARCH_PROVIDER`` now genuinely beats config (it was shadowed
+    before), so an export in the shell would flip these assertions.
+    """
+    monkeypatch.delenv("NAVIG_WEB_SEARCH_PROVIDER", raising=False)
 
 
 class _FakeConfigManager:
@@ -137,3 +149,46 @@ def test_the_real_config_manager_satisfies_the_contract_this_relies_on() -> None
 
     assert hasattr(ConfigManager, "get")
     assert not hasattr(ConfigManager, "get_global_config_value")
+
+
+# ── NAVIG_WEB_SEARCH_PROVIDER precedence (env > config > auto) ───────────────
+# The env override used to be seeded as a DEFAULT, then overwritten by any
+# config.yaml value — so the documented system-level override was silently
+# dead the moment a config key existed. These pin the fixed order.
+
+
+def test_env_provider_beats_config(monkeypatch) -> None:
+    monkeypatch.setenv("NAVIG_WEB_SEARCH_PROVIDER", "mojeek")
+    cm = _FakeConfigManager({"web": {"search": {"provider": "brave"}}})
+
+    assert get_web_config(cm)["search"]["provider"] == "mojeek"
+
+
+def test_env_provider_alias_normalizes(monkeypatch) -> None:
+    """A short/alias env name resolves to the canonical id dispatch expects."""
+    monkeypatch.setenv("NAVIG_WEB_SEARCH_PROVIDER", "ddg")
+    cm = _FakeConfigManager({"web": {"search": {"provider": "brave"}}})
+
+    assert get_web_config(cm)["search"]["provider"] == "duckduckgo"
+
+
+def test_empty_skip_and_unknown_env_do_not_override(monkeypatch) -> None:
+    """``""``/unset, the onboarding ``skip`` sentinel and typos must never
+    displace the configured engine."""
+    cm = _FakeConfigManager({"web": {"search": {"provider": "tavily"}}})
+    for value in ("", "skip", "not-a-provider"):
+        monkeypatch.setenv("NAVIG_WEB_SEARCH_PROVIDER", value)
+        assert get_web_config(cm)["search"]["provider"] == "tavily", value
+
+
+def test_env_only_resolution_runs_through_env_alias(monkeypatch) -> None:
+    monkeypatch.setenv("NAVIG_WEB_SEARCH_PROVIDER", "deepseek")
+
+    assert get_web_config(_FakeConfigManager({}))["search"]["provider"] == "deepseek_search"
+
+
+def test_config_without_env_keeps_the_configured_value(monkeypatch) -> None:
+    monkeypatch.delenv("NAVIG_WEB_SEARCH_PROVIDER", raising=False)
+    cm = _FakeConfigManager({"web": {"search": {"provider": "brave"}}})
+
+    assert get_web_config(cm)["search"]["provider"] == "brave"

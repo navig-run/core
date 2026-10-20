@@ -19,6 +19,9 @@ def _isolate_vault(monkeypatch):
     These tests assert selection logic given config/env; without isolation they
     would resolve whatever real search keys happen to live in the operator's
     vault. Individual tests override this with their own vault stub.
+    ``vault_exists`` is forced True so the stub is actually consulted (a real
+    existence check would read the machine and skip the stub entirely).
+    Also clears the env provider override — it now genuinely beats config.
     """
 
     class _EmptyVault:
@@ -26,6 +29,8 @@ def _isolate_vault(monkeypatch):
             return ""
 
     monkeypatch.setattr("navig.vault.core.get_vault", lambda: _EmptyVault())
+    monkeypatch.setattr("navig.vault.vault_exists", lambda: True)
+    monkeypatch.delenv("NAVIG_WEB_SEARCH_PROVIDER", raising=False)
 
 
 class _VaultWithBraveKey:
@@ -404,3 +409,227 @@ def test_web_search_explicit_key_still_honored_for_brave(monkeypatch):
     )
     assert cascaded.success is True and cascaded.provider == "brave"
     assert cascaded.results and "brave-explicit" in cascaded.results[0].snippet
+
+
+# ── deepseek_search provider ─────────────────────────────────────────────────
+
+
+def _ok_deepseek(
+    query: str, api_key: str, count: int = 5, timeout_seconds: int = 30
+) -> WebSearchResult:
+    return WebSearchResult(
+        success=True,
+        query=query,
+        provider="deepseek_search",
+        results=[SearchResult(title="t", url="u", snippet=f"k={api_key}")],
+    )
+
+
+def test_web_search_explicit_deepseek_uses_vault_key(monkeypatch):
+    monkeypatch.setattr("navig.tools.web.REQUESTS_AVAILABLE", True)
+    monkeypatch.setattr("navig.tools.web._search_deepseek", _ok_deepseek)
+    monkeypatch.setattr("navig.tools.web._search_keyless", _ok_ddg)
+    monkeypatch.setattr(
+        "navig.vault.core.get_vault",
+        lambda: _SecretStrVault({"deepseek_search": "sk-ds-real"}),
+    )
+    monkeypatch.setattr(
+        "navig.tools.web.get_web_config",
+        lambda config_manager=None: {
+            "search": {"provider": "auto", "api_key": "", "api_keys": {}}
+        },
+    )
+
+    result = web_search("python", provider="deepseek_search", use_cache=False)
+
+    assert result.success is True
+    assert result.provider == "deepseek_search"
+    assert result.results and "sk-ds-real" in result.results[0].snippet
+
+
+def test_web_search_deepseek_alias_normalizes(monkeypatch):
+    """`--provider deepseek` (and config value `deepseek`) resolve to deepseek_search."""
+    monkeypatch.setattr("navig.tools.web.REQUESTS_AVAILABLE", True)
+    monkeypatch.setattr("navig.tools.web._search_deepseek", _ok_deepseek)
+    monkeypatch.setattr("navig.tools.web._search_keyless", _ok_ddg)
+    monkeypatch.setattr(
+        "navig.vault.core.get_vault",
+        lambda: _SecretStrVault({"deepseek_search": "sk-ds"}),
+    )
+    monkeypatch.setattr(
+        "navig.tools.web.get_web_config",
+        lambda config_manager=None: {
+            "search": {"provider": "auto", "api_key": "", "api_keys": {}}
+        },
+    )
+
+    result = web_search("python", provider="deepseek", use_cache=False)
+
+    assert result.success is True
+    assert result.provider == "deepseek_search"
+
+
+def test_web_search_deepseek_without_key_fails_loudly(monkeypatch):
+    """The configured engine must NEVER silently answer as a keyless engine —
+    attribution stays honest (deliberate deviation from tavily/brave's silent
+    drop to Mojeek/DDG)."""
+    monkeypatch.setattr("navig.tools.web.REQUESTS_AVAILABLE", True)
+    monkeypatch.setattr("navig.tools.web._search_keyless", _ok_ddg)
+    monkeypatch.delenv("DEEPSEEK_SEARCH_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "navig.tools.web.get_web_config",
+        lambda config_manager=None: {
+            "search": {"provider": "deepseek_search", "api_key": "", "api_keys": {}}
+        },
+    )
+
+    result = web_search("python", provider="auto", use_cache=False)
+
+    assert result.success is False
+    assert result.provider == "deepseek_search"
+    assert result.error and "navig vault set deepseek_search/api_key" in result.error
+
+
+def test_web_search_auto_cascade_runs_deepseek_before_tavily(monkeypatch):
+    """Auto order pin: DeepSeek first among keyed engines; a failing DeepSeek
+    cascades to Tavily (not dead-end, not straight to keyless)."""
+    monkeypatch.setattr("navig.tools.web.REQUESTS_AVAILABLE", True)
+    monkeypatch.setattr(
+        "navig.vault.core.get_vault",
+        lambda: _SecretStrVault({"deepseek_search": "ds", "tavily": "tv"}),
+    )
+    monkeypatch.setattr(
+        "navig.integrations.firecrawl.get_firecrawl_client",
+        lambda: (_ for _ in ()).throw(FirecrawlError("no key", status_code=401)),
+    )
+    order: list[str] = []
+
+    def _fail_deepseek(query, api_key, count=5, timeout_seconds=30):
+        order.append("deepseek_search")
+        return WebSearchResult(
+            success=False, query=query, provider="deepseek_search", error="quota"
+        )
+
+    monkeypatch.setattr("navig.tools.web._search_deepseek", _fail_deepseek)
+    monkeypatch.setattr(
+        "navig.tools.web._search_tavily",
+        lambda q, k, c=5, t=30: (
+            order.append("tavily")
+            or WebSearchResult(
+                success=True,
+                query=q,
+                provider="tavily",
+                results=[SearchResult(title="t", url="u", snippet="ok")],
+            )
+        ),
+    )
+    monkeypatch.setattr("navig.tools.web._search_brave", lambda *a, **k: order.append("brave"))
+    monkeypatch.setattr("navig.tools.web._search_keyless", _ok_ddg)
+    monkeypatch.setattr(
+        "navig.tools.web.get_web_config",
+        lambda config_manager=None: {
+            "search": {"provider": "auto", "api_key": "", "api_keys": {}}
+        },
+    )
+
+    result = web_search("anything", provider="auto", use_cache=False)
+
+    assert result.success is True and result.provider == "tavily"
+    assert order == ["deepseek_search", "tavily"]
+
+
+def test_cli_provider_flag_beats_env_and_config(monkeypatch):
+    """Precedence contract: a non-auto --provider wins over env AND config."""
+    monkeypatch.setattr("navig.tools.web.REQUESTS_AVAILABLE", True)
+    monkeypatch.setattr("navig.tools.web._search_brave", _ok_brave)
+    monkeypatch.setenv("NAVIG_WEB_SEARCH_PROVIDER", "mojeek")
+    from navig.tools.web import get_web_config as _real_get_web_config
+
+    class _CM:
+        def get(self, key, default=None):
+            return {"search": {"provider": "tavily", "api_key": "", "api_keys": {"brave": "b-key"}}} if key == "web" else default
+
+    monkeypatch.setattr(
+        "navig.tools.web.get_web_config",
+        lambda config_manager=None: _real_get_web_config(_CM()),
+    )
+
+    result = web_search("python", provider="brave", use_cache=False)
+
+    assert result.success is True
+    assert result.provider == "brave"
+
+
+# ── provider_status() — the /search/status payload ──────────────────────────
+
+_KEY_ENV_VARS = (
+    "BRAVE_API_KEY",
+    "TAVILY_API_KEY",
+    "SERPAPI_KEY",
+    "SERPAPI_API_KEY",
+    "FIRECRAWL_API_KEY",
+    "DEEPSEEK_SEARCH_API_KEY",
+)
+
+
+def test_provider_status_reports_keys_cascade_and_coercion(monkeypatch):
+    """Status shows key PRESENCE (never material), the cascade, and coerces the
+    string 'false' kill switch the way `navig config set` stores it."""
+    from navig.tools.web import provider_status
+
+    for var in _KEY_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(
+        "navig.vault.core.get_vault",
+        lambda: _SecretStrVault({"deepseek_search": "sk-ds"}),
+    )
+    monkeypatch.setattr(
+        "navig.tools.web.get_web_config",
+        lambda config_manager=None: {
+            "search": {
+                "provider": "deepseek_search",
+                "enabled": "false",
+                "api_key": "",
+                "api_keys": {},
+            }
+        },
+    )
+
+    status = provider_status()
+
+    assert status["enabled"] is False  # string "false" coerced, not truthy
+    assert status["provider"] == "deepseek_search"
+    by_id = {p["id"]: p for p in status["providers"]}
+    assert by_id["deepseek_search"]["has_key"] is True
+    assert by_id["tavily"]["has_key"] is False
+    assert by_id["brave"]["has_key"] is False
+    assert by_id["firecrawl"]["has_key"] is False
+    # Keyless engines need no key — the UI labels them from KEYLESS_PROVIDERS.
+    assert by_id["mojeek"]["has_key"] is False
+    assert by_id["duckduckgo"]["has_key"] is False
+    assert status["cascade"][0] == "deepseek_search"
+    assert set(status["cascade"]) == {
+        "deepseek_search",
+        "tavily",
+        "brave",
+        "serpapi",
+        "mojeek",
+        "duckduckgo",
+    }
+    # Never any key material in the status document.
+    assert "sk-ds" not in repr(status)
+
+
+def test_provider_status_surfaces_unknown_configured_value(monkeypatch):
+    """A typo in config must appear as-is in status, not collapse to 'auto'."""
+    from navig.tools.web import provider_status
+
+    monkeypatch.setattr("navig.vault.core.get_vault", lambda: _SecretStrVault({}))
+    monkeypatch.setattr(
+        "navig.tools.web.get_web_config",
+        lambda config_manager=None: {
+            "search": {"provider": "nonesuch", "enabled": True, "api_keys": {}}
+        },
+    )
+
+    assert provider_status()["provider"] == "nonesuch"

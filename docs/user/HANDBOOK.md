@@ -8557,8 +8557,8 @@ Search the web for information.
 |-----------|------|---------|-------------|
 | `query` | string | required | Search query |
 | `--limit`, `-l` | int | 10 | Maximum results |
-| `--provider`, `-p` | string | auto | Provider preference: auto (Firecrawl-first), firecrawl, brave, duckduckgo, tavily, perplexity, gemini, grok, kimi |
-| `--json` | flag | false | Output in JSON format |
+| `--provider`, `-p` | string | auto | Engine for this call: auto, deepseek_search, tavily, brave, serpapi, firecrawl, mojeek, duckduckgo |
+| `--json` | flag | false | Output in JSON format (includes the answering `provider`) |
 | `--plain` | flag | false | Plain text output |
 
 **Examples:**
@@ -8569,31 +8569,53 @@ navig search "Python best practices"
 # Limit results
 navig search "Docker tutorial" --limit 5
 
-# JSON output
+# JSON output (prints the provider that actually answered)
 navig search "kubernetes deployment" --json
 
-# Force specific provider
+# Force one engine for this call
 navig search "nginx configuration" --provider duckduckgo
 ```
 
-**Provider behavior (default):**
+**Provider behavior:**
 
-- `auto` uses Firecrawl first.
-- If Firecrawl is unavailable/unconfigured at runtime, NAVIG gracefully falls back to legacy providers.
+- The engine is `web.search.provider` (one config key shared by the CLI, agent
+  tools, MCP `navig_web_search`, Telegram and NAVIG OS — set it once, every
+  surface follows). Precedence: `--provider` (non-`auto`) > `NAVIG_WEB_SEARCH_PROVIDER`
+  env > config > `auto`.
+- `auto` uses Firecrawl first (when keyed), then the keyed cascade
+  **DeepSeek Search → Tavily → Brave → SerpApi**, then keyless
+  **Mojeek → DuckDuckGo**. Cascades on *failure*, not just missing keys.
+- Every surface reports the provider that actually answered (`--json`
+  `provider`, tool output, the OS Search-engine test, Telegram's
+  `[Web context — via …]` header).
 
-**Required Firecrawl key setup:**
+**DeepSeek Search key setup (recommended engine):**
 ```bash
-# Firecrawl requests require an API key (even on free credits)
-navig cred add firecrawl --key fc-xxxxxxxx --label "Firecrawl API Key"
+# Key from https://platform.deepseek.com — search API, not the LLM key namespace
+printf %s "$KEY" | navig vault set deepseek_search/api_key --stdin
+# Pick the engine (or use NAVIG OS → Settings → Personalization → Search engine)
+navig config set web.search.provider deepseek_search
 ```
 
-**Legacy provider setup (optional):**
+**Other provider keys (optional):**
 ```bash
-# 1. Get API key from https://brave.com/search/api/
-# 2. Set in environment or config
-export BRAVE_API_KEY="your-api-key"
-# Or: navig config set web.search.api_key=YOUR_KEY
+navig vault set tavily/api_key <key>
+navig vault set brave/api_key <key>       # or: export BRAVE_API_KEY=…
+# Firecrawl (paid tier first in auto): navig cred add firecrawl --key fc-… 
 ```
+
+**Search control plane (NAVIG OS + API):**
+
+| Route | Purpose |
+|-------|---------|
+| `GET /api/deck/search/status` | active engine, available engines with key presence (booleans only), fallback cascade |
+| `POST /api/deck/search/config` | `{provider}` — validate + write `web.search.provider` (the OS settings picker) |
+| `POST /api/deck/search/test` | live 3-result probe → `{provider_used, result_count, latency_ms}` |
+| `POST /api/deck/search` | web-search proxy for NAVIG OS agent sessions (kill switch → 403) |
+
+NAVIG OS → Settings → Personalization → **Search engine** renders this status
+document: active engine, per-engine key chips ("key ✓" / "key missing" / "no key
+required"), fallback order, and a Test button showing which engine answered.
 
 ### 26.10 Firecrawl Scraping & Crawling (MCP + REST Fallback)
 
@@ -11823,7 +11845,7 @@ you run `navig recall enable`.
 | `navig recall changes [-p project \| --here] [--since DAYS] [--refresh] [--json]` | Recent commits of a project, each joined to the sessions and records it explains. `--refresh` asks git first and fills the metadata-only commits cache (never diffs). |
 | `navig recall unfinished [-p project \| --here] [--json]` | Plans and tasks nothing has verified yet, oldest first. Display-only — it never spawns, resumes or schedules anything. |
 | `navig recall conflicts [-p project \| --here] [--refresh] [--json]` | Recorded contradictions: opposed user verdicts on one subject, or claims verification disproved (`navig recall verify` records them too). Deterministic, idempotent, zero inference. |
-| `navig recall migrate <file> -p project [--apply] [--retire] [--delete-backup] [--json]` | Import a legacy changelog. **Dry-run by default** (zero writes): parsed entries, projected record ids, sha256, consumer scan. `--apply` backs up to `vault/.migrations/`, imports, then re-reads the original to verify digest + ids + turns before reporting. `--retire` additionally moves a **private dev** changelog to its backup — release notes are never retired, and any consumer of the file's name blocks it. `--delete-backup` is the one irreversible step: interactive, typed-path confirmation, never `--json`. |
+| `navig recall migrate <file> -p project [--apply] [--retire] [--root <folder>] [--delete-backup] [--json]` | Import a legacy changelog. **Dry-run by default** (zero writes): parsed entries, projected record ids, sha256, consumer scan. `--apply` backs up to `vault/.migrations/`, imports, then re-reads the original to verify digest + ids + turns before reporting. `--retire` additionally moves a **private dev** changelog to its backup — release notes are never retired, and any consumer of the file's name blocks it (`.navig/history/**`, the operation log, is not a consumer). `--root` scans a specific tree when a worktree and the registry disagree. `--delete-backup` is the one irreversible step: interactive, typed-path confirmation, never `--json`. |
 
 **Who said it is kept separate from whether it is true.** User-role text is split before
 anything is stored: what you typed, pasted material, editor selections and background-agent

@@ -690,6 +690,21 @@ def register_deck_routes(
         app.router.add_get(
             "/api/deck/personalization/context", handle_personalization_context
         )
+
+        # Web-search control plane — status/config/test for the OS Search-engine
+        # section, plus the Pi agent's web_search proxy (routes/search.py).
+        from navig.gateway.deck.routes.search import (
+            handle_deck_search,
+            handle_deck_search_config,
+            handle_deck_search_status,
+            handle_deck_search_test,
+        )
+
+        app.router.add_get("/api/deck/search/status", handle_deck_search_status)
+        app.router.add_post("/api/deck/search/config", handle_deck_search_config)
+        app.router.add_post("/api/deck/search/test", handle_deck_search_test)
+        app.router.add_post("/api/deck/search", handle_deck_search)
+
         # Chat starter suggestions from the user's own sources (empty chat screen).
         from navig.gateway.deck.routes.starters import handle_starters
 

@@ -1,6 +1,6 @@
 # NAVIG Command Reference
 
-_Generated 2026-10-20T00:15:20.965117+00:00_
+_Generated 2026-10-20T04:09:15.488326+00:00_
 
 ## `navig action add`
 **Status:** `stable` · **Since:** 
@@ -11411,6 +11411,38 @@ Launch the app with a debug port (or report the port it already has).
 navig perplexity attach
 ```
 
+## `navig perplexity backend`
+**Status:** `stable` · **Since:** 
+Which transport a delegation would use, and what it can do.
+**Examples:**
+```sh
+navig perplexity backend
+```
+
+## `navig perplexity capabilities`
+**Status:** `stable` · **Since:** 
+What this build and account actually expose — modes, connectors, uploads, images.
+**Examples:**
+```sh
+navig perplexity capabilities
+```
+
+## `navig perplexity capture`
+**Status:** `stable` · **Since:** 
+Copy the Perplexity window here — a PNG of the app, linked to its conversation.
+**Examples:**
+```sh
+navig perplexity capture
+```
+
+## `navig perplexity connectors`
+**Status:** `stable` · **Since:** 
+The app connectors this account can toggle for a request (--connector <name>).
+**Examples:**
+```sh
+navig perplexity connectors
+```
+
 ## `navig perplexity model`
 **Status:** `stable` · **Since:** 
 Show or change the model the composer will use (explicit, not routed).
@@ -11485,7 +11517,7 @@ navig perplexity threads list
 
 ## `navig perplexity threads prune`
 **Status:** `stable` · **Since:** 
-Delete the conversations this agent session (or a project) left behind.
+Delete the **temporary** conversations a session (or a project) left behind.
 **Examples:**
 ```sh
 navig perplexity threads prune
@@ -11505,6 +11537,14 @@ Which agent sessions left conversations behind, and how many.
 **Examples:**
 ```sh
 navig perplexity threads sessions
+```
+
+## `navig perplexity threads set-lifecycle`
+**Status:** `stable` · **Since:** 
+Classify a conversation, so cleanup knows whether it is scratch or a keeper.
+**Examples:**
+```sh
+navig perplexity threads set-lifecycle
 ```
 
 ## `navig perplexity threads show`

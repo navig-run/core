@@ -39,6 +39,11 @@ from .genesis import GenesisData
 
 _WEB_SEARCH_PROVIDER_CATALOG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
+        "deepseek_search",
+        "DeepSeek Search    (in-house search engine, web search + fetch API)",
+        ("DEEPSEEK_SEARCH_API_KEY",),
+    ),
+    (
         "perplexity",
         "Perplexity Search  (structured results, domain/language/freshness filters)",
         ("PERPLEXITY_API_KEY", "PPLX_API_KEY"),
@@ -1524,6 +1529,8 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
         "kimi": "kimi",
         "moonshot": "kimi",
         "tavily": "tavily",
+        "deepseek": "deepseek_search",
+        "deepseek_search": "deepseek_search",
     }
 
     def _persist_provider(preferred_provider: str) -> bool:

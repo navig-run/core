@@ -563,7 +563,8 @@ def test_web_search_provider_empty_api_key_returns_skipped(monkeypatch, tmp_path
 
     # typer.prompt is only called once (for the provider-index selection).
     # The API key prompt goes through _prompt_masked, which is mocked separately.
-    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "1")  # choose perplexity
+    # Index 1 = first catalog entry (deepseek_search — the system engine).
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "1")
 
     # _prompt_masked returns "" — user pressed Enter for the API key.
     monkeypatch.setattr("navig.onboarding.steps._prompt_masked", lambda *a, **kw: "")
@@ -572,7 +573,7 @@ def test_web_search_provider_empty_api_key_returns_skipped(monkeypatch, tmp_path
 
     assert result.status == "skipped"
     assert "API key" in result.output.get("reason", "")
-    assert result.output.get("provider") == "perplexity"
+    assert result.output.get("provider") == "deepseek_search"
 
 
 def test_web_search_provider_with_api_key_returns_completed(monkeypatch, tmp_path: Path) -> None:
@@ -584,7 +585,8 @@ def test_web_search_provider_with_api_key_returns_completed(monkeypatch, tmp_pat
     monkeypatch.setattr("sys.stdout.flush", lambda: None)
 
     # typer.prompt is only called once (for the provider-index selection).
-    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "2")  # choose brave
+    # Index 3 = brave (catalog: deepseek_search, perplexity, brave, …).
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "3")
     monkeypatch.setattr("navig.onboarding.steps._prompt_masked", lambda *a, **kw: "my-brave-key")
 
     result = step.run()

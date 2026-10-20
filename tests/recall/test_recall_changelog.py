@@ -234,6 +234,20 @@ def test_retire_requires_private_dev_and_no_consumers(ing, tmp_path: Path) -> No
     assert (src or {}).get("meta", {}).get("retired_at")
 
 
+def test_runtime_history_is_never_a_consumer(ing, tmp_path: Path) -> None:
+    """.navig/history/** is the operation log — it ECHOES command paths (including this
+    file's) and must not block a retirement."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    p = _write(proj, "CHANGELOG.md", _GRABNITE)
+    hist = proj / ".navig" / "history" / "inflight"
+    hist.mkdir(parents=True)
+    (hist / "op.json").write_text('{"cmd": "migrate CHANGELOG.md --retire"}', encoding="utf-8")
+    out = ing.import_changelog("alpha", p, root=proj, apply=True, retire=True)
+    assert out["consumers"] == []
+    assert out["retired"] is True and not p.exists()
+
+
 def test_release_notes_are_never_retired(ing, tmp_path: Path) -> None:
     p = _write(tmp_path, "CHANGELOG.md", _RELEASE)
     out = ing.import_changelog("alpha", p, root=tmp_path, apply=True, retire=True)

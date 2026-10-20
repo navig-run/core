@@ -3686,7 +3686,10 @@ class TelegramChannel:
                 if _sr.success and isinstance(_sr.output, dict):
                     _hits = _sr.output.get("results") or _sr.output.get("items") or []
                     if _hits:
-                        _ctx = ["[Web context]"]
+                        # Attribute the answering engine (owner requirement: every
+                        # surface reports which provider actually answered).
+                        _via = str(_sr.output.get("provider") or "").strip()
+                        _ctx = [f"[Web context — via {_via}]" if _via else "[Web context]"]
                         for _i, _h in enumerate(_hits[:3], 1):
                             _t = _h.get("title", "")
                             _sn = _h.get("snippet", "")

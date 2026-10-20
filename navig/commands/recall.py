@@ -822,6 +822,10 @@ def migrate_cmd(
     delete_backup: bool = typer.Option(False, "--delete-backup",
                                        help="IRREVERSIBLE: delete a verified backup (interactive; "
                                             "type the path back to confirm)."),
+    root: str = typer.Option(None, "--root",
+                             help="Folder whose files are scanned for consumers (default: the "
+                                  "project's registered folder) — pass the tree the FILE lives "
+                                  "in when a worktree and the registry disagree."),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """Import a legacy changelog into Recall — dry-run by default, verify before any retire."""
@@ -831,7 +835,7 @@ def migrate_cmd(
 
     _require_enabled()
     path = resolve_user_path(file)
-    root = _project_root(project)
+    root = resolve_user_path(root) if root else _project_root(project)
     ing = Ingestor()
     try:
         out = ing.import_changelog(project, path, root=root, apply=apply, retire=retire)

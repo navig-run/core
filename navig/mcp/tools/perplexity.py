@@ -70,6 +70,11 @@ def _run(args: dict[str, Any], *, default_task: str = "auto") -> dict[str, Any]:
         full=bool(args.get("full", False)),
         wait=min(float(args.get("wait") or 120), 300.0),
         cross_project=bool(args.get("cross_project", False)),
+        attach=[str(p) for p in (args.get("attach") or [])],
+        connectors=[str(c) for c in (args.get("connectors") or [])],
+        lifecycle=str(args.get("lifecycle") or ""),
+        backend=str(args.get("backend") or "auto"),
+        media=bool(args.get("media", False)),
     )
     try:
         return delegate(request).as_dict()
@@ -109,12 +114,20 @@ def _tool_perplexity_threads(server: Any, args: dict[str, Any]) -> Any:  # noqa:
                 "threads": registry.list(
                     project=args.get("project") or None,
                     include_archived=bool(args.get("all", False)),
+                    lifecycle=args.get("lifecycle") or None,
+                    session=args.get("session") or None,
                     limit=int(args.get("limit") or 20),
                 ),
             }
         if action == "sessions":
             return {"ok": True, "current": session_identity(),
                     "sessions": registry.session_summary()}
+        if action == "set_lifecycle":
+            alias = str(args.get("alias") or "").strip()
+            if not alias:
+                return {"ok": False, "error": "action 'set_lifecycle' needs an alias"}
+            lifecycle = str(args.get("lifecycle") or "").strip()
+            return {"ok": True, "thread": registry.set_lifecycle(alias, lifecycle).as_dict()}
         if action == "delete":
             alias = str(args.get("alias") or "").strip()
             if not alias:
@@ -139,6 +152,12 @@ def _tool_perplexity_threads(server: Any, args: dict[str, Any]) -> Any:  # noqa:
                 scope["title_like"] = str(args["title"])
             if not scope:
                 scope["session"] = session_identity()
+            if args.get("include_persistent"):
+                scope["include_persistent"] = True
+            if args.get("include_artifacts"):
+                scope["include_artifacts"] = True
+            if args.get("force"):
+                scope["force"] = True
             preview = bool(args.get("dry_run", True)) or not bool(args.get("confirm", False))
             result = prune_conversations(
                 remote=not bool(args.get("registry_only", False)),
@@ -166,6 +185,24 @@ def _tool_perplexity_threads(server: Any, args: dict[str, Any]) -> Any:  # noqa:
         return _failed(exc)
     except DelegationError as exc:
         return _failed(exc)
+
+
+def _tool_perplexity_capabilities(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
+    try:
+        from navig_perplexity import capabilities as caps_mod
+        from navig_perplexity.driver import Driver
+    except ImportError:
+        return _missing()
+    record = caps_mod.load()
+    if bool(args.get("refresh", False)) or not caps_mod.is_fresh(record):
+        try:
+            with Driver(timeout=60) as driver:
+                caps_mod.save(caps_mod.build_from_probe(driver.capability_probe()))
+        except Exception as exc:  # noqa: BLE001 - report what could not be probed
+            return _failed(exc)
+        record = caps_mod.load()
+    return {"ok": True, "probed_at": record.get("probed_at"),
+            "capabilities": record.get("capabilities") or []}
 
 
 def _tool_perplexity_models(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
@@ -202,6 +239,12 @@ def _tool_perplexity_status(server: Any, args: dict[str, Any]) -> Any:  # noqa: 
         return _missing()
     info = appmod.status()
     try:
+        from navig_perplexity import api as api_mod
+
+        info["backend"] = {"api_key_configured": api_mod.available()}
+    except ImportError:
+        pass
+    try:
         from navig_perplexity.driver import Driver
 
         if info.get("port"):
@@ -219,7 +262,8 @@ _THREADS_SCHEMA = {
     "properties": {
         "action": {
             "type": "string",
-            "enum": ["list", "show", "resume", "archive", "delete", "prune", "sessions"],
+            "enum": ["list", "show", "resume", "archive", "delete", "prune", "sessions",
+                     "set_lifecycle"],
             "default": "list",
             "description": "What to do with the registry. 'delete'/'prune' need confirm=true.",
         },
@@ -236,6 +280,15 @@ _THREADS_SCHEMA = {
                     "description": "prune previews unless confirm is also true."},
         "registry_only": {"type": "boolean", "default": False,
                           "description": "Forget the row but keep the app's conversation."},
+        "lifecycle": {"type": "string", "enum": ["temporary", "persistent", "archived",
+                                                 "deletion_pending"],
+                      "description": "Filter by lifecycle, or the new state for set_lifecycle."},
+        "include_persistent": {"type": "boolean", "default": False,
+                               "description": "prune: also consider persistent/archived work."},
+        "include_artifacts": {"type": "boolean", "default": False,
+                              "description": "prune: also consider conversations that produced files."},
+        "force": {"type": "boolean", "default": False,
+                  "description": "delete/prune: allow protected (persistent/archived) work."},
     },
     "required": [],
 }
@@ -247,7 +300,8 @@ _WORK_PROPS = {
     "model": {"type": "string", "description": "'auto' (routed), or a model label from perplexity_models."},
     "reasoning": {"type": "string", "enum": ["auto", "on", "off"],
                   "description": "Reasoning is satisfied by model choice in this build."},
-    "mode": {"type": "string", "enum": ["auto", "search", "research", "computer"]},
+    "mode": {"type": "string", "enum": ["auto", "search", "research", "computer"],
+             "description": "How the app answers: search, research or computer; auto lets it choose."},
     "thread": {"type": "string", "description": "Continue this conversation alias."},
     "topic": {"type": "string", "description": "Subject label: reuse the thread for this topic."},
     "project": {"type": "string", "description": "Project identity (defaults to the repo's name)."},
@@ -259,6 +313,19 @@ _WORK_PROPS = {
     "wait": {"type": "number", "default": 120, "description": "Seconds to wait for a busy composer."},
     "cross_project": {"type": "boolean", "default": False,
                       "description": "Reuse a thread that belongs to another project."},
+    "attach": {"type": "array", "items": {"type": "string"},
+               "description": "Local files to attach as context (PDF, doc, image, code)."},
+    "connectors": {"type": "array", "items": {"type": "string"},
+                   "description": "Already-authorized app connectors to toggle for this request "
+                                  "(see perplexity_capabilities); restored afterwards."},
+    "backend": {"type": "string", "enum": ["auto", "cdp", "api"],
+                "description": "Transport: auto uses the API when a key is configured, otherwise "
+                               "the desktop app. api = text+citations only (no modes/connectors/files)."},
+    "media": {"type": "boolean", "default": False,
+              "description": "Copy the images the answer shows into the conversation's media folder."},
+    "lifecycle": {"type": "string", "enum": ["temporary", "persistent"],
+                  "description": "temporary = disposable scratch work (cleanup may delete it); "
+                                 "persistent = project work (protected). Defaults from the task."},
 }
 
 
@@ -297,6 +364,31 @@ def register(server: Any) -> None:
                     **_WORK_PROPS,
                 },
                 "required": ["brief"],
+            },
+        },
+        "perplexity_capabilities": {
+            "name": "perplexity_capabilities",
+            "description": (
+                "Reports what this Perplexity build and account actually expose — modes (search, "
+                "deep research, learn step by step, model council, computer), file upload, "
+                "connectors, image and video generation — one row per capability with the UI "
+                "evidence it came from and a status of verified / gated / unsupported / unverified. "
+                "Returns the cached record unless refresh is true. Call it before promising a "
+                "multimodal or connector workflow, or when perplexity_ask rejects a mode or "
+                "connector; use perplexity_models for the model picker and perplexity_ask to "
+                "delegate the work itself instead of guessing at capabilities."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "refresh": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Probe the running app again instead of returning the cache.",
+                    },
+                },
+                "required": [],
+                "additionalProperties": False,
             },
         },
         "perplexity_threads": {
@@ -338,6 +430,7 @@ def register(server: Any) -> None:
         "perplexity_ask": _tool_perplexity_ask,
         "perplexity_write": _tool_perplexity_write,
         "perplexity_threads": _tool_perplexity_threads,
+        "perplexity_capabilities": _tool_perplexity_capabilities,
         "perplexity_models": _tool_perplexity_models,
         "perplexity_model": _tool_perplexity_model,
         "perplexity_status": _tool_perplexity_status,
@@ -351,6 +444,7 @@ def register(server: Any) -> None:
         "perplexity_ask": "moderate",
         "perplexity_write": "moderate",
         "perplexity_threads": "moderate",
+        "perplexity_capabilities": "safe",
         "perplexity_model": "moderate",
         "perplexity_models": "safe",
         "perplexity_status": "safe",

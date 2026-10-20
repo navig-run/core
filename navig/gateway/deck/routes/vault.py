@@ -71,6 +71,7 @@ _VAULT_ALLOWED_PROVIDERS = {
     "tavily",
     "serpapi",
     "brave",
+    "deepseek_search",
     "hunter",
     "apollo",
     # Messaging / social adapters

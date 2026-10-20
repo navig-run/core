@@ -69,8 +69,13 @@ def test_show_init_status_returns_expected_payload(tmp_path: Path, monkeypatch, 
     assert payload["integrations"]["email"] is False
     assert payload["web_search"]["provider"] in {
         "auto",
+        "deepseek_search",
+        "tavily",
         "brave",
+        "serpapi",
+        "mojeek",
         "duckduckgo",
+        "firecrawl",
         "perplexity",
         "gemini",
         "grok",

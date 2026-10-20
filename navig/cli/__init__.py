@@ -20,6 +20,10 @@ from navig import __version__ as __version__
 from navig.deprecation import deprecation_warning
 from navig.lazy_loader import lazy_import
 
+# Zero-dep constants only (no requests/trafilatura) — safe on the `navig --help`
+# fast path; keeps --provider help in sync with dispatch's supported set.
+from navig.tools.search_providers import SUPPORTED_SEARCH_PROVIDERS
+
 # Lazy-load console helper (imports rich.*). This keeps `navig --help` fast.
 ch = lazy_import("navig.console_helper")
 
@@ -601,7 +605,7 @@ def search_command(
         "auto",
         "--provider",
         "-p",
-        help="Search provider: auto, mojeek, brave, tavily, serpapi, duckduckgo, firecrawl, perplexity",
+        help=f"Search provider: auto, {', '.join(SUPPORTED_SEARCH_PROVIDERS)}",
     ),
     plain: bool = typer.Option(
         False,
@@ -617,7 +621,9 @@ def search_command(
     """
     Search the web for information.
 
-    Uses Brave Search API (requires API key) or DuckDuckGo as fallback.
+    Uses the engine from web.search.provider (auto → Firecrawl → DeepSeek
+    Search → Tavily → Brave → SerpApi → keyless Mojeek/DuckDuckGo), or
+    --provider for a single call. --json reports the answering provider.
 
     Examples:
         navig search "Python best practices"
@@ -625,9 +631,9 @@ def search_command(
         navig search "kubernetes deployment" --json
         navig search "nginx configuration" --provider duckduckgo
 
-    Setup Brave Search:
-        1. Get API key from https://brave.com/search/api/
-        2. Set in config: navig config set web.search.api_key=YOUR_KEY
+    Add a provider key:
+        navig vault set deepseek_search/api_key <key>   # DeepSeek Search
+        navig vault set tavily/api_key <key>
     """
     from navig.commands.docs_cmd import run_search
 

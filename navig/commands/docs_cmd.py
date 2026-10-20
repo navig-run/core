@@ -229,6 +229,7 @@ def run_search(
                 {
                     "success": result.success,
                     "query": query,
+                    "provider": result.provider,
                     "results": (
                         [
                             {"title": r.title, "url": r.url, "snippet": r.snippet}
@@ -249,7 +250,10 @@ def run_search(
                         console.print(f"   {r.snippet[:200]}")
                     console.print()
             else:
-                console.print(f"[bold cyan]Search Results for '{query}'[/bold cyan]\n")
+                console.print(
+                    f"[bold cyan]Search Results for '{query}'[/bold cyan]"
+                    f" [dim](via {result.provider})[/dim]\n"
+                )
                 for i, r in enumerate(result.results, 1):
                     console.print(f"[bold white]{i}. {r.title}[/bold white]")
                     console.print(f"   [blue underline]{r.url}[/blue underline]")
@@ -259,10 +263,15 @@ def run_search(
         elif result.success:
             console.print("[yellow]No results found.[/yellow]")
         else:
-            ch.error(f"Search failed: {result.error}")
-            console.print("\n[dim]Tip: Set up Brave Search API for better results:[/dim]")
-            console.print("[dim]  1. Get key from https://brave.com/search/api/[/dim]")
-            console.print("[dim]  2. navig config set web.search.api_key=YOUR_KEY[/dim]")
+            ch.error(f"Search failed ({result.provider}): {result.error}")
+            console.print("\n[dim]Tip: pick another engine or add its key:[/dim]")
+            console.print(
+                "[dim]  navig config set web.search.provider deepseek_search[/dim]"
+            )
+            console.print(
+                "[dim]  navig vault set deepseek_search/api_key <key>   "
+                "(keys: tavily, brave, serpapi…)[/dim]"
+            )
             raise typer.Exit(1)
 
     except ImportError as e:

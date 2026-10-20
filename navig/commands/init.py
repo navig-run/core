@@ -712,64 +712,24 @@ def show_init_status(*, render: bool = True) -> dict[str, Any]:
         cfg.global_config.get("email", {}).get("smtp_host")
     )
 
+    from navig.tools.search_providers import KEYLESS_PROVIDERS
+    from navig.tools.web import effective_search_provider, resolve_provider_key
+
     web_cfg = cfg.global_config.get("web", {}) if isinstance(cfg.global_config, dict) else {}
     web_search_cfg = web_cfg.get("search", {}) if isinstance(web_cfg, dict) else {}
-    web_provider = (
-        str(web_search_cfg.get("provider") or os.environ.get("NAVIG_WEB_SEARCH_PROVIDER") or "auto")
-        .strip()
-        .lower()
-    )
-    if not web_provider:
-        web_provider = "auto"
-
-    def _web_key_from_vault(provider_name: str) -> str:
-        # Bare provider name first — that is where `navig vault add <provider>` keys
-        # live; the compound labels are legacy/alternate conventions.
-        label_map = {
-            "brave": ("brave", "web/brave_api_key", "brave/api_key", "brave_api_key"),
-            "tavily": ("tavily", "web/tavily_api_key", "tavily/api_key", "tavily_api_key"),
-            "serpapi": ("serpapi", "serpapi/api_key", "serpapi_api_key"),
-            "perplexity": (
-                "perplexity",
-                "web/perplexity_api_key",
-                "perplexity/api_key",
-                "pplx/api_key",
-            ),
-            "gemini": ("gemini", "web/gemini_api_key", "google/api_key", "google_api_key"),
-            "grok": ("grok", "xai", "web/grok_api_key", "xai/api_key", "xai_api_key"),
-            "kimi": ("kimi", "web/kimi_api_key", "moonshot/api_key", "moonshot_api_key"),
-        }
-        try:
-            # Same rule as the vault-status probe above: opening a Vault CREATES it.
-            from navig.vault import vault_exists
-            from navig.vault.core import get_vault, reveal_secret
-
-            if not vault_exists():
-                return ""
-
-            vault = get_vault()
-            for label in label_map.get(provider_name, ()):
-                # reveal_secret unwraps the SecretStr get_secret() returns; the old
-                # bare .strip() raised and was swallowed, so keys were never found.
-                value = reveal_secret(vault, label)
-                if value:
-                    return value
-        except Exception:
-            pass  # best-effort: vault unavailable; fall back to empty string
-        return ""
-
-    web_key = ""
-    if web_provider and web_provider != "auto":
-        web_key = _web_key_from_vault(web_provider)
-    if not web_key and web_provider == "brave":
-        web_key = str(
-            web_search_cfg.get("api_key") or os.environ.get("BRAVE_API_KEY") or ""
-        ).strip()
-    if not web_key:
-        api_keys = web_search_cfg.get("api_keys", {}) if isinstance(web_search_cfg, dict) else {}
-        if isinstance(api_keys, dict):
-            web_key = str(api_keys.get(web_provider) or "").strip()
-    web_ready = web_provider in {"auto", "duckduckgo"} or bool(web_key)
+    # Same precedence as web_search(): NAVIG_WEB_SEARCH_PROVIDER (known names
+    # only) > web.search.provider > "auto", alias-normalized.
+    web_provider = effective_search_provider(web_search_cfg.get("provider"))
+    # Keys resolve through the SAME chain dispatch uses (vault → api_keys →
+    # legacy brave → env) — a second copy of that order is how "has key" and
+    # "uses key" drift apart. No probe for auto or keyless engines: opening a
+    # vault CREATES it, so probing when no key can exist is a side effect.
+    if web_provider == "auto" or web_provider in KEYLESS_PROVIDERS:
+        web_key = ""
+        web_ready = True
+    else:
+        web_key = resolve_provider_key(web_provider, web_search_cfg)
+        web_ready = bool(web_key)
 
     try:
         from navig.providers.source_scan import scan_enabled_provider_sources

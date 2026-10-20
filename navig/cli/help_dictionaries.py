@@ -528,7 +528,7 @@ HELP_REGISTRY: dict[str, dict[str, Any]] = {
         "commands": {
             "<query>": "search the web",
             "--limit": "max number of results",
-            "--provider": "brave or duckduckgo",
+            "--provider": "engine for this call: auto, deepseek_search, tavily, brave, serpapi, duckduckgo, mojeek, firecrawl",
         },
     },
     "formation": {
