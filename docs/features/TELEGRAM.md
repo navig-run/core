@@ -148,7 +148,7 @@ Legend:
 | `/settings` | Yes | `/settings` | Settings hub |
 | `/providers` | Yes | `/providers [provider-name]` | Provider hub |
 | `/provider` | Alias/Hidden | `/provider [provider-name]` | Alias for providers |
-| `/mode` | Yes | `/mode [work|deep-focus|coder|auto|list]` | Focus mode |
+| `/mode` | Yes | `/mode [standard\|creative\|auto\|list]` | Agent mode (retired focus modes map to standard) |
 | `/big` | Yes | `/big` then send message | Force big tier |
 | `/small` | Yes | `/small` then send message | Force small tier |
 | `/coder` | Yes | `/coder` then send message | Force coder tier |

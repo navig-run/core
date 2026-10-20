@@ -141,7 +141,9 @@ navig approve policy
 navig approve status
 navig approve yes
 navig ask
+navig audio ad-slot
 navig audio ambience
+navig audio arrange
 navig audio beat analyse
 navig audio beat demo
 navig audio beat fit
@@ -151,16 +153,25 @@ navig audio beat layer
 navig audio beat plan
 navig audio beat styles
 navig audio bed assign
+navig audio chapters
 navig audio check
+navig audio chop
 navig audio clean-video
 navig audio clone
+navig audio comp
+navig audio debleed
 navig audio delivery
+navig audio doubles
 navig audio draft
+navig audio drum-replace
 navig audio dub
 navig audio enhance
 navig audio enhance-presets
+navig audio fix-word
 navig audio gen
+navig audio highlights
 navig audio isolate
+navig audio level-speakers
 navig audio loop
 navig audio loudness
 navig audio master
@@ -168,6 +179,7 @@ navig audio match
 navig audio plan
 navig audio podcast-edit
 navig audio publish
+navig audio qa
 navig audio read
 navig audio regenerate
 navig audio render
@@ -180,7 +192,10 @@ navig audio songs check
 navig audio speed
 navig audio spoken
 navig audio stems
+navig audio sting
+navig audio tap-beat
 navig audio translate
+navig audio vocal-fit
 navig audio voice-line
 navig audio voice-stats
 navig audio voices
@@ -466,6 +481,16 @@ navig cost
 navig cost clear
 navig cost history
 navig crash export
+navig creative
+navig creative build
+navig creative dismiss
+navig creative index
+navig creative list
+navig creative publish
+navig creative publish-disable
+navig creative publish-enable
+navig creative show
+navig creative status
 navig cron
 navig cron add
 navig cron disable
@@ -491,6 +516,7 @@ navig db restore
 navig db run
 navig db show
 navig db tables
+navig debrief
 navig debrief build
 navig debrief list
 navig debrief open
@@ -939,6 +965,9 @@ navig github watched
 navig github webhooks
 navig github wiki
 navig github workflows
+navig glass open
+navig glass status
+navig glass where
 navig gmail compose
 navig goal add
 navig goal list
@@ -947,6 +976,7 @@ navig goal remove
 navig goal resume
 navig goal run
 navig goal session clear
+navig goal session complete
 navig goal session list
 navig goal session pause
 navig goal session resume
@@ -1421,17 +1451,23 @@ navig pentest urls
 navig pentest whois
 navig pentest wordlist
 navig pentest wpscan
+navig perplexity artifacts
 navig perplexity ask
 navig perplexity attach
+navig perplexity automations
 navig perplexity backend
 navig perplexity capabilities
 navig perplexity capture
+navig perplexity comet
 navig perplexity connectors
+navig perplexity image
 navig perplexity model
 navig perplexity models
 navig perplexity new
 navig perplexity open
+navig perplexity research
 navig perplexity selftest
+navig perplexity skills
 navig perplexity status
 navig perplexity threads archive
 navig perplexity threads delete
@@ -1922,6 +1958,7 @@ navig vault leave
 navig vault list
 navig vault login add
 navig vault login capture
+navig vault login discover
 navig vault login get
 navig vault login list
 navig vault login remove
@@ -1944,12 +1981,22 @@ navig vault sync
 navig vault test
 navig vault validate
 navig version
+navig video beat-cut
+navig video broll
+navig video captions
+navig video color-match
 navig video cut
 navig video doctor
+navig video export-check
 navig video kinetic plan
 navig video kinetic render
+navig video lipsync
 navig video parity
+navig video recap
+navig video reframe
+navig video stabilize
 navig video status
+navig video tighten
 navig vm console
 navig vm create
 navig vm destroy

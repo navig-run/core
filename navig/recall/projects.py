@@ -131,10 +131,25 @@ def _nearest_marked_root(path: Path, *, stop: str) -> Path | None:
 
 
 def _registry_entries() -> list[tuple[str, str]]:
+    """(id, path) per space — ONE row per id via ``canonical_row_for_id``: legacy
+    duplicate rows (worktree checkouts registered under the main project's id) used to
+    each become a candidate root, and ``root_for(id)`` (longest-path-first) preferred
+    the WORKTREE — breaking file-key prefix checks for main-checkout paths. A broken
+    registry still degrades to marker-based resolution."""
     try:
-        from navig.spaces.registry import load_registry  # noqa: PLC0415
+        from navig.spaces.registry import canonical_row_for_id, load_registry  # noqa: PLC0415
 
-        return [(str(e.get("id") or ""), str(e.get("path") or "")) for e in load_registry()["spaces"]]
+        reg = load_registry()
+        out: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for e in reg["spaces"]:
+            sid = str(e.get("id") or "")
+            if not sid or sid in seen:
+                continue
+            seen.add(sid)
+            row = canonical_row_for_id(reg, sid) or e
+            out.append((sid, str(row.get("path") or "")))
+        return out
     except Exception:  # noqa: BLE001 — a broken registry degrades to marker-based resolution
         return []
 

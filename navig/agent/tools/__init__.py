@@ -341,6 +341,13 @@ def register_search_all_tools() -> None:
     _AGENT_REGISTRY.register(SearchAllTool(), toolset="search_all")
 
 
+def register_creative_tools() -> None:
+    """Register the ``creative`` capability-intelligence tool (both agent modes)."""
+    from navig.agent.tools.creative_tools import register_creative_tool
+
+    register_creative_tool()
+
+
 def register_all_tools() -> None:
     """Register all available built-in agent tools.
 
@@ -370,6 +377,7 @@ def register_all_tools() -> None:
         ("chat_media", register_chat_media_tools),
         ("read_aloud", register_read_aloud_tools),
         ("search_all", register_search_all_tools),
+        ("creative", register_creative_tools),
     ]:
         try:
             fn()

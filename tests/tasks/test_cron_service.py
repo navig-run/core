@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -728,6 +730,77 @@ async def test_completed_navig_subprocess_is_not_killed(tmp_path, monkeypatch):
     out = await svc._execute_job_command(job)
     assert out.strip() == "ok"
     assert proc.killed is False  # happy path must not kill
+
+
+# ─── `navig …` jobs re-enter THIS install, never the PATH's `navig` ───────────
+# Measured 2026-10-20: a gateway started by hand (`py -3.13 -m navig gateway
+# start` from an agent shell) inherited a narrower PATH than the daemon's
+# scheduled-task env. Every CLI-shaped job (habit:checkin, courrier:scan,
+# mail:watch, presence:crawl…) failed 25–45 ms in with `[WinError 2]`, while
+# in-process jobs (habit reminders, check-ins) kept working. The bare word was
+# resolved by CreateProcess against the scheduler's PATH — and on Windows the
+# first `navig` on that PATH is the navig.cmd shim, which CreateProcess cannot
+# execute at all, so a bare name was never a safe argv[0].
+
+
+async def test_navig_job_spawns_the_resolved_launcher_not_the_bare_name(tmp_path, monkeypatch):
+    """The spawned argv must start with the install launcher and keep every argument."""
+    from navig.scheduler.cron_service import navig_launcher
+
+    svc = _svc(tmp_path)
+    job = _make_job(command="navig habit checkin --send --space human-space")
+    seen: dict[str, list[str]] = {}
+
+    class _Proc:
+        returncode = 0
+
+        async def communicate(self):
+            return (b"ok\n", b"")
+
+    async def _fake_create(*argv, **_k):
+        seen["argv"] = list(argv)
+        return _Proc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create)
+    out = await svc._execute_job_command(job)
+
+    argv = seen["argv"]
+    prefix = navig_launcher()
+    assert argv[0] != "navig"  # never the bare, PATH-resolved word
+    assert argv[: len(prefix)] == prefix
+    assert argv[len(prefix) :] == ["habit", "checkin", "--send", "--space", "human-space"]
+    assert out.strip() == "ok"
+
+
+def test_navig_launcher_is_an_absolute_program_never_the_bare_name():
+    from navig.scheduler.cron_service import navig_launcher
+
+    argv = navig_launcher()
+    assert argv
+    assert argv[0] != "navig"
+    assert Path(argv[0]).is_absolute()
+    if argv[1:] == ["-m", "navig"]:
+        assert Path(argv[0]) == Path(sys.executable)  # same interpreter, same code
+
+
+async def test_missing_program_failure_names_the_program_and_the_cause(tmp_path, monkeypatch):
+    """A WinError-2 alert must say WHICH program could not start, not just errno 2."""
+    from navig.scheduler.cron_service import EXEC_PREFIX
+
+    svc = _svc(tmp_path)
+    job = _make_job(command=EXEC_PREFIX + "C:/no/such/program.exe --flag")
+
+    async def _boom(*_a, **_k):
+        raise FileNotFoundError(2, "The system cannot find the file specified")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _boom)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        await svc._execute_job_command(job)
+    message = str(excinfo.value)
+    assert "C:/no/such/program.exe" in message
+    assert "PATH" in message  # the actionable cause, not just [WinError 2]
+
 
 
 class _FakeGatewayNoneTurn:

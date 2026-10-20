@@ -18,6 +18,10 @@ from typing import Any
 # Manifest filenames, priority order. Looked up under .navig/ first, then at the
 # space root (the community/D:\spaces "file-at-root" shape).
 MANIFEST_NAMES: tuple[str, ...] = ("space.json", "space.config.json", "space.manifest.json")
+
+#: Unified Environments schema 1 — the manifest ``kind`` values (additive contract,
+#: introduced 2026-10-20; manifests without ``kind`` are legacy ``"space"``).
+SPACE_KINDS: tuple[str, ...] = ("environment", "area", "project", "space")
 _YAML_NAMES: tuple[str, ...] = ("space.yaml", "space.yml")
 
 
@@ -66,6 +70,49 @@ class SpaceManifest:
             if v:
                 return str(v)
         return None
+
+    # ── Unified Environments contract (additive, schema 1 — absence = legacy "space") ──
+
+    @property
+    def kind(self) -> str:
+        """``environment`` | ``area`` | ``project`` | ``space`` (default when absent/invalid).
+
+        Classification is DATA, never inferred from the folder name: a directory is
+        what its manifest says it is, so renames and links never change a UI role.
+        Membership stays on ``relations.parent`` (an Area's parent Environment); a
+        Project's membership lives as references in each Environment's ``projects``
+        list — many-to-many, never a false single parent.
+        """
+        k = self.data.get("kind")
+        return k if isinstance(k, str) and k in SPACE_KINDS else "space"
+
+    @property
+    def project_refs(self) -> tuple[str, ...]:
+        """Stable Project Manager ids this manifest references (see ``kind``).
+
+        Ids are Space-registry ids (``projects/model.resolve_project`` resolves them) —
+        the SAME identity space, never a second project store. Order preserved,
+        duplicates dropped; malformed entries ignored.
+        """
+        val = self.data.get("projects")
+        if not isinstance(val, list):
+            return ()
+        out: list[str] = []
+        for it in val:
+            if isinstance(it, str) and it.strip() and it.strip() not in out:
+                out.append(it.strip())
+        return tuple(out)
+
+    @property
+    def interface(self) -> dict[str, Any]:
+        """Environment presentation bindings (dashboard/dock/menu profile refs …).
+
+        A pointer only: layouts and widgets live OS-side (per-Environment prefs);
+        this stays an open dict so Environment Packs can ship bindings later without
+        a schema break. Non-dict → {} (tolerant, like every reader here).
+        """
+        val = self.data.get("interface")
+        return dict(val) if isinstance(val, dict) else {}
 
     def _id_list(self, key: str) -> list[str]:
         val = self.data.get(key)

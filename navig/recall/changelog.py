@@ -22,7 +22,8 @@ from dataclasses import dataclass
 _H_ADDENDUM_PAREN = re.compile(r"^##\s+(?:✅\s*)?Session Addendum\s+—\s+(\d{4}-\d{2}-\d{2})\s+\((.+?)\)\s*$")
 _H_ADDENDUM_DASH = re.compile(r"^##\s+Addendum\s+(\d{4}-\d{2}-\d{2})\s*[—-]\s*(.+?)\s*$")
 _H_DATED = re.compile(r"^##\s+(\d{4}-\d{2}-\d{2}):\s*(.+?)\s*$")
-_H_RELEASE = re.compile(r"^##\s+\[?([^\]\n]+?)\]?\s*(?:[—-]\s*(\d{4}-\d{2}-\d{2}))?\s*$")
+_H_RELEASE = re.compile(r"^##\s+\[?([^\]\n]+?)\]?(?:\s*[—-]\s*([^\n]+?))?\s*$")
+_ISO = re.compile(r"\d{4}-\d{2}-\d{2}")
 _H_LEVEL2 = re.compile(r"^##\s+(?!#)")
 
 
@@ -57,7 +58,17 @@ def _header_parts(line: str) -> tuple[str, str] | None:
         return m.group(2).strip(), m.group(1)
     m = _H_RELEASE.match(line)
     if m:
-        return m.group(1).strip(), m.group(2) or ""
+        title = m.group(1).strip()
+        suffix = (m.group(2) or "").strip()
+        iso = _ISO.search(suffix)
+        if iso:
+            return title, iso.group(0)          # `## [0.1.0] - 2026-01-01 …`
+        if suffix:
+            # version + a NON-date label (`## [1.0.0] — Unreleased`, `## [3.38.34] —
+            # AI-Proposed Enhancement`): keep the label in the title, no fake date —
+            # these matched NO header family before the pilot migration (2026-10-20).
+            return f"{title} — {suffix}", ""
+        return title, ""
     return None
 
 
@@ -99,8 +110,16 @@ def record_id(project: str, filename: str, entry: Entry) -> str:
 
 
 def classify(entries: list[Entry]) -> str:
-    """``private_dev`` · ``release_notes`` — release notes are migrated but never retired
-    (published release documentation must survive the migration)."""
+    """``private_dev`` · ``release_notes`` · ``sample_artifact``.
+
+    Release notes are migrated but never retired (published release documentation must
+    survive). A file that SELF-DESCRIBES as a sample/proposal ("sample proposed change",
+    "AI-Proposed" — the pilot case, 2026-10-20) is a ``sample_artifact``: retirable,
+    and NOT protected by the release-notes rule it only resembles via semver titles.
+    """
+    body = " ".join(e.text for e in entries[:20]).casefold()
+    if "sample proposed change" in body or "ai-proposed" in body:
+        return "sample_artifact"
     names = " ".join(e.title for e in entries[:10]).lower()
     if "unreleased" in names or any(re.match(r"^\d+\.\d+\.\d+", e.title) for e in entries[:10]):
         return "release_notes"

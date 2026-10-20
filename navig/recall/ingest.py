@@ -357,7 +357,8 @@ class Ingestor:
         Dry-run is the default: with ``apply=False`` nothing is written anywhere.
         Raises ``ValueError`` when the file has content but no recognizable entries —
         an unparsable source is never migrated and never retired. ``retire`` additionally
-        requires ``root`` (the consumer scan), a ``private_dev`` classification and a
+        requires ``root`` (the consumer scan), a retirable classification
+        (``private_dev`` / ``sample_artifact``) and a
         clean scan; release notes are indexed but their file stays.
         """
         import json  # noqa: PLC0415
@@ -376,7 +377,7 @@ class Ingestor:
         entries = cl.parse(raw.decode("utf-8", errors="replace"))  # ValueError → abort
         kind = cl.classify(entries)
         sid = cl_src.source_id_for(project, p.name)
-        consumers = cl_src.find_consumers(Path(root), p.name) if root else []
+        consumers = cl_src.find_consumers(Path(root), p) if root else []
         manifest: dict[str, Any] = {
             "project": project, "file": str(p), "filename": p.name, "sha256": digest16,
             "classification": kind, "entries": len(entries),
@@ -451,8 +452,8 @@ class Ingestor:
 
         # 4. retire: private dev history only, only with a root to scan, only with no consumers
         if retire:
-            if kind != "private_dev":
-                manifest["retire_refused"] = "release_notes — release documentation is kept"
+            if kind not in ("private_dev", "sample_artifact"):
+                manifest["retire_refused"] = f"{kind} — release documentation is kept"
             elif not root:
                 manifest["retire_refused"] = "no project root given — consumer scan impossible"
             elif consumers:

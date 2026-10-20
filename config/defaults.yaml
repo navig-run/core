@@ -608,3 +608,20 @@ decide:
   shadow: false             # true = call and LOG, but keep the previous logic deciding
   redact: true              # strip emails / phone numbers / secrets before sending
   account_id: ""            # Cloudflare account; empty = Lighthouse's
+
+# MCP server exposure (S2/S3) — see navig/mcp_server.py + navig/mcp/files_policy.py
+mcp:
+  # Dangerous tools over a remote exposure (network transport, or stdio declared
+  # --exposure remote). "deny" is the secure default: an authenticated remote caller
+  # still cannot auto-approve cdp_eval / connector_*_act / block_apply. Set "approve"
+  # only after an explicit decision to allow unattended high-risk remote operations.
+  remote_dangerous: deny
+  files:
+    # desktop_filesystem is a dangerous tool; a remotely exposed server may only touch
+    # these directories. Empty + remote exposure = deny all (fail closed). Local stdio
+    # keeps its trusted behaviour unless roots are set (enforce: auto) or always.
+    roots: []
+    enforce: auto          # auto | always | never (never is ignored for remote exposure)
+  # CORS origins for the HTTP transport. Empty = loopback wildcard only; a network
+  # bind never gets a wildcard origin (non-browser MCP clients are unaffected).
+  cors_origins: []

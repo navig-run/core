@@ -79,7 +79,7 @@ async def handle_deck_status(request: "web.Request") -> "web.Response":
             "tasks_done": tasks_done,
             "tasks_pending": tasks_pending,
             "errors": 0,
-            "current_mode": "work",
+            "current_mode": "standard",
             "uptime": _fmt_uptime(time.monotonic() - _START_TS),
             "task_queue_status": task_status,
         }
@@ -87,15 +87,11 @@ async def handle_deck_status(request: "web.Request") -> "web.Response":
             payload["events"] = events
         return web.json_response(payload)
 
-    mode = tracker.get_preference("chat_mode", "work")
+    mode = tracker.get_preference("chat_mode", "standard")
 
     mode_to_state = {
-        "work": "focused",
-        "deep-focus": "focused",
-        "planning": "focused",
-        "creative": "calm",
-        "relax": "calm",
-        "sleep": "sleeping",
+        "standard": "focused",
+        "creative": "learning",
     }
     avatar_state = mode_to_state.get(mode, "calm")
 
@@ -128,13 +124,14 @@ async def handle_deck_status(request: "web.Request") -> "web.Response":
 async def handle_deck_settings_get(request: "web.Request") -> "web.Response":
     tracker = _get_tracker()
     defaults = {
-        "chat_mode": "work",
+        "chat_mode": "standard",
         "verbosity": "normal",
         "autonomy_level": "low-risk-auto",
         "quiet_hours_start": 23,
         "quiet_hours_end": 7,
         "quiet_hours_enabled": True,
         "notifications_enabled": True,
+        "dnd_enabled": False,
     }
     if tracker:
         for key in defaults:
@@ -160,6 +157,7 @@ async def handle_deck_settings_post(request: "web.Request") -> "web.Response":
         "quiet_hours_end",
         "quiet_hours_enabled",
         "notifications_enabled",
+        "dnd_enabled",
     }
 
     for key, value in body.items():
@@ -178,13 +176,15 @@ async def handle_deck_mode(request: "web.Request") -> "web.Response":
     except Exception:
         return web.json_response({"error": "invalid json"}, status=400)
 
-    from navig.gateway.channels.focus_modes import FOCUS_MODES
+    from navig.gateway.channels.focus_modes import AGENT_MODES, resolve
 
-    mode = body.get("mode")
-    # The one vocabulary /mode and the preference store share — a local copy could drift.
-    if mode not in FOCUS_MODES:
+    raw = body.get("mode")
+    # Tolerate stale clients: an old bundle may still post a retired focus-mode
+    # id — accept it as Standard (flagged `migrated`), never expose the six back.
+    mode, was_legacy = resolve(raw) if isinstance(raw, str) else (None, False)
+    if mode not in AGENT_MODES:
         return web.json_response(
-            {"error": f"invalid mode. valid: {', '.join(FOCUS_MODES)}"}, status=400
+            {"error": f"invalid mode. valid: {', '.join(AGENT_MODES)}"}, status=400
         )
 
     tracker = _get_tracker()
@@ -193,4 +193,7 @@ async def handle_deck_mode(request: "web.Request") -> "web.Response":
     if tracker.set_preference("chat_mode", mode) is False:
         return web.json_response({"error": f"mode '{mode}' was not saved"}, status=500)
 
-    return web.json_response({"mode": mode})
+    payload: dict = {"mode": mode}
+    if was_legacy:
+        payload["migrated"] = True
+    return web.json_response(payload)

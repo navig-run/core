@@ -236,6 +236,17 @@ def _extract_json(text: str) -> dict[str, Any] | None:
     return None
 
 
+def extract_json(text: str) -> dict[str, Any] | None:
+    """Public entry point: the first JSON object in LLM output, or ``None``.
+
+    The same parser core itself uses (fenced blocks, bare objects at any depth,
+    best-effort trailing commas) — published so plugins never reach for the
+    private ``_extract_json`` (the private-import guard rejects that, on purpose:
+    a private name may be renamed without notice).
+    """
+    return _extract_json(text)
+
+
 # =============================================================================
 # Parser
 # =============================================================================

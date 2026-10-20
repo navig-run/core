@@ -747,8 +747,36 @@ class ConversationalAgent:
         Everything here holds for the life of the session, so it can sit in the
         cached system prefix. The clock and the one-shot freshness line moved to
         :meth:`_build_turn_context`.
+
+        The agent-mode line rides here too: the system prompt is rebuilt every
+        message, so a mode switch is visible on the next turn (provider cache is
+        re-billed once per switch — the accepted cost of a rare, deliberate change).
         """
         parts: list[str] = []
+        # The mode must actually shape behaviour, not just label the session —
+        # this is the live runtime path (the old line lived only on the dead
+        # conversational_legacy path).
+        try:
+            from navig.creative.mode import get_agent_mode
+
+            _mode = get_agent_mode()
+        except Exception:  # pragma: no cover - mode must never break prompt build
+            _mode = "standard"
+        if _mode == "creative":
+            parts.append(
+                "Current agent mode: creative — proactive capability intelligence is ON. "
+                "From real evidence (repeated friction, recurring failures, blocked goals) "
+                "look for ways to make NAVIG more useful: reuse or compose existing "
+                "capabilities before ever creating new ones, and surface a grounded "
+                "proposal only when the evidence justifies it — propose nothing otherwise."
+            )
+        else:
+            parts.append(
+                "Current agent mode: standard — everyday assistance, coding, operations, "
+                "research and execution. No proactive suggestions and no capability "
+                "authoring unless the operator asks; capability discovery and reuse "
+                "advice remain available on request."
+            )
         if uname := self._user_identity.get("username", ""):
             parts.append(f"You are talking to {uname} (your operator). Address them naturally.")
         elif uid := self._user_identity.get("user_id", ""):

@@ -4118,6 +4118,66 @@
       "aliases": [],
       "arguments": [
         {
+          "name": "file",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig audio ad-slot"
+      ],
+      "handler": "audio_ad_slot",
+      "module": "navig_audio.commands.podcast_tools",
+      "options": [
+        {
+          "flags": [
+            "--ad"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--at"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--count",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--bed"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig audio ad-slot",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83d\udcb0 Find natural pauses for a sponsor read and drop it in, level-matched.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
           "name": "kind",
           "required": true,
           "variadic": false
@@ -4167,6 +4227,59 @@
       "since": "",
       "status": "stable",
       "summary": "\ud83c\udf27 Rain, static or city weather under a cut \u2014 deterministic, seeded by kind.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "beat",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig audio arrange"
+      ],
+      "handler": "audio_arrange",
+      "module": "navig_audio.commands.beat_tools",
+      "options": [
+        {
+          "flags": [
+            "--stems"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--bars"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--bpm"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig audio arrange",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83e\uddf1 Intro, breakdown and drop versions of a beat \u2014 same key and tempo.",
       "tags": []
     },
     {
@@ -4247,6 +4360,36 @@
             "--voices"
           ],
           "takes_value": true
+        },
+        {
+          "flags": [
+            "--lyrics"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--voice"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--start-bar"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--sing"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--allow-cloud"
+          ],
+          "takes_value": false
         },
         {
           "flags": [
@@ -4733,6 +4876,59 @@
     },
     {
       "aliases": [],
+      "arguments": [
+        {
+          "name": "file",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig audio chapters"
+      ],
+      "handler": "audio_chapters",
+      "module": "navig_audio.commands.podcast_tools",
+      "options": [
+        {
+          "flags": [
+            "--min-minutes"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--no-ai"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--model"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig audio chapters",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83d\udcd1 Chapters and show notes from the episode's own words.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [],
       "examples": [
         "navig audio check"
@@ -4751,6 +4947,47 @@
       "since": "",
       "status": "stable",
       "summary": "Show whether AI audio generation is configured (a provider key resolves).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "record",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig audio chop"
+      ],
+      "handler": "audio_chop",
+      "module": "navig_audio.commands.beat_tools",
+      "options": [
+        {
+          "flags": [
+            "--bpm"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig audio chop",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83d\udd2a Bar slices, the loop that repeats, and a MIDI map for a sampler.",
       "tags": []
     },
     {
@@ -4851,6 +5088,94 @@
       "aliases": [],
       "arguments": [
         {
+          "name": "takes",
+          "required": true,
+          "variadic": true
+        }
+      ],
+      "examples": [
+        "navig audio comp"
+      ],
+      "handler": "audio_comp",
+      "module": "navig_audio.commands.beat_tools",
+      "options": [
+        {
+          "flags": [
+            "--beat"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--bpm"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig audio comp",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83c\udfaf Score every take phrase by phrase and join the best into one comp.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "tracks",
+          "required": true,
+          "variadic": true
+        }
+      ],
+      "examples": [
+        "navig audio debleed"
+      ],
+      "handler": "audio_debleed",
+      "module": "navig_audio.commands.podcast_tools",
+      "options": [
+        {
+          "flags": [
+            "--depth"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig audio debleed",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83c\udf9a Silence each mic while someone else is talking.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
           "name": "file",
           "required": true,
           "variadic": false
@@ -4900,6 +5225,54 @@
       "since": "",
       "status": "stable",
       "summary": "\ud83d\udce1 Check loudness against a platform's delivery spec \u2014 and fix it to fit.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "lead",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig audio doubles"
+      ],
+      "handler": "audio_doubles",
+      "module": "navig_audio.commands.beat_tools",
+      "options": [
+        {
+          "flags": [
+            "--voices",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--harmony"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig audio doubles",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83d\udc65 Stack doubles (and a harmony) that stay solid in mono.",
       "tags": []
     },
     {
@@ -4957,6 +5330,65 @@
       "since": "",
       "status": "stable",
       "summary": "\ud83d\udcdd Turn rough notes into a strict scenario you can review before rendering.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "loop",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig audio drum-replace"
+      ],
+      "handler": "audio_drum_replace",
+      "module": "navig_audio.commands.beat_tools",
+      "options": [
+        {
+          "flags": [
+            "--kick"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--snare"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--hat"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--blend"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig audio drum-replace",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83e\udd41 Detect kicks, snares and hats and swap in your own samples at the same timing.",
       "tags": []
     },
     {
@@ -5142,6 +5574,83 @@
       "aliases": [],
       "arguments": [
         {
+          "name": "file",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig audio fix-word"
+      ],
+      "handler": "audio_fix_word",
+      "module": "navig_audio.commands.podcast_tools",
+      "options": [
+        {
+          "flags": [
+            "--say"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--word"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--at"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--voice"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--own-voice"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--keep-voice"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--allow-cloud"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig audio fix-word",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83e\ude79 Re-record one word in the speaker's own voice.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
           "name": "prompt",
           "required": true,
           "variadic": false
@@ -5240,6 +5749,72 @@
         }
       ],
       "examples": [
+        "navig audio highlights"
+      ],
+      "handler": "audio_highlights",
+      "module": "navig_audio.commands.podcast_tools",
+      "options": [
+        {
+          "flags": [
+            "--count",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--min"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--max"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--title"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--list"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig audio highlights",
+      "since": "",
+      "status": "stable",
+      "summary": "\u2728 The strongest moments as captioned vertical clips.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "file",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
         "navig audio isolate"
       ],
       "handler": "audio_isolate",
@@ -5263,6 +5838,59 @@
       "since": "",
       "status": "stable",
       "summary": "\ud83c\udfa4 Strip background noise, keep the voice \u2014 the ElevenLabs voice isolator.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "file",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig audio level-speakers"
+      ],
+      "handler": "audio_level_speakers",
+      "module": "navig_audio.commands.podcast_tools",
+      "options": [
+        {
+          "flags": [
+            "--allow-cloud"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--speakers"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--target"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig audio level-speakers",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83c\udf99 Bring every speaker to the same loudness.",
       "tags": []
     },
     {
@@ -5511,6 +6139,18 @@
         },
         {
           "flags": [
+            "--check"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--mono-bass"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
             "--format",
             "-f"
           ],
@@ -5618,6 +6258,24 @@
         },
         {
           "flags": [
+            "--breaths"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--clicks"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--keep-timing"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
             "--language",
             "-l"
           ],
@@ -5700,6 +6358,41 @@
       "since": "",
       "status": "stable",
       "summary": "\ud83d\udce4 Publish a rendered episode to NobiCast \u2014 plan it first, --upload to send.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "file",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig audio qa"
+      ],
+      "handler": "audio_qa",
+      "module": "navig_audio.commands.podcast_tools",
+      "options": [
+        {
+          "flags": [
+            "--target",
+            "-t"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig audio qa",
+      "since": "",
+      "status": "stable",
+      "summary": "\u2705 One pass/fail page before you publish.",
       "tags": []
     },
     {
@@ -6413,6 +7106,119 @@
       "aliases": [],
       "arguments": [
         {
+          "name": "description",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig audio sting"
+      ],
+      "handler": "audio_sting",
+      "module": "navig_audio.commands.podcast_tools",
+      "options": [
+        {
+          "flags": [
+            "--seconds",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--name"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--allow-cloud"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig audio sting",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83d\udd14 An intro sting at an exact length.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "taps",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig audio tap-beat"
+      ],
+      "handler": "audio_tap_beat",
+      "module": "navig_audio.commands.beat_tools",
+      "options": [
+        {
+          "flags": [
+            "--bars"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--bpm"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--swing"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig audio tap-beat",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83d\udc4f Tap a rhythm, get a drum pattern at that tempo (audio + MIDI).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
           "name": "scenario",
           "required": true,
           "variadic": false
@@ -6449,6 +7255,53 @@
       "since": "",
       "status": "stable",
       "summary": "\ud83c\udf0d Translate the spoken lines, keeping the album structure identical.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "vocal",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig audio vocal-fit"
+      ],
+      "handler": "audio_vocal_fit",
+      "module": "navig_audio.commands.beat_tools",
+      "options": [
+        {
+          "flags": [
+            "--beat"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--fix"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig audio vocal-fit",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83c\udfbc Is the vocal in the beat's tempo and key? How far off, and the move that fixes it.",
       "tags": []
     },
     {
@@ -16659,6 +17512,292 @@
       "aliases": [],
       "arguments": [],
       "examples": [
+        "navig creative"
+      ],
+      "handler": "creative_default",
+      "module": "navig.commands.creative",
+      "options": [],
+      "path": "navig creative",
+      "since": "",
+      "status": "stable",
+      "summary": "Capability intelligence at a glance (same as `navig creative status`).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "proposal-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig creative build"
+      ],
+      "handler": "creative_build",
+      "module": "navig.commands.creative",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig creative build",
+      "since": "",
+      "status": "stable",
+      "summary": "Build a proposal's artifact through the standard skill contracts (Creative only).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "proposal-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig creative dismiss"
+      ],
+      "handler": "creative_dismiss",
+      "module": "navig.commands.creative",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig creative dismiss",
+      "since": "",
+      "status": "stable",
+      "summary": "Dismiss a proposal permanently \u2014 it will never be re-proposed.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig creative index"
+      ],
+      "handler": "creative_index",
+      "module": "navig.commands.creative",
+      "options": [
+        {
+          "flags": [
+            "--q"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--kind"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--limit",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--build"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig creative index",
+      "since": "",
+      "status": "stable",
+      "summary": "Query the capability index \u2014 what NAVIG can already do, and how.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig creative list"
+      ],
+      "handler": "creative_list",
+      "module": "navig.commands.creative",
+      "options": [
+        {
+          "flags": [
+            "--status"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig creative list",
+      "since": "",
+      "status": "stable",
+      "summary": "List proposals (the same rows the Dashboard card shows).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "proposal-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig creative publish"
+      ],
+      "handler": "creative_publish",
+      "module": "navig.commands.creative",
+      "options": [
+        {
+          "flags": [
+            "--automatic"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig creative publish",
+      "since": "",
+      "status": "stable",
+      "summary": "Publish a built capability under the authorized-destination policy.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig creative publish-disable"
+      ],
+      "handler": "creative_publish_disable",
+      "module": "navig.commands.creative",
+      "options": [],
+      "path": "navig creative publish-disable",
+      "since": "",
+      "status": "stable",
+      "summary": "Revoke the publishing destination \u2014 back to local-only (the default).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig creative publish-enable"
+      ],
+      "handler": "creative_publish_enable",
+      "module": "navig.commands.creative",
+      "options": [
+        {
+          "flags": [
+            "--repo"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--branch"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--auto-push"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--yes",
+            "-y"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig creative publish-enable",
+      "since": "",
+      "status": "stable",
+      "summary": "Authorize a private destination for publishing (owner-run; default stays local).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "proposal-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig creative show"
+      ],
+      "handler": "creative_show",
+      "module": "navig.commands.creative",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig creative show",
+      "since": "",
+      "status": "stable",
+      "summary": "Show one proposal's full card: evidence, decision, benefit, risk.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig creative status"
+      ],
+      "handler": "creative_status",
+      "module": "navig.commands.creative",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig creative status",
+      "since": "",
+      "status": "stable",
+      "summary": "Show mode, index freshness, scan pace, proposals and publish policy.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
         "navig cron"
       ],
       "handler": "_cron_callback",
@@ -17500,6 +18639,96 @@
       "since": "",
       "status": "stable",
       "summary": "List tables in a database.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig debrief"
+      ],
+      "handler": "debrief_default",
+      "module": "navig_debrief.commands.debrief",
+      "options": [
+        {
+          "flags": [
+            "--session"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--plan"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--presentation"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--story",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--technical"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--open"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--export"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--width"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--capture/--no-capture"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig debrief",
+      "since": "",
+      "status": "stable",
+      "summary": "Build the visual presentation (last session by default; proposals via --plan).",
       "tags": []
     },
     {
@@ -20811,6 +22040,12 @@
         },
         {
           "flags": [
+            "--campaign"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
             "--dry-run"
           ],
           "takes_value": false
@@ -20825,7 +22060,7 @@
       "path": "navig distribution content import",
       "since": "",
       "status": "stable",
-      "summary": "Import a written article package as editable drafts (idempotent per folder).",
+      "summary": "Import a written article package and its platform adaptations as editable drafts.",
       "tags": []
     },
     {
@@ -21274,6 +22509,12 @@
       "handler": "publish_run",
       "module": "navig_distribution.commands.distribution",
       "options": [
+        {
+          "flags": [
+            "--retry"
+          ],
+          "takes_value": false
+        },
         {
           "flags": [
             "--json"
@@ -34230,6 +35471,78 @@
     },
     {
       "aliases": [],
+      "arguments": [
+        {
+          "name": "path",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig glass open"
+      ],
+      "handler": "open_cmd",
+      "module": "navig_glass.commands",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig glass open",
+      "since": "",
+      "status": "stable",
+      "summary": "Open a file in NAVIG Glass \u2014 the same binary, whether NAVIG is here or not.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig glass status"
+      ],
+      "handler": "status_cmd",
+      "module": "navig_glass.commands",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig glass status",
+      "since": "",
+      "status": "stable",
+      "summary": "What discovery actually verified: path, contract version, capabilities.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig glass where"
+      ],
+      "handler": "where_cmd",
+      "module": "navig_glass.commands",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig glass where",
+      "since": "",
+      "status": "stable",
+      "summary": "Print the resolved executable, or every location that was searched.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [],
       "examples": [
         "navig gmail compose"
@@ -34516,6 +35829,41 @@
       "since": "",
       "status": "stable",
       "summary": "Remove the goal from a session. Its injected rounds stay in history.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "session",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig goal session complete"
+      ],
+      "handler": "goal_session_complete",
+      "module": "navig.commands.goal",
+      "options": [
+        {
+          "flags": [
+            "--evidence",
+            "-e"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig goal session complete",
+      "since": "",
+      "status": "stable",
+      "summary": "Close an active goal as the operator, WITH evidence (human override).",
       "tags": []
     },
     {
@@ -40937,6 +42285,24 @@
             "--only"
           ],
           "takes_value": true
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--exposure"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--insecure-local"
+          ],
+          "takes_value": false
         }
       ],
       "path": "navig mcp serve",
@@ -48995,6 +50361,34 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig perplexity artifacts"
+      ],
+      "handler": "artifacts",
+      "module": "navig_perplexity.commands.perplexity",
+      "options": [
+        {
+          "flags": [
+            "--pull"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig perplexity artifacts",
+      "since": "",
+      "status": "stable",
+      "summary": "List the app's Artifacts (reports, images, presentations) and optionally copy images out.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "prompt",
@@ -49035,6 +50429,12 @@
             "-r"
           ],
           "takes_value": true
+        },
+        {
+          "flags": [
+            "--thinking/--no-thinking"
+          ],
+          "takes_value": false
         },
         {
           "flags": [
@@ -49195,6 +50595,46 @@
       "aliases": [],
       "arguments": [],
       "examples": [
+        "navig perplexity automations"
+      ],
+      "handler": "automations",
+      "module": "navig_perplexity.commands.perplexity",
+      "options": [
+        {
+          "flags": [
+            "--templates"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--create"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--yes"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig perplexity automations",
+      "since": "",
+      "status": "stable",
+      "summary": "Manage the app's scheduled Automations (recurring research that delivers results).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
         "navig perplexity backend"
       ],
       "handler": "backend",
@@ -49284,6 +50724,60 @@
     },
     {
       "aliases": [],
+      "arguments": [
+        {
+          "name": "question",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig perplexity comet"
+      ],
+      "handler": "comet",
+      "module": "navig_perplexity.commands.perplexity",
+      "options": [
+        {
+          "flags": [
+            "--file",
+            "-f"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--page"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--port",
+            "-p"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig perplexity comet",
+      "since": "",
+      "status": "stable",
+      "summary": "Ask Comet's sidebar assistant \u2014 it sees the page you are looking at.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [],
       "examples": [
         "navig perplexity connectors"
@@ -49308,6 +50802,110 @@
       "since": "",
       "status": "stable",
       "summary": "The app connectors this account can toggle for a request (--connector <name>).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "subject",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig perplexity image"
+      ],
+      "handler": "image",
+      "module": "navig_perplexity.commands.perplexity",
+      "options": [
+        {
+          "flags": [
+            "--file",
+            "-f"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--aspect"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--style"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--text"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--no-text"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--continue",
+            "-c"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--topic"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--model",
+            "-m"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--backend"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--force"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig perplexity image",
+      "since": "",
+      "status": "stable",
+      "summary": "Generate an image with Perplexity and copy it here.",
       "tags": []
     },
     {
@@ -49425,6 +51023,86 @@
     },
     {
       "aliases": [],
+      "arguments": [
+        {
+          "name": "question",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig perplexity research"
+      ],
+      "handler": "research",
+      "module": "navig_perplexity.commands.perplexity",
+      "options": [
+        {
+          "flags": [
+            "--file",
+            "-f"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--topic"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--continue",
+            "-c"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--model",
+            "-m"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--force"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--backend"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig perplexity research",
+      "since": "",
+      "status": "stable",
+      "summary": "Run a Deep Research question and save the report.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [],
       "examples": [
         "navig perplexity selftest"
@@ -49449,6 +51127,47 @@
       "since": "",
       "status": "stable",
       "summary": "Verify the whole path: port, window, composer, models, modes, registry.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig perplexity skills"
+      ],
+      "handler": "skills",
+      "module": "navig_perplexity.commands.perplexity",
+      "options": [
+        {
+          "flags": [
+            "--search",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--install"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--yes"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig perplexity skills",
+      "since": "",
+      "status": "stable",
+      "summary": "Read the Skills catalogue (or install one) on the app's Computer page.",
       "tags": []
     },
     {
@@ -49879,6 +51598,12 @@
             "-r"
           ],
           "takes_value": true
+        },
+        {
+          "flags": [
+            "--thinking/--no-thinking"
+          ],
+          "takes_value": false
         },
         {
           "flags": [
@@ -66047,6 +67772,24 @@
         },
         {
           "flags": [
+            "--from-chrome"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--browser"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
             "--json"
           ],
           "takes_value": false
@@ -66056,6 +67799,46 @@
       "since": "",
       "status": "stable",
       "summary": "Sign in ONCE in a visible browser (Google/GitHub buttons OK) \u2014 session saved to the vault.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig vault login discover"
+      ],
+      "handler": "login_discover",
+      "module": "navig_vault.commands.vault",
+      "options": [
+        {
+          "flags": [
+            "--browser"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--all"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig vault login discover",
+      "since": "",
+      "status": "stable",
+      "summary": "List sites you are ALREADY signed into in your browser, so you can save them.",
       "tags": []
     },
     {
@@ -66683,6 +68466,231 @@
       "aliases": [],
       "arguments": [
         {
+          "name": "clips",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig video beat-cut"
+      ],
+      "handler": "video_beat_cut",
+      "module": "navig_video.commands.lab",
+      "options": [
+        {
+          "flags": [
+            "--music",
+            "-m"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--beats"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--seconds"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--vertical"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig video beat-cut",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83e\udd41 A montage whose cuts land on the beat.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "video",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig video broll"
+      ],
+      "handler": "video_broll",
+      "module": "navig_video.commands.lab",
+      "options": [
+        {
+          "flags": [
+            "--count",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--generate"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--allow-cloud"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig video broll",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83c\udf9e Cutaway ideas where the narration names something \u2014 and, with --generate, the shots.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "video",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig video captions"
+      ],
+      "handler": "video_captions",
+      "module": "navig_video.commands.lab",
+      "options": [
+        {
+          "flags": [
+            "--style",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--translate",
+            "-t"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--no-burn"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--language",
+            "-l"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig video captions",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83d\udcac Word-timed captions (SRT \u00b7 VTT \u00b7 burned in), optionally translated.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "video",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig video color-match"
+      ],
+      "handler": "video_color_match",
+      "module": "navig_video.commands.lab",
+      "options": [
+        {
+          "flags": [
+            "--ref",
+            "-r"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--strength",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig video color-match",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83c\udfa8 Give one shot the colour of another (a reusable .cube LUT too).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
           "name": "edl",
           "required": true,
           "variadic": false
@@ -66740,6 +68748,66 @@
       "since": "",
       "status": "stable",
       "summary": "Deep check: workspace layout, engines, ffmpeg, fonts. Exit 1 if a requirement fails.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "video",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig video export-check"
+      ],
+      "handler": "video_export_check",
+      "module": "navig_video.commands.lab",
+      "options": [
+        {
+          "flags": [
+            "--for",
+            "-p"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--fix"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--pad"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--safe-areas"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig video export-check",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83d\udce6 Size, frame rate, codecs, length, safe areas and loudness for one platform.",
       "tags": []
     },
     {
@@ -66852,6 +68920,53 @@
       "aliases": [],
       "arguments": [
         {
+          "name": "video",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig video lipsync"
+      ],
+      "handler": "video_lipsync",
+      "module": "navig_video.commands.lab",
+      "options": [
+        {
+          "flags": [
+            "--audio"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--allow-cloud"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig video lipsync",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83d\udc44 Re-time the speaker's mouth to new sound (LatentSync).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
           "name": "a",
           "required": true,
           "variadic": false
@@ -66901,6 +69016,136 @@
     },
     {
       "aliases": [],
+      "arguments": [
+        {
+          "name": "video",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig video recap"
+      ],
+      "handler": "video_recap",
+      "module": "navig_video.commands.lab",
+      "options": [
+        {
+          "flags": [
+            "--seconds",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig video recap",
+      "since": "",
+      "status": "stable",
+      "summary": "\u23f1 The liveliest moments, cut into a short recap.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "video",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig video reframe"
+      ],
+      "handler": "video_reframe",
+      "module": "navig_video.commands.lab",
+      "options": [
+        {
+          "flags": [
+            "--to"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig video reframe",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83d\udcf1 Reframe to vertical, following whoever is speaking.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "video",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig video stabilize"
+      ],
+      "handler": "video_stabilize",
+      "module": "navig_video.commands.lab",
+      "options": [
+        {
+          "flags": [
+            "--smoothing"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--deflicker"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig video stabilize",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83e\uddd8 Steadier picture (and no flicker), measured before and after.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [],
       "examples": [
         "navig video status"
@@ -66926,6 +69171,65 @@
       "since": "",
       "status": "stable",
       "summary": "Workspace, engines and render verbs \u2014 one glance at what is wired.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "video",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig video tighten"
+      ],
+      "handler": "video_tighten",
+      "module": "navig_video.commands.lab",
+      "options": [
+        {
+          "flags": [
+            "--max-pause"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--keep-pause"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--no-fillers"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig video tighten",
+      "since": "",
+      "status": "stable",
+      "summary": "\u2702\ufe0f Cut fillers and long pauses from picture and sound together.",
       "tags": []
     },
     {
@@ -68830,7 +71134,7 @@
       "tags": []
     }
   ],
-  "generated_at": "2026-10-20T04:09:15.488326+00:00",
+  "generated_at": "2026-10-20T13:16:51.672585+00:00",
   "groups": {
     "action": "Manage quick actions (stored shortcuts)",
     "agent": "Manage autonomous agent mode",
@@ -68874,9 +71178,10 @@
     "cortex": "\ud83e\udde0 Execute an autonomous goal using the Hybrid Visual Brain Loop (Cortex).",
     "cost": "Show LLM token usage and USD cost for the current and past sessions.",
     "crash": "Manage crash reports and logs",
+    "creative": "Proactive capability intelligence \u2014 discover, propose, build, publish.",
     "cron": "Persistent job scheduling",
     "db": "Database operations (query, backup, restore, list, shell)",
-    "debrief": "Turn a work session into a navigable visual report (timeline, map, files, PNG shots).",
+    "debrief": "Turn work into a visual presentation \u2014 bare `navig debrief` presents the last session, `--plan` presents a proposal; build/list/open/shot keep the technical report.",
     "debug": "Debug mode and observability tools",
     "decider": "Decision model (Cloudflare Clef) for fast bounded decisions \u2014 on/off, model, test.",
     "deck": "The NAVIG control UI \u2014 open \u00b7 dev \u00b7 deploy",
@@ -68909,6 +71214,7 @@
     "gateway": "Manage the autonomous agent gateway",
     "generate": "AI media \u2014 analyse (video\u2192briefing) + generate (image/video/audio).",
     "github": "\ud83d\udc19 GitHub: backup \u00b7 mirror \u00b7 export \u00b7 manage (full GitHub engine, vault-wired)",
+    "glass": "NAVIG Glass: discover the standalone viewer and open files through it.",
     "gmail": "Compose & send Gmail in your logged-in browser profile (deep-link, no LLM).",
     "goal": "Standing goals \u2014 an objective NAVIG keeps working on a schedule until it is done",
     "guard": "Process watchdog: runaway-memory killer, deprioritizer, orphan reaper.",
@@ -69017,5 +71323,5 @@
     "wut": "Show what NAVIG thinks is happening (context snapshot)"
   },
   "schema_version": "1.0.0",
-  "total": 2017
+  "total": 2064
 }

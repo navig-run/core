@@ -247,3 +247,133 @@ def test_capture_keeps_an_existing_password_login(monkeypatch):
     assert out["idp"] == "github"                # --idp wins over inference
     assert out["ok"] is True
     assert len(calls["save_session"]) == 1       # the session still landed
+
+
+# ── capture --from-chrome / discover ─────────────────────────────────────────
+
+
+def _fake_import(monkeypatch, per_profile: dict[str, list[dict]], discovered=()):
+    """Stub the real-browser seams: discovery and the per-profile cookie capture."""
+    calls = _fake_browser(monkeypatch, {"cookies": [], "origins": []})
+    calls["captured_profiles"] = []
+
+    async def _capture(app, host, headless=True, profile="Default"):
+        calls["captured_profiles"].append(profile)
+        return per_profile.get(profile, [])
+
+    class _Site:
+        def __init__(self, domain, profile):
+            self.domain, self.profile, self.saved = domain, profile, False
+            self.auth_cookie_names = ["session"]
+
+    monkeypatch.setattr(
+        "navig_browser.system_chrome.capture_existing_cookies", _capture
+    )
+    monkeypatch.setattr(
+        "navig_browser.signed_in_sites.discover_signed_in_sites",
+        lambda *a, **k: [_Site(d, p) for d, p in discovered],
+    )
+    return calls
+
+
+def test_from_chrome_imports_only_the_sites_own_cookies(monkeypatch):
+    cookies = [
+        {"name": "user_session", "value": "x", "domain": ".github.com", "path": "/"},
+        {"name": "_octo", "value": "y", "domain": "github.com", "path": "/"},
+        # a look-alike whose name merely CONTAINS the site — must be dropped
+        {"name": "sess", "value": "z", "domain": ".evilgithub.com", "path": "/"},
+    ]
+    calls = _fake_import(
+        monkeypatch, {"Profile 4": cookies}, discovered=[("github.com", "Profile 4")]
+    )
+    res = runner.invoke(
+        vault_app, ["login", "capture", "https://github.com/x", "--from-chrome", "--json"]
+    )
+    assert res.exit_code == 0, res.output
+    out = _json_out(res)
+    assert out["ok"] is True and out["domain"] == "github.com"
+    assert out["source"] == "chrome:Profile 4" and out["cookies"] == 2
+    assert out["verified"] is None               # imported, never claimed verified
+    saved = calls["save_session"][0]
+    assert {c["domain"] for c in saved["state"]["cookies"]} == {".github.com", "github.com"}
+    # the profile discovery pointed at is tried first; Default only as a fallback
+    assert calls["captured_profiles"] == ["Profile 4"]
+
+
+def test_from_chrome_falls_back_to_default_profile(monkeypatch):
+    calls = _fake_import(
+        monkeypatch,
+        {"Default": [{"name": "sid", "value": "v", "domain": ".notion.so", "path": "/"}]},
+    )
+    res = runner.invoke(vault_app, ["login", "capture", "notion.so", "--from-chrome", "--json"])
+    assert res.exit_code == 0, res.output
+    assert _json_out(res)["source"] == "chrome:Default"
+    assert calls["captured_profiles"] == ["Default"]
+
+
+def test_from_chrome_with_no_signin_fails_loudly_and_saves_nothing(monkeypatch):
+    calls = _fake_import(monkeypatch, {})
+    res = runner.invoke(vault_app, ["login", "capture", "example.com", "--from-chrome", "--json"])
+    assert res.exit_code == 1, res.output
+    out = _json_out(res)
+    assert out["ok"] is False and "navig vault login capture example.com" in out["error"]
+    assert calls["save_session"] == [] and calls["add_sso_login"] == []
+
+
+def test_from_chrome_explicit_profile_is_the_only_one_tried(monkeypatch):
+    calls = _fake_import(monkeypatch, {}, discovered=[("x.com", "Default")])
+    res = runner.invoke(
+        vault_app,
+        ["login", "capture", "x.com", "--from-chrome", "--profile", "Profile 7", "--json"],
+    )
+    assert res.exit_code == 1
+    assert calls["captured_profiles"] == ["Profile 7"]
+
+
+def test_discover_lists_unsaved_sites_with_the_next_step(monkeypatch):
+    class _Site:
+        def __init__(self, domain, profile, saved):
+            self.domain, self.profile, self.saved = domain, profile, saved
+            self.auth_cookie_names = ["session", "token"]
+
+    monkeypatch.setattr(
+        "navig_browser.signed_in_sites.discover_signed_in_sites",
+        lambda *a, **k: [_Site("notion.so", "Profile 4", False), _Site("github.com", "Default", True)],
+    )
+    res = runner.invoke(vault_app, ["login", "discover", "--json"])
+    assert res.exit_code == 0, res.output
+    rows = json.loads(res.output[res.output.index("["):])
+    assert [r["domain"] for r in rows] == ["notion.so"]   # saved hidden by default
+    assert rows[0] == {"domain": "notion.so", "profile": "Profile 4", "saved": False, "signals": 2}
+
+    res_all = runner.invoke(vault_app, ["login", "discover", "--all", "--json"])
+    rows_all = json.loads(res_all.output[res_all.output.index("["):])
+    assert {r["domain"] for r in rows_all} == {"notion.so", "github.com"}
+
+    table = runner.invoke(vault_app, ["login", "discover"])
+    assert table.exit_code == 0, table.output
+    assert "--from-chrome" in table.output and "heuristic" in table.output
+
+
+def test_json_output_survives_a_narrow_terminal(monkeypatch):
+    """`--json` must parse even when a value is longer than the terminal is wide.
+
+    Measured live: `navig vault login discover --json` piped at 80 columns broke a long
+    value with a newline INSIDE the JSON string — Rich wraps at the console width. The
+    capture button in NAVIG OS parses this output, so one long account name broke it.
+    """
+    monkeypatch.setenv("COLUMNS", "40")
+
+    class _Site:
+        domain = "a-very-long-subdomain-name-that-wraps.example-with-a-long-name.com"
+        profile = "Profile 4"
+        saved = False
+        auth_cookie_names = ["session"]
+
+    monkeypatch.setattr(
+        "navig_browser.signed_in_sites.discover_signed_in_sites", lambda *a, **k: [_Site()]
+    )
+    res = runner.invoke(vault_app, ["login", "discover", "--json"])
+    assert res.exit_code == 0, res.output
+    rows = json.loads(res.output[res.output.index("["):])
+    assert rows[0]["domain"] == _Site.domain

@@ -43,6 +43,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", type=Path, help="Write the full evaluation here.")
     parser.add_argument("--label", default="", help="Name this run (e.g. 'installed 3.27.1').")
     parser.add_argument("--worst", type=int, default=8, help="How many lowest scores to print.")
+    parser.add_argument(
+        "--profile",
+        choices=("full", "default"),
+        default="full",
+        help="full = the legacy catalogue (default); default = the compact routed surface.",
+    )
     args = parser.parse_args(argv)
 
     core_root = Path(__file__).resolve().parents[1]
@@ -59,8 +65,11 @@ def main(argv: list[str] | None = None) -> int:
     except Exception:  # noqa: BLE001
         version, module_path = "unknown", "unknown"
 
-    report = scorer.score_catalogue(MCPProtocolHandler().tools)
-    report["label"] = args.label
+    handler = MCPProtocolHandler(profile=args.profile)
+    tools = handler.advertised_tools() if args.profile != "full" else handler.tools
+    report = scorer.score_catalogue(tools)
+    report["label"] = args.label or args.profile
+    report["profile"] = args.profile
     report["navig_version"] = version
     report["module_path"] = module_path
 

@@ -65,6 +65,12 @@ _ALLOWLIST: dict[str, str] = {
         "has_own_repo: a project shows its OWN repo, never an enclosing one, so the root "
         "check is the intent; git_state confirms with rev-parse --show-toplevel"
     ),
+    "navig/spaces/registry.py": (
+        "one-identity model: _claim_id / canonical_row_for_id ask whether a registry row's "
+        "path IS the real checkout (`.git` dir) or a worktree instance (`.git` file) — rows "
+        "are project checkout roots by construction, never arbitrary subdirectories; "
+        "same_repo/gitinfo confirm anything non-nested via rev-parse"
+    ),
     "navig/selfheal/git_manager.py": "checks the managed clone dir (~/.navig/core-repo)",
 }
 

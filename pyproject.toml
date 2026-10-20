@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "navig"
-version = "3.27.7"
+version = "3.28.0"
 description = "Terminal-first infrastructure CLI with multi-host SSH management, encrypted vault, AI operator layer, and memory"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -235,6 +235,9 @@ chats = ["navig-chats>=0.1.0"]
 # Web sticky notes (`navig notes`): the NAVIG Dock syncs its page/site/everywhere notes here
 # (/api/deck/notes/*); list, search, add and export them, and Recall finds them (`--source notes`).
 notes = ["navig-notes>=0.1.0"]
+# Session debriefs (`navig debrief`): turn a finished work session into a navigable
+# visual report — story, product map, live product page, verdict and next steps.
+debrief = ["navig-debrief>=0.1.0"]
 # Documents, one plugin (navig-cabinet): `navig cabinet` — an encrypted cabinet for
 # important files (ID/passport scans, medical records, photos, recordings; local-OCR
 # search, expiry reminders, portable backups) — and `navig paperwork`, the business
@@ -304,6 +307,7 @@ navig-dedupe = { path = "../plugins/navig-dedupe", editable = true }
 navig-bookmarks = { path = "../plugins/navig-bookmarks", editable = true }
 navig-chats = { path = "../plugins/navig-chats", editable = true }
 navig-notes = { path = "../plugins/navig-notes", editable = true }
+navig-debrief = { path = "../plugins/navig-debrief", editable = true }
 navig-blackbox = { path = "../plugins/navig-blackbox", editable = true }
 navig-contacts = { path = "../plugins/navig-contacts", editable = true }
 navig-cabinet = { path = "../plugins/navig-cabinet", editable = true }

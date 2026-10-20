@@ -20,6 +20,7 @@ Shapes (all ``to_dict``-able, ``limit``-bounded):
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from navig.recall import gitprov
@@ -108,6 +109,35 @@ def history(target: str, *, project: str | None = None, limit: int = 50,
     shas: list[str] = []
     if key.startswith("commit:"):
         shas = [key]
+    elif key.startswith("file:"):
+        # The design (D-history): git's own history of the file ∪ the commits its
+        # sessions linked. Without git, history only showed commits whose SHA a
+        # transcript happened to print — a landed-by-land change touching the file
+        # was invisible (real benchmark miss, 2026-10-20).
+        #
+        # File keys are PROJECT-relative (folded to the canonical checkout), so the
+        # path must be joined against the key's project canonical root — joining
+        # against an arbitrary caller `root` (a worktree) yields a double-nested
+        # path that does not exist and silently drops the git half (second
+        # benchmark miss). First existing candidate wins; none → linked-only.
+        rel = key.split("/", 1)[1] if "/" in key else ""
+        proj_of_key = key[len("file:"):].split("/", 1)[0]
+        git_root: str | None = None
+        if rel:
+            canon = (resolver or ProjectResolver()).root_for(proj_of_key)
+            for base in (canon, root):
+                if base and Path(base, rel).is_file():
+                    git_root = base
+                    break
+        git_shas = (gitprov.commits_touching(git_root, f"{git_root}/{rel}", limit=limit)
+                    if git_root else [])
+        linked = [ln["b"] for ln in st._read_all(  # noqa: SLF001 — scoped link read
+            "SELECT DISTINCT b FROM links WHERE a IN "
+            f"(SELECT a FROM links WHERE b = ? AND rel IN ('touched', 'linked', 'committed')) "
+            "AND rel = 'committed' AND b LIKE 'commit:%' LIMIT ?",
+            (key, limit))]
+        git7 = {s[:7] for s in git_shas}
+        shas = list(git_shas) + [b for b in linked if b[len("commit:"):][:7] not in git7]
     else:
         shas = [ln["b"] for ln in st._read_all(  # noqa: SLF001 — scoped link read
             "SELECT DISTINCT b FROM links WHERE a IN "

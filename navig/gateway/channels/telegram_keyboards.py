@@ -746,7 +746,10 @@ class ResponseKeyboardBuilder:
                 from navig.agent.proactive.user_state import get_user_state_tracker
 
                 tracker = get_user_state_tracker()
-                tracker.set_preference("chat_mode", "sleep")
+                # DND is its own preference now (the agent mode never gates it);
+                # a refused write is logged — it used to be a silent no-op.
+                if tracker.set_preference("dnd_enabled", True) is False:
+                    logger.warning("eve:dnd_on: dnd_enabled was not saved")
                 tracker.set_preference("notifications_enabled", False)
             except Exception as exc:
                 logger.warning("eve:dnd_on preference error: %s", exc)
@@ -766,7 +769,8 @@ class ResponseKeyboardBuilder:
                 from navig.agent.proactive.user_state import get_user_state_tracker
 
                 tracker = get_user_state_tracker()
-                tracker.set_preference("chat_mode", "work")
+                if tracker.set_preference("dnd_enabled", False) is False:
+                    logger.warning("eve:dnd_off: dnd_enabled was not saved")
                 tracker.set_preference("notifications_enabled", True)
             except Exception as exc:
                 logger.warning("eve:dnd_off preference error: %s", exc)
@@ -1152,21 +1156,31 @@ _settings_header_text = _audio_header_text
 def _settings_hub_text(session: Any) -> str:
     """Header text for the /settings hub panel."""
     try:
-        from navig.gateway.channels.focus_modes import DEFAULT_MODE, FOCUS_MODES
+        from navig.gateway.channels.focus_modes import AGENT_MODES, DEFAULT_MODE
 
-        focus = getattr(session, "focus_mode", DEFAULT_MODE)
-        fm = FOCUS_MODES.get(focus)
-        focus_label = f"{fm.emoji} {focus}" if fm else focus
+        # Session metadata (`agent_mode`, legacy `focus_mode` read fallback)…
+        md = getattr(session, "metadata", None) or {}
+        mode = md.get("agent_mode") or md.get("focus_mode") or None
+        if not mode:
+            # …else the live global preference (session copies are display-only
+            # and may not exist yet).
+            from navig.agent.proactive.user_state import get_user_state_tracker
+
+            mode = get_user_state_tracker().get_preference("chat_mode", DEFAULT_MODE)
+        if mode not in AGENT_MODES:
+            mode = DEFAULT_MODE
+        fm = AGENT_MODES[mode]
+        mode_label = f"{fm.emoji} {mode}"
     except Exception as exc:
-        logger.debug("focus mode lookup failed: %s", exc)
-        focus_label = getattr(session, "focus_mode", "work")
+        logger.debug("agent mode lookup failed: %s", exc)
+        mode_label = "standard"
 
     tts_p = getattr(session, "tts_provider", "auto")
     vr = "on" if getattr(session, "voice_replies", False) else "off"
     ai_m = getattr(session, "ai_mode", "") or "auto"
     return (
         "⚙️ <b>NAVIG Settings</b>\n\n"
-        f"Focus <code>{focus_label}</code> · AI mode <code>{ai_m}</code>\n"
+        f"Mode <code>{mode_label}</code> · AI mode <code>{ai_m}</code>\n"
         f"Voice replies <code>{vr}</code> · TTS <code>{tts_p}</code>\n\n"
         "<i>Tap a section — /voice for full audio settings</i>"
     )
@@ -1310,6 +1324,12 @@ class CallbackHandler:
         user_id = user.get("id")
 
         if not chat_id or not cb_data:
+            # Not loggable-as-debug: this branch answers only a tiny toast, so
+            # a press dropped here looked like nothing happened at all.
+            logger.warning(
+                "callback dropped: chat_id=%s cb_data=%r message=%s",
+                chat_id, cb_data, "present" if message.get("message_id") else "MISSING",
+            )
             await self._answer(cb_id, "⚠️ Invalid callback")
             return
 
@@ -1372,7 +1392,11 @@ class CallbackHandler:
                         source_text=_src.get("text") or _src.get("caption") or "",
                     )
                 except Exception as _tk_exc:  # noqa: BLE001
-                    logger.debug("tiktok callback error: %s", _tk_exc)
+                    # WARNING with traceback, not debug: this catch swallowed
+                    # the owner's live ⬇️ tap with zero visible trace
+                    # (gateway.log, 2026-10-20) — the failure class this
+                    # whole log block exists to end.
+                    logger.warning("tiktok callback failed: %s", _tk_exc, exc_info=True)
                 return
 
             # ── Extensions card (xt:*) — switch bot features on and off ──

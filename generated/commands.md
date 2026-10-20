@@ -1,6 +1,6 @@
 # NAVIG Command Reference
 
-_Generated 2026-10-20T04:09:15.488326+00:00_
+_Generated 2026-10-20T13:09:29.728657+00:00_
 
 ## `navig action add`
 **Status:** `stable` · **Since:** 
@@ -1146,12 +1146,28 @@ Ask AI about server/configuration.
 navig ask
 ```
 
+## `navig audio ad-slot`
+**Status:** `stable` · **Since:** 
+💰 Find natural pauses for a sponsor read and drop it in, level-matched.
+**Examples:**
+```sh
+navig audio ad-slot
+```
+
 ## `navig audio ambience`
 **Status:** `stable` · **Since:** 
 🌧 Rain, static or city weather under a cut — deterministic, seeded by kind.
 **Examples:**
 ```sh
 navig audio ambience
+```
+
+## `navig audio arrange`
+**Status:** `stable` · **Since:** 
+🧱 Intro, breakdown and drop versions of a beat — same key and tempo.
+**Examples:**
+```sh
+navig audio arrange
 ```
 
 ## `navig audio beat analyse`
@@ -1226,12 +1242,28 @@ navig audio beat styles
 navig audio bed assign
 ```
 
+## `navig audio chapters`
+**Status:** `stable` · **Since:** 
+📑 Chapters and show notes from the episode's own words.
+**Examples:**
+```sh
+navig audio chapters
+```
+
 ## `navig audio check`
 **Status:** `stable` · **Since:** 
 Show whether AI audio generation is configured (a provider key resolves).
 **Examples:**
 ```sh
 navig audio check
+```
+
+## `navig audio chop`
+**Status:** `stable` · **Since:** 
+🔪 Bar slices, the loop that repeats, and a MIDI map for a sampler.
+**Examples:**
+```sh
+navig audio chop
 ```
 
 ## `navig audio clean-video`
@@ -1250,6 +1282,22 @@ navig audio clean-video
 navig audio clone
 ```
 
+## `navig audio comp`
+**Status:** `stable` · **Since:** 
+🎯 Score every take phrase by phrase and join the best into one comp.
+**Examples:**
+```sh
+navig audio comp
+```
+
+## `navig audio debleed`
+**Status:** `stable` · **Since:** 
+🎚 Silence each mic while someone else is talking.
+**Examples:**
+```sh
+navig audio debleed
+```
+
 ## `navig audio delivery`
 **Status:** `stable` · **Since:** 
 📡 Check loudness against a platform's delivery spec — and fix it to fit.
@@ -1258,12 +1306,28 @@ navig audio clone
 navig audio delivery
 ```
 
+## `navig audio doubles`
+**Status:** `stable` · **Since:** 
+👥 Stack doubles (and a harmony) that stay solid in mono.
+**Examples:**
+```sh
+navig audio doubles
+```
+
 ## `navig audio draft`
 **Status:** `stable` · **Since:** 
 📝 Turn rough notes into a strict scenario you can review before rendering.
 **Examples:**
 ```sh
 navig audio draft
+```
+
+## `navig audio drum-replace`
+**Status:** `stable` · **Since:** 
+🥁 Detect kicks, snares and hats and swap in your own samples at the same timing.
+**Examples:**
+```sh
+navig audio drum-replace
 ```
 
 ## `navig audio dub`
@@ -1290,6 +1354,14 @@ navig audio enhance
 navig audio enhance-presets
 ```
 
+## `navig audio fix-word`
+**Status:** `stable` · **Since:** 
+🩹 Re-record one word in the speaker's own voice.
+**Examples:**
+```sh
+navig audio fix-word
+```
+
 ## `navig audio gen`
 **Status:** `stable` · **Since:** 
 Generate audio from a text prompt and save it locally.
@@ -1298,12 +1370,28 @@ Generate audio from a text prompt and save it locally.
 navig audio gen
 ```
 
+## `navig audio highlights`
+**Status:** `stable` · **Since:** 
+✨ The strongest moments as captioned vertical clips.
+**Examples:**
+```sh
+navig audio highlights
+```
+
 ## `navig audio isolate`
 **Status:** `stable` · **Since:** 
 🎤 Strip background noise, keep the voice — the ElevenLabs voice isolator.
 **Examples:**
 ```sh
 navig audio isolate
+```
+
+## `navig audio level-speakers`
+**Status:** `stable` · **Since:** 
+🎙 Bring every speaker to the same loudness.
+**Examples:**
+```sh
+navig audio level-speakers
 ```
 
 ## `navig audio loop`
@@ -1360,6 +1448,14 @@ navig audio podcast-edit
 **Examples:**
 ```sh
 navig audio publish
+```
+
+## `navig audio qa`
+**Status:** `stable` · **Since:** 
+✅ One pass/fail page before you publish.
+**Examples:**
+```sh
+navig audio qa
 ```
 
 ## `navig audio read`
@@ -1458,12 +1554,36 @@ navig audio spoken
 navig audio stems
 ```
 
+## `navig audio sting`
+**Status:** `stable` · **Since:** 
+🔔 An intro sting at an exact length.
+**Examples:**
+```sh
+navig audio sting
+```
+
+## `navig audio tap-beat`
+**Status:** `stable` · **Since:** 
+👏 Tap a rhythm, get a drum pattern at that tempo (audio + MIDI).
+**Examples:**
+```sh
+navig audio tap-beat
+```
+
 ## `navig audio translate`
 **Status:** `stable` · **Since:** 
 🌍 Translate the spoken lines, keeping the album structure identical.
 **Examples:**
 ```sh
 navig audio translate
+```
+
+## `navig audio vocal-fit`
+**Status:** `stable` · **Since:** 
+🎼 Is the vocal in the beat's tempo and key? How far off, and the move that fixes it.
+**Examples:**
+```sh
+navig audio vocal-fit
 ```
 
 ## `navig audio voice-line`
@@ -3746,6 +3866,86 @@ Export the latest crash report for GitHub issues.
 navig crash export
 ```
 
+## `navig creative`
+**Status:** `stable` · **Since:** 
+Capability intelligence at a glance (same as `navig creative status`).
+**Examples:**
+```sh
+navig creative
+```
+
+## `navig creative build`
+**Status:** `stable` · **Since:** 
+Build a proposal's artifact through the standard skill contracts (Creative only).
+**Examples:**
+```sh
+navig creative build
+```
+
+## `navig creative dismiss`
+**Status:** `stable` · **Since:** 
+Dismiss a proposal permanently — it will never be re-proposed.
+**Examples:**
+```sh
+navig creative dismiss
+```
+
+## `navig creative index`
+**Status:** `stable` · **Since:** 
+Query the capability index — what NAVIG can already do, and how.
+**Examples:**
+```sh
+navig creative index
+```
+
+## `navig creative list`
+**Status:** `stable` · **Since:** 
+List proposals (the same rows the Dashboard card shows).
+**Examples:**
+```sh
+navig creative list
+```
+
+## `navig creative publish`
+**Status:** `stable` · **Since:** 
+Publish a built capability under the authorized-destination policy.
+**Examples:**
+```sh
+navig creative publish
+```
+
+## `navig creative publish-disable`
+**Status:** `stable` · **Since:** 
+Revoke the publishing destination — back to local-only (the default).
+**Examples:**
+```sh
+navig creative publish-disable
+```
+
+## `navig creative publish-enable`
+**Status:** `stable` · **Since:** 
+Authorize a private destination for publishing (owner-run; default stays local).
+**Examples:**
+```sh
+navig creative publish-enable
+```
+
+## `navig creative show`
+**Status:** `stable` · **Since:** 
+Show one proposal's full card: evidence, decision, benefit, risk.
+**Examples:**
+```sh
+navig creative show
+```
+
+## `navig creative status`
+**Status:** `stable` · **Since:** 
+Show mode, index freshness, scan pace, proposals and publish policy.
+**Examples:**
+```sh
+navig creative status
+```
+
 ## `navig cron`
 **Status:** `stable` · **Since:** 
 Run navig cron
@@ -3950,6 +4150,14 @@ List tables in a database.
 **Examples:**
 ```sh
 navig db tables
+```
+
+## `navig debrief`
+**Status:** `stable` · **Since:** 
+Build the visual presentation (last session by default; proposals via --plan).
+**Examples:**
+```sh
+navig debrief
 ```
 
 ## `navig debrief build`
@@ -4682,7 +4890,7 @@ navig distribution content block
 
 ## `navig distribution content import`
 **Status:** `stable` · **Since:** 
-Import a written article package as editable drafts (idempotent per folder).
+Import a written article package and its platform adaptations as editable drafts.
 **Examples:**
 ```sh
 navig distribution content import
@@ -7536,6 +7744,30 @@ Backup GitHub Actions workflows from a repository.
 navig github workflows
 ```
 
+## `navig glass open`
+**Status:** `stable` · **Since:** 
+Open a file in NAVIG Glass — the same binary, whether NAVIG is here or not.
+**Examples:**
+```sh
+navig glass open
+```
+
+## `navig glass status`
+**Status:** `stable` · **Since:** 
+What discovery actually verified: path, contract version, capabilities.
+**Examples:**
+```sh
+navig glass status
+```
+
+## `navig glass where`
+**Status:** `stable` · **Since:** 
+Print the resolved executable, or every location that was searched.
+**Examples:**
+```sh
+navig glass where
+```
+
 ## `navig gmail compose`
 **Status:** `stable` · **Since:** 
 Open a pre-filled Gmail compose window (and optionally send it).
@@ -7598,6 +7830,14 @@ Remove the goal from a session. Its injected rounds stay in history.
 **Examples:**
 ```sh
 navig goal session clear
+```
+
+## `navig goal session complete`
+**Status:** `stable` · **Since:** 
+Close an active goal as the operator, WITH evidence (human override).
+**Examples:**
+```sh
+navig goal session complete
 ```
 
 ## `navig goal session list`
@@ -11395,6 +11635,14 @@ WordPress security scan (wpscan). GATED.
 navig pentest wpscan
 ```
 
+## `navig perplexity artifacts`
+**Status:** `stable` · **Since:** 
+List the app's Artifacts (reports, images, presentations) and optionally copy images out.
+**Examples:**
+```sh
+navig perplexity artifacts
+```
+
 ## `navig perplexity ask`
 **Status:** `stable` · **Since:** 
 Delegate any task; model, reasoning mode and conversation are chosen for you.
@@ -11409,6 +11657,14 @@ Launch the app with a debug port (or report the port it already has).
 **Examples:**
 ```sh
 navig perplexity attach
+```
+
+## `navig perplexity automations`
+**Status:** `stable` · **Since:** 
+Manage the app's scheduled Automations (recurring research that delivers results).
+**Examples:**
+```sh
+navig perplexity automations
 ```
 
 ## `navig perplexity backend`
@@ -11435,12 +11691,28 @@ Copy the Perplexity window here — a PNG of the app, linked to its conversation
 navig perplexity capture
 ```
 
+## `navig perplexity comet`
+**Status:** `stable` · **Since:** 
+Ask Comet's sidebar assistant — it sees the page you are looking at.
+**Examples:**
+```sh
+navig perplexity comet
+```
+
 ## `navig perplexity connectors`
 **Status:** `stable` · **Since:** 
 The app connectors this account can toggle for a request (--connector <name>).
 **Examples:**
 ```sh
 navig perplexity connectors
+```
+
+## `navig perplexity image`
+**Status:** `stable` · **Since:** 
+Generate an image with Perplexity and copy it here.
+**Examples:**
+```sh
+navig perplexity image
 ```
 
 ## `navig perplexity model`
@@ -11475,12 +11747,28 @@ Open a conversation from the app's sidebar by index.
 navig perplexity open
 ```
 
+## `navig perplexity research`
+**Status:** `stable` · **Since:** 
+Run a Deep Research question and save the report.
+**Examples:**
+```sh
+navig perplexity research
+```
+
 ## `navig perplexity selftest`
 **Status:** `stable` · **Since:** 
 Verify the whole path: port, window, composer, models, modes, registry.
 **Examples:**
 ```sh
 navig perplexity selftest
+```
+
+## `navig perplexity skills`
+**Status:** `stable` · **Since:** 
+Read the Skills catalogue (or install one) on the app's Computer page.
+**Examples:**
+```sh
+navig perplexity skills
 ```
 
 ## `navig perplexity status`
@@ -15403,6 +15691,14 @@ Sign in ONCE in a visible browser (Google/GitHub buttons OK) — session saved t
 navig vault login capture
 ```
 
+## `navig vault login discover`
+**Status:** `stable` · **Since:** 
+List sites you are ALREADY signed into in your browser, so you can save them.
+**Examples:**
+```sh
+navig vault login discover
+```
+
 ## `navig vault login get`
 **Status:** `stable` · **Since:** 
 Show a stored login. The password is masked unless --reveal/--json is given.
@@ -15579,6 +15875,38 @@ Show NAVIG version and system info.
 navig version
 ```
 
+## `navig video beat-cut`
+**Status:** `stable` · **Since:** 
+🥁 A montage whose cuts land on the beat.
+**Examples:**
+```sh
+navig video beat-cut
+```
+
+## `navig video broll`
+**Status:** `stable` · **Since:** 
+🎞 Cutaway ideas where the narration names something — and, with --generate, the shots.
+**Examples:**
+```sh
+navig video broll
+```
+
+## `navig video captions`
+**Status:** `stable` · **Since:** 
+💬 Word-timed captions (SRT · VTT · burned in), optionally translated.
+**Examples:**
+```sh
+navig video captions
+```
+
+## `navig video color-match`
+**Status:** `stable` · **Since:** 
+🎨 Give one shot the colour of another (a reusable .cube LUT too).
+**Examples:**
+```sh
+navig video color-match
+```
+
 ## `navig video cut`
 **Status:** `stable` · **Since:** 
 🎬 Render an EDL — the editable timeline — into its outputs.
@@ -15593,6 +15921,14 @@ Deep check: workspace layout, engines, ffmpeg, fonts. Exit 1 if a requirement fa
 **Examples:**
 ```sh
 navig video doctor
+```
+
+## `navig video export-check`
+**Status:** `stable` · **Since:** 
+📦 Size, frame rate, codecs, length, safe areas and loudness for one platform.
+**Examples:**
+```sh
+navig video export-check
 ```
 
 ## `navig video kinetic plan`
@@ -15611,6 +15947,14 @@ navig video kinetic plan
 navig video kinetic render
 ```
 
+## `navig video lipsync`
+**Status:** `stable` · **Since:** 
+👄 Re-time the speaker's mouth to new sound (LatentSync).
+**Examples:**
+```sh
+navig video lipsync
+```
+
 ## `navig video parity`
 **Status:** `stable` · **Since:** 
 ⚖ Do two renders match? Container, pixels, audio — the porting contract.
@@ -15619,12 +15963,44 @@ navig video kinetic render
 navig video parity
 ```
 
+## `navig video recap`
+**Status:** `stable` · **Since:** 
+⏱ The liveliest moments, cut into a short recap.
+**Examples:**
+```sh
+navig video recap
+```
+
+## `navig video reframe`
+**Status:** `stable` · **Since:** 
+📱 Reframe to vertical, following whoever is speaking.
+**Examples:**
+```sh
+navig video reframe
+```
+
+## `navig video stabilize`
+**Status:** `stable` · **Since:** 
+🧘 Steadier picture (and no flicker), measured before and after.
+**Examples:**
+```sh
+navig video stabilize
+```
+
 ## `navig video status`
 **Status:** `stable` · **Since:** 
 Workspace, engines and render verbs — one glance at what is wired.
 **Examples:**
 ```sh
 navig video status
+```
+
+## `navig video tighten`
+**Status:** `stable` · **Since:** 
+✂️ Cut fillers and long pauses from picture and sound together.
+**Examples:**
+```sh
+navig video tighten
 ```
 
 ## `navig vm console`

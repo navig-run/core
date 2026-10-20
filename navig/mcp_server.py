@@ -17,12 +17,15 @@ VS Code Integration:
 """
 
 import asyncio
+import hmac
 import json
 import logging
+import os
 import secrets
 import sys
 import threading
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -31,6 +34,46 @@ from navig.config import ConfigManager
 from navig.mcp.validation import summarise, validate_arguments
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class TransportContext:
+    """How this server is exposed — the input to NAVIG's transport-aware policy.
+
+    ``local`` means a trusted single-operator surface (stdio, or a loopback listener
+    the operator explicitly opted into). ``remote`` means the wire is reachable by
+    somebody other than the desktop user (a network bind, or a stdio server declared
+    remote because a proxy exposes it). ``token_present`` says an authentication
+    credential protects the surface; it never by itself authorises dangerous actions.
+    """
+
+    mode: str = "stdio"
+    host: str = ""
+    exposure: str = "local"
+    token_present: bool = True
+    insecure_local: bool = False
+
+
+def is_loopback(host: str) -> bool:
+    """True only for the loopback names/addresses — never for a forwarded header."""
+    import ipaddress
+
+    value = (host or "").strip().lower().strip("[]")
+    if value == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        return False
+
+
+def _remote_dangerous_allowed(config: ConfigManager) -> bool:
+    """Explicit operator policy for dangerous operations over a remote exposure."""
+    try:
+        value = config.get("mcp.remote_dangerous", "deny")
+    except Exception:  # noqa: BLE001 - an unreadable policy must deny, not allow
+        return False
+    return str(value).strip().lower() == "approve"
 
 
 def _tool_error(
@@ -87,15 +130,36 @@ def _result_signals_error(result: Any) -> bool:
 class MCPProtocolHandler:
     """Handles MCP JSON-RPC protocol over stdio."""
 
-    def __init__(self, only: list[str] | tuple[str, ...] | None = None):
+    def __init__(
+        self,
+        only: list[str] | tuple[str, ...] | None = None,
+        profile: str = "full",
+        transport: TransportContext | None = None,
+    ):
         #: Tool bundles to serve (``navig mcp serve --only``); ``None`` serves them all.
         self._only = tuple(only) if only else None
+        #: ``full`` (legacy catalogue) or ``default`` (the compact routed surface).
+        #: ``--only`` keeps its historical meaning: a restricted full catalogue.
+        self._profile = "full" if only else profile
+        #: Where this server is exposed; drives S2's fail-closed policy.
+        self._transport = transport or TransportContext()
         self.tools: dict[str, dict[str, Any]] = {}
+        #: Names a client may list and call. Full profile = every tool; compact =
+        #: the routers; unauthenticated exposure = read-only tools only.
+        self._visible_tools: set[str] = set()
+        #: True once the advertised surface is deliberately narrower than the registry.
+        self._restricted = False
+        #: router name -> {action: original tool or capability} (see navig.mcp.routing)
+        self._router_actions: dict[str, dict[str, str]] = {}
         self.resources: dict[str, dict[str, Any]] = {}
         self.prompts: dict[str, dict[str, Any]] = {}
         self._handlers: dict[str, Callable] = {}
         self._running = False
         self._config = ConfigManager()
+        from navig.mcp.files_policy import policy_from_config
+
+        # S3: containment for desktop_filesystem, driven by exposure + mcp.files.*
+        self._files_policy = policy_from_config(self._config, self._transport)
         # Tools a stdio loop may run off the reader thread (bundles opt in), so a slow
         # call never blocks the next request — or the client's notifications/cancelled.
         self._concurrent_tools: set[str] = set()
@@ -108,6 +172,49 @@ class MCPProtocolHandler:
         self._setup_protocol_handlers()
         self._setup_navig_tools()
         self._setup_navig_resources()
+        self._apply_exposure_surface()
+
+    def _setup_navig_tools(self):
+        """Register NAVIG tools for MCP — the full catalogue, then the profile view."""
+        self.tools = {}
+        self._tool_handlers = {}
+        # Per-tool safety classification consulted by the approval gate before a
+        # tool runs. Absent → "safe" (never gated). Bundles populate this in
+        # their register() (see navig.mcp.tools.cdp).
+        self._tool_safety: dict[str, str] = {}
+        from navig.mcp.tools import register_all_tools
+
+        only = getattr(self, "_only", None)
+        if only:
+            register_all_tools(self, only=only)
+        else:
+            register_all_tools(self)  # the long-standing one-argument contract (tests patch it)
+
+        # The compact surface is built ON TOP of the full registration: its handlers
+        # call the originals directly, so the full handler map must exist first.
+        if getattr(self, "_profile", "full") == "default":
+            from navig.mcp.routing import register_compact_surface
+
+            register_compact_surface(self)
+            self._restricted = True
+        else:
+            self._visible_tools = set(self.tools)
+
+    def _apply_exposure_surface(self) -> None:
+        """Drop executable actions from an unauthenticated network exposure."""
+        transport = getattr(self, "_transport", TransportContext())
+        if transport.mode == "stdio" or transport.token_present or transport.insecure_local:
+            return
+        from navig.mcp.routing import apply_read_only_surface
+
+        kept = apply_read_only_surface(self)
+        self._restricted = True
+        logger.warning(
+            "MCP exposed without a token on %s: advertising %d read-only tool(s) only. "
+            "Pass --token (recommended) or --insecure-local for the full local surface.",
+            transport.host or "loopback",
+            len(kept),
+        )
 
     def _setup_protocol_handlers(self):
         """Setup MCP protocol method handlers."""
@@ -125,22 +232,6 @@ class MCPProtocolHandler:
         self._handlers["prompts/get"] = self._handle_prompts_get
         self._handlers["ping"] = self._handle_ping
         self._handlers["notifications/cancelled"] = self._handle_cancelled
-
-    def _setup_navig_tools(self):
-        """Register NAVIG tools for MCP."""
-        self.tools = {}
-        self._tool_handlers = {}
-        # Per-tool safety classification consulted by the approval gate before a
-        # tool runs. Absent → "safe" (never gated). Bundles populate this in
-        # their register() (see navig.mcp.tools.cdp).
-        self._tool_safety: dict[str, str] = {}
-        from navig.mcp.tools import register_all_tools
-
-        only = getattr(self, "_only", None)
-        if only:
-            register_all_tools(self, only=only)
-        else:
-            register_all_tools(self)  # the long-standing one-argument contract (tests patch it)
 
     def _setup_navig_resources(self):
         """Register NAVIG resources for MCP."""
@@ -292,16 +383,28 @@ class MCPProtocolHandler:
             "capabilities": capabilities,
             "serverInfo": {"name": "navig-mcp-server", "version": self._server_version()},
             # MCP `instructions`: a client shows this to the model before it picks a tool.
-            # Without it the model meets 148 names and no context; with it, the first call
-            # is usually navig_get_context instead of a guess. Kept short on purpose —
-            # it costs tokens on every session.
+            # Without it the model meets a list of names and no context; with it, the
+            # first call is usually the right domain instead of a guess. Kept short on
+            # purpose — it costs tokens on every session.
             "instructions": (
-                "NAVIG exposes the machine it runs on: SSH host and app inventory, a local "
-                "wiki, an encrypted vault, persistent memory, and (on Windows) desktop and "
-                "CDP browser control. Start with navig_get_context or navig_list_hosts to "
-                "see what is configured. Tools whose names end in _act, _write, _delete, "
-                "_exec, _install or _apply change state and are gated by NAVIG's approval "
-                "layer; prefer the read-only tools while exploring."
+                (
+                    "NAVIG exposes the machine it runs on through fifteen domain tools; each "
+                    "takes an `action` argument. Start with navig_fleet's context/list_hosts, "
+                    "search navig_knowledge for docs/wiki, navig_recall for past decisions and "
+                    "navig_memory for durable facts. State-changing domains are separate "
+                    "(*_update/*_action/*_apply and browser act tools) and are gated by NAVIG's "
+                    "approval layer; prefer read tools while exploring. `navig mcp serve "
+                    "--profile full` exposes the complete catalogue."
+                )
+                if getattr(self, "_profile", "full") == "default"
+                else (
+                    "NAVIG exposes the machine it runs on: SSH host and app inventory, a local "
+                    "wiki, persistent memory, and (on Windows) desktop and CDP browser control. "
+                    "Start with navig_get_context or navig_list_hosts to see what is configured. "
+                    "Tools whose names end in _act, _write, _delete, _exec, _install or _apply "
+                    "change state and are gated by NAVIG's approval layer; prefer the read-only "
+                    "tools while exploring."
+                )
             ),
         }
 
@@ -347,8 +450,16 @@ class MCPProtocolHandler:
         return {}
 
     def _handle_tools_list(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Return list of available tools."""
-        return {"tools": list(self.tools.values())}
+        """Return the tools this exposure is allowed to advertise."""
+        from navig.mcp.routing import advertised_tools
+
+        return {"tools": list(advertised_tools(self).values())}
+
+    def advertised_tools(self) -> dict[str, dict[str, Any]]:
+        """The tool definitions a client can currently list and call."""
+        from navig.mcp.routing import advertised_tools
+
+        return advertised_tools(self)
 
     def _handle_tools_call(self, params: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool call, after checking the arguments against its schema.
@@ -369,6 +480,13 @@ class MCPProtocolHandler:
         if tool is None:
             return _tool_error("unknown_tool", f"Unknown tool: {tool_name}")
 
+        from navig.mcp.routing import is_visible
+
+        if not is_visible(self, tool_name):
+            # A hidden full-catalogue tool is as unknown as a nonexistent one: the
+            # compact profile is a real boundary, not a filtered listing.
+            return _tool_error("unknown_tool", f"Unknown tool: {tool_name}")
+
         problems = validate_arguments(tool.get("inputSchema") or {}, arguments)
         if problems:
             return _tool_error(
@@ -386,7 +504,9 @@ class MCPProtocolHandler:
             if isinstance(ready, list) and ready:
                 envelope: dict[str, Any] = {"content": ready}
             else:
-                envelope = {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
+                envelope = {
+                    "content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]
+                }
 
             # Structured output: only for tools that DECLARE an outputSchema, and only in
             # the shape that schema promises (list tools wrap in {"items": [...]}). A
@@ -490,8 +610,31 @@ class MCPProtocolHandler:
         tool error by ``_handle_tools_call``.
         """
         safety = getattr(self, "_tool_safety", {}).get(tool_name, "safe")
+        original = tool_name
+        route: dict[str, Any] = {}
+        if getattr(self, "_router_actions", {}).get(tool_name):
+            from navig.mcp.routing import gate_target
+
+            target = gate_target(self, tool_name, arguments)
+            if target is None:
+                # An unknown/invalid router action is reported by the router handler,
+                # with the valid action list. It never reaches an original operation.
+                return
+            original, safety = target
+            route = {"router": tool_name, "action": arguments.get("action"), "original": original}
         if safety == "safe":
             return
+        transport = getattr(self, "_transport", TransportContext())
+        if (
+            transport.exposure == "remote"
+            and safety == "dangerous"
+            and not _remote_dangerous_allowed(self._config)
+        ):
+            raise PermissionError(
+                f"Tool '{tool_name}' is dangerous and this server is exposed remotely; "
+                "mcp.remote_dangerous is 'deny'. Set `navig config set mcp.remote_dangerous "
+                "approve` only if an operator explicitly authorises unattended high-risk use."
+            )
         try:
             from navig.tools.approval import ApprovalDecision, check_sync
         except Exception as exc:  # noqa: BLE001
@@ -503,21 +646,25 @@ class MCPProtocolHandler:
         # Audit the attempt by arg *keys* only — never log values (a secret could
         # live in cdp_type `text` / cdp_eval `expression`).
         logger.warning(
-            "[mcp.gate] %s tool '%s' (args: %s) surface=mcp",
+            "[mcp.gate] %s tool '%s'%s (args: %s) surface=mcp",
             safety,
             tool_name,
+            (
+                f" -> {original} (router={route.get('router')}, action={route.get('action')})"
+                if route
+                else ""
+            ),
             ",".join(sorted(arguments or {})) or "-",
         )
         decision = check_sync(
-            tool_name,
+            original,
             safety,
             parameters={"arg_keys": sorted(arguments or {})},
-            context={"surface": "mcp"},
+            context={"surface": "mcp", **route},
         )
         if decision != ApprovalDecision.APPROVED:
             raise PermissionError(
-                f"Tool '{tool_name}' was not approved by the approval gate "
-                f"({decision.value})."
+                f"Tool '{tool_name}' was not approved by the approval gate ({decision.value})."
             )
 
     def _read_resource(self, uri: str) -> str:
@@ -676,6 +823,9 @@ def start_mcp_server(
     token: str | None = None,
     host: str = "127.0.0.1",
     only: list[str] | tuple[str, ...] | None = None,
+    profile: str = "full",
+    exposure: str | None = None,
+    insecure_local: bool = False,
 ):
     """Start the NAVIG MCP server.
 
@@ -685,8 +835,64 @@ def start_mcp_server(
         token: Optional auth token; auto-generated if None in websocket mode
         host: Bind address for HTTP/WebSocket modes (default 127.0.0.1)
         only: Serve only these tool bundles (e.g. ``["recall"]``); default all
+        profile: ``full`` (legacy catalogue) or ``default`` (compact routed surface).
+            The CLI and ``python -m navig.mcp_server`` pass ``default``; this function
+            keeps ``full`` so programmatic callers/tests are unchanged.
+        exposure: ``local`` or ``remote``. Defaults to local for stdio and remote for
+            network transports. Declare ``remote`` for a stdio server behind a proxy.
+        insecure_local: explicit opt-in to keep the full surface on a loopback
+            listener without a token. Never permitted on a non-loopback bind.
     """
-    handler = MCPProtocolHandler(only=only)
+    if profile not in {"default", "full"}:
+        raise ValueError(f"unknown MCP profile {profile!r}; use 'default' or 'full'")
+    if exposure is None:
+        # A container/packager can declare the exposure once in the environment, so a
+        # platform that overrides the launch command cannot silently downgrade a remote
+        # server to local trust. An explicit flag still wins.
+        env_exposure = os.environ.get("NAVIG_MCP_EXPOSURE", "").strip().lower()
+        if env_exposure:
+            if env_exposure not in {"local", "remote"}:
+                raise ValueError(
+                    f"NAVIG_MCP_EXPOSURE={env_exposure!r} is invalid; use 'local' or 'remote'"
+                )
+            exposure = env_exposure
+        else:
+            # Loopback is the operator's own machine. A network bind is remote. A stdio
+            # server behind a proxy is declared remote explicitly (--exposure remote).
+            exposure = "local" if mode == "stdio" or is_loopback(host) else "remote"
+    if exposure not in {"local", "remote"}:
+        raise ValueError(f"unknown MCP exposure {exposure!r}; use 'local' or 'remote'")
+    if insecure_local and not is_loopback(host):
+        raise ValueError(
+            "--insecure-local is only allowed on a loopback bind; refusing to expose the "
+            f"full surface unauthenticated on {host!r}"
+        )
+    if mode == "websocket" and token is None:
+        # WebSocket always carries a token (generated before the surface/policy is
+        # built); a caller cannot reach it without the value printed locally.
+        token = secrets.token_urlsafe(32)
+    if mode != "stdio":
+        if not is_loopback(host) and not token:
+            raise ValueError(
+                f"refusing to expose the MCP server on {host!r} without --token. Bind "
+                "127.0.0.1, or provide a Bearer token (recommended)."
+            )
+        if exposure == "remote" and not token:
+            raise ValueError(
+                "exposure=remote requires authentication; pass --token or use stdio behind "
+                "an authenticating proxy"
+            )
+    if only and profile == "default":
+        # --only keeps its historical semantics: a restricted full catalogue.
+        profile = "full"
+    transport = TransportContext(
+        mode=mode,
+        host=host,
+        exposure=exposure,
+        token_present=bool(token) or mode == "stdio",
+        insecure_local=insecure_local,
+    )
+    handler = MCPProtocolHandler(only=only, profile=profile, transport=transport)
 
     if mode == "stdio":
         handler.run_stdio()
@@ -722,23 +928,38 @@ def _build_http_app(
 
     session_token = token
 
-    _CORS_HEADERS = {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
-    }
+    # A wildcard CORS origin on a loopback listener is what makes a browser page able
+    # to reach the local server; on a network bind it is never appropriate. The MCP
+    # protocol itself is used by non-browser clients, so the token (required for a
+    # non-loopback bind) is the real boundary.
+    if is_loopback(host):
+        _CORS_HEADERS = {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        }
+    else:
+        _CORS_HEADERS = {
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        }
 
     def _check_auth(request: web.Request) -> bool:
         if not session_token:
             return True
         auth = request.headers.get("Authorization", "")
-        return auth == f"Bearer {session_token}"
+        return hmac.compare_digest(auth, f"Bearer {session_token}")
 
     async def handle_options(request: web.Request) -> web.Response:
-        return web.Response(
-            status=200,
-            headers={**_CORS_HEADERS, "Access-Control-Max-Age": "86400"},
-        )
+        preflight = {
+            **_CORS_HEADERS,
+            "Access-Control-Max-Age": "86400",
+        }
+        if session_token:
+            # Allow the browser preflight to send the Bearer header: the actual request
+            # still fails without it.
+            preflight["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept"
+        return web.Response(status=200, headers=preflight)
 
     async def handle_health(request: web.Request) -> web.Response:
         body = json.dumps({"status": "ok", "server": "navig-mcp", "transport": "http"})
@@ -1293,9 +1514,10 @@ async def memory_stats() -> dict:
 
 # Allow running as module: python -m navig.mcp_server
 # Usage:
-#   python -m navig.mcp_server                  # stdio mode
+#   python -m navig.mcp_server                  # stdio mode, compact surface
+#   python -m navig.mcp_server --profile full   # complete legacy catalogue
 #   python -m navig.mcp_server --websocket      # WebSocket on port 3001
-#   python -m navig.mcp_server --port 3001      # Same as above
+#   python -m navig.mcp_server --http --token T # HTTP with Bearer auth
 if __name__ == "__main__":
     import argparse
 
@@ -1314,6 +1536,23 @@ if __name__ == "__main__":
         default=None,
         help="Auth token (auto-generated if omitted for websocket)",
     )
+    parser.add_argument(
+        "--profile",
+        choices=("default", "full"),
+        default="default",
+        help="default = compact routed surface; full = complete catalogue",
+    )
+    parser.add_argument(
+        "--exposure",
+        choices=("local", "remote"),
+        default=None,
+        help="Declare this stdio server remote when a proxy exposes it",
+    )
+    parser.add_argument(
+        "--insecure-local",
+        action="store_true",
+        help="Keep the full surface unauthenticated on a loopback bind (explicit risk)",
+    )
     args = parser.parse_args()
 
     if args.http:
@@ -1322,4 +1561,12 @@ if __name__ == "__main__":
         mode = "websocket"
     else:
         mode = "stdio"
-    start_mcp_server(mode=mode, port=args.port, token=args.token, host=args.host)
+    start_mcp_server(
+        mode=mode,
+        port=args.port,
+        token=args.token,
+        host=args.host,
+        profile=args.profile,
+        exposure=args.exposure,
+        insecure_local=args.insecure_local,
+    )

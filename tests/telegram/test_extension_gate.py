@@ -255,8 +255,19 @@ async def test_habit_cron_reminder_is_queued_normally_when_enabled(monkeypatch):
     assert "queued" in result.lower()
 
 
-def test_the_habit_banner_appears_only_while_the_extension_is_off(habits_off):
+def test_the_habit_banner_appears_only_while_the_extension_is_off(habits_off, monkeypatch):
+    """The banner is localized, so its language is pinned here.
+
+    Without the pin this passed alone and failed in the gate: the banner resolves the
+    operator's ``user.language``, and on a machine set to Russian any earlier test that
+    loaded the real config in the same worker turned the assertion red (measured
+    2026-10-20). What this test owns is "the banner appears while the extension is
+    off" — not which language the operator reads.
+    """
+    from navig.core import i18n
     from navig.telegram import habit_actions
+
+    monkeypatch.setattr(i18n, "current_language", lambda: "en")
 
     assert habit_actions.extension_is_off() is True
     assert "not delivered" in habit_actions.extension_banner()

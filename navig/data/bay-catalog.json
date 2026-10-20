@@ -1,6 +1,6 @@
 {
-  "navigVersion": "3.27.7",
-  "sourceCommit": "aecb1461b7",
+  "navigVersion": "3.28.0",
+  "sourceCommit": "c86baf6240",
   "generatedAt": "2026-10-20",
   "source": "local",
   "items": [
@@ -2007,8 +2007,8 @@
       "surfaces": [
         "cli"
       ],
-      "tagline": "Visual debrief of a work session: timeline, tool mix, mind map, files and UI mockups rendered to one navigable HTML report, with PNG exports",
-      "description": "Visual debrief of a work session: timeline, tool mix, mind map, files and UI mockups rendered to one navigable HTML report, with PNG exports",
+      "tagline": "Visual presentation of a work session: a slide deck from transcript facts (navig debrief), plus the full HTML report and PNG exports",
+      "description": "Visual presentation of a work session: a slide deck from transcript facts (navig debrief), plus the full HTML report and PNG exports",
       "tags": [
         "pip",
         "debrief"
@@ -4989,8 +4989,8 @@
           "surfaces": [
             "cli"
           ],
-          "tagline": "Visual debrief of a work session: timeline, tool mix, mind map, files and UI mockups rendered to one navigable HTML report, with PNG exports",
-          "description": "Visual debrief of a work session: timeline, tool mix, mind map, files and UI mockups rendered to one navigable HTML report, with PNG exports",
+          "tagline": "Visual presentation of a work session: a slide deck from transcript facts (navig debrief), plus the full HTML report and PNG exports",
+          "description": "Visual presentation of a work session: a slide deck from transcript facts (navig debrief), plus the full HTML report and PNG exports",
           "tags": [
             "pip",
             "debrief"

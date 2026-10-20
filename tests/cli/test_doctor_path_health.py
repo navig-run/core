@@ -170,7 +170,7 @@ def test_row_is_wired_into_the_runtime_section(tmp_path, monkeypatch):
     for name in (
         "check_config", "check_storage", "check_databases", "check_vault",
         "check_cache_dir", "check_sockets", "check_formations", "check_skills",
-        "check_gateway", "check_event_processor", "check_gateway_auth",
+        "check_gateway", "check_uplink", "check_event_processor", "check_gateway_auth",
         "check_ai_providers", "check_identity", "check_media_tools", "check_wiring",
         "check_daemon_freshness",
     ):

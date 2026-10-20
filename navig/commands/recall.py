@@ -835,7 +835,12 @@ def migrate_cmd(
 
     _require_enabled()
     path = resolve_user_path(file)
-    root = resolve_user_path(root) if root else _project_root(project)
+    # Consumer scan root = the checkout the FILE lives in (explicit active-checkout
+    # resolution) — a project id alone can resolve to a different checkout than the
+    # file's tree; `--root` still overrides everything.
+    from navig.projects.model import active_checkout  # noqa: PLC0415
+
+    root = resolve_user_path(root) if root else active_checkout(path, project_id=project)
     ing = Ingestor()
     try:
         out = ing.import_changelog(project, path, root=root, apply=apply, retire=retire)

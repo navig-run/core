@@ -537,11 +537,51 @@ class TestCheckSkills:
 
 class TestCheckGateway:
     def test_gateway_running_returns_ok(self, tmp_path):
+        # `_gateway_owner` reads the REAL process table for the port. Left unpatched this
+        # test probed whichever process happened to hold 8789 on the tester's machine —
+        # on this box (2026-10-20) the telegram worker holds it while the gateway runs on
+        # its self-healed 8790, so the test failed for a reason that has nothing to do
+        # with what it claims to check. The owner is the other half of the verdict: say
+        # what this test means to say, namely "a gateway owns the responding port".
         with patch("navig.commands.doctor.config_dir", return_value=tmp_path):
             with patch("navig.commands.doctor._gateway_reachable", return_value=True):
-                results = check_gateway(port=8789)
+                with patch(
+                    "navig.commands.doctor._gateway_owner",
+                    return_value=r"C:\venv\Scripts\pythonw.exe -m navig gateway start",
+                ):
+                    results = check_gateway(port=8789)
         _, ok, _ = results[0]
         assert ok is True
+
+    def test_gateway_port_owned_by_the_worker_is_not_a_gateway(self, tmp_path):
+        """The split-brain #2021 exists to catch — and this machine actually exhibits.
+
+        The telegram worker answers 8789 while the gateway runs on another port: a green
+        "gateway up" there is the phantom green that hides a missing Lighthouse uplink.
+        """
+        with patch("navig.commands.doctor.config_dir", return_value=tmp_path):
+            with patch("navig.commands.doctor._gateway_reachable", return_value=True):
+                with patch(
+                    "navig.commands.doctor._gateway_owner",
+                    return_value=r"C:\venv\Scripts\pythonw.exe -m navig.daemon.telegram_worker",
+                ):
+                    results = check_gateway(port=8789)
+        icon, ok, line = results[0]
+        assert ok is False
+        assert icon == "⚠"
+        assert "no gateway process" in line
+        assert "telegram_worker" in line or "navig.daemon" in line
+
+    def test_unreadable_owner_claims_reachability_only(self, tmp_path):
+        """`None` (psutil absent / permissions) = we only know it answers; never more."""
+        with patch("navig.commands.doctor.config_dir", return_value=tmp_path):
+            with patch("navig.commands.doctor._gateway_reachable", return_value=True):
+                with patch("navig.commands.doctor._gateway_owner", return_value=None):
+                    results = check_gateway(port=8789)
+        _, ok, line = results[0]
+        assert ok is True
+        assert "Responding" in line
+        assert "gateway up" not in line  # identity was never verified
 
     def test_gateway_not_running_returns_failure(self, tmp_path):
         with patch("navig.commands.doctor.config_dir", return_value=tmp_path):

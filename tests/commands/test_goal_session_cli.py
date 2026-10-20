@@ -20,7 +20,7 @@ from navig.commands.goal import goal_app
 runner = CliRunner()
 
 STANDING_VERBS = ["add", "list", "show", "run", "pause", "resume", "remove"]
-SESSION_VERBS = ["set", "show", "list", "pause", "resume", "clear"]
+SESSION_VERBS = ["set", "show", "list", "pause", "resume", "clear", "complete"]
 
 
 @pytest.fixture(autouse=True)
@@ -191,3 +191,47 @@ def test_pause_and_clear_send_their_commands(os_calls):
     assert result.exit_code == 0, result.stdout
     _, command = [a for ch, a in os_calls["calls"] if ch == "sessions:command"][-1]
     assert command == {"type": "clearGoal"}
+
+
+def test_complete_requires_evidence_option(os_calls):
+    result = runner.invoke(goal_app, ["session", "complete", "sess-beta-002"])
+    assert result.exit_code != 0  # typer refuses: --evidence is required
+    assert not any(
+        ch == "sessions:command" for ch, _ in os_calls["calls"]
+    ), "no command must reach the server without evidence"
+
+
+def test_complete_sends_complete_goal_with_evidence(os_calls):
+    # NOTE: mutate the fixture's command_result in place — the fake RPC returns
+    # that object by reference; replacing the dict would leave the closure stale.
+    os_calls["command_result"]["goal"] = {
+        "id": "g-1", "objective": "keep the lights on", "phase": "complete",
+        "roundsStarted": 2, "maxRounds": 12, "revision": 5,
+        "completionNote": "closed by operator: suite green twice",
+    }
+    result = runner.invoke(goal_app, [
+        "session", "complete", "sess-beta-002",
+        "--evidence", "suite green twice; diff reviewed",
+    ])
+    assert result.exit_code == 0, result.stdout
+    assert "Goal completed" in result.stdout
+    _, command = next(a for ch, a in os_calls["calls"] if ch == "sessions:command")
+    assert command == {
+        "type": "completeGoal",
+        "evidence": "suite green twice; diff reviewed",
+    }
+
+
+def test_complete_json_prints_the_goal(os_calls):
+    os_calls["command_result"]["goal"] = {
+        "id": "g-1", "objective": "lights", "phase": "complete",
+        "roundsStarted": 1, "maxRounds": 12, "revision": 2,
+        "completionNote": "closed by operator: verified on disk",
+    }
+    result = runner.invoke(goal_app, [
+        "session", "complete", "sess-beta-002", "-e", "verified on disk", "--json",
+    ])
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["phase"] == "complete"
+    assert "closed by operator" in payload["completionNote"]

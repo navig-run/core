@@ -3247,7 +3247,7 @@ class NavigGateway:
     #: Toggleable opt-in producers surfaced in the deck "Monitors" card.
     MONITOR_KEYS = ("webcam", "resources", "self_errors", "connectivity", "config_incidents",
                     "browser_reaper", "pushover_escalation", "host_checks", "breach",
-                    "site_probes", "lens_updates", "recall_ingest")
+                    "site_probes", "lens_updates", "recall_ingest", "creative_scan")
 
     #: Monitors that default ON (started at boot unless explicitly disabled). The rest are
     #: opt-in. config_incidents is the one exception because a MISSED config-rescue event —
@@ -3259,7 +3259,12 @@ class NavigGateway:
     #: pending, and an unacknowledged emergency that never escalates is a silent miss.
     #: lens_updates is ON because an update nobody hears about is a fix nobody applies; it
     #: is idle unless a Lens was installed from a link, and it only STAGES — never applies.
-    MONITORS_DEFAULT_ON = frozenset({"config_incidents", "pushover_escalation", "lens_updates"})
+    #: creative_scan is ON for the same shape of reason: it is idle unless Creative Agent
+    #: Mode is on (Standard skips without reading history) and it only PROPOSES — nothing
+    #: is built, published or notified without the operator.
+    MONITORS_DEFAULT_ON = frozenset(
+        {"config_incidents", "pushover_escalation", "lens_updates", "creative_scan"}
+    )
 
     def _init_notify_monitors(self) -> None:
         """Start each enabled monitor at boot (per ``monitors.<name>.enabled``).
@@ -3371,6 +3376,10 @@ class NavigGateway:
             from navig.notify.monitors.recall_ingest import run_recall_ingest
 
             self._spawn_monitor_task(name, run_recall_ingest())
+        elif name == "creative_scan":
+            from navig.notify.monitors.creative_scan import run_creative_scan_monitor
+
+            self._spawn_monitor_task(name, run_creative_scan_monitor())
         elif name == "connectivity":
             # Driven by the uplink listener + a live config check — nothing to spawn.
             self._monitor_tasks[name] = "live"

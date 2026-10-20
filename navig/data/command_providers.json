@@ -72,7 +72,7 @@
       "plugin": "navig-debrief",
       "module": null,
       "pip": "navig-debrief",
-      "description": "Visual debrief of a work session: timeline, tool mix, mind map, files and UI mockups rendered to one navigable HTML report, with PNG exports."
+      "description": "Visual presentation of a work session: a slide deck from transcript facts (navig debrief), plus the full HTML report and PNG exports."
     },
     "dedupe": {
       "plugin": "navig-dedupe",
@@ -97,6 +97,12 @@
       "module": null,
       "pip": "navig-devnet",
       "description": "Developer/ops network inspection: DNS/WHOIS/SSL lookups and an SSRF-guarded HTTP repeater — its own navig-devnet command, and `navig devnet` inside navig."
+    },
+    "distribution": {
+      "plugin": "navig-distribution",
+      "module": null,
+      "pip": "navig-distribution",
+      "description": "Distribution for NAVIG OS: project-scoped channel research, eligibility, campaigns, block-level content, identities, approvals and a publication journal."
     },
     "dl": {
       "alias_of": "download"
@@ -145,6 +151,12 @@
       "module": "github",
       "pip": "navig-github",
       "description": "GitHub tools (repos, issues, PRs, backup, mirror)"
+    },
+    "glass": {
+      "plugin": "navig-glass",
+      "module": "glass",
+      "pip": "navig-glass",
+      "description": "NAVIG Glass viewer — discover the standalone file viewer and open files through it"
     },
     "ios": {
       "plugin": "navig-mobile",

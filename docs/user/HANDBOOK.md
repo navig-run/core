@@ -4715,15 +4715,34 @@ The NAVIG MCP server exposes your infrastructure configuration to AI assistants,
 - Query hosts, apps, and database configurations
 - Search the wiki knowledge base
 - Access project context and recent errors
-- Execute read-only NAVIG commands
+- Search past work, read/write durable facts, inspect browser sessions and connected providers
 
 **Start MCP Server:**
 ```bash
-navig mcp serve              # Start in stdio mode (for VS Code)
-navig mcp serve --port 3000  # Start in SSE mode
+navig mcp serve                       # compact 15-tool surface (default)
+navig mcp serve --profile full        # the complete legacy catalogue
+navig mcp serve --transport stdio     # stdio for editors / Claude Desktop
+navig mcp serve --port 3000 --token "$TOKEN"
 ```
 
-`--only <bundle[,bundle]>` serves just those tool bundles. For example, `navig mcp serve --transport stdio --only recall` is the Recall server Claude Code uses (§56.1).
+The default is a **routed surface**: fifteen domain tools, each taking an `action`
+(`navig_fleet`, `navig_knowledge`, `navig_recall`, `navig_memory`, `navig_runtime`,
+`navig_automation`, `navig_web`, `navig_browser_debug`, `navig_browser_user`,
+`navig_connectors`, plus separate read/act domains for memory, runtime actions,
+Bay/blocks, browser actions and connector writes). This keeps tool selection cheap and
+annotations honest; the full catalogue is unchanged behind `--profile full`.
+
+`--only <bundle[,bundle]>` keeps its historical meaning: a restricted **full** catalogue
+of those bundles (it overrides `--profile default`). For example `navig mcp serve
+--transport stdio --only recall` is the Recall server Claude Code uses (§56.1).
+
+**Exposure and security:**
+- A network bind without `--token` is refused; a loopback bind without a token serves
+  read-only tools only (`--insecure-local` is the explicit local opt-out).
+- Declare `--exposure remote` for a stdio server behind a proxy. Dangerous tools are then
+  denied unless `navig config set mcp.remote_dangerous approve` is an explicit decision.
+- `desktop_filesystem` is contained to `mcp.files.roots` whenever remotely exposed; no
+  roots means deny-all. The file itself is never reachable outside those roots.
 
 **Generate Configuration:**
 ```bash
@@ -5720,6 +5739,7 @@ navig goal session list                    # sessions that have a goal
 navig goal session pause <session>         # stop injecting rounds; history kept
 navig goal session resume <session>        # re-arm (a restarted OS loads disarmed — resume is explicit)
 navig goal session clear <session> --yes   # drop the goal; injected rounds stay in chat
+navig goal session complete <session> -e "…"  # operator closes it WITH evidence (human override)
 ```
 
 - **Requires NAVIG Desktop to be running** (the CLI talks to the announced OS server); it
@@ -5729,6 +5749,16 @@ navig goal session clear <session> --yes   # drop the goal; injected rounds stay
   consecutive identical blocker reports before `blocked` is accepted), `goal.tool_policy`
   (`model` = the agent may complete/block the goal via its `get_goal` /
   `set_session_goal` tools; `human` = read-only for the agent).
+- **Completion is evidence-gated:** `set_session_goal action: "complete"` must carry an
+  `evidence` string (commands run and their output, files changed and inspected, tests
+  observed passing). A completion without evidence is refused; accepted evidence is
+  recorded on the goal and shown in the UI strip, in `navig goal session show --json`
+  (`completionNote`) and from `get_goal`.
+- **Resolving a blocked goal:** a goal in `blocked` is terminal — the round budget
+  (`round-limit`) is spent or the model's blocker streak closed it. Read the reason
+  (`navig goal session show <session>` → `Blocked`), fix the underlying condition, then
+  `navig goal session clear <session> --yes` and `set` the objective again (with a fresh
+  budget if you need one). `resume` refuses a spent budget on purpose.
 - In the NAVIG Desktop UI the same goal lives on a composer strip (set / edit / pause /
   resume / clear) and each injected round shows as a collapsed **Context · Goal · Round
   N** chip; `/goal <objective>` in the chat input is a shortcut for `set`.
@@ -7120,6 +7150,155 @@ navig content telegram-import --mode link --preview
 - **As a Block:** `navig apply content-reel --input topic="…"` runs the same line under
   approval with a signed receipt, and verifies the drafted file actually exists
   (`navig block verify content-reel` lints the spec).
+
+## 23.5.7 NAVIG Glass viewer (`navig glass`)
+
+[NAVIG Glass](https://github.com/navig-run/glass) is the standalone instant file viewer —
+images, PDF, video and audio (source: `apps/glass`) — that runs with NAVIG uninstalled and
+keeps every one of its standalone functions if NAVIG disappears mid-session. The
+`navig-glass` plugin adds discovery and launch only: no socket in the viewer, no NAVIG
+secret on disk, no always-online anything. The `glass` module is free and toggleable —
+switching it off disables the routes and leaves the app untouched.
+
+```bash
+navig glass status          # verified install: path, contract version, kinds (--json)
+navig glass where           # resolved executable, or every path that was searched (--json)
+navig glass open <file>     # open a file in Glass — the same binary a double-click runs (--json)
+```
+
+Discovery order: `$NAVIG_GLASS_EXE` → `PATH` (winget / MSIX app-execution aliases) →
+`%LOCALAPPDATA%\Programs\NAVIG Glass\`. An executable that cannot answer the
+`--navig-info` contract is reported as such, never assumed healthy.
+
+NAVIG surfaces reach the same launch through the daemon: `POST /api/deck/glass/open`
+(standard deck auth, module-gated). The reuse model for the next standalone product —
+one contract flag, discovery, launch, one route, one module — is documented in
+[`docs/guides/standalone-integration.md`](../../../docs/guides/standalone-integration.md).
+
+## 23.5.5 Podcaster tools — chapters, levelling, one-word fixes, QA, bleed, highlights, ads, stings
+
+```bash
+navig audio chapters episode.mp3                       # chapters + show notes; a copy with chapters embedded
+navig audio qa episode.mp3                             # pass/fail page before you publish (exit 1 on fail)
+navig audio level-speakers episode.wav                 # every speaker to one loudness (local speaker split)
+navig audio level-speakers episode.wav --allow-cloud   # …with ElevenLabs Scribe finding the speakers
+navig audio debleed host.wav guest.wav                 # turn each mic down while the other person talks
+navig audio podcast-edit episode.mp3 --breaths --clicks             # breaths ducked, clicks repaired
+navig audio podcast-edit episode.cuts.json --apply --keep-timing    # cuts filled with room tone (video sync)
+navig audio highlights episode.mp3 -n 5                # five captioned 1080x1920 clips (audiogram for audio)
+navig audio ad-slot episode.wav                        # list natural pauses for a sponsor read
+navig audio ad-slot episode.wav --ad read.wav --bed music.wav   # insert it, level-matched, bed ducked
+navig audio fix-word episode.wav --word forty --say fifty --own-voice --allow-cloud
+navig audio sting "warm analog synth, quiet confidence" --seconds 8 --allow-cloud
+```
+
+- **chapters** — local transcript; with an AI configured it titles the chapters and writes the
+  notes (`--no-ai` for pause-placed chapters titled with their opening words). Chapter starts
+  are always snapped onto a real sentence start. MP3/M4A copies keep their audio untouched.
+- **qa** — loudness and true peak for a `--target`, clipping, silences over 3 s (measured
+  against the room's own noise floor), harsh S sounds per minute, cut-off start/ending, noise
+  between words.
+- **level-speakers** — the local speaker split uses voice pitch and spectral shape on the
+  audio's own pauses and is labelled approximate; gains are capped at ±12 dB and change only
+  between turns, then a latency-compensated -1 dBTP limiter.
+- **fix-word** — finds the word (digits and number words match each other: "40" = "forty"),
+  clones only that speaker's turns (up to 90 s), speaks the replacement with the surrounding
+  words as context, level-matches it, lays room tone under it and splices it in. The clone is
+  deleted afterwards unless `--keep-voice`. Needs `--own-voice` (consent) and `--allow-cloud`;
+  the replaced span is marked AI-generated in the sidecar.
+- **ad-slot** — a slot is a sentence end followed by at least 0.5 s of pause, picked near
+  25/50/75 % (or `--at`); the output is M4A with "Sponsor" chapters.
+- **sting** — two-section composition plan, composed at 10 s and cut to the exact length with a
+  fade, levelled to -16 LUFS. `--dry-run` shows the plan for free.
+
+## 23.5.6 Beatmaker tools — comp, fit, chop, doubles, drums, arrangement, scratch vocals
+
+```bash
+navig audio comp take1.wav take2.wav take3.wav --beat beat.wav   # best take per bar, joined
+navig audio vocal-fit part.wav --beat beat.wav --fix beat        # tempo + key gap, and the move that closes it
+navig audio chop record.wav                                      # bar slices + loop.wav + slices.mid
+navig audio doubles lead.wav --voices 2 --harmony third          # doubles that stay solid in mono
+navig audio enhance vocal.wav --preset audio-enhance/radio-vocal # de-plosive, de-ess, breath control
+navig audio match mix.wav --ref ref.wav --check --mono-bass      # balance, width, low end vs a reference
+navig audio stems beat.mp3 --allow-cloud                         # split once …
+navig audio drum-replace beat.stems/drums.mp3 --kick k.wav --snare s.wav --blend 0.3
+navig audio tap-beat taps.wav --bars 4                           # tapped rhythm → pattern + MIDI
+navig audio arrange beat.mp3 --stems beat.stems                  # intro / breakdown / drop
+navig audio beat demo beat.mp3 --lyrics hook.txt                 # spoken guide, one line per bar
+navig audio beat demo beat.mp3 --lyrics hook.txt --sing --allow-cloud   # sung guide
+```
+
+- **comp** — takes are aligned to the first; with `--beat` each bar is scored (otherwise each
+  phrase): timing = lag against the takes' consensus in that bar, noise = quiet frames inside it,
+  clipping, pitch steadiness. The winner per bar is joined with 20 ms crossfades.
+- **vocal-fit** — tempo ratio (half/double time count as a match) and the pitch move from lining
+  up the two chroma profiles, tie-broken by the bass root (key names alone confuse a key with its
+  dominant). `--fix beat|vocal` writes a rubberband-moved copy (formants kept).
+- **chop** — bars from the beat tracker; the loop is the 1/2/4/8-bar span whose next occurrence
+  matches best; `slices.mid` plays slice *n* on note 36+*n*.
+- **doubles** — ±8–14 cent, 15–35 ms copies panned L/R; delays are re-drawn until the mono sum
+  stays within 1.5 dB of the lead in third-octave bands. Harmony is a fixed interval for the whole
+  take (not note-by-note).
+- **drum-replace / tap-beat** — hits by spectral flux, timed to 1 ms; each hit can be several
+  drums (kick < 150 Hz, snare 200 Hz–5 kHz, hat > 5 kHz, each judged against its own band); MIDI
+  on GM drum notes. Tap-beat renders a kit synthesised locally (no samples needed).
+- **radio-vocal** — new enhance params `deplosive`, `deess` (light/strong), `breath_control`
+  (light/strong); the verifier treats a darker result as intended when the de-esser ran.
+- **match --check** — six-band balance and stereo width (side/mid, a mono file reads -60 dB),
+  low-end L/R correlation (anti-phase lows are reported, never folded), loudness, crest; `--mono-bass`
+  folds < 120 Hz to mono with a Linkwitz-Riley crossover.
+- **arrange** — cut from the beat on its own bar grid, so key and tempo match; with `--stems`
+  "drums out" is exact, otherwise a band-split pulls them back (reported).
+- **beat demo --lyrics** — builds the demo sheet from a plain lyrics file (one line per bar, a
+  stock voice, `--voice` to pick another); `--sing` composes the hook with sung lyrics at the beat's
+  tempo and key, splits out the vocal and lays it on the beat. Guides are tagged
+  `GUIDE — NOT FOR RELEASE`.
+
+## 23.5.7 Video Lab — tighten, captions, reframe, cut on the beat, b-roll, grade, recap, export
+
+```bash
+navig video tighten talk.mp4                         # fillers + long pauses out of picture and sound
+navig video captions talk.mp4 --style box --translate fr   # word-timed SRT/VTT + burned captions
+navig video reframe talk.mp4 --to 9:16               # vertical that follows whoever is speaking
+navig video beat-cut clips/ --music track.mp3 --vertical   # montage cut on the beat
+navig video broll talk.mp4                           # cutaway ideas where the narration names one (free)
+navig video broll talk.mp4 --generate --allow-cloud  # …and the generated shots laid in
+navig video color-match b.mp4 --ref a.mp4            # one shot's colour on another (+ a .cube LUT)
+navig video recap long.mp4 --seconds 60              # the liveliest minute, joined
+navig video stabilize shaky.mp4 [--deflicker]        # steadier picture, shake measured before/after
+navig video export-check clip.mp4 --for tiktok --fix [--safe-areas]   # platform spec, pass/fail
+navig video lipsync dubbed.mp4 --allow-cloud         # mouth re-timed to the dub (LatentSync)
+```
+
+- **tighten** — the podcast cut list (fillers, pauses, repeats) applied at identical timestamps
+  to picture and sound, so sync cannot drift; 10 ms audio fades hide the joins.
+  `--dry-run` lists the cuts.
+- **captions** — local transcript; cues end at sentences or ~42 characters; SRT + VTT for every
+  track, optionally burned in (`plain` · `box` · `kinetic`). `--translate fr` asks your AI to
+  translate the cues as a batch with the original timings (a wrong count is refused, not written).
+- **reframe** — faces five times a second (YuNet if available, else OpenCV's cascade), the
+  speaker chosen by mouth-region motion with a one-second hold before switching, the crop
+  gliding at a speed limit. `9:16` · `1:1` · `4:5`. A clip with no faces holds its frame.
+- **beat-cut** — a shot every `--beats` beats of the music's grid, each taken from the most
+  active stretch of its clip; the music is the sound.
+- **broll** — listing is free (`--json`/table); `--generate` is billed (Replicate) and lays the
+  shots over the picture with the original sound, then labels them AI-generated.
+- **color-match** — Reinhard Lab transfer to a 33-point `.cube` LUT (usable in any editor),
+  ΔE reported before and after; works on clips and stills.
+- **recap** — windows scored on sound energy, frame motion and shot changes, joined in order.
+- **stabilize** — two-pass vid.stab (`optzoom` hides the moving edges) with shake measured by
+  tracking corners and flicker by brightness jitter; pairs whose motion could not be measured
+  are counted, never guessed.
+- **export-check** — platform table (tiktok · reels · shorts · youtube · instagram-feed ·
+  square · broadcast): size, fps, codecs, length, loudness, true peak. `--fix` writes a passing
+  copy (crop or `--pad`, rate, codecs, levelled sound); `--safe-areas` saves a frame with the
+  platform's UI zones drawn on it.
+- **lipsync** — LatentSync on Replicate (`bytedance/latentsync`, version pinned in the module).
+  For `navig audio dub` output: the picture and the dub are uploaded, the mouth is redrawn to
+  match, and the result reports whether the lengths agree. Billed; needs `--allow-cloud`.
+
+Everything else in the list is local. Sources are never written; every output gets a JSON
+sidecar.
 
 ## 23.6 Windows System Tray Launcher
 
@@ -10377,7 +10556,18 @@ navig cdp new --headed                                        # a VISIBLE browse
                                                               # prompt or a captcha yourself)
 navig cdp login github.com --open https://github.com/login   # navigate + sign in
 navig vault login capture notion.so --idp-user you@gmail.com # SSO site (see below)
+navig vault login discover                                   # sites you're ALREADY signed into
+navig vault login capture notion.so --from-chrome            # import that sign-in, no re-login
 ```
+
+- **Already signed in in your browser?** `navig vault login discover` lists the sites you look
+  signed into in Chrome/Edge/Brave (it reads only cookie *names* and hosts from a throwaway copy
+  of the cookie database — never cookie values, never your live profile) and prints a ready
+  `capture … --from-chrome` line for each. `--from-chrome` imports that sign-in with no new login,
+  by letting the real browser decrypt its own cookies for that one site. "Looks signed in" is a
+  heuristic (an unexpired session cookie), and on some machines Chrome's App-Bound Encryption
+  blocks the import — then it says so and points you at the interactive `capture`. Add `--browser
+  edge|brave` or `--profile "Profile 4"` to target a specific browser/profile.
 
 - **Session-first**: on success the authenticated session (cookies + localStorage) is
   captured to the vault; the next `login` **restores the session** — no password typed —
@@ -12024,3 +12214,112 @@ Keys: `/` search · ↑/↓ move · Enter open · `e` open the first source · E
 
 The tab is read-only: `/api/deck/recall/status|search|ask|views/<name>|record|excerpt`, all
 GET, all behind deck auth. When Recall is off, the tab shows the command to turn it on.
+
+## 57. Distribution (`navig distribution`)
+
+**What it is:** the multi-project distribution workspace (plugin `navig-distribution`,
+NAVIG OS → Distribution). Channel research and eligibility, campaigns, a block-level
+content studio, identities, a fifteen-check publication gate, approvals and an
+append-only journal — NAVIG Social carries the actual platform posts, NAVIG's CDP
+drives operator-led submissions.
+
+- **`navig distribution status`** — cross-project health: channels, campaigns,
+  publications and the active policy. Start here.
+- **`navig distribution seed`** — import the bundled research (SCHEMA's 139 channel
+  records with evidence, campaigns, identities). Runs itself once on first use.
+- **`navig distribution plan` / `channels` / `channel <id>`** — ranked, evidence-backed
+  destinations per project and the full record behind one channel.
+- **`navig distribution content new|show|block|regenerate|review|translate|import`** —
+  the studio: one block per edit, every save a recoverable version, regeneration
+  scoped to the selected block (the rest of the article is untouched), quality/canon/
+  locale review, and `content import --source <dir> [--campaign <id>]` for a written
+  package (idempotent, brings platform adaptations along).
+- **`navig distribution publish prepare|approve|reject|run|record|verify|journal`** —
+  the publication flow: `prepare` runs the gate and creates the row; `approve` binds a
+  human to the exact content hash + identity + destination (30-day expiry, revocable);
+  `run` executes through the only transport the destination allows — a NAVIG Social
+  post, a manual package, or an honest refusal; `record` + `verify` handle what you
+  submitted by hand; `journal` is the ledger.
+- **`navig distribution research import|validate|stale`** — bring in researched channel
+  records (contract-checked) and list verifications past the window.
+- **`navig distribution maintain`** — recompute eligibility, list stale verifications,
+  park expired scheduled posts, report the policy. `navig distribution schedule
+  --cron '<expr>'` wires it into NAVIG's scheduler (it never publishes).
+- **`navig distribution analytics`** — measured outcomes with explicit "not measured"
+  gaps; publication links carry `ref=<channel>` so visits map back to their channel.
+
+Safety rules the code enforces: an already-submitted row is never posted twice; an
+uncertain (retryable) result must be verified before any retry; approvals die at
+their expiry or when revoked; every status change walks the published state machine;
+project-scoped reads refuse another project's rows; transport errors are redacted
+before they reach the journal. Full runbook:
+`plugins/navig-distribution/docs/RUNBOOK.md`.
+
+## 58. Visual presentations (`navig debrief`)
+
+Turns a finished work session into an interactive slide deck — the result,
+what changed, how it works, the measured impact, what's next — from transcript
+facts plus an optional `story.json`. The scrolling report is unchanged behind
+its own verbs.
+
+| Command | What it does |
+|---|---|
+| `navig debrief` | Presentation of the newest session (`presentation.html` + `presentation.json`) |
+| `navig debrief --session <id>` | A specific session (substring / `last` / transcript path) |
+| `navig debrief --story <path>` | Enrich it with an authored `story.json` |
+| `navig debrief --presentation <path>` | Render an authored `presentation.json` |
+| `navig debrief --profile board` | 4–6 slide board brief (results, risks, priorities) |
+| `navig debrief --technical` | Append the developer evidence appendix |
+| `navig debrief --export pdf` | Print the deck to `presentation.pdf` (Edge/Chrome) |
+| `navig debrief --plan "<text>"` | Proposal deck — always labeled *proposed*, never as done (`-` reads stdin) |
+| `navig debrief --open` / `--json` | Open it / machine-readable manifest |
+| `navig debrief build · list · open · shot` | The scrolling technical report (unchanged) |
+
+Decks never invent: metrics come from the transcript (each with a source),
+plan decks wear a persistent *Proposed* band and the validator rejects a
+completed status on them. Inside NAVIG, the `debrief_build` agent tool takes
+`presentation` / `profile` / `technical`; the **Debrief** tile in NAVIG OS
+previews deck or report; the `session-debrief` skill routes chat requests.
+Authoring recipes: the `debrief` and `debrief-plan` prompts.
+
+## 59. Creative Mode (`navig creative`)
+
+Proactive capability intelligence: understand what NAVIG already has, detect real friction in
+your own operation history, and improve NAVIG through **reuse → configure → compose → extend →
+create → do nothing** — in that order, so a wrapper is never generated for a tool NAVIG ships.
+
+Two agent modes (owner decision 2026-10-20) replace the six retired focus modes:
+
+| Mode | Meaning |
+|---|---|
+| `standard` | Everyday assistance, coding, operations, research, execution (default). Discovery and reuse advice stay available; proactive scans, builds and publishes are off. |
+| `creative` | Standard plus proactive discovery, grounded proposals, authoring and authorized publishing. Never grants extra execution authority — tool schemas are identical in both modes. |
+
+All six legacy values (`work`, `deep-focus`, `planning`, `creative`-tone, `relax`, `sleep`) migrate
+to `standard` on load; deep-focus/sleep users keep notification suppression via the new
+`dnd_enabled` preference (DND no longer hangs off the mode).
+
+```powershell
+navig creative status            # mode · index freshness · scan pace · proposals · publish policy
+navig creative index --q docker  # capability search — options: kind filter, limit, rebuild, json
+navig creative list              # proposals the 6-hour scan and the agent surfaced
+navig creative show <id>         # full card: evidence, decision, benefit, risk, assumptions
+navig creative build <id>        # write the skill (Creative mode only) through the standard
+                                 #   skill contracts — lint + parser checks, rollback on failure
+navig creative dismiss <id>      # permanent: it will never be re-proposed
+navig creative publish <id>      # authorized-destination checklist (see below)
+navig creative publish-enable --repo <path-or-github:owner/name>   # owner-run; default stays local
+navig creative publish-disable   # back to local-only
+```
+
+**Publishing** is local-only until `publish-enable` writes an allow-listed destination; the
+checklist (allow-list · private visibility · branch · unchanged HEAD · no force · fresh foreign
+lock · credentials · secret scan) is deterministic — blocked is a list of failed checks, never a
+prompt. Public repositories and force-push are refused unconditionally.
+
+Surfaces: the **Dashboard Suggestions card** (evidence, Build/Dismiss, empty state first-class),
+**Settings → Brain → Agent Mode** (the one selector) and **Creative publishing**, the
+`creative_scan` monitor (default on, idle unless Creative), Telegram `/mode standard|creative`
+(retired names answer with a "retired" notice and behave as Standard), and the `creative` agent
+tool (`lookup`/`decide` in both modes, `propose` Creative-only). Data lives under
+`data_dir()/creative/` (rebuildable index + proposal store); config under `creative.*`.

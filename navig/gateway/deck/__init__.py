@@ -710,6 +710,25 @@ def register_deck_routes(
 
         app.router.add_get("/api/deck/suggestions/starters", handle_starters)
 
+        # Creative Mode — Dashboard proposal cards + Settings publishing.
+        # (Mode changes stay on the existing /mode + /settings routes: the Agent
+        # Mode selector exists exactly once, in Settings → Brain.)
+        from navig.gateway.deck.routes.creative import (
+            handle_creative_proposal_action,
+            handle_creative_proposals,
+            handle_creative_publish_get,
+            handle_creative_publish_post,
+            handle_creative_status,
+        )
+
+        app.router.add_get("/api/deck/creative/proposals", handle_creative_proposals)
+        app.router.add_get("/api/deck/creative/status", handle_creative_status)
+        app.router.add_post(
+            "/api/deck/creative/proposals/{id}", handle_creative_proposal_action
+        )
+        app.router.add_get("/api/deck/creative/publish", handle_creative_publish_get)
+        app.router.add_post("/api/deck/creative/publish", handle_creative_publish_post)
+
         # Ask NAVIG — one-shot conversational reply for the command palette's
         # "Ask NAVIG" row (backs the navig:ask-ai front-end seam).
         app.router.add_post("/api/deck/ask", handle_deck_ask)
@@ -1248,6 +1267,11 @@ def register_deck_routes(
         # NAVIG Voice — the reader surface the Dock (and any remote client) speaks through.
         from navig.gateway.deck.routes import voice as _voice
         _voice.register(app)
+
+        # NAVIG Translate — select a passage in the Dock, translate it, put it back
+        # (one route; deck auth answers for it like every other /api/deck/* route).
+        from navig.gateway.deck.routes import translate as _translate
+        _translate.register(app)
 
         # Studio — social composer & scheduler — now lives in the navig-social
         # plugin; it mounts its routes via the gateway:register_routes hook below

@@ -515,13 +515,13 @@ class ConversationalAgent:
         elif uid:
             parts.append(f"User ID: {uid}.")
 
-        # Current mode (if available from user_state)
+        # Current agent mode (if available from user_state)
         try:
             from navig.agent.proactive.user_state import get_user_state_tracker
 
             tracker = get_user_state_tracker()
-            mode = tracker.get_preference("chat_mode", "work")
-            parts.append(f"Current focus mode: {mode}.")
+            mode = tracker.get_preference("chat_mode", "standard")
+            parts.append(f"Current agent mode: {mode}.")
         except Exception as exc:  # noqa: BLE001
             logger.debug("Exception suppressed: %s", exc)  # best-effort; failure is non-critical
 

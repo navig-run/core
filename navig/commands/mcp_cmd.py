@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from enum import Enum
 
 import typer
@@ -13,6 +14,16 @@ class _Transport(str, Enum):
     stdio = "stdio"
     websocket = "websocket"
     http = "http"
+
+
+class _Profile(str, Enum):
+    default = "default"
+    full = "full"
+
+
+class _Exposure(str, Enum):
+    local = "local"
+    remote = "remote"
 
 
 @mcp_app.command("serve")
@@ -38,19 +49,34 @@ def mcp_serve(
     only: str | None = typer.Option(
         None,
         "--only",
-        help="Serve only these tool bundles, comma-separated (e.g. recall). Default: all.",
+        help="Serve only these tool bundles, comma-separated (e.g. recall). Implies --profile full.",
+    ),
+    profile: _Profile = typer.Option(
+        _Profile.default,
+        "--profile",
+        help="default = compact 15-tool routed surface; full = complete legacy catalogue.",
+    ),
+    exposure: _Exposure | None = typer.Option(
+        None,
+        "--exposure",
+        help="local or remote. Declare remote when a proxy exposes a stdio server.",
+    ),
+    insecure_local: bool = typer.Option(
+        False,
+        "--insecure-local",
+        help="Keep the full surface unauthenticated on a loopback bind (explicit risk).",
     ),
 ):
     """Start the NAVIG MCP server.
 
     \b
     Examples:
-      navig mcp serve                          # HTTP on http://127.0.0.1:3001/mcp
-      navig mcp serve --transport http --port 8080
-      navig mcp serve --transport websocket    # WebSocket on ws://localhost:3001
-      navig mcp serve --transport stdio        # stdio (for VS Code / Claude Desktop)
-      navig mcp serve --print-config           # Print Perplexity connector URL and exit
-      navig mcp serve -t stdio --only recall   # just the Recall tools (Claude Code)
+      navig mcp serve                          # HTTP on http://127.0.0.1:3001/mcp (compact)
+      navig mcp serve --transport stdio        # stdio for VS Code / Claude Desktop
+      navig mcp serve --profile full           # complete legacy catalogue
+      navig mcp serve --transport http --port 8080 --token "$TOKEN"
+      navig mcp serve -t stdio --only recall   # just the Recall bundle (full profile)
+      navig mcp serve --transport stdio --exposure remote   # stdio behind an auth proxy
     """
     from navig import console_helper as ch
     from navig.mcp_server import (
@@ -79,12 +105,33 @@ def mcp_serve(
         return
 
     bundles = [b.strip() for b in (only or "").split(",") if b.strip()] or None
+    chosen_profile = profile.value
+    if bundles and chosen_profile == "default":
+        # --only has always meant "these bundles of the full catalogue".
+        msg = "--only selects bundles from the full catalogue; ignoring --profile default."
+        if transport == _Transport.stdio:
+            # stdout IS the JSON-RPC channel in stdio mode — one info line there makes
+            # every client's line-1 parse fail (broke the narrow-stdio recall test on
+            # main, 2026-10-20). Diagnostics belong on stderr.
+            print(msg, file=sys.stderr)
+        else:
+            ch.dim(msg)
+        chosen_profile = "full"
 
     if transport == _Transport.http and not token:
         ch.dim("Tip: pass --token to require Bearer token authentication.")
 
     try:
-        start_mcp_server(mode=transport.value, port=port, token=token, host=host, only=bundles)
+        start_mcp_server(
+            mode=transport.value,
+            port=port,
+            token=token,
+            host=host,
+            only=bundles,
+            profile=chosen_profile,
+            exposure=exposure.value if exposure else None,
+            insecure_local=insecure_local,
+        )
     except (ImportError, ValueError) as exc:
         ch.error(str(exc))
         raise typer.Exit(1) from exc
@@ -123,8 +170,22 @@ def claude_code_command(scope: str, claude: str = "claude") -> list[str]:
 
     navig = shutil.which("navig")
     launcher = [navig] if navig else [sys.executable, "-m", "navig"]
-    return [claude, "mcp", "add", CLAUDE_CODE_SERVER, "--scope", scope, "--",
-            *launcher, "mcp", "serve", "--transport", "stdio", "--only", "recall"]
+    return [
+        claude,
+        "mcp",
+        "add",
+        CLAUDE_CODE_SERVER,
+        "--scope",
+        scope,
+        "--",
+        *launcher,
+        "mcp",
+        "serve",
+        "--transport",
+        "stdio",
+        "--only",
+        "recall",
+    ]
 
 
 def _install_claude_code(scope: _Scope, dry_run: bool, yes: bool) -> None:
@@ -145,7 +206,9 @@ def _install_claude_code(scope: _Scope, dry_run: bool, yes: bool) -> None:
         ch.info("Would run (dry run, nothing changed):")
         ch.console.print(f"  {shown}", markup=False, highlight=False)
         if not claude:
-            ch.warning("`claude` is not on PATH here — install Claude Code before running it for real.")
+            ch.warning(
+                "`claude` is not on PATH here — install Claude Code before running it for real."
+            )
         return
     if not claude:
         ch.error("Claude Code (`claude`) is not on PATH.", f"Install it, then run: {shown}")
@@ -155,17 +218,32 @@ def _install_claude_code(scope: _Scope, dry_run: bool, yes: bool) -> None:
     ch.console.print(f"  {shown}", markup=False, highlight=False)
     if not yes:
         if not sys.stdin.isatty():
-            ch.error("Not a terminal, so I can't ask.", "Re-run with --yes to confirm, or --dry-run to preview.")
+            ch.error(
+                "Not a terminal, so I can't ask.",
+                "Re-run with --yes to confirm, or --dry-run to preview.",
+            )
             raise typer.Exit(2)
         if not typer.confirm("Run it?", default=False):
             ch.dim("Nothing changed.")
             raise typer.Exit(1)
-    proc = subprocess.run(cmd, cwd=str(invocation_cwd()), capture_output=True, text=True,
-                          encoding="utf-8", errors="replace", timeout=60)
+    proc = subprocess.run(
+        cmd,
+        cwd=str(invocation_cwd()),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
+    )
     if proc.returncode != 0:
-        ch.error(f"claude mcp add failed (exit {proc.returncode}).", (proc.stderr or proc.stdout).strip()[:500])
+        ch.error(
+            f"claude mcp add failed (exit {proc.returncode}).",
+            (proc.stderr or proc.stdout).strip()[:500],
+        )
         raise typer.Exit(1)
-    ch.success(f"Claude Code can now call the Recall tools ({CLAUDE_CODE_SERVER}, scope {scope.value}).")
+    ch.success(
+        f"Claude Code can now call the Recall tools ({CLAUDE_CODE_SERVER}, scope {scope.value})."
+    )
     ch.dim("  Check: claude mcp list  ·  Turn reading on first if needed: navig recall enable")
 
 
@@ -178,8 +256,12 @@ def mcp_install_config(
     scope: _Scope = typer.Option(
         _Scope.user, "--scope", help="claude-code only: user (all sessions) | project | local."
     ),
-    dry_run: bool = typer.Option(False, "--dry-run", help="claude-code only: print the command, change nothing."),
-    yes: bool = typer.Option(False, "--yes", "-y", help="claude-code only: don't ask before running it."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="claude-code only: print the command, change nothing."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="claude-code only: don't ask before running it."
+    ),
 ):
     """Wire an editor or agent to NAVIG's MCP server so its tools are callable there.
 
@@ -298,7 +380,9 @@ def mcp_tools(
         for lvl, lbl in (("dangerous", "gated"), ("moderate", "moderate"), ("safe", "safe"))
     )
     ch.dim(f"\nApproval: {summary} — gated tools go through the approval gate and are audited.")
-    ch.dim("Wire an editor:  navig mcp install-config --client vscode   ·   Serve:  navig mcp serve")
+    ch.dim(
+        "Wire an editor:  navig mcp install-config --client vscode   ·   Serve:  navig mcp serve"
+    )
 
 
 @mcp_app.command("list")
@@ -331,7 +415,7 @@ def mcp_start(
     from navig.mcp_server import start_mcp_server
 
     try:
-        start_mcp_server(mode=transport.value, port=port, host=host)
+        start_mcp_server(mode=transport.value, port=port, host=host, profile="default")
     except (ImportError, ValueError) as exc:
         ch.error(str(exc))
         raise typer.Exit(1) from exc

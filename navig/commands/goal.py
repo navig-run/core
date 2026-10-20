@@ -574,6 +574,39 @@ def goal_session_resume(
     ch.kv("Rounds", f"{(goal or {}).get('roundsStarted', 0)}/{(goal or {}).get('maxRounds', '?')}")
 
 
+@session_app.command("complete")
+def goal_session_complete(
+    session: str = typer.Argument(..., help="Session id (or unique prefix / exact name)."),
+    evidence: str = typer.Option(
+        ...,
+        "--evidence",
+        "-e",
+        help="What you verified: commands run and their output, files changed, tests observed.",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Print the resulting goal as JSON."),
+) -> None:
+    """Close an active goal as the operator, WITH evidence (human override).
+
+    Same evidence assessment the model faces: substantive text, not a restatement
+    of the objective, and any cited paths must exist on disk. Recorded as
+    'closed by operator: …' so the UI, show --json and get_goal can tell it apart
+    from a model completion.
+    """
+    target = _resolve_session(session)
+    _session_goal_or_exit(target)
+    result = _os_call(
+        "sessions:command",
+        target.get("id"),
+        {"type": "completeGoal", "evidence": evidence.strip()},
+    )
+    goal = (result or {}).get("goal") if isinstance(result, dict) else None
+    if as_json:
+        _print_goal_row(target, goal or {}, as_json=True)
+        return
+    ch.success(f"Goal completed · {_esc(str((goal or {}).get('objective') or ''))[:80]}")
+    ch.kv("Evidence", _esc(str((goal or {}).get("completionNote") or evidence))[:200])
+
+
 @session_app.command("clear")
 def goal_session_clear(
     session: str = typer.Argument(..., help="Session id (or unique prefix / exact name)."),

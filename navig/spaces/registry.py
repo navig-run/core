@@ -244,6 +244,126 @@ def _id_held_elsewhere(reg: dict[str, Any], space_id: str, rp: str) -> bool:
     )
 
 
+# ── one logical project identity ─────────────────────────────────────────────
+#
+# A project is ONE id → ONE canonical path; git worktrees (and other checkouts) of
+# that repository are INSTANCES, never registry rows. Two defects violated this:
+# `register`/`ensure_registered` appended a row for every path (discovery persisted a
+# worktree folder before its duplicate check), and every id→root reader then took
+# whichever row came first — so a migration or scanner could silently operate on the
+# wrong checkout. The write layer now refuses/repoints collisions, and the readers
+# ask `canonical_row_for_id` instead of trusting row order.
+
+
+def _nested(child: str, parent: str) -> bool:
+    """True when normed *child* is strictly inside *parent* (case/separator-insensitive)."""
+    c = child.replace("/", "\\").casefold().rstrip("\\")
+    p = parent.replace("/", "\\").casefold().rstrip("\\")
+    return c != p and c.startswith(p + "\\")
+
+
+def _is_checkout_of(path: str, holder: str) -> bool:
+    """*path* is a checkout (worktree/instance) of the repository at *holder*:
+    nested inside it, or the same git repository (worktrees live elsewhere on disk)."""
+    if _nested(path, holder) or _nested(holder, path):
+        return True
+    try:
+        from navig.projects import (
+            gitinfo,  # noqa: PLC0415 — lazy: spaces must not import projects at module load
+        )
+
+        return gitinfo.same_repo(path, holder)
+    except Exception:  # noqa: BLE001 — git missing/broken degrades to containment only
+        return False
+
+
+_claim_warned: set[tuple[str, str]] = set()
+
+
+def _claim_id(reg: dict[str, Any], rp: str, space_id: str, name: str | None = None) -> str:
+    """Decide a same-id collision BEFORE a row is written.
+
+    Returns ``"write"`` (id free), ``"held"`` (another folder keeps the id — no row),
+    or ``"repointed"`` (the holder row was moved to the ANCESTOR *rp*, which contains
+    it — registering a main checkout heals a stray worktree row). Warns once per
+    (id, path) pair: discovery re-tries every scan, a warning flood helps nobody.
+    """
+    holder = next(
+        (e for e in reg["spaces"]
+         if e.get("id") == space_id and _norm(e.get("path", "")) != rp),
+        None,
+    )
+    if holder is None:
+        return "write"
+    hp = _norm(holder.get("path", ""))
+    # The holder is an INSTANCE when it lives inside rp, or when it is a worktree of
+    # the same repository while rp is the real checkout (a sibling/codex worktree row
+    # heals to the path holding the actual `.git` directory). Registering the
+    # INSTANCE's path while the canonical row exists stays refused below.
+    holder_is_instance = (
+        _nested(hp, rp)
+        or (_is_checkout_of(hp, rp) and not (Path(hp) / ".git").is_dir()
+            and (Path(rp) / ".git").is_dir())
+    )
+    if holder_is_instance:  # repoint the instance row to the canonical ancestor/checkout
+        if holder.get("path") != rp:
+            holder["path"] = rp
+            if name:
+                holder["name"] = name
+        return "repointed"
+    key = (space_id, rp)
+    if key not in _claim_warned:
+        _claim_warned.add(key)
+        reason = "a checkout of it" if _is_checkout_of(rp, hp) else "another folder"
+        logger.warning(
+            "space id %r already belongs to %s (%s) — no row written for %s. "
+            "One id, one project: rename the folder (navig space rename) to claim it.",
+            space_id, hp, reason, rp,
+        )
+    return "held"
+
+
+def canonical_row_for_id(reg: dict[str, Any], space_id: str) -> dict[str, Any] | None:
+    """THE row for *space_id* — deterministic for any row order (legacy duplicates
+    included): rows nested inside another same-id row are instances; among survivors
+    the real repository (``.git`` directory, not a worktree's ``.git`` file) wins;
+    then the shortest path, then casefold order.
+    """
+    rows = [e for e in reg.get("spaces", []) if e.get("id") == space_id]
+    if not rows:
+        return None
+    if len(rows) == 1:
+        return rows[0]
+    paths = [_norm(e.get("path", "")) for e in rows]
+    survivors = [
+        e for i, e in enumerate(rows)
+        if not any(_nested(paths[i], paths[j]) for j in range(len(rows)) if j != i)
+    ]
+    pool = survivors or rows
+    real_repos = [e for e in pool if (Path(_norm(e.get("path", ""))) / ".git").is_dir()]
+    if len(real_repos) == 1:
+        return real_repos[0]
+    pool = real_repos or pool
+    return sorted(pool, key=lambda e: (len(_norm(e.get("path", ""))),
+                                       _norm(e.get("path", "")).casefold()))[0]
+
+
+def canonical_root(space_id: str, *, require_exists: bool = True) -> str | None:
+    """The canonical filesystem root for a project id (stable regardless of row order).
+
+    ``require_exists`` (default) returns None when the canonical folder is gone — a
+    stale row must never resolve to a path that is not there. Set False for purely
+    structural/registry questions.
+    """
+    row = canonical_row_for_id(load_registry(), space_id)
+    if row is None:
+        return None
+    root = _norm(row.get("path", ""))
+    if require_exists and not Path(root).is_dir():
+        return None
+    return root
+
+
 @_locked
 def register(
     path: str | Path,
@@ -255,9 +375,13 @@ def register(
 ) -> dict[str, Any]:
     """Add or update a space in the registry. Existing ``enabled`` is preserved.
 
-    Keys on PATH. It does not police id uniqueness — see ``id_taken_by_another_path``,
-    which every user-facing entry point (init, wire, doctor --fix) consults first.
-    An explicit register also lifts a previous ``forget``.
+    Keys on PATH, and enforces **one id ↔ one project**: a checkout (worktree) of the
+    id's holder gets NO new row, an unrelated folder claiming a taken id is refused
+    with a warning (the holder's row is returned so callers see the truth), and
+    registering an ANCESTOR path repoints a stray descendant row to it. User-facing
+    entry points still consult ``id_taken_by_another_path`` first to fail early with
+    the other path named — this layer guarantees the invariant even when a caller
+    forgets. An explicit register also lifts a previous ``forget``.
     """
     rp = _norm(path)
     entry = {
@@ -281,6 +405,14 @@ def register(
         existing["source"] = source
         save_registry(reg)
         return existing
+    # One id, one project: a checkout of the holder gets no row; an unrelated folder
+    # claiming the id is refused (the holder's row comes back so callers see the truth).
+    action = _claim_id(reg, rp, entry["id"], entry.get("name"))
+    if action == "held":
+        return canonical_row_for_id(reg, entry["id"]) or entry
+    if action == "repointed":
+        save_registry(reg)
+        return canonical_row_for_id(reg, entry["id"]) or entry
     reg["spaces"].append(entry)
     save_registry(reg)
     return entry
@@ -303,8 +435,16 @@ def _ensure_in(
                 existing["name"] = name
             changed = True
         return changed
+    want = id or Path(rp).name
+    # The discovery hole that made 9 `navig` rows: a worktree folder scanned from its
+    # own session appended a row before any duplicate check. Same rule as `register`.
+    action = _claim_id(reg, rp, want, name)
+    if action == "held":
+        return False
+    if action == "repointed":
+        return True
     reg["spaces"].append({
-        "id": id or Path(rp).name, "name": name or Path(rp).name,
+        "id": want, "name": name or Path(rp).name,
         "path": rp, "source": source, "enabled": True, "last_active": None,
     })
     return True

@@ -20,7 +20,8 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["commits_since", "git_state", "has_own_repo", "head_sha"]
+__all__ = ["commits_since", "git_state", "has_own_repo", "head_sha", "same_repo",
+           "toplevel"]
 
 # Measured: a trivial call took up to 2.7 s on a loaded machine, and the old 2.0 s
 # ceiling turned a slow repo into "not a repo".
@@ -170,3 +171,72 @@ def _parse_status(text: str) -> tuple[str, bool, int, int]:
         elif line and not line.startswith(("#", "!")):
             changed += 1
     return branch, has_commits, changed, new
+
+
+def _git_open(root: Path, *args: str) -> str | None:
+    """stdout or None — the CLIMBING variant of :func:`_git`.
+
+    ``_env``'s ``GIT_CEILING_DIRECTORIES`` exists so ``git_state`` reads THIS folder's
+    repo and never an outer one; ``toplevel``/``--git-common-dir`` ask "which repo
+    contains this", which requires ascending at least one level — under a ceiling that
+    starts at ``root.parent`` (any subdirectory of a checkout) git answers nothing and
+    every subdir silently read as "not a repo".
+    """
+    try:
+        cp = subprocess.run(
+            ["git", *args], cwd=str(root), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=_TIMEOUT,
+            env={**os.environ, "LC_ALL": "C", "GIT_TERMINAL_PROMPT": "0"},
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return cp.stdout if cp.returncode == 0 else None
+
+
+def toplevel(path: str | Path) -> str | None:
+    """Repository worktree root containing *path* (worktree-aware), else None.
+
+    Deliberately climbs without a ceiling — the question IS "which repo contains
+    this", including a git worktree whose root is a checkout directory. Returns the
+    native absolute path string, or None when git cannot answer (not a repo, git
+    missing, timeout). For a file path, resolves from its parent directory.
+    """
+    p = Path(path)
+    start = p if p.is_dir() else p.parent
+    if not start.exists():
+        return None
+    out = _git_open(start, "rev-parse", "--show-toplevel")
+    if not out or not out.strip():
+        return None
+    try:
+        return str(Path(out.strip()))
+    except (OSError, ValueError):
+        return out.strip()
+
+
+def common_git_dir(path: str | Path) -> str | None:
+    """Absolute ``--git-common-dir`` for *path* — equal for every checkout (worktree)
+    of one repository — or None when git cannot answer."""
+    p = Path(path)
+    start = p if p.is_dir() else p.parent
+    if not start.exists():
+        return None
+    raw_out = _git_open(start, "rev-parse", "--git-common-dir")
+    if not raw_out or not raw_out.strip():
+        return None
+    raw = raw_out.strip()
+    try:
+        resolved = Path(raw) if Path(raw).is_absolute() else Path(start, raw)
+        return str(resolved.resolve())
+    except (OSError, ValueError):
+        return raw
+
+
+def same_repo(a: str | Path, b: str | Path) -> bool:
+    """True when *a* and *b* belong to the SAME repository — main checkout and any
+    of its worktrees share one ``--git-common-dir``. False when either is not a repo."""
+    ca, cb = common_git_dir(a), common_git_dir(b)
+    if not ca or not cb:
+        return False
+    return os.path.normcase(ca) == os.path.normcase(cb)

@@ -69,6 +69,45 @@ def _resolver() -> ProjectResolver:
 # ── history ─────────────────────────────────────────────────
 
 
+def test_file_history_includes_git_commits_no_session_printed(tmp_path: Path) -> None:
+    """A change landed WITHOUT a transcript printing its sha (merge/land flows) still
+    shows in file history — git's own file log ∪ session-linked commits. Real-benchmark
+    miss q2 (2026-10-20): history previously listed only commits a session happened to
+    print, so the newest commit touching a file was invisible."""
+    import os
+    import subprocess
+
+    repo = tmp_path / "r"
+    repo.mkdir()
+    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=str(repo), check=True,
+                   capture_output=True, env=env)
+    (repo / "x.py").write_text("v1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "x.py"], cwd=str(repo), check=True,
+                   capture_output=True, env=env)
+    subprocess.run(["git", "commit", "-q", "-m", "landed without a printed sha"],
+                   cwd=str(repo), check=True, capture_output=True, env=env)
+    sha = subprocess.run(["git", "rev-parse", "--short=12", "HEAD"], cwd=str(repo),
+                         capture_output=True, text=True, check=True, env=env).stdout.strip()
+
+    st = RecallStore(tmp_path / "h.db")
+    sid = "cc:11111111-1111-1111-1111-111111111111"
+    st.upsert_source({"source_id": sid, "adapter": "claude_code", "project": "proj",
+                      "title": "t", "cwd": str(repo), "meta": {}})
+    st.add_turns(sid, [Turn(msg_id="m1", speaker="user_typed", text="edited x.py")])
+    # the session touched the file but NEVER committed it (no committed link exists)
+    st.add_links([(sid, "file:proj/x.py", "touched")])
+
+    out = query.history("file:proj/x.py", project="proj", root=str(repo),
+                        resolver=ProjectResolver(entries=[("proj", str(repo))],
+                                                 home=r"C:\Users\x"),
+                        store=st)
+    shas = [c["sha"] for c in out["commits"]]
+    assert any(s.startswith(sha[:7]) for s in shas), f"git commit missing: {shas}"
+    assert out["commits"][0]["known"] is True
+
+
 def test_history_merges_sessions_commits_and_records(bank) -> None:
     out = query.history("file:alpha/core/widget.py", store=bank)
     assert out["key"] == "file:alpha/core/widget.py"

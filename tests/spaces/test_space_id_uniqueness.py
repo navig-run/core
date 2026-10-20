@@ -54,13 +54,16 @@ def test_id_taken_names_the_other_path_and_not_itself(isolated: Path) -> None:
 
 
 def test_the_old_behaviour_would_have_made_two_rows(isolated: Path) -> None:
-    """Pins the defect the entry points now guard against: register() itself still keys on
-    path, so a second path under the same id IS a duplicate — the callers must not let it
-    happen. If register ever starts refusing, this test (and the guards) can be simplified."""
-    _existing(isolated, "homelab")
-    registry.register(isolated / "second", id="homelab", name="homelab", source="external")
+    """register() now REFUSES a second path under one id — the layer guarantee behind
+    the caller guards (was: "register() itself still keys on path… if register ever
+    starts refusing, this test (and the guards) can be simplified")."""
+    other = _existing(isolated, "homelab")
+    returned = registry.register(isolated / "second", id="homelab", name="homelab",
+                                 source="external")
     rows = [e for e in registry.load_registry()["spaces"] if e["id"] == "homelab"]
-    assert len(rows) == 2
+    assert len(rows) == 1
+    # the refusal is honest: the holder's row comes back, not a phantom new one
+    assert registry._norm(returned["path"]) == registry._norm(other)
 
 
 # ── space init ───────────────────────────────────────────────────────────────

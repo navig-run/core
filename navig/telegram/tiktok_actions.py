@@ -367,7 +367,9 @@ async def offer_card(channel, chat_id: int, message_id: int, text: str, *,
         # success (callers may treat True as "I own this message") when it landed.
         return sent is not None
     except Exception as exc:  # noqa: BLE001
-        logger.debug("tiktok offer_card send failed: %s", exc)
+        # WARNING: a card send that raised used to be debug-only, so "the card
+        # never appeared" left nothing in the live log to investigate.
+        logger.warning("tiktok offer_card send failed: %s", exc, exc_info=True)
         return False
 
 

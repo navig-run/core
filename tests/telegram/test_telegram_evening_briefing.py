@@ -131,13 +131,17 @@ class TestEveLog(_IsolatedConfigDir):
 # ---------------------------------------------------------------------------
 
 class TestDNDCallbacks:
-    def test_dnd_on_calls_set_preference_sleep(self):
+    def test_dnd_on_arms_dnd_preference(self):
         handler = _make_handler()
         tracker = MagicMock()
         with patch("navig.agent.proactive.user_state.get_user_state_tracker", return_value=tracker):
             _eve_cb(handler, "dnd_on")
-        tracker.set_preference.assert_any_call("chat_mode", "sleep")
+        # DND is its own preference now — the agent mode never gates it.
+        tracker.set_preference.assert_any_call("dnd_enabled", True)
         tracker.set_preference.assert_any_call("notifications_enabled", False)
+        assert not any(
+            c.args[:1] == ("chat_mode",) for c in tracker.set_preference.call_args_list
+        ), "the DND button must not touch the agent mode"
 
     def test_dnd_on_sends_wake_button(self):
         handler = _make_handler()
@@ -147,13 +151,16 @@ class TestDNDCallbacks:
         cb_datas = [b["callback_data"] for b in _flat_buttons(handler.channel.send_message)]
         assert "eve:dnd_off" in cb_datas, "Expected 🌅 revert button"
 
-    def test_dnd_off_calls_set_preference_work(self):
+    def test_dnd_off_clears_dnd_preference(self):
         handler = _make_handler()
         tracker = MagicMock()
         with patch("navig.agent.proactive.user_state.get_user_state_tracker", return_value=tracker):
             _eve_cb(handler, "dnd_off")
-        tracker.set_preference.assert_any_call("chat_mode", "work")
+        tracker.set_preference.assert_any_call("dnd_enabled", False)
         tracker.set_preference.assert_any_call("notifications_enabled", True)
+        assert not any(
+            c.args[:1] == ("chat_mode",) for c in tracker.set_preference.call_args_list
+        ), "the wake button must not touch the agent mode"
 
     def test_dnd_off_sends_confirmation_text(self):
         handler = _make_handler()

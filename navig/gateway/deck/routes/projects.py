@@ -98,6 +98,34 @@ def _int(value: Any) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def _environments_map() -> dict[str, list[str]]:
+    """project id → Environment ids (one scan per request; membership never 500s a list)."""
+    from navig.spaces.environments import environment_project_map  # noqa: PLC0415
+
+    try:
+        return environment_project_map()
+    except Exception:  # noqa: BLE001
+        logger.warning("environment membership map failed", exc_info=True)
+        return {}
+
+
+def _with_environments(data: Any) -> Any:
+    """Add ``environments: [env ids]`` to a project list or a single project.
+
+    The Projects hub stays a pure view of the Project Manager — Environments
+    reference PM ids, so membership is layered on read from the Environment
+    manifests (many-to-many), never stored twice.
+    """
+    pmap = _environments_map()
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict) and "id" in item:
+                item["environments"] = pmap.get(str(item["id"]), [])
+    elif isinstance(data, dict) and "id" in data:
+        data["environments"] = pmap.get(str(data["id"]), [])
+    return data
+
+
 # ── list / add / scan ───────────────────────────────────────────────────────
 
 
@@ -108,7 +136,7 @@ async def handle_projects_list(request: web.Request) -> web.Response:
     # The list answers without waiting on git (cached state, else the branch from
     # `.git/HEAD` + `git.pending`); `?git=full` waits for every repo instead.
     fast = request.rel_url.query.get("git") != "full"
-    return await _run(list_projects, refresh=refresh, fast=fast)
+    return await _run(lambda: _with_environments(list_projects(refresh=refresh, fast=fast)))
 
 
 async def handle_projects_add(request: web.Request) -> web.Response:
@@ -137,7 +165,47 @@ async def handle_projects_scan_root(request: web.Request) -> web.Response:
 async def handle_project_get(request: web.Request) -> web.Response:
     from navig.projects.model import get_project  # noqa: PLC0415
 
-    return await _run(get_project, request.match_info["id"])
+    return await _run(lambda: _with_environments(get_project(request.match_info["id"])))
+
+
+async def handle_project_environments_op(request: web.Request) -> web.Response:
+    """POST {op: attach|detach, environment: <env id>} — Environment membership write.
+
+    The Project Manager stays the single project database: Environments reference
+    its ids (many-to-many, stored only in the Environment manifest). Core-side
+    validation maps through ``_run``: unknown project → 404; non-Environment target,
+    unknown project id, missing field or bad op → 400. Returns the project's
+    updated membership list so a client never refetches to converge.
+    """
+    from navig.projects.model import resolve_project  # noqa: PLC0415
+
+    body = await _body(request)
+    op = str(body.get("op") or "").strip()
+    env_id = str(body.get("environment") or "").strip()
+    pid = request.match_info["id"]
+
+    def _op() -> dict[str, Any]:
+        from navig.spaces.environments import (  # noqa: PLC0415
+            attach_project,
+            detach_project,
+            environments_containing,
+        )
+
+        resolve_project(pid)  # ProjectNotFound → 404 via _run
+        if not env_id:
+            raise ValueError("'environment' is required")
+        if op == "attach":
+            attach_project(env_id, pid)
+        elif op == "detach":
+            detach_project(env_id, pid)
+        else:
+            raise ValueError("op must be 'attach' or 'detach'")
+        # Project-centric response: `environments` is ALWAYS the env ids containing
+        # this project (the same shape `_with_environments` puts on reads) — not the
+        # target Environment's project list.
+        return {"id": pid, "environments": environments_containing(pid)}
+
+    return await _run(_op)
 
 
 async def handle_project_prefs(request: web.Request) -> web.Response:
@@ -679,6 +747,7 @@ def register(app: web.Application) -> None:
     r.add_get("/api/deck/projects/runs/{run}/stream", handle_run_stream)
     r.add_get("/api/deck/projects/{id}", handle_project_get)
     r.add_patch("/api/deck/projects/{id}/prefs", handle_project_prefs)
+    r.add_post("/api/deck/projects/{id}/environments", handle_project_environments_op)
     r.add_get("/api/deck/projects/{id}/docs", handle_project_docs)
     r.add_get("/api/deck/projects/{id}/doc", handle_project_doc_get)
     r.add_post("/api/deck/projects/{id}/doc", handle_project_doc_save)

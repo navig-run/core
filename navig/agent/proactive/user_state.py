@@ -60,18 +60,33 @@ class TimeOfDay(Enum):
 class UserPreferences:
     """Per-user preferences persisted across sessions."""
 
-    chat_mode: str = "work"  # work, deep-focus, planning, creative, relax, sleep
+    # The canonical AGENT mode (standard | creative). Legacy focus-mode ids
+    # (work/deep-focus/planning/creative/relax/sleep) migrate to "standard" on
+    # load — see `_load_state`. A stored "creative" from the OLD system becomes
+    # "standard"; only a write made under this schema keeps "creative".
+    chat_mode: str = "standard"
+    # True once this file has been through the agent-mode migration. Without it,
+    # a stored value is pre-migration and "creative" means the retired tone mode.
+    mode_migrated: bool = False
     verbosity: str = "normal"  # brief, normal, detailed
     voice_enabled: bool = False  # Whether voice responses are on
     quiet_hours_start: int = 23  # 24h format  (hour to START quiet)
     quiet_hours_end: int = 7  # 24h format  (hour to END quiet)
     autonomy_level: str = "balanced"  # cautious, balanced, autonomous
     notifications_enabled: bool = True
+    # Do-not-disturb, decoupled from the agent mode: a migrated deep-focus/sleep
+    # user stays held; `chat_mode` itself never gates suppression anymore.
+    dnd_enabled: bool = False
 
     # Valid values for each field
-    _VALID_MODES = ("work", "deep-focus", "planning", "creative", "relax", "sleep")
+    _VALID_MODES = ("standard", "creative")
     _VALID_VERBOSITY = ("brief", "normal", "detailed")
     _VALID_AUTONOMY = ("cautious", "balanced", "autonomous")
+    # The retired focus-mode vocabulary — named only so load-migration can map
+    # every one of these (including the old "creative") onto "standard".
+    _LEGACY_MODES = ("work", "deep-focus", "planning", "creative", "relax", "sleep")
+    # Legacy modes that held notifications; their users migrate with DND armed.
+    _LEGACY_DND_MODES = ("deep-focus", "sleep")
 
 
 @dataclass
@@ -438,6 +453,10 @@ class UserStateTracker:
             if value not in UserPreferences._VALID_MODES:
                 return False
             self.preferences.chat_mode = value
+            # A write under the new vocabulary is itself proof the migration
+            # happened — a later load must never re-map this "creative" to
+            # "standard" (that would silently switch capability authoring off).
+            self.preferences.mode_migrated = True
         elif key == "verbosity":
             if value not in UserPreferences._VALID_VERBOSITY:
                 return False
@@ -454,6 +473,10 @@ class UserStateTracker:
             self.preferences.autonomy_level = value
         elif key == "notifications_enabled":
             self.preferences.notifications_enabled = bool(value)
+        elif key == "dnd_enabled":
+            from navig.core.coerce import coerce_bool
+
+            self.preferences.dnd_enabled = coerce_bool(value, default=False)
         else:
             return False
         self._save_state()
@@ -475,10 +498,16 @@ class UserStateTracker:
             return hour >= start or hour < end
 
     def is_do_not_disturb(self) -> bool:
-        """True when mode is deep-focus or sleep, or notifications disabled."""
+        """True when DND is armed or notifications are disabled.
+
+        Decoupled from the agent mode (2026-10-20): the retired focus modes
+        deep-focus/sleep used to gate this; suppression now hangs off the
+        dedicated ``dnd_enabled`` preference so Standard/Creative never change
+        whether notifications are held.
+        """
         if not self.preferences.notifications_enabled:
             return True
-        return self.preferences.chat_mode in ("deep-focus", "sleep")
+        return bool(self.preferences.dnd_enabled)
 
     def should_suppress_notification(self, priority: int = 2) -> bool:
         """
@@ -547,6 +576,7 @@ class UserStateTracker:
 
         state_file = self.state_dir / "user_state.json"
         sidecar = self.state_dir / "last_seen.json"
+        resave = False
         if state_file.exists():
             try:
                 data = load_json_for_update(state_file, default={})
@@ -589,14 +619,17 @@ class UserStateTracker:
                 prefs = data.get("preferences", {})
                 if prefs:
                     self.preferences = UserPreferences(
-                        chat_mode=prefs.get("chat_mode", "work"),
+                        chat_mode=prefs.get("chat_mode", "standard"),
+                        mode_migrated=bool(prefs.get("mode_migrated", False)),
                         verbosity=prefs.get("verbosity", "normal"),
                         voice_enabled=prefs.get("voice_enabled", False),
                         quiet_hours_start=prefs.get("quiet_hours_start", 23),
                         quiet_hours_end=prefs.get("quiet_hours_end", 7),
                         autonomy_level=prefs.get("autonomy_level", "balanced"),
                         notifications_enabled=prefs.get("notifications_enabled", True),
+                        dnd_enabled=bool(prefs.get("dnd_enabled", False)),
                     )
+                    resave = self._migrate_agent_mode(prefs)
             except JsonReadError as e:
                 # Has content but unreadable — the one case that must never be
                 # replaced by the in-memory defaults.
@@ -607,6 +640,14 @@ class UserStateTracker:
                 # so a failure between them leaves half the file's values as defaults.
                 self._load_failed = True
                 logger.warning("Failed to load user state: %s", e)
+        if resave and not getattr(self, "_load_failed", False):
+            # First boot under the agent-mode schema: persist the migration once.
+            # Guarded separately so a write problem here can never flip a
+            # successful read into `_load_failed` (that would wedge every save).
+            try:
+                self._save_state()
+            except Exception as e:  # pragma: no cover - defensive
+                logger.debug("Could not persist agent-mode migration: %s", e)
         elif sidecar.exists():
             # No main state yet — at least restore last_seen from sidecar (BUG-5)
             try:
@@ -616,6 +657,33 @@ class UserStateTracker:
                     self.stats.last_seen = sc_ts
             except Exception:
                 pass  # best-effort: sidecar state unreadable; use defaults
+
+    def _migrate_agent_mode(self, raw: dict[str, Any]) -> bool:
+        """Map a pre-migration (focus-mode) preferences dict onto the agent-mode
+        schema. Returns True when the file needs re-saving.
+
+        Rules (owner decision 2026-10-20):
+        - All six legacy ids — including the OLD tone "creative" — land on
+          ``"standard"``; a legacy value must never enable capability authoring.
+        - ``deep-focus``/``sleep`` additionally arm ``dnd_enabled`` so their
+          users keep notification suppression after the modes retire. The arm
+          fires only while the raw value is still legacy, which the same save
+          clears — so it can never re-arm a user who later turned DND off.
+        - A file already marked migrated is trusted as-is; an unknown value
+          there degrades to ``"standard"`` rather than failing the load.
+        """
+        if raw.get("mode_migrated"):
+            if self.preferences.chat_mode not in UserPreferences._VALID_MODES:
+                self.preferences.chat_mode = "standard"
+            return False
+        self.preferences.chat_mode = "standard"
+        if (
+            raw.get("chat_mode") in UserPreferences._LEGACY_DND_MODES
+            and "dnd_enabled" not in raw
+        ):
+            self.preferences.dnd_enabled = True
+        self.preferences.mode_migrated = True
+        return True
 
     def _save_state(self):
         """Persist state to disk. Refuses while the last load is known to have failed.
@@ -666,12 +734,14 @@ class UserStateTracker:
                 },
                 "preferences": {
                     "chat_mode": self.preferences.chat_mode,
+                    "mode_migrated": self.preferences.mode_migrated,
                     "verbosity": self.preferences.verbosity,
                     "voice_enabled": self.preferences.voice_enabled,
                     "quiet_hours_start": self.preferences.quiet_hours_start,
                     "quiet_hours_end": self.preferences.quiet_hours_end,
                     "autonomy_level": self.preferences.autonomy_level,
                     "notifications_enabled": self.preferences.notifications_enabled,
+                    "dnd_enabled": self.preferences.dnd_enabled,
                 },
                 "updated_at": datetime.now().isoformat(),
             }

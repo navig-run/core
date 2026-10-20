@@ -1294,6 +1294,53 @@ def check_skills() -> list[tuple[str, bool, str]]:
     return [_check("Skills", True, f"{len(skills)} found across {len(dirs)} dir(s)")]
 
 
+def _gateway_owner(port: int) -> str | None:
+    """Command line of the process LISTENING on *port* — ``None`` when unknown.
+
+    Reachability alone cannot answer "is the gateway running": once no gateway holds
+    the port, the telegram worker takes it (same split-brain as gateway.json) and
+    answers, so this row stayed green while there was no gateway — and therefore no
+    Lighthouse uplink — at all. ``None`` (psutil absent, permissions) means we only
+    know the port answers; callers must then claim reachability only.
+    """
+    try:
+        import psutil  # noqa: PLC0415 - optional dependency, and only needed for this row
+    except ImportError:
+        return None
+    try:
+        for conn in psutil.net_connections(kind="tcp"):
+            if conn.status != psutil.CONN_LISTEN or not conn.pid:
+                continue
+            if getattr(conn.laddr, "port", None) == port:
+                return " ".join(psutil.Process(conn.pid).cmdline() or [])
+    except Exception:  # noqa: BLE001 — an unreadable process must not fail the report
+        return None
+    return None
+
+
+def _owner_label(cmdline: str) -> str:
+    """A short, non-path name for an owning process — its `-m` module, else the exe.
+
+    The `-m` module IS the identity (`navig.daemon.telegram_worker` vs the gateway);
+    a path regex is wrong here, because the install path itself usually contains
+    `navig` (``C:\\…\\navig\\venv\\Scripts\\pythonw.exe``) and wins the match.
+    """
+    parts = cmdline.split()
+    if "-m" in parts:
+        idx = parts.index("-m")
+        module = parts[idx + 1] if idx + 1 < len(parts) else ""
+        if module.lower() in ("navig", "navig.exe") and idx + 2 < len(parts):
+            return f"navig {parts[idx + 2]}"  # `-m navig gateway …` → "navig gateway"
+        return module or "unknown"
+    first = parts[0] if parts else "unknown"
+    return first.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
+
+
+def _is_gateway_cmdline(cmdline: str) -> bool:
+    """Is this the gateway itself — ``python[w] -m navig gateway start [--port N]``?"""
+    return "navig gateway start" in " ".join(cmdline.split()).lower()
+
+
 def check_gateway(port: int | None = None) -> list[tuple[str, bool, str]]:
     """Check if the gateway is running — on its LIVE port, not a guessed one."""
     results = []
@@ -1311,7 +1358,28 @@ def check_gateway(port: int | None = None) -> list[tuple[str, bool, str]]:
 
     reachable = _gateway_reachable("127.0.0.1", port)
     if reachable:
-        results.append(_check("Gateway", True, f"Responding at 127.0.0.1:{port}"))
+        owner = _gateway_owner(port)
+        if owner is None:
+            # Reachability IS verified — claim only that, never the gateway's identity.
+            results.append(_check("Gateway", True, f"Responding at 127.0.0.1:{port}"))
+        elif _is_gateway_cmdline(owner):
+            results.append(
+                _check("Gateway", True, f"Responding at 127.0.0.1:{port} (gateway up)")
+            )
+        else:
+            # Something else answers on the gateway's port: with no gateway there is
+            # no uplink either, so a green "Responding" here is the phantom green
+            # that hid a two-day outage.
+            results.append(
+                _check(
+                    "Gateway",
+                    False,
+                    f"answering on 127.0.0.1:{port}, but that port belongs to "
+                    f"{_owner_label(owner)} — no gateway process "
+                    "(start with: navig service start)",
+                    warn=True,
+                )
+            )
     else:
         results.append(
             _check(
@@ -1356,6 +1424,93 @@ def check_gateway(port: int | None = None) -> list[tuple[str, bool, str]]:
         )
 
     return results
+
+
+def check_uplink(port: int | None = None) -> list[tuple[str, bool, str]]:
+    """Is the brain's PUBLIC path up — the outbound Lighthouse uplink?
+
+    The row exists for a measured outage: with `gateway: false` in
+    `~/.navig/daemon/config.json`, every `navig service` boot started the Telegram
+    worker and never a gateway — so no uplink. The edge then answered
+    `503 {"offline":true}` for EVERY inbound webhook (Stripe sales, the cloud Deck,
+    edge-routed Telegram) for two days while `service status`, `gateway.json` and the
+    Gateway row all stayed green: no `Registered gateway` in `daemon.log` between
+    2026-10-18 13:04 and 2026-10-20, found by POSTing to the real edge URL.
+
+    It asks the daemon itself (`GET /api/deck/cloud/status` — the same read
+    `navig lighthouse status` prints). Could-not-verify is a warning, never a tick.
+    The row appears only where an edge is configured: cloud off, or a non-lighthouse
+    mode, means there is no such public path to report on.
+    """
+    if port is None:
+        try:
+            from navig.gateway_client import gateway_live_defaults
+
+            port = gateway_live_defaults()[0]
+        except Exception:  # noqa: BLE001
+            port = _GATEWAY_PORT
+
+    try:
+        from navig.config import ConfigManager
+        from navig.core.coerce import coerce_bool
+
+        # `global_config` is the NESTED tree (`cloud: {mode, enabled, …}`), not the flat
+        # dotted-key view `navig.config.get("cloud.mode")` exposes. Read the section
+        # dict and coerce its leaf: the stored value is a STRING (`navig config set
+        # cloud.enabled false`), so `bool("false")` is True — hence coerce_bool, and
+        # hence no raw `gcfg.get("cloud.enabled", …)` default here at all (the guard in
+        # tests/quality/test_config_booleans_are_coerced.py fails that read, correctly).
+        gcfg = ConfigManager().global_config or {}
+        cloud = gcfg.get("cloud")
+        if not isinstance(cloud, dict):
+            return []  # no cloud section: this install has no public path to report on
+        if not coerce_bool(cloud.get("enabled", True), default=True):
+            return []  # the operator turned the public path off — nothing to report
+        mode = str(cloud.get("mode") or "").strip().lower()
+    except Exception as exc:  # noqa: BLE001 — doctor must never crash on a check
+        return [_check("Uplink", False, f"COULD NOT VERIFY (config: {exc})", warn=True)]
+    if mode != "lighthouse":
+        return []  # no Lighthouse edge in this install — the question does not apply
+
+    if not _gateway_reachable("127.0.0.1", port):
+        # The Gateway row already fails loudly when the daemon is down — degrade the
+        # way the event processor row does instead of duplicating that failure.
+        return [_check("Uplink", False, "not checked — gateway not running", warn=True)]
+
+    try:
+        import requests  # noqa: PLC0415
+
+        from navig.gateway_client import gateway_request_headers  # noqa: PLC0415
+
+        resp = requests.get(
+            f"http://127.0.0.1:{port}/api/deck/cloud/status",
+            headers=gateway_request_headers(),
+            timeout=_STATUS_TIMEOUT,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return [_check("Uplink", False, f"COULD NOT VERIFY ({exc})", warn=True)]
+    if resp.status_code != 200:
+        return [_check("Uplink", False, f"COULD NOT VERIFY (HTTP {resp.status_code})", warn=True)]
+    try:
+        info = resp.json()
+    except ValueError:
+        return [
+            _check("Uplink", False, "COULD NOT VERIFY (status endpoint sent non-JSON)", warn=True)
+        ]
+
+    lh = info.get("lighthouse") or {}
+    status = str(lh.get("status") or info.get("status") or "").strip().lower()
+    if status == "online":
+        return [_check("Uplink", True, "online — the edge can reach this brain")]
+    return [
+        _check(
+            "Uplink",
+            False,
+            f"{status or 'unknown'} — the edge will 503 every webhook "
+            "(bring it up: navig service restart)",
+            warn=True,
+        )
+    ]
 
 
 # Pending events before the Event processor row warns about a growing backlog.
@@ -3798,6 +3953,7 @@ def _collect_sections(
         (
             "Gateway",
             check_gateway(port=port)
+            + check_uplink(port=port)
             + check_event_processor(port=port)
             + check_gateway_auth()
             + check_policy_default(),

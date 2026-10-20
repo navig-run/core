@@ -33,12 +33,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Canonical focus modes. Map common aliases to a canonical id.
-# Keep this list in sync with the Deck Account → Focus Mode picker.
-# Focus-mode phrase→canonical normalisation now lives in the single source of truth,
-# navig.gateway.channels.focus_modes (see `_normalize_focus` below). The former local
-# `_FOCUS_MODE_ALIASES` mapped phrases to `balance`/`navig`/`coder` — values that are not
-# valid `chat_mode`s, so `set_preference` rejected them.
+# Agent-mode phrase→canonical normalisation lives in the single source of truth,
+# navig.gateway.channels.focus_modes (see `_resolve_focus` below): two modes only,
+# `standard` | `creative`. The former local `_FOCUS_MODE_ALIASES` mapped phrases to
+# `balance`/`navig`/`coder` — values that are not valid `chat_mode`s, so
+# `set_preference` rejected them; retired focus-mode phrases now resolve to
+# `standard` (reported as legacy so the reply can say the mode retired).
 
 # Tier override aliases (the canonical values mirror _handle_tier_command).
 _TIER_ALIASES: dict[str, str] = {
@@ -101,17 +101,16 @@ _TIER_PATTERNS: list[re.Pattern[str]] = [
 ]
 
 
-def _normalize_focus(raw: str) -> str | None:
-    """Map a free-form focus phrase to a canonical ``chat_mode`` id, or None.
+def _resolve_focus(raw: str) -> tuple[str | None, bool]:
+    """Map a free-form mode phrase to ``(canonical chat_mode id | None, was_legacy)``.
 
     Delegates to the single source of truth so this and ``/mode`` share one vocabulary.
-    The old local ``_FOCUS_MODE_ALIASES`` mapped some phrases to ``balance`` / ``navig`` /
-    ``coder`` — none of which are valid ``chat_mode`` values, so ``set_preference`` rejected
-    them and the change silently no-op'd.
+    Retired phrases (deep work, balance, …) resolve to ``standard`` with
+    ``was_legacy=True`` so the reply can mention the retirement.
     """
-    from navig.gateway.channels.focus_modes import normalize
+    from navig.gateway.channels.focus_modes import resolve
 
-    return normalize(raw)
+    return resolve(raw)
 
 
 def _normalize_tier(raw: str) -> str | None:
@@ -126,15 +125,15 @@ def _normalize_tier(raw: str) -> str | None:
     return _TIER_ALIASES.get(key)
 
 
-def _extract_focus_mode(text: str) -> str | None:
-    """Try each focus-mode pattern; return the canonical mode or None."""
+def _extract_focus_mode(text: str) -> tuple[str, bool] | None:
+    """Try each mode pattern; return ``(canonical mode, was_legacy)`` or None."""
     for pat in _FOCUS_PATTERNS:
         m = pat.search(text)
         if not m:
             continue
-        canonical = _normalize_focus(m.group(1))
+        canonical, was_legacy = _resolve_focus(m.group(1))
         if canonical:
-            return canonical
+            return canonical, was_legacy
     return None
 
 
@@ -161,21 +160,19 @@ async def _apply_focus_mode(
     user_id: int,
     mode: str,
 ) -> None:
-    """Persist the focus mode change in both session metadata and user state."""
+    """Persist the agent-mode change in both session metadata and user state."""
     is_group = chat_id != user_id
-    # Session metadata. `mode` is already a canonical id from `_normalize_focus`
-    # (which resolves "auto"/"reset" to the default), so store it as-is — the old
-    # `"balance" if mode == "auto"` special-case pointed at a value that is not a valid
-    # chat_mode and no longer occurs.
+    # Session metadata under `agent_mode`; `mode` is already canonical from
+    # `_resolve_focus` (retired phrases included — they arrive as "standard").
     try:
         from navig.gateway.channels.telegram_sessions import get_session_manager
 
         sm = get_session_manager()
         sm.set_session_metadata(
-            chat_id, user_id, "focus_mode", mode, is_group=is_group
+            chat_id, user_id, "agent_mode", mode, is_group=is_group
         )
     except Exception as exc:
-        logger.debug("nl_settings: focus_mode session write failed: %s", exc)
+        logger.debug("nl_settings: agent_mode session write failed: %s", exc)
 
     # User-state preference
     try:
@@ -373,14 +370,21 @@ async def try_handle_settings_intent(
 
     stripped = text.strip()
 
-    # Focus mode
-    mode = _extract_focus_mode(stripped)
-    if mode:
+    # Agent mode
+    extracted = _extract_focus_mode(stripped)
+    if extracted:
+        mode, was_legacy = extracted
         await _apply_focus_mode(channel, chat_id, user_id, mode)
-        label = mode if mode != "auto" else "auto (NAVIG decides)"
+        reply = f"✅ Agent mode → {mode}"
+        if was_legacy:
+            # Say the mode retired without re-listing the obsolete choices.
+            reply = (
+                "⌛ That mode has retired — NAVIG now has Standard and Creative.\n"
+                f"✅ Agent mode → {mode}"
+            )
         await channel.send_message(
             chat_id,
-            f"✅ Focus mode → {label}",
+            reply,
             parse_mode=None,
         )
         return True

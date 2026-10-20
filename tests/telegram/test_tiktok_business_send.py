@@ -231,6 +231,43 @@ async def test_business_link_hands_offer_card_a_business_sender(cfg, monkeypatch
     assert captured["channel"].bcid == "conn1"
 
 
+async def test_business_link_also_wraps_music_offer_links(cfg, monkeypatch):
+    """The sibling enrichment shares the send path and must get the same
+    BusinessSender — raw-channel music sends fail in a business chat exactly
+    like the TikTok card did (and used to be wired that way)."""
+    cfg.d["telegram.business.enabled"] = True
+    b.remember_connection("conn1", owner_id=999)
+
+    captured: dict = {}
+
+    async def fake_offer_links(channel, chat_id, message_id, text):
+        captured["channel"] = channel
+        return False
+
+    from navig.telegram import music_actions
+
+    monkeypatch.setattr(music_actions, "offer_links", fake_offer_links)
+    monkeypatch.setattr(tiktok_actions, "offer_card", AsyncMock(return_value=False))
+
+    ch = AsyncMock()
+    ch.bot_token = "8490556839:ABC"
+    msg = {
+        "chat": {"id": 429106811, "title": "Biz"},
+        "from": {"id": 111, "username": "bob"},
+        "message_id": 8,
+        "text": "https://open.spotify.com/track/xyz",
+        "business_connection_id": "conn1",
+        "date": 0,
+    }
+    await b.handle_business_message(ch, msg)
+
+    assert isinstance(captured.get("channel"), b.BusinessSender), (
+        "music offer_links received the raw channel — its business-chat sends "
+        "would hit the same Forbidden rejection the TikTok card hit"
+    )
+    assert captured["channel"].bcid == "conn1"
+
+
 # ── seam 3: the button tap ───────────────────────────────────────────────────
 
 

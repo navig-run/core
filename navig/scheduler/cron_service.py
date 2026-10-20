@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 from navig.core.aio_subprocess import kill_process_tree
 from navig.core.json_io import JsonReadError, atomic_write_json, load_json_for_update
 from navig.debug_logger import get_debug_logger
+from navig.platform.navig_cli import navig_launcher
 
 if TYPE_CHECKING:
     from navig.gateway.server import NavigGateway
@@ -81,7 +82,6 @@ def split_exec_command(line: str) -> list[str]:
             for a in shlex.split(line, posix=False)
         ]
     return shlex.split(line)
-
 
 @dataclass
 class CronJob:
@@ -1317,11 +1317,13 @@ class CronService:
                 raise RuntimeError("NAVIG_EXEC job has no program to run")
             return await self._run_argv(argv)
 
-        # Check if it's a direct NAVIG command
+        # Check if it's a direct NAVIG command. The verb is re-entered through
+        # the install's own launcher: a bare `navig` is resolved against this
+        # process's PATH, which a hand-started gateway does not control.
         if command.startswith("navig "):
             import shlex
 
-            return await self._run_argv(shlex.split(command))
+            return await self._run_argv([*navig_launcher(), *shlex.split(command)[1:]])
 
         # Otherwise, treat as AI prompt
         response = await self.gateway.run_agent_turn(
@@ -1339,11 +1341,21 @@ class CronService:
 
     async def _run_argv(self, argv: list[str]) -> str:
         """Run one program to completion; its output, or an error on a non-zero exit."""
-        process = await asyncio.create_subprocess_exec(
-            *argv,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *argv,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError as exc:
+            # A bare WinError 2 is the only thing the operator's failure alert
+            # used to say, and it names neither the job's program nor a cause.
+            # This `str(e)` IS `job.last_output`, so it has to identify the
+            # programme that could not start.
+            raise RuntimeError(
+                f"Cannot launch {argv[0]!r}: the programme was not found — the "
+                f"scheduler process cannot see it on its PATH"
+            ) from exc
 
         try:
             stdout_bytes, stderr_bytes = await process.communicate()

@@ -130,6 +130,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "audit": ("navig.commands.audit", "audit_app"),
     "trigger": ("navig.commands.triggers", "trigger_app"),
     "insights": ("navig.commands.insights", "insights_app"),
+    "creative": ("navig.commands.creative", "creative_app"),
     "server-template": ("navig.commands.server_template", "server_template_app"),
     "gateway": ("navig.commands.gateway", "gateway_app"),
     "bot": ("navig.commands.gateway", "bot_app"),

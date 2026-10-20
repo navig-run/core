@@ -414,7 +414,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     ),
     SlashCommandEntry(
         "mode",
-        "Focus mode: work, deep-focus, planning, creative, relax, sleep",
+        "Agent mode: standard, creative",
         handler="_handle_mode",
         category="core",
         usage="/mode [name|list]",
@@ -1296,7 +1296,7 @@ _HELP_CATEGORIES: list[_HelpCategory] = [
         key="focus",
         label="Focus",
         emoji="🎯",
-        # Modes: work · deep-focus · planning · creative · relax · sleep.
+        # Agent modes: standard · creative (retired focus modes normalize to standard).
         commands=["mode", "briefing"],
     ),
     _HelpCategory(
@@ -4479,14 +4479,19 @@ class TelegramCommandsMixin:
                 voice_on = sm.get_session_metadata(
                     chat_id, user_id, "voice_replies_enabled", False, is_group=is_group
                 )
-                focus = sm.get_session_metadata(
-                    chat_id, user_id, "focus_mode", "balance", is_group=is_group
+                mode = sm.get_session_metadata(
+                    chat_id, user_id, "agent_mode", "", is_group=is_group
+                ) or sm.get_session_metadata(
+                    chat_id, user_id, "focus_mode", "", is_group=is_group
                 )
+                from navig.gateway.channels.focus_modes import DEFAULT_MODE
+
+                mode = mode if mode in ("standard", "creative") else DEFAULT_MODE
                 msg_count = getattr(session, "message_count", 0)
                 lines.append("")
                 lines.append("<b>Preferences</b>")
                 lines.append(f"{_ni('voice')} Voice replies: {'🔊 on' if voice_on else '🔇 off'}")
-                lines.append(f"{_ni('focus')} Focus mode: <code>{focus}</code>")
+                lines.append(f"{_ni('focus')} Agent mode: <code>{mode}</code>")
                 if msg_count:
                     lines.append(f"{_ni('note')} Messages in session: {msg_count}")
             except Exception as _e:  # noqa: BLE001
@@ -4513,15 +4518,20 @@ class TelegramCommandsMixin:
         await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
 
     async def _handle_mode(self, chat_id: int, text: str = "", user_id: int = 0) -> None:
-        """Set the focus mode — the LIVE ``chat_mode`` preference the agent reads and that
-        gates do-not-disturb (deep-focus / sleep hold notifications).
+        """Set the agent mode — the LIVE ``chat_mode`` preference (``standard`` |
+        ``creative``) the agent runtime shows and Creative-side gates read.
 
-        Was crashing on a removed ``navig.agent.soul.MOOD_REGISTRY`` import, and even before
-        that set ``chat_mode`` to mood ids (``balance`` …) the preference store rejected, so
-        it never actually changed the mode. Now driven by the single source of truth in
-        ``navig.gateway.channels.focus_modes``, keyed on the real ``_VALID_MODES`` vocabulary.
+        Retired focus-mode requests (work / deep-focus / … / the old tone creative)
+        behave as Standard and get a short "retired" notice — the obsolete choices
+        are never re-offered. DND is NOT gated by mode anymore (``dnd_enabled``).
+        Vocabulary comes from the single source of truth
+        (``navig.gateway.channels.focus_modes``), keyed on ``_VALID_MODES``.
         """
-        from navig.gateway.channels.focus_modes import DEFAULT_MODE, FOCUS_MODES, normalize
+        from navig.gateway.channels.focus_modes import (
+            AGENT_MODES,
+            DEFAULT_MODE,
+            resolve,
+        )
 
         mode_arg = command_args(text)
         _uid = user_id or chat_id
@@ -4537,8 +4547,8 @@ class TelegramCommandsMixin:
 
         if not mode_arg or mode_arg.lower() in ("help", "list"):
             current = _current()
-            lines = ["<b>Focus Modes</b>\n"]
-            for mid, fm in FOCUS_MODES.items():
+            lines = ["<b>Agent Modes</b>\n"]
+            for mid, fm in AGENT_MODES.items():
                 active_marker = " <b>· active</b>" if mid == current else ""
                 lines.append(f"{fm.emoji} <code>{mid}</code>{active_marker}\n<i>{fm.description}</i>")
             lines.append(
@@ -4548,9 +4558,9 @@ class TelegramCommandsMixin:
             await self.send_message(chat_id, "\n\n".join(lines), parse_mode="HTML")
             return
 
-        canonical = normalize(mode_arg)
+        canonical, was_legacy = resolve(mode_arg)
         if canonical is None:
-            available = "  ".join(f"<code>{k}</code>" for k in FOCUS_MODES)
+            available = "  ".join(f"<code>{k}</code>" for k in AGENT_MODES)
             await self.send_message(
                 chat_id,
                 f"Unknown mode: <code>{html.escape(mode_arg)}</code>\n\nAvailable: {available}",
@@ -4558,17 +4568,18 @@ class TelegramCommandsMixin:
             )
             return
 
-        fm = FOCUS_MODES[canonical]
-        # focus_mode (session, drives the settings keyboard chip) + chat_mode (user-state,
-        # drives agent behaviour + DND) — both set to the SAME canonical id.
+        fm = AGENT_MODES[canonical]
+        # agent_mode (session, drives the settings keyboard chip) — chat_mode
+        # (user-state) drives agent behaviour; both get the SAME canonical id.
+        # The old `focus_mode` metadata key is no longer written; readers fall back to it.
         if _HAS_SESSIONS:
             try:
                 sm = get_session_manager()
                 sm.set_session_metadata(
-                    chat_id, _uid, "focus_mode", canonical, is_group=_is_grp
+                    chat_id, _uid, "agent_mode", canonical, is_group=_is_grp
                 )
             except Exception as e:
-                logger.debug("Failed to persist focus_mode: %s", e)
+                logger.debug("Failed to persist agent_mode: %s", e)
         try:
             from navig.agent.proactive.user_state import get_user_state_tracker
 
@@ -4576,6 +4587,14 @@ class TelegramCommandsMixin:
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
+        if was_legacy:
+            await self.send_message(
+                chat_id,
+                f"⌛ <code>{html.escape(mode_arg)}</code> has retired — NAVIG now has "
+                f"Standard and Creative.\n{fm.confirmation}",
+                parse_mode="HTML",
+            )
+            return
         await self.send_message(chat_id, fm.confirmation, parse_mode=None)
 
     async def _handle_lang(

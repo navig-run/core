@@ -207,3 +207,10 @@ class TestFindNavigBin:
         assert sys.executable in result
         assert "-m" in result
         assert "navig" in result
+
+    def test_never_returns_a_cmd_shim(self):
+        """CreateProcess cannot execute `.cmd`; the Windows shim must be refused."""
+        with patch("navig.platform.navig_cli.shutil.which", return_value=r"C:\bin\navig.cmd"):
+            result = _find_navig_bin()
+        assert not result[0].lower().endswith((".cmd", ".bat"))
+

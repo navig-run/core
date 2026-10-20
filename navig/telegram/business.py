@@ -735,16 +735,22 @@ async def handle_business_message(channel, msg: dict, *, edited: bool = False) -
         sender = BusinessSender(channel, bcid) if bcid else channel
         await tiktok_actions.offer_card(sender, chat_id, message_id, text, is_owner=is_owner)
     except Exception:  # noqa: BLE001
-        logger.debug("tiktok offer_card skipped", exc_info=True)
+        # WARNING, not debug: this catch hid the enrichment dying entirely —
+        # the 2026-10-20 "link sent, card never appeared" investigation found
+        # every failure of this path was invisible in the live log.
+        logger.warning("tiktok offer_card skipped", exc_info=True)
     # A shared bare music link (Spotify/Apple/Deezer/…) gets the same track on every
     # platform (song.link). Owner-facing enrichment; a no-op without a bare music link
-    # or when telegram.music_links.enabled is off.
+    # or when telegram.music_links.enabled is off. Same BusinessSender route as the
+    # TikTok card above — the two enrichment sends share one failure mode.
     try:
         from navig.telegram import music_actions
 
-        await music_actions.offer_links(channel, chat_id, message_id, text)
+        bcid = msg.get("business_connection_id")
+        sender = BusinessSender(channel, bcid) if bcid else channel
+        await music_actions.offer_links(sender, chat_id, message_id, text)
     except Exception:  # noqa: BLE001
-        logger.debug("music offer_links skipped", exc_info=True)
+        logger.warning("music offer_links skipped", exc_info=True)
     # Pro-mode auto-reply: if the owner activated a persona for this chat, answer
     # the counterparty AS the owner (human-like timing). No-op when inactive or
     # when the message is from the owner.

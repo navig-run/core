@@ -108,6 +108,7 @@ __all__ = [
     "get_tool_registry",
     "get_tool_router",
     "parse_llm_action",
+    "extract_json",
     "get_pipeline_registry",
     "ToolCallAction",
     "RespondAction",
@@ -135,6 +136,13 @@ def parse_llm_action(text: str):
     from .schemas import parse_llm_action as _parse
 
     return _parse(text)
+
+
+def extract_json(text: str):
+    """First JSON object in LLM output, or None (lazy load)."""
+    from .schemas import extract_json as _extract
+
+    return _extract(text)
 
 
 # ─── Pipeline ToolRegistry singleton ──────────────────────────

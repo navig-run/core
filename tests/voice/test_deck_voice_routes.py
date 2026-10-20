@@ -600,3 +600,64 @@ async def test_a_local_voice_that_is_not_installed_is_a_400(engine):
         )
         assert resp.status == 400 and (await resp.json())["code"] == "bad_voice"
     assert engine["calls"] == []
+
+
+def test_a_policy_change_reaches_the_daemon_without_a_restart(tmp_path, monkeypatch):
+    """`navig voice policy offline` from a terminal must bite now.
+
+    The daemon's config snapshot is process-lifetime; the deck voice settings have to
+    re-stat the file (`get_live`) or the running daemon keeps sending text to a cloud
+    engine after the operator turned that off — which is exactly what a live probe
+    showed before this fix (offline in the file, Edge in the response, until restart).
+    """
+    import navig.config as cfg
+    from navig.gateway.deck.routes.voice import voice_settings
+
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(cfg, "_config_manager_instance", None)
+    monkeypatch.setattr(cfg, "_config_manager_config_dir", None)
+
+    daemon = cfg.get_config_manager()          # the long-lived process's view
+    daemon.set_global("voice.policy", "auto")
+    assert voice_settings()["policy"] == "auto"
+
+    cli = cfg.ConfigManager(config_dir=tmp_path)  # a second process: `navig voice policy offline`
+    cli.set_global("voice.policy", "offline")
+
+    assert voice_settings()["policy"] == "offline"
+    assert voice_settings()["daily_char_budget"] >= 0  # the same live read serves the rest
+
+
+async def test_speak_detects_the_language_when_nobody_named_one(engine):
+    """No lang, no profile: the words themselves pick the language.
+
+    A raw API caller (or a client that forgot lang) used to get whichever engine
+    default came first — a French line read with an English voice. Detection fills
+    the gap for every engine: default voice, lexicon and on-device pack.
+    """
+    async with await _client() as c:
+        resp = await c.post(
+            "/api/deck/voice/speak",
+            json={"text": "Bonjour, le café est prêt et la fenêtre est ouverte."},
+        )
+        assert resp.status == 200, await resp.text()
+        assert resp.headers["X-Navig-Voice-Id"].startswith("fr-FR")
+        await resp.read()
+    call = engine["calls"][-1]
+    assert call["lang"] == "fr"
+    assert call["voice"].startswith("fr-FR")
+
+    # An explicit lang still beats detection.
+    async with await _client() as c:
+        resp = await c.post("/api/deck/voice/speak", json={"text": "Bonjour.", "lang": "en"})
+        assert resp.status == 200, await resp.text()
+        await resp.read()
+    assert engine["calls"][-1]["lang"] == "en"
+    assert engine["calls"][-1]["voice"].startswith("en-US")
+
+    # Text detection cannot honestly name keeps the old behaviour: no lang, engine default.
+    async with await _client() as c:
+        resp = await c.post("/api/deck/voice/speak", json={"text": "Hola mundo bienvenidos amigos."})
+        assert resp.status == 200, await resp.text()
+        await resp.read()
+    assert engine["calls"][-1]["lang"] is None

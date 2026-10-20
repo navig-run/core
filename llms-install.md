@@ -9,9 +9,22 @@ to your own hosts, and gated shell/browser/device tools. Nothing is hosted, ther
 account, and no API key is required.
 
 - Package: `navig` on PyPI (<https://pypi.org/project/navig/>)
-- Tools: 130, namespaced `navig_*`
+- Tools: **15 by default** (a compact routed surface with `action` arguments); 155 with `--profile full`
 - Transport: stdio (`navig mcp serve --transport stdio`)
 - License: Apache-2.0 · Python 3.10+ · macOS / Windows / Linux
+
+Newer clients get the compact surface by default. If you need the pre-3.28 tool names
+(`navig_list_hosts`, `recall_search`, …), add `--profile full` to the launch arguments:
+
+```json
+"args": ["--from", "navig", "navig", "mcp", "serve", "--transport", "stdio", "--profile", "full"]
+```
+
+The compact surface is fifteen domain tools (`navig_fleet`, `navig_knowledge`,
+`navig_recall`, `navig_memory`, `navig_runtime`, `navig_automation`, `navig_web`,
+`navig_browser_debug`, `navig_browser_user`, `navig_connectors`, and separate read/act
+domains for memory, runtime actions, Bay/blocks, browser actions and connector writes).
+Each takes an `action` argument; the read domains are genuinely read-only.
 
 ## 1. Run it without installing anything (preferred)
 

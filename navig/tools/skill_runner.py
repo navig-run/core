@@ -14,7 +14,6 @@ Usage::
 from __future__ import annotations
 
 import shlex
-import sys
 from typing import Any
 
 from loguru import logger
@@ -157,13 +156,13 @@ def _find_navig_bin() -> list[str]:
     Always returns a *list* so callers can safely do::
 
         cmd = _find_navig_bin() + ["skill", "run", skill_id, command]
+
+    The install's entry point is preferred (it may carry its own interpreter in
+    a uv-managed env), but it must be a program CreateProcess can execute: the
+    first ``navig`` on the Windows PATH is the ``navig.cmd`` shim, which the old
+    ``shutil.which("navig")`` happily returned. ``navig_launcher`` refuses the
+    shim and falls back to ``sys.executable -m navig``.
     """
-    import shutil
+    from navig.platform.navig_cli import navig_launcher
 
-    # Prefer the installed entry-point (covers uv-managed envs)
-    found = shutil.which("navig")
-    if found:
-        return [found]
-
-    # Fallback: invoke via the same Python interpreter (editable install)
-    return [sys.executable, "-m", "navig"]
+    return navig_launcher(prefer_entrypoint=True)

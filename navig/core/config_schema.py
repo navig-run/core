@@ -185,7 +185,8 @@ if PYDANTIC_AVAILABLE:
 
                 warnings.warn(
                     "API key appears to be hardcoded. "
-                    "Consider using environment variables: ${OPENROUTER_API_KEY}", stacklevel=2
+                    "Consider using environment variables: ${OPENROUTER_API_KEY}",
+                    stacklevel=2,
                 )
             return v
 
@@ -356,6 +357,53 @@ if PYDANTIC_AVAILABLE:
     # Main Config Models
     # =============================================================================
 
+    class MCPFilesConfig(BaseModel):
+        """Filesystem containment for the MCP `desktop_filesystem` tool (S3).
+
+        Roots are the ONLY directories a remotely exposed server may touch; an empty
+        list with enforcement on denies everything (fail closed). Local stdio enforces
+        when roots are configured, or always with ``enforce: always``. Remote exposure
+        always enforces, whatever ``enforce`` says.
+        """
+
+        roots: list[str] = Field(
+            default_factory=list,
+            description=(
+                "Allowed absolute directories for MCP filesystem operations. Empty means "
+                "deny-all for a remote exposure and legacy unrestricted for local stdio."
+            ),
+        )
+        enforce: str = Field(
+            default="auto",
+            pattern=r"^(auto|always|never)$",
+            description="auto = remote or roots configured; always = every exposure; never = local only",
+        )
+
+        model_config = ConfigDict(extra="allow")
+
+    class MCPConfig(BaseModel):
+        """MCP server exposure policy (S2/S3).
+
+        Declared in the schema on purpose: the schema-filtered config view drops
+        undeclared keys, which would make these security settings silently unreadable.
+        """
+
+        remote_dangerous: str = Field(
+            default="deny",
+            pattern=r"^(deny|approve)$",
+            description=(
+                "Dangerous tools over a remote exposure: deny (default) requires an explicit "
+                "operator decision to approve; approve restores the single-operator behaviour."
+            ),
+        )
+        files: MCPFilesConfig = Field(default_factory=MCPFilesConfig)
+        cors_origins: list[str] = Field(
+            default_factory=list,
+            description="Explicit CORS origins; empty keeps the loopback default.",
+        )
+
+        model_config = ConfigDict(extra="allow")
+
     class GlobalConfig(BaseModel):
         """
         Global NAVIG configuration schema.
@@ -409,6 +457,9 @@ if PYDANTIC_AVAILABLE:
 
         # Browser / CDP automation (window visibility, idle reaping)
         browser: BrowserConfig = Field(default_factory=BrowserConfig)
+
+        # MCP server exposure (remote policy, filesystem roots, CORS)
+        mcp: MCPConfig = Field(default_factory=MCPConfig)
 
         # Advanced
         debug_mode: bool = False
@@ -489,7 +540,8 @@ if PYDANTIC_AVAILABLE:
 
                 warnings.warn(
                     "Hardcoded password detected. "
-                    "Consider using SSH keys or ${SSH_PASSWORD} syntax.", stacklevel=2
+                    "Consider using SSH keys or ${SSH_PASSWORD} syntax.",
+                    stacklevel=2,
                 )
             return v
 
@@ -501,7 +553,8 @@ if PYDANTIC_AVAILABLE:
 
                 warnings.warn(
                     "Key auth selected but no ssh_key specified. "
-                    "Will try default locations (~/.ssh/id_rsa, etc.)", stacklevel=2
+                    "Will try default locations (~/.ssh/id_rsa, etc.)",
+                    stacklevel=2,
                 )
             if self.auth_method == AuthMethod.PASSWORD and not self.password:
                 raise ValueError("Password auth selected but no password specified")
@@ -549,7 +602,8 @@ def validate_global_config(raw: dict[str, Any], strict: bool = False) -> GlobalC
         import warnings
 
         warnings.warn(
-            "Pydantic not installed. Config validation disabled. Install with: pip install pydantic", stacklevel=2
+            "Pydantic not installed. Config validation disabled. Install with: pip install pydantic",
+            stacklevel=2,
         )
         return None
 

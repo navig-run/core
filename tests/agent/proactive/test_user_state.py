@@ -10,6 +10,7 @@ Covers:
 - UserStateTracker.record_interaction stats update
 """
 
+import json
 import time
 from unittest.mock import patch
 
@@ -101,19 +102,28 @@ class TestTimeOfDay:
 class TestUserPreferences:
     def test_defaults(self):
         p = UserPreferences()
-        assert p.chat_mode == "work"
+        assert p.chat_mode == "standard"
         assert p.verbosity == "normal"
         assert p.voice_enabled is False
         assert p.quiet_hours_start == 23
         assert p.quiet_hours_end == 7
         assert p.autonomy_level == "balanced"
         assert p.notifications_enabled is True
+        assert p.dnd_enabled is False
+        assert p.mode_migrated is False
 
-    def test_valid_modes_contains_work(self):
-        assert "work" in UserPreferences._VALID_MODES
+    def test_valid_modes_are_standard_and_creative(self):
+        assert "standard" in UserPreferences._VALID_MODES
+        assert "creative" in UserPreferences._VALID_MODES
+        assert set(UserPreferences._VALID_MODES) == {"standard", "creative"}
 
-    def test_valid_modes_contains_sleep(self):
-        assert "sleep" in UserPreferences._VALID_MODES
+    def test_legacy_modes_are_retired_from_the_valid_set(self):
+        for legacy in ("work", "deep-focus", "planning", "relax", "sleep"):
+            assert legacy not in UserPreferences._VALID_MODES
+        # …and named only so load-migration can map them all onto Standard.
+        assert set(UserPreferences._LEGACY_MODES) == {
+            "work", "deep-focus", "planning", "creative", "relax", "sleep",
+        }
 
     def test_valid_verbosity(self):
         assert "brief" in UserPreferences._VALID_VERBOSITY
@@ -215,7 +225,7 @@ class TestUserStateTrackerInit:
         assert tracker.stats.total_messages == 0
 
     def test_preferences_defaults(self, tracker):
-        assert tracker.preferences.chat_mode == "work"
+        assert tracker.preferences.chat_mode == "standard"
 
     def test_interactions_list_empty(self, tracker):
         assert tracker._interactions == []
@@ -263,3 +273,119 @@ class TestRecordInteraction:
         tracker.record_interaction(message_type="chat")
         tracker.record_interaction(message_type="command", command="ls")
         assert len(tracker._interactions) == 2
+
+
+# ─────────────────────────────────────────────────────────────
+# Agent-mode migration + DND decoupling (owner decision 2026-10-20)
+# ─────────────────────────────────────────────────────────────
+
+
+def _seed_state(state_dir, **prefs):
+    """Write a user_state.json exactly as the PRE-migration system would."""
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "user_state.json").write_text(
+        json.dumps(
+            {"stats": {}, "config": {}, "preferences": prefs, "updated_at": "2026-01-01T00:00:00"}
+        ),
+        encoding="utf-8",
+    )
+
+
+class TestAgentModeMigration:
+    def test_six_legacy_values_migrate_to_standard(self, tmp_path):
+        """All six focus modes — including the OLD tone creative — land on Standard,
+        and deep-focus/sleep additionally arm DND so suppression is not lost."""
+        for legacy in UserPreferences._LEGACY_MODES:
+            state_dir = tmp_path / f"mig-{legacy}"
+            _seed_state(state_dir, chat_mode=legacy)
+            tracker = UserStateTracker(state_dir=state_dir)
+            assert tracker.get_preference("chat_mode") == "standard", legacy
+            expect_dnd = legacy in UserPreferences._LEGACY_DND_MODES
+            assert tracker.preferences.dnd_enabled is expect_dnd, legacy
+            assert tracker.preferences.mode_migrated is True
+
+    def test_migration_is_persisted_once_and_idempotent(self, tmp_path):
+        state_dir = tmp_path / "mig-once"
+        _seed_state(state_dir, chat_mode="deep-focus")
+        UserStateTracker(state_dir=state_dir)  # first load migrates + re-saves
+        saved = json.loads((state_dir / "user_state.json").read_text(encoding="utf-8"))
+        assert saved["preferences"]["chat_mode"] == "standard"
+        assert saved["preferences"]["mode_migrated"] is True
+        assert saved["preferences"]["dnd_enabled"] is True
+        # A user who then turns DND off is never re-armed by a later load.
+        tracker = UserStateTracker(state_dir=state_dir)
+        assert tracker.set_preference("dnd_enabled", False) is True
+        again = UserStateTracker(state_dir=state_dir)
+        assert again.preferences.dnd_enabled is False
+
+    def test_legacy_creative_never_becomes_capability_creative(self, tmp_path):
+        """A stored OLD `creative` (chat tone) must not arm capability authoring."""
+        state_dir = tmp_path / "mig-oldcreative"
+        _seed_state(state_dir, chat_mode="creative")
+        tracker = UserStateTracker(state_dir=state_dir)
+        assert tracker.get_preference("chat_mode") == "standard"
+
+    def test_new_schema_creative_survives_reload(self, tmp_path):
+        """Once written under the new schema, `creative` IS capability mode and must
+        not be re-migrated on the next boot."""
+        state_dir = tmp_path / "mig-newcreative"
+        _seed_state(state_dir, chat_mode="standard", mode_migrated=True)
+        tracker = UserStateTracker(state_dir=state_dir)
+        assert tracker.set_preference("chat_mode", "creative") is True
+        reloaded = UserStateTracker(state_dir=state_dir)
+        assert reloaded.get_preference("chat_mode") == "creative"
+
+    def test_unknown_value_on_migrated_file_degrades_to_standard(self, tmp_path):
+        state_dir = tmp_path / "mig-unknown"
+        _seed_state(state_dir, chat_mode="half-life", mode_migrated=True)
+        tracker = UserStateTracker(state_dir=state_dir)
+        assert tracker.get_preference("chat_mode") == "standard"
+
+    def test_set_preference_rejects_retired_ids(self, tmp_path):
+        with patch("navig.agent.proactive.user_state.UserStateTracker._load_state"):
+            tracker = UserStateTracker(state_dir=tmp_path / "reject")
+        for retired in ("work", "deep-focus", "sleep", "balance"):
+            assert tracker.set_preference("chat_mode", retired) is False
+
+
+class TestDndDecoupledFromMode:
+    def test_mode_never_gates_do_not_disturb(self, tmp_path):
+        with patch("navig.agent.proactive.user_state.UserStateTracker._load_state"):
+            tracker = UserStateTracker(state_dir=tmp_path / "dnd")
+        # Both modes, notifications on, DND off → never DND.
+        for mode in ("standard", "creative"):
+            assert tracker.set_preference("chat_mode", mode) is True
+            assert tracker.is_do_not_disturb() is False
+
+    def test_dnd_preference_holds_in_either_mode(self, tmp_path):
+        with patch("navig.agent.proactive.user_state.UserStateTracker._load_state"):
+            tracker = UserStateTracker(state_dir=tmp_path / "dnd2")
+        assert tracker.set_preference("dnd_enabled", True) is True
+        for mode in ("standard", "creative"):
+            tracker.set_preference("chat_mode", mode)
+            assert tracker.is_do_not_disturb() is True
+
+    def test_notifications_disabled_alone_is_still_dnd(self, tmp_path):
+        with patch("navig.agent.proactive.user_state.UserStateTracker._load_state"):
+            tracker = UserStateTracker(state_dir=tmp_path / "dnd3")
+        assert tracker.set_preference("notifications_enabled", False) is True
+        assert tracker.is_do_not_disturb() is True
+
+    def test_suppression_priority_matrix_unchanged(self, tmp_path):
+        """DND blocks LOW/NORMAL/HIGH, CRITICAL (4) always passes; quiet hours block
+        LOW/NORMAL only — the exact behaviour that hung off the old modes."""
+        with patch("navig.agent.proactive.user_state.UserStateTracker._load_state"):
+            tracker = UserStateTracker(state_dir=tmp_path / "dnd4")
+        tracker.set_preference("dnd_enabled", True)
+        for prio in (1, 2, 3):
+            assert tracker.should_suppress_notification(priority=prio) is True, prio
+        assert tracker.should_suppress_notification(priority=4) is False
+
+    def test_dnd_enabled_accepts_string_false(self, tmp_path):
+        """`"false"` must never become truthy — the coerce_bool trap."""
+        with patch("navig.agent.proactive.user_state.UserStateTracker._load_state"):
+            tracker = UserStateTracker(state_dir=tmp_path / "dnd5")
+        assert tracker.set_preference("dnd_enabled", "true") is True
+        assert tracker.preferences.dnd_enabled is True
+        assert tracker.set_preference("dnd_enabled", "false") is True
+        assert tracker.preferences.dnd_enabled is False

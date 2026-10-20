@@ -424,13 +424,14 @@ _MONITORS = [
     {"key": "breach",           "label": "Breach check",       "desc": "Scan your vault emails against leak dumps (CyberAIGen). Off until you connect a token; alerts carry masked passwords only."},
     {"key": "recall_ingest",    "label": "Recall reading",     "desc": "Every 5 minutes, read new Claude Code, Codex and shared-chat conversations into Recall so they are searchable. Needs recall reading on (navig recall enable); nothing leaves this machine."},
     {"key": "site_probes",      "label": "Site uptime & certs", "desc": "Probe the URLs in monitors.site_probes.urls for downtime and TLS certificate expiry (warning before the date, critical at crit days) — with an all-clear when they recover."},
+    {"key": "creative_scan",    "label": "Creative suggestions", "desc": "Idle unless Creative Agent Mode is on: every 6 hours, look through your own operation history for grounded improvement proposals and surface them on the Dashboard. Standard mode scans nothing; nothing is built or published without you."},
 ]
 _MONITOR_KEYS = {m["key"] for m in _MONITORS}
 
 # Monitors shown ON when the operator has never toggled them. Mirrors
 # NavigGateway.MONITORS_DEFAULT_ON (kept in sync by test_monitor_defaults_agree) so the
 # card and the gateway never disagree about a monitor's default state.
-_DEFAULT_ON = frozenset({"config_incidents", "pushover_escalation", "lens_updates"})
+_DEFAULT_ON = frozenset({"config_incidents", "pushover_escalation", "lens_updates", "creative_scan"})
 
 
 def _truthy(v: object) -> bool:

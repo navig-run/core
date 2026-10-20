@@ -234,11 +234,11 @@ async def test_model_tier_persists_through_the_bots_own_writer(isolated):
     assert got["user_tier_override"] == "big"
 
 
-# ── focus mode ───────────────────────────────────────────────────────────────
+# ── agent mode ───────────────────────────────────────────────────────────────
 
 
-async def test_mode_accepts_exactly_focus_modes(isolated, monkeypatch):
-    from navig.gateway.channels.focus_modes import FOCUS_MODES
+async def test_mode_accepts_exactly_agent_modes(isolated, monkeypatch):
+    from navig.gateway.channels.focus_modes import AGENT_MODES
     from navig.gateway.deck.routes import core as core_routes
 
     saved: list[str] = []
@@ -250,12 +250,19 @@ async def test_mode_accepts_exactly_focus_modes(isolated, monkeypatch):
 
     monkeypatch.setattr(core_routes, "_get_tracker", lambda: _Tracker())
     async with TestClient(TestServer(_app())) as client:
-        for mode in FOCUS_MODES:
+        for mode in AGENT_MODES:
             status, body = await _post(client, "/api/deck/mode", {"mode": mode})
             assert status == 200, (mode, body)
-        status, _ = await _post(client, "/api/deck/mode", {"mode": "balance"})
+            assert body == {"mode": mode}
+        # A stale client posting a retired focus-mode id is migrated, not 400'd —
+        # the obsolete vocabulary is never echoed back.
+        status, body = await _post(client, "/api/deck/mode", {"mode": "work"})
+        assert status == 200, body
+        assert body == {"mode": "standard", "migrated": True}
+        # Genuinely unknown input is still refused.
+        status, _ = await _post(client, "/api/deck/mode", {"mode": "banana"})
         assert status == 400
-    assert saved == list(FOCUS_MODES)
+    assert saved == list(AGENT_MODES) + ["standard"]
 
 
 async def test_mode_reports_a_rejected_write(isolated, monkeypatch):
@@ -267,7 +274,7 @@ async def test_mode_reports_a_rejected_write(isolated, monkeypatch):
 
     monkeypatch.setattr(core_routes, "_get_tracker", lambda: _Tracker())
     async with TestClient(TestServer(_app())) as client:
-        status, _ = await _post(client, "/api/deck/mode", {"mode": "work"})
+        status, _ = await _post(client, "/api/deck/mode", {"mode": "creative"})
     assert status == 500
 
 

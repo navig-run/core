@@ -260,10 +260,14 @@ def _synthesize(gw):
 
 
 def _voice_policy() -> str:
-    """The operator's ``voice.policy`` (``auto`` when absent or unrecognised)."""
+    """The operator's ``voice.policy`` (``auto`` when absent or unrecognised).
+
+    Read with ``get_live`` — this route runs inside the long-lived daemon, and a
+    privacy switch the operator flips from a terminal must bite without a restart.
+    """
     from navig.config import get_config_manager
 
-    pol = str(get_config_manager().get("voice.policy", "auto") or "auto").strip().lower()
+    pol = str(get_config_manager().get_live("voice.policy", "auto") or "auto").strip().lower()
     return pol if pol in ("auto", "free", "premium", "offline") else "auto"
 
 

@@ -1710,6 +1710,11 @@ class TelegramChannel:
             logger.debug("callback extension gate skipped: %s", exc)
             return True
 
+        # The rejecting gate itself used to be log-silent: the operator got a
+        # toast and the log got nothing, so "extension off" and "never arrived"
+        # looked identical the next day.
+        logger.info("callback rejected (extension off): %s", (cb_data or "?")[:60])
+
         try:
             await self._api_call(
                 "answerCallbackQuery",
@@ -1838,6 +1843,17 @@ class TelegramChannel:
                 logger.warning("Unauthorized callback: user_id=%s", cb_user_id)
                 return
             cb_data = callback_query.get("data", "")
+            # Arrival leaves a trace: without it, a press that dies in a
+            # DEBUG-logging catch below — or on a gate that only toasts — is
+            # indistinguishable from "the press never happened". That is
+            # exactly how the owner's live ⬇️ tap vanished with zero log
+            # lines (2026-10-20, gateway.log).
+            logger.info(
+                "callback: %s chat=%s message=%s",
+                (cb_data or "?")[:60],
+                cb_chat_id_cq,
+                "present" if cb_message.get("message_id") else "MISSING",
+            )
 
             # ── Extension gate ─────────────────────────────────────────────
             # Placed ABOVE every branch below, deliberately: `slash:` (next)

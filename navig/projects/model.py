@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "ProjectNotFound",
+    "active_checkout",
     "add_project",
     "get_project",
     "list_projects",
@@ -155,19 +156,60 @@ def _discover() -> dict[str, Any]:
 
 
 def resolve_project(project_id: str) -> tuple[str, Path]:
-    """Space id → (canonical id, root). Raises :class:`ProjectNotFound`."""
+    """Space id → (canonical id, root). Raises :class:`ProjectNotFound`.
+
+    The root is the CANONICAL checkout — the registry's deterministic row via
+    ``canonical_row_for_id``, never "whichever duplicate row discovery saw first"
+    (worktree sessions used to flip this between runs). Discovery remains the
+    fallback for spaces known only from the filesystem. When the caller means
+    "the checkout I am standing in", ask :func:`active_checkout` explicitly.
+    """
     pid = (project_id or "").strip()
     if not pid:
         raise ProjectNotFound("project id is required")
+    from navig.spaces.contracts import normalize_space_name  # noqa: PLC0415
+    from navig.spaces.registry import canonical_root  # noqa: PLC0415
+
+    root = canonical_root(pid)
+    if root is not None:
+        return normalize_space_name(pid), Path(root)
     spaces = _discover()
     cfg = spaces.get(pid)
     if cfg is None:
-        from navig.spaces.contracts import normalize_space_name  # noqa: PLC0415
-
         cfg = spaces.get(normalize_space_name(pid))
     if cfg is None:
         raise ProjectNotFound(f"unknown project: {pid}")
     return cfg.canonical_name, Path(cfg.path)
+
+
+def active_checkout(path: str | Path | None = None, *,
+                    project_id: str | None = None) -> str | None:
+    """THE checkout containing *path* (default: cwd) for *project_id* — explicit
+    active-checkout resolution, the counterpart of :func:`resolve_project`'s canonical
+    answer.
+
+    Rules, in order: the git worktree root that contains the path wins when it belongs
+    to the project's repository (a worktree session resolves to ITS checkout, a main
+    checkout session to the main one); otherwise the project's canonical root; ``None``
+    when neither exists. Non-git folders fall back to the canonical root.
+    """
+    from navig.spaces.registry import canonical_root  # noqa: PLC0415
+
+    canon = canonical_root(project_id) if project_id else None
+    target = Path(path) if path is not None else Path.cwd()
+    top = gitinfo.toplevel(target)
+    if top is None:
+        # Not inside a git worktree: containment still says whether the path IS the project
+        if canon and (str(target).replace("/", "\\").casefold().rstrip("\\")
+                      .startswith(canon.replace("/", "\\").casefold().rstrip("\\") + "\\")
+                      or Path(target).resolve() == Path(canon).resolve()):
+            return canon
+        return canon
+    if canon and gitinfo.same_repo(top, canon):
+        return top
+    if canon:
+        return canon  # path belongs to some other repo (or none) — the project's root is canonical
+    return top if project_id is None else None
 
 
 # ── summaries ───────────────────────────────────────────────────────────────

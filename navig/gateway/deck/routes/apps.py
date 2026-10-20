@@ -990,13 +990,12 @@ async def handle_deck_apps_calendar(request: "web.Request") -> "web.Response":
     Shape: CalendarEvent[]  { id, title, start_at, end_at, all_day, source }
     """
     import asyncio
-    import shutil
 
-    navig_bin = shutil.which("navig") or "navig"
+    from navig.platform.navig_cli import navig_launcher
 
     try:
         proc = await asyncio.create_subprocess_exec(
-            navig_bin, "calendar", "list", "--json",
+            *navig_launcher(), "calendar", "list", "--json",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

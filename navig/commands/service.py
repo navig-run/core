@@ -397,16 +397,35 @@ def service_install(
     # Save config
     import json
 
-    from navig.core.yaml_io import atomic_write_text
+    from navig.core.yaml_io import atomic_write_text, read_text_retrying
     from navig.daemon import service_manager as sm
     from navig.daemon.entry import DEFAULT_DAEMON_CONFIG, save_default_config
 
     config_path = save_default_config()
+    # A FAILED READ must never become a destructive WRITE. `save_default_config()`
+    # above already distinguishes "genuinely corrupt" (repair) from "unreadable
+    # right now" (leave it alone) — this read has to agree with it. Falling back to
+    # DEFAULT_DAEMON_CONFIG here hands `_resolved_daemon_components` a config with no
+    # `gateway` key, so it writes `gateway: false` and the next daemon start comes up
+    # with the Telegram bot and NO Lighthouse uplink: the edge answers 503 for every
+    # webhook (Stripe sales, the cloud Deck, edge-routed Telegram) while
+    # `navig service status` still says RUNNING. Measured on the operator's machine —
+    # config rewritten 2026-10-19 22:55, no `Registered gateway` after 2026-10-18
+    # 13:04, discovered by POSTing to the real edge. Refuse instead: nothing is
+    # written, and the operator retries once the transient lock clears.
     try:
-        cfg = json.loads(config_path.read_text(encoding="utf-8"))
-        if not isinstance(cfg, dict):
-            cfg = DEFAULT_DAEMON_CONFIG.copy()
-    except (json.JSONDecodeError, OSError):
+        cfg = json.loads(read_text_retrying(config_path))
+    except json.JSONDecodeError:
+        # Corrupt, not torn: writes here are atomic (temp + os.replace), so this is
+        # the same "repair to defaults" policy entry._load_config applies at boot.
+        cfg = DEFAULT_DAEMON_CONFIG.copy()
+    except OSError as exc:
+        ch.error(
+            f"Cannot read {config_path} right now ({exc}) — nothing was written.",
+            "Another process is holding the file; retry in a moment.",
+        )
+        raise typer.Exit(1) from exc
+    if not isinstance(cfg, dict):
         cfg = DEFAULT_DAEMON_CONFIG.copy()
     cfg = _resolved_daemon_components(
         cfg, bot=bot, gateway=gateway, scheduler=scheduler, health_port=health_port

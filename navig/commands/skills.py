@@ -83,13 +83,17 @@ def _resolve_skills_dirs(explicit_dir: str | None) -> list[Path]:
     # OUT of the navig package to <repo>/core/store/skills, which (a) never existed in
     # an installed layout, so a pip-installed navig saw zero builtin skills, and (b)
     # died outright when the content store moved inside the package.
-    from navig.platform.paths import builtin_store_dir
+    from navig.platform.paths import builtin_store_dir, store_dir
 
     base_dir = Path(__file__).resolve()
     candidates = [
         base_dir.parent / "skills",          # navig/commands/skills/  (co-located)
         base_dir.parent.parent / "skills",   # navig/skills/           (package skills)
         builtin_store_dir() / "skills",      # navig/builtin/skills/   (canonical store)
+        # The USER store — where `navig skill new` and the Creative build path
+        # write. Without this, `skill new` succeeded and then advertised
+        # `skill run <slug>` that could not find the skill without --dir.
+        store_dir() / "skills",
     ]
 
     unique: list[Path] = []
@@ -796,25 +800,18 @@ def skills_new(
     ch.info("Edit the description (auto-activation matches it), then: navig skill run " + slug)
 
 
-@skills_app.command("lint")
-@skills_app.command("validate")
-def skills_lint(
-    path: Path = typer.Argument(Path("."), help="Skill dir or SKILL.md (default: ./)."),
-    json_out: bool = typer.Option(False, "--json", help="Machine-readable results."),
-):
-    """Validate a SKILL.md against the NAVIG authoring standard (docs/authoring-guide.md).
+def lint_skill_path(skill_file: Path) -> list[tuple[str, str, str]]:
+    """Check one SKILL.md against the authoring standard (docs/authoring-guide.md).
 
-    Catches the common failure modes: `**key:** value` pseudo-keys with no real YAML
-    frontmatter (every field silently discarded), an invalid ``safety`` enum, and a
-    description too thin to route well.
+    Returns ``(level, check, detail)`` rows with ``level`` in ``ok|warn|fail``.
+    Extracted from ``skills_lint`` so the Creative build path enforces EXACTLY
+    the standard the CLI reports — one implementation, two callers. Pure: never
+    prints, never exits; a missing file is a ``fail`` row, not an exception.
     """
     import re
 
-    target = path.expanduser()
-    skill_file = target if target.name == "SKILL.md" else target / "SKILL.md"
     if not skill_file.exists():
-        ch.error("No SKILL.md found.", details=str(skill_file))
-        raise typer.Exit(1)
+        return [("fail", "frontmatter", f"no SKILL.md at {skill_file}")]
 
     raw = skill_file.read_text(encoding="utf-8")
     fm = _load_frontmatter(skill_file)
@@ -882,6 +879,28 @@ def skills_lint(
     else:
         checks.append(("ok", "safety", "unset → defaults to safe"))
 
+    return checks
+
+
+@skills_app.command("lint")
+@skills_app.command("validate")
+def skills_lint(
+    path: Path = typer.Argument(Path("."), help="Skill dir or SKILL.md (default: ./)."),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable results."),
+):
+    """Validate a SKILL.md against the NAVIG authoring standard (docs/authoring-guide.md).
+
+    Catches the common failure modes: `**key:** value` pseudo-keys with no real YAML
+    frontmatter (every field silently discarded), an invalid ``safety`` enum, and a
+    description too thin to route well.
+    """
+    target = path.expanduser()
+    skill_file = target if target.name == "SKILL.md" else target / "SKILL.md"
+    if not skill_file.exists():
+        ch.error("No SKILL.md found.", details=str(skill_file))
+        raise typer.Exit(1)
+
+    checks = lint_skill_path(skill_file)
     fails = [c for c in checks if c[0] == "fail"]
     warns = [c for c in checks if c[0] == "warn"]
 

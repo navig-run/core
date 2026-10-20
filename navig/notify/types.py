@@ -62,6 +62,9 @@ NOTIFICATION_TYPES: list[dict] = [
     {"key": "agent_done",        "label": "Agent run finished", "category": "Agent",    "default_channels": ["deck"]},
     {"key": "agent_failed",      "label": "Agent run failed",   "category": "Agent",    "default_channels": ["deck"]},
     {"key": "agent_needs_input", "label": "Agent needs you",    "category": "Agent",    "default_channels": ["deck"]},
+    # Creative Mode's grounded improvement proposal (navig creative / Dashboard card).
+    # Deck only by default — suggestions are not phone buzz; Telegram is opt-in per type.
+    {"key": "creative_proposal", "label": "NAVIG suggestions",  "category": "Agent",    "default_channels": ["deck"]},
     {"key": "agent_stalled",     "label": "Agent run stalled",  "category": "Agent",    "default_channels": ["deck"]},
     {"key": "agent_message",    "label": "Agent messages",     "category": "Agent",    "default_channels": ["deck"]},
     {"key": "system_alert",     "label": "System alerts",      "category": "System",   "default_channels": ["deck", "telegram"]},
@@ -125,6 +128,7 @@ def emoji_for_type(type_key: str) -> str:
         "reminder": "⏰", "appointment": "📅", "briefing": "☀️", "mission_complete": "✅", "goal_digest": "🎯",
         "approval": "🔔", "agent_message": "🤖",
         "agent_done": "✅", "agent_failed": "❌", "agent_needs_input": "🙋", "agent_stalled": "⏳", "system_alert": "🚨",
+        "creative_proposal": "💡",
         "node_status": "🛰️", "security_alert": "🛡️", "invoice_due": "🧾",
         "finance_alert": "💸", "webcam_on": "📷", "webcam_off": "📷",
         "message_deleted": "🗑", "breach_alert": "🔓",

@@ -9,7 +9,235 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Do NOT add entries here by hand: drop a fragment in changelog.d/<slug>.<kind>.md (see changelog.d/README.md) -->
 <!-- and fold them in with `npm run changelog:assemble`. Direct edits of this block collide on every rebase. -->
 <!-- This file merges by UNION (.gitattributes): two branches inserting at the same line keep both entries on rebase. -->
-<!-- Run: git log v3.27.7..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+<!-- Run: git log v3.28.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+
+## [3.28.0] — 2026-10-20
+
+### Added
+- **NAVIG Debrief presentations (`navig debrief`)** — bare `navig debrief` turns the
+  last work session into an interactive slide deck (`presentation.html` +
+  `presentation.json`), `--plan` presents a proposal (always labeled proposed, never as
+  done), `--profile board` trims to a 4–6 slide brief, `--export pdf` prints the deck,
+  `--technical` appends the evidence appendix, `--presentation` renders an authored
+  spec. Decks derive only from transcript facts plus an optional `story.json`; the
+  scrolling report (`navig debrief build|list|open|shot`) is unchanged, the OS tile can
+  build either, and `pip install "navig[debrief]"` now pulls the plugin (`core` extra).
+- **`navig.tools.extract_json`** — public entry point for the LLM-output JSON
+  parser plugins already needed (fenced/bare objects, trailing commas); the
+  private `_extract_json` stays core-internal, and the private-import guard
+  now has a supported path for plugin callers.
+- **DeepSeek Search is the system search engine** — new `deepseek_search` provider for
+  `web_search()` (POST `/v1/tools/search`, key in the vault under `deepseek_search/api_key`,
+  alias `deepseek`), first in the `auto` keyed cascade. Every surface reports the engine that
+  actually answered: `navig search --json` now prints `provider`, the agent tool output and
+  Telegram's `[Web context — via …]` header carry it, and a **Search engine** section on
+  NAVIG OS Settings → Personalization shows the active engine, available engines with key
+  presence (booleans only — never key material), the fallback cascade, and a Test button
+  (`GET/POST /api/deck/search/status|config|test`). NAVIG OS agent sessions search through the
+  new `POST /api/deck/search` proxy, so core, CLI, MCP, Telegram and NAVIG OS all share ONE
+  backend and ONE config key (`web.search.provider`); the proxy honors the
+  `web.search.enabled` kill switch (403).
+- **Distribution — the multi-project distribution workspace** ships in this tree:
+  `navig distribution` (26 commands: status, plan, channels, research, content studio,
+  publish prepare/approve/reject/run/record/verify/journal, maintain, schedule,
+  analytics) plus the native NAVIG OS app (NAVIG OS → Distribution) backed by 37 deck
+  routes. The bundled seed imports SCHEMA's 139 audited channel records with their
+  verification evidence and computes eligibility **per project** across ten configured
+  projects; publishing delegates platform posts to NAVIG Social and operator-led
+  submissions to NAVIG's CDP.
+- **Unified Environments data model (schema 1) — the contract under NAVIG OS's next
+  switcher.** Manifests gain an additive, tolerant `kind` (`environment` · `area` ·
+  `project` · defaulting to `space` for every legacy manifest), `projects` (stable
+  Project-Manager registry ids, ordered and de-duplicated — many-to-many membership,
+  never a false single parent) and `interface` (an open dict of dashboard/dock/menu
+  bindings; layouts stay OS-side so Environment Packs can ship pointers later). The
+  folder name never decides a role. Active Environment / Area / Project pointers run
+  through the same canonical engine as the active Space (`NAVIG_ENVIRONMENT` /
+  `NAVIG_AREA` / `NAVIG_PROJECT` → cache file as truth → config mirror, each
+  independent and clearable), plus a bounded newest-first recent-Environments list.
+  Membership itself stays on the existing `relations.parent` edge — no second storage
+  engine, no registry migration (unknown registry keys provably round-trip), and
+  Spaces/CLI/MCP behaviour is untouched.
+- **Projects ↔ Environments membership — the Project Manager stays the one project
+  database.** `GET /api/deck/projects` and `GET /api/deck/projects/{id}` now carry
+  `environments: [<env ids>]` (many-to-many, layered on read from Environment
+  manifests — never stored twice), and `POST /api/deck/projects/{id}/environments`
+  with `{op: attach|detach, environment}` writes membership core-side-validated:
+  unknown project → 404, non-Environment target / unknown project id / bad op →
+  400, responses return the project's updated Environment list so clients converge
+  without refetching. Core library: `environments_containing`,
+  `environment_project_map`, `attach_project` / `detach_project` (idempotent;
+  detaching a stale id still works for cleanup; attaching to an Area is refused —
+  Areas hang off Environments via `relations.parent`).
+- **Session goal: operator completion + evidence assessment** — `navig goal session
+  complete <session> -e "…"` closes an active goal as the human override, recorded as
+  `closed by operator: …` in the UI strip, `show --json` and `get_goal`. Completion
+  evidence (model or operator) is now assessed, not just counted: substantive length,
+  not a restatement of the objective, and any cited path-like artifacts must exist on
+  disk (workspace-relative or absolute) — prose-only claims still pass, because a
+  plausibility gate must not false-negative. GoalBar gains an accessible labelled group
+  with a live phase region; `docs/reference/session-goal-interop.md` documents the
+  Python↔OS goal contract (single writer, human-plane commands, CAS stays in-OS).
+- **The daemon detects the language when nobody says it.** `POST /api/deck/voice/speak`
+  without `lang` (and without a profile that carries one) now reads the language out of
+  the text itself — the default voice, the lexicon and the on-device pack all follow the
+  words, instead of whichever engine default came first. The Dock and the CLI already
+  detect client-side; a raw API caller gets the same answer.
+
+### Changed
+- **MCP serves a compact routed surface by default; the full catalogue is `--profile full`.**
+  `navig mcp serve` (HTTP, stdio, WebSocket) and `python -m navig.mcp_server` now register
+  fifteen domain tools — `navig_fleet`, `navig_knowledge`, `navig_recall`, `navig_memory`,
+  `navig_runtime`, `navig_automation`, `navig_web`, `navig_browser_debug`,
+  `navig_browser_user`, `navig_connectors`, plus separate act domains `navig_memory_update`,
+  `navig_runtime_action`, `navig_automation_apply`, `navig_browser_debug_act`,
+  `navig_connectors_act` — each taking an `action` argument that dispatches to the existing
+  handler. 79 actions map to 79 original operations; nothing is reimplemented and every
+  original handler stays registered for `--profile full`. The definition payload falls from
+  ~34.2k to ~10.1k tokens; the local TDQS of the new definitions is 5.00/5 and the
+  tool+action selection benchmark scores 0.891 tool top-1 / 0.766 action top-1 (0.969 tool
+  top-3, floors enforced by tests). Arguments are validated against the original tool's own
+  schema, safety comes from the original operation (a read action inside a mixed router is
+  not gated), and `--only` keeps its historical meaning: a restricted full catalogue. The
+  full 155-tool matrix, per-action safety levels and migration notes are in
+  `reports/quality/compact-surface.md`; `MCPProtocolHandler()` keeps its programmatic full
+  default so existing integrations and tools are unaffected.
+- **The hosted container serves the compact surface with remote trust and an exact pin.**
+  `core/Dockerfile` (published at the root of `navig-run/core`, which directories such as
+  Glama build) now installs `navig==<current release>` instead of the floating
+  `navig>=3.27,<4`, so a rebuild cannot silently change the served tool surface; it runs as
+  a non-root user with `/data` as the only writable state; and it starts
+  `navig mcp serve --transport stdio --profile default --exposure remote`, with
+  `NAVIG_MCP_EXPOSURE=remote` as a second line of defence for a platform that overrides the
+  launch command. A locally trusted run overrides the CMD with `--exposure local`.
+  `NAVIG_MCP_EXPOSURE` is validated at startup and an explicit `--exposure` flag wins over
+  it; `tests/packaging/test_mcp_dockerfile.py` fails if the pin and `pyproject.toml`
+  disagree, if the image drops the compact profile or remote exposure, or if it returns to
+  a floating floor.
+
+### Fixed
+- **The brain's public path can no longer vanish silently.** One measured outage had both
+  halves: with `gateway: false` in `~/.navig/daemon/config.json` (written 2026-10-19 when a
+  failed config *read* fell back to defaults), every `navig service` boot started the
+  Telegram worker and never a gateway — so no Lighthouse uplink, and the edge answered
+  `503 offline` for every Stripe sale, the cloud Deck and edge-routed Telegram for two days
+  while `navig service status` still reported the daemon running.
+  - `navig service install` no longer rewrites the daemon config from defaults when the
+    file cannot be **read** (a transient OS lock); it now refuses and writes nothing.
+  - `navig doctor` → **Gateway** verifies *who* holds the port (a telegram worker
+    answering there is a ⚠, not a ✓) and gains an **Uplink** row that asks the daemon
+    whether the edge can actually reach this brain — could-not-verify stays a warning.
+- **Distribution publication safety**: an already-submitted row can never reach the
+  transport again, an uncertain result requires verification (or an explicit `--retry`)
+  before re-posting, every status write walks the state-machine transitions (two new
+  documented edges: the manual-package hop and verified-URL restoration), analytics
+  events only say `published` for a confirmed URL, transport errors are redacted before
+  storage, and the CLI now passes the NAVIG Social transport (social destinations used
+  to fall through to BLOCKED).
+- **Distribution approvals are enforceable**: `approve` writes a 30-day expiry, a new
+  revoke path (service + `POST …/revoke`) withdraws a live approval, the gate's
+  expired/revoked branches are live (store schema 1→2), and approval checks use a
+  future-aware timestamp instead of `days_since`, which read every fresh approval as
+  expired.
+- **Distribution project scoping**: idempotency keys segment on the project (two
+  projects' byte-identical acts are two journal rows) and by-id reads/writes refuse a
+  row from another project when the caller names its project; the OS app persists the
+  selected project across refresh and clears an open document on project switch.
+- **Distribution attribution**: prepared publication destinations carry
+  `ref=<channel slug>` + UTM (the tracked-URL builder is no longer dead code) and
+  visit events posted with only a ref resolve back to their channel.
+- **`recall history <file>` shows git's own history, not just transcripts' prints.**
+  File histories previously listed only commits whose SHA some session's `git commit`
+  output happened to print — a change merged by the land flow (no transcript ever
+  printed it) was invisible, and the newest commit touching a file could be missing
+  (caught by the real-world benchmark, question "file history: last commit"). History
+  now merges `commits_touching` (git log over the file) with the session-linked
+  commits, newest first, deduplicated by prefix; sessions, records and plan targets
+  are unchanged.
+- **Session goal reliability audit fixes** — the goal loop now refuses to spend a round
+  on a turn that produced no assistant reply (context-overflow / silent API failures used
+  to burn one round per failed call), completion is **evidence-gated** (`set_session_goal`
+  must carry verified evidence — recorded on the goal, shown in the UI strip, the CLI and
+  `get_goal`), overlapping stop events can no longer double-inject rounds (stop
+  re-entrancy guard), `goal_changed` events are shape-validated before reaching the UI,
+  and GoalBar/`/goal` command failures surface as toasts instead of silent unhandled
+  rejections. Added: busy chip + completion-evidence line on the Goal strip, HANDBOOK
+  blocked-resolution procedure, 30+ regression tests (persistence round-trip, pause/clear
+  mid-flight, error recovery, evidence refusal).
+- **One project identity, every checkout: duplicate worktree registrations are gone.**
+  Discovery persisted every folder it walked into `spaces.json` *before* its duplicate
+  check, so any session opened inside a git worktree appended a row under the main
+  project's id (9 `navig` rows on the operator's machine) — and every id→root reader
+  then answered "whichever row came first", flipping between checkouts between runs so
+  migrations and scanners could read the wrong tree. The registry now enforces one id ↔
+  one canonical path at the write layer (a checkout registers no row; an unrelated
+  folder claiming a taken id is refused with a warning; registering the ancestor repoints
+  a stray instance row), all readers resolve through the deterministic
+  `canonical_row_for_id` (nested rows lose to the real `.git` checkout, order-independent),
+  `resolve_project` is canonical-first, and the new `active_checkout(path, project_id)`
+  answers "the checkout containing this file" explicitly — `recall migrate`'s consumer
+  scan uses it (with `--root` still overriding). `repo remove` now also drops the removed
+  worktree's legacy registry row (no tombstone, so the slug can register again).
+  Regression-tested: multi-worktree families, order stability, refusal/repoint,
+  removal, Windows casing, 6-way concurrent registration, missing checkouts.
+- **Telegram button presses and enrichment cards can no longer fail invisibly.**
+  The owner's live ⬇️ tap on a business-chat TikTok card (2026-10-20) died with
+  zero log lines: the tap path's exception catch, the invalid-callback branch,
+  the extension-gate rejection and the enrichment try/excepts in
+  `business.py` all logged at DEBUG (absent from the live log) or toasted
+  without logging. Arrival now logs at INFO, the rejection and invalid-branch
+  log, and every catch on the TikTok/music enrichment and callback path is a
+  WARNING with traceback — so "the press never arrived" and "the press died"
+  are finally distinguishable.
+- **Music link enrichment posts into business chats as the business account.**
+  `music_actions.offer_links` was still handed the raw channel one line below
+  the TikTok card — same `business_connection_id` gap, same rejected sends.
+  It now goes through `BusinessSender` like its sibling.
+- **`navig voice policy offline` bites without a restart.** The daemon's deck and Echo
+  voice routes read `voice.policy` from the process-lifetime config snapshot, so flipping
+  the privacy switch from a terminal left the running daemon sending text to Edge until
+  it restarted (observed live: offline in the file, `X-Navig-Voice-Provider: edge` in the
+  response). Both readers now go through `get_live` — one `stat` when nothing changed —
+  and the deck's other voice settings (daily budget, paid fallback, stt model) follow the
+  same read.
+- **`NAVIG_WEB_SEARCH_PROVIDER` actually overrides config now** — the env var was seeded as a
+  *default* and then overwritten by any `web.search.provider` value in `config.yaml`, so the
+  documented system-level override was silently dead the moment the config key existed.
+  `get_web_config()` re-applies it after the config merge (known provider names only — `""`,
+  the onboarding `skip` sentinel and typos never displace the configured engine). Precedence is
+  now: CLI `--provider` (non-`auto`) > env > config > `auto`, pinned by tests.
+
+### Security
+- **`desktop_filesystem` is root-allowlisted whenever the MCP server is exposed remotely.**
+  The eight-mode filesystem tool (`read`/`write`/`copy`/`move`/`delete`/`list`/`search`/
+  `info`) previously accepted any absolute path the process could reach — acceptable for a
+  trusted stdio server, unacceptable behind a proxy. A remote exposure (network transport
+  or stdio declared `--exposure remote`) now enforces `mcp.files.roots`, and with no roots
+  configured it denies **everything** (fail closed) instead of falling back to all paths.
+  Enforcement is resolved-path based: `..`, symlinks, junctions and Win32
+  extended-length (`\\?\`) prefixes cannot escape a root, and copy/move check the
+  destination too. NAVIG's own config/vault/data/store/log directories and the Space deny
+  list (`.env*`, `*credentials*`, `*.db`/`*.sqlite*`, `*.log`, `secrets.*`), plus credential
+  files (`*.pem`, `*.key`, `id_rsa*`, `.ssh`/`.aws`/`.gnupg` segments, …), are denied even
+  inside an allowed root. `mcp.files.enforce` is `auto` (remote or roots configured),
+  `always`, or `never` — and `never` is ignored for a remote exposure. Local stdio keeps its
+  existing unrestricted behaviour unless roots are configured.
+- **MCP transport exposure is authenticated and remote dangerous tools fail closed.**
+  A non-loopback `navig mcp serve --transport http|websocket` bind now refuses to start
+  without `--token`, and `--exposure remote` requires authentication even on a loopback
+  bind. A loopback HTTP/WS listener running without a token advertises **only**
+  `readOnlyHint: true`, `destructiveHint: false` tools (8 compact read domains instead of
+  15; `--insecure-local` is the explicit local opt-out, refused on a non-loopback bind).
+  Dangerous operations (`cdp_eval`, `navig_block_apply`, `connector_*_act`,
+  `desktop_filesystem`, …) over a remote exposure — network bind, or stdio declared
+  `--exposure remote` for a proxy — are denied unless the operator sets
+  `navig config set mcp.remote_dangerous approve`; authentication alone no longer implies
+  authorisation. Bearer comparison uses `hmac.compare_digest`, a non-loopback bind no
+  longer gets a wildcard CORS origin, and the WebSocket token is generated before the
+  exposure policy is decided so an auto-tokenised listener is not mistaken for an open
+  one. Router actions are gated under the original operation's safety level and audited
+  with `{router, action, original}` in the approval context. Programmatic
+  `MCPProtocolHandler()` callers keep the previous local-trust behaviour.
 
 ## [3.27.7] — 2026-10-20
 

@@ -38,21 +38,22 @@ logger = logging.getLogger(__name__)
 
 
 def _registered_path(canonical: str) -> Path | None:
-    """The registry's path for a canonical id, when it still exists on disk.
+    """The registry's CANONICAL path for a canonical id, when it still exists on disk.
 
-    A cheap file read instead of a discovery walk — worth ~0.33s per miss. Returns None
-    for an id the registry does not know or whose directory has since been deleted, so
-    a stale row can never resolve to a path that is not there.
+    A cheap file read instead of a discovery walk — worth ~0.33s per miss. Legacy
+    duplicates (worktree rows) resolve through ``canonical_row_for_id``, so the answer
+    no longer depends on row order — a stale row can never resolve to a path that is
+    not there, and a worktree row can never impersonate the project root.
     """
     try:
         from navig.spaces import registry as _registry  # noqa: PLC0415
 
-        for entry in _registry.load_registry().get("spaces", []):
-            if entry.get("id") != canonical:
-                continue
-            candidate = Path(str(entry.get("path", "")))
-            if candidate.is_dir():
-                return candidate
+        row = _registry.canonical_row_for_id(_registry.load_registry(), canonical)
+        if row is None:
+            return None
+        candidate = Path(str(row.get("path", "")))
+        if candidate.is_dir():
+            return candidate
     except Exception:  # noqa: BLE001 — an unreadable registry must not break resolution
         logger.debug("registry lookup failed for %r", canonical)
     return None

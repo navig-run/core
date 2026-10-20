@@ -117,6 +117,11 @@ _TOOLSET_LABELS: dict[str, tuple[str, str]] = {
     "coordinator": ("multi-agent coordination", "Coordinate several sub-agents to tackle one goal in parallel"),
     "background_task": ("background jobs", "Run long jobs in the background and check on them later"),
     "skills": ("installable skills", "Learn and apply installable skills"),
+    "creative": (
+        "capability intelligence",
+        "Discover what NAVIG can already do, get reuse-first advice, and surface "
+        "grounded improvement proposals (proposals need Creative mode)",
+    ),
     "core": ("files & local commands", "Read & write files and run local commands"),
 }
 

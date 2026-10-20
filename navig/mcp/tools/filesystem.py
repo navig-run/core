@@ -116,11 +116,13 @@ def register(server: Any) -> None:
     # and assuming it exists raised AttributeError. cdp.py already guarded; these did not.
     if not hasattr(server, "_tool_safety"):
         server._tool_safety = {}
-    server._tool_safety.update({
-        # One tool, eight modes — write/copy/move/delete are in there, so the tool
-        # as a whole is gated. Mode-level granularity would need the gate to see args.
-        "desktop_filesystem": "dangerous",
-    })
+    server._tool_safety.update(
+        {
+            # One tool, eight modes — write/copy/move/delete are in there, so the tool
+            # as a whole is gated. Mode-level granularity would need the gate to see args.
+            "desktop_filesystem": "dangerous",
+        }
+    )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -154,6 +156,19 @@ def _tool_filesystem(server: Any, args: dict[str, Any]) -> Any:
     offset: int | None = args.get("offset")
     limit: int | None = args.get("limit")
     encoding: str = args.get("encoding", "utf-8")
+
+    # S3: a remotely exposed server (or one the operator scoped with roots) never
+    # touches a path outside its allowlist. Checked before any filesystem call, and a
+    # denial is an error result — never a success string.
+    policy = getattr(server, "_files_policy", None)
+    if policy is not None and getattr(policy, "enforce", False):
+        denied = policy.check(path, label="path")
+        if denied:
+            return {"error": "path_denied", "message": denied, "isError": True}
+        if mode in ("copy", "move") and destination:
+            denied = policy.check(destination, label="destination")
+            if denied:
+                return {"error": "path_denied", "message": denied, "isError": True}
 
     try:
         if mode == "read":

@@ -245,3 +245,21 @@ async def test_synthesize_pins_the_routed_provider_into_the_engine(policy_engine
     assert status == 500, body
     assert policy_engine["calls"], "the routed provider never reached the engine"
     assert policy_engine["calls"][0]["provider"].value == "edge"
+
+
+def test_voice_policy_reads_live_not_the_lifetime_snapshot(tmp_path, monkeypatch):
+    """The Echo synthesize route runs in the daemon: its policy gate must see a
+    terminal's `navig voice policy offline` without a restart (get_live), or text
+    keeps leaving the machine after the operator switched it off."""
+    import navig.config as cfg
+    from navig.gateway.routes.voice import _voice_policy
+
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(cfg, "_config_manager_instance", None)
+    monkeypatch.setattr(cfg, "_config_manager_config_dir", None)
+
+    cfg.get_config_manager().set_global("voice.policy", "auto")
+    assert _voice_policy() == "auto"
+
+    cfg.ConfigManager(config_dir=tmp_path).set_global("voice.policy", "offline")
+    assert _voice_policy() == "offline"

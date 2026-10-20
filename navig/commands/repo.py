@@ -2444,6 +2444,17 @@ def remove_worktree(root: Path, wt_dir: Path, *, force: bool = False) -> dict:
 
     leftover = _rmtree_force(wt_dir) if wt_dir.exists() else None
     _git(["worktree", "prune"], root)  # tidy dangling metadata
+    # One logical identity: a worktree never owns a spaces.json row (the registry
+    # write layer refuses new ones), but LEGACY rows exist — drop the removed path's
+    # row without tombstoning it, so a future worktree with the same slug can
+    # register again. Best-effort: registry trouble never fails a removal.
+    if not wt_dir.exists():
+        try:
+            from navig.spaces import registry as _registry  # noqa: PLC0415
+
+            _registry.forget(str(wt_dir), remember=False)
+        except Exception:  # noqa: BLE001 — cleanup is best-effort by design; a locked
+            pass           # registry just leaves a row the canonical reader already ignores
     return {
         "removed": not wt_dir.exists(),
         "refused": None,

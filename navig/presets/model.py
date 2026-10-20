@@ -96,6 +96,9 @@ PARAM_SCHEMAS: dict[str, dict[str, tuple[str, Any]]] = {
         "stereo_width": ("number", (0.0, 2.0)),
         "highpass_hz": ("number", (0.0, 300.0)),   # rumble / handling noise below this
         "lowpass_hz": ("number", (2000.0, 22000.0)),  # hiss / band-limited sources above this
+        "deess": ("enum", ["off", "light", "strong"]),       # harsh S sounds
+        "deplosive": ("bool", None),                          # P/B pops (dynamic low-band cut)
+        "breath_control": ("enum", ["off", "light", "strong"]),  # breaths and room between phrases
         "space": ("enum", ["off", "room", "hall"]),
         "engine": ("enum", ["auto", "local", "deepfilter", "elevenlabs"]),
         "allow_cloud": ("bool", None),

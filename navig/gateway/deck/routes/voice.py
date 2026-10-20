@@ -89,19 +89,25 @@ def _plugin_required() -> "web.Response":
 
 
 def voice_settings() -> dict[str, Any]:
-    """The operator's voice policy, read fresh from config (raw strings tolerated)."""
+    """The operator's voice policy, read fresh from config (raw strings tolerated).
+
+    Fresh means ``get_live``: the daemon caches config for its whole life, so a
+    ``navig voice policy offline`` from a terminal would otherwise stay invisible
+    until a restart — and the daemon would keep sending text to a cloud engine after
+    the operator turned that off. One ``stat`` when nothing changed.
+    """
     from navig.config import get_config_manager
     from navig.core.coerce import coerce_bool, coerce_int
 
     cm = get_config_manager()
-    policy = str(cm.get("voice.policy", "auto") or "auto").strip().lower()
+    policy = str(cm.get_live("voice.policy", "auto") or "auto").strip().lower()
     if policy not in ("auto", "free", "premium", "offline"):
         policy = "auto"
-    stt_model = str(cm.get("voice.stt_model", "base") or "base").strip().lower()
+    stt_model = str(cm.get_live("voice.stt_model", "base") or "base").strip().lower()
     return {
         "policy": policy,
-        "daily_char_budget": coerce_int(cm.get("voice.daily_char_budget", DEFAULT_DAILY_BUDGET), DEFAULT_DAILY_BUDGET, minimum=0),
-        "paid_fallback": coerce_bool(cm.get("voice.paid_fallback", False), default=False),
+        "daily_char_budget": coerce_int(cm.get_live("voice.daily_char_budget", DEFAULT_DAILY_BUDGET), DEFAULT_DAILY_BUDGET, minimum=0),
+        "paid_fallback": coerce_bool(cm.get_live("voice.paid_fallback", False), default=False),
         "stt_model": stt_model if stt_model in _STT_MODELS else "base",
     }
 
@@ -259,6 +265,19 @@ async def handle_speak(request: "web.Request") -> "web.Response":
     lang = lang.strip().lower()[:2] if isinstance(lang, str) and lang.strip() else plan.lang
     if lang is not None and lang not in _LANG_OK:
         lang = None  # an unknown language is not an error — the voice decides
+    if lang is None:
+        # Neither the client nor a profile named one: take the language the TEXT is written
+        # in, so the default voice, the lexicon and the on-device pack all follow the words
+        # on the page. The Dock and the CLI already detect; a raw API caller gets the same
+        # answer instead of whichever engine default happens to come first.
+        try:
+            from navig_audio.reader import (
+                detect_language,  # noqa: PLC0415 — lazy: the same detector the plugin ships
+            )
+
+            lang = detect_language(text)
+        except Exception:  # noqa: BLE001 — detection is a courtesy; the engine default still speaks
+            lang = None
 
     settings = await asyncio.to_thread(voice_settings)
     try:
