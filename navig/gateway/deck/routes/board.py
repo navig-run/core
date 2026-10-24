@@ -417,6 +417,7 @@ def _card_kwargs(spec: dict[str, Any]) -> dict[str, Any]:
         "due_at": spec.get("due_at"),
         "ai_mode": spec.get("ai_mode") or "inherit",
         "auto_advance": bool(spec.get("auto_advance")),
+        "space": (str(spec.get("space") or "").strip() or None),
     }
 
 

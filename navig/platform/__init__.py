@@ -41,6 +41,7 @@ from navig.platform.paths import (
     is_unix,
     is_windows,
     is_wsl,
+    knowledge_db_path,
     log_dir,
     msg_trace_path,
     onboarding_json_path,
@@ -53,6 +54,7 @@ from navig.platform.paths import (
     stack_dir,
     store_dir,
     temp_dir,
+    trash_dir,
     vault_dir,
     workspace_dir,
 )
@@ -75,6 +77,7 @@ __all__ = [
     "cache_dir",
     "workspace_dir",
     "debug_log_path",
+    "knowledge_db_path",
     "global_config_path",
     "msg_trace_path",
     "genesis_json_path",
@@ -87,6 +90,7 @@ __all__ = [
     "vault_dir",
     "ssh_key_dir",
     "temp_dir",
+    "trash_dir",
     "stack_dir",
     "blackbox_dir",
     # Discovery

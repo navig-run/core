@@ -83,6 +83,12 @@ _ALLOWLIST: dict[str, set[str]] = {
     # whitelists over API input, not config strings).
     "navig/gateway/deck/routes/telegram_mtproto.py": {"_truthy"},
     "navig/gateway/deck/routes/telegram_manager.py": {"_truthy"},
+    # Livebox SoftAtHome wire booleans (`Active`, `Enable`, `Reserved`) are API
+    # vocabulary, not `config set` strings; unknown -> False by the API contract.
+    "plugins/navig-home/navig_home/router.py": {"_as_bool"},
+    # tshark JSON field values (`wlan.fc.type_subtype` etc.) use libwireshark's
+    # own truth spelling; this is packet data, not a `config set` toggle.
+    "plugins/navig-home/navig_home/wifi_forensics.py": {"_as_bool"},
 }
 
 

@@ -36,6 +36,7 @@
 25. [⭐ Autonomous Agent Mode (NEW)](#25-autonomous-agent-mode)
 26. [⭐ Information Retrieval (Web Search, Prices, Weather) (NEW)](#26-information-retrieval)
 27. [⭐ Advanced AI Features (NEW)](#27-advanced-ai-features-new)
+27b. [NAVIG Reflex — `navig endpoints` + `navig ask` plan/commit](#27b-navig-reflex)
 28. [⭐ Operations Dashboard TUI (NEW)](#28-operations-dashboard-tui)
 29. [⭐ Command History & Replay (NEW)](#29-command-history--replay)
 30. [⭐ Intelligent Suggestions & Quick Actions (NEW)](#30-intelligent-suggestions--quick-actions)
@@ -5422,6 +5423,28 @@ navig connector catalog --status live --json   # what is usable right now, for s
 The deck serves the same data at `GET /api/deck/connectors/catalog` (same filters as query
 parameters, plus `limit`/`offset`). The data and the batch workflow: `docs/connectors-catalog.md`.
 
+### 22.10 Capability index — one row per thing NAVIG can do (`navig store capabilities`)
+
+`navig store list` shows every *item* (plugin, module, connector, MCP server, skill). The
+capability index folds those rows into logical **capabilities**: Perplexity appears ONCE,
+with its desktop app (CDP), its Sonar API connector and its skills listed as backends —
+each with its state, auth requirement (field names, never values), CLI commands and MCP
+tools.
+
+```bash
+navig store capabilities                 # every capability, one table
+navig store capabilities perplexity      # one capability in full detail
+navig store capabilities --multi         # only capabilities with 2+ backends
+navig store capabilities --json          # machine-readable (also lists reader errors)
+navig store capabilities --no-mcp        # skip MCP tool derivation (~1s faster)
+```
+
+State is the best available across backends (`wired` if any backend is up) — but a broken
+backend stays visible under `health`, never swallowed. Same-index HTTP surface for NAVIG
+OS: `GET /api/deck/store?capabilities=1` (additive; the plain endpoint is unchanged).
+Implementation: `core/navig/hub/capabilities.py` — a pure fold over the Store, no second
+registry and no cache.
+
 ### NAVIG in Chrome — the Dock side panel
 
 The NAVIG Dock extension (`apps/dock/extension`, load `dist/` unpacked) puts NAVIG next to any
@@ -9082,6 +9105,91 @@ same switches under **Settings → Decision model**.
 
 ---
 
+<a id="27b-navig-reflex"></a>
+## 27b. NAVIG Reflex — `navig endpoints` + `navig ask` plan/commit
+
+One typed device model, one confirm-first router and one Answer object, layered over the shipped
+home/voice plugins. Full contract: [`docs/reference/aria-unified.md`](../../../docs/reference/aria-unified.md).
+Every command emits an **Answer** envelope (`ok, speech, display_text, table, json, directives,
+suggestions, data, plan, intent`); `--json` prints exactly one document.
+
+### 27b.1 `navig endpoints` — typed projection of the home inventory
+
+`~/.navig/home/devices.yaml` stays the only inventory; endpoints is a read-through view (no second
+store, core parses no YAML, no provider imports).
+
+| Command | What it does |
+|---|---|
+| `navig endpoints list [--provider P] [--room R] [--json]` | One row per controllable thing: `id` (`provider:device`), `type`, `room`, `online`, typed capabilities + live state. `--json` carries the records. |
+| `navig endpoints show <id> [--json]` | One endpoint: live state, parameters and the directives it supports. |
+| `navig endpoints set <id> <directive> [value] [--json]` | Apply one directive through the home plugin. **Idempotent**: a replay reports `changed:false` and does not call the provider twice. |
+
+Directives: `on_off`, `set_range`, `set_mode`, `set_color`, `toggle`. Values: `on|off`, a number
+(percent / Kelvin / Celsius), `#rrggbb`, or a mode name.
+
+```powershell
+navig endpoints list --json
+navig endpoints list --provider govee --room office
+navig endpoints show govee:desk-lamp
+navig endpoints set govee:desk-lamp on_off off
+navig endpoints set govee:desk-lamp set_range 40
+navig endpoints set govee:desk-lamp set_color "#ff8800"
+```
+
+Vocabulary is deliberately small (5 capability types + 3 read-only properties): `vacuum`, `media`,
+`volume`, `ir`, `dp` are reported as `data.unmapped`, not modelled.
+
+**Exit codes:** `0` success · `2` usage error (unknown directive, or a capability the device does
+not declare) · `1` home plugin missing/not ready (the error carries the install hint).
+
+### 27b.2 `navig ask` — deterministic plan → commit
+
+The existing `navig ask` gains four additive flags; with no matching tool the question falls
+through to the assistant exactly as before (no dead end, `--json` is deterministic-router only).
+
+| Flag | Behaviour |
+|---|---|
+| `--plan` | Preclassify, resolve the target, print **tool · target · blast radius · profile · commit_token**, perform nothing. |
+| `--commit <token>` (`-c`) | Finish a planned action: runs **exactly once**, replay returns the stored Answer and exits 0. |
+| `--profile safe\|fast\|campaign` (`-p`) | Routing preset (default `fast`). Unknown name → exit 2. |
+| `--json` | One Answer document (plan metadata in `Answer.plan`). |
+| `--execute` | Kept for compatibility: with `--plan`, preview then execute the planned tool. |
+
+```powershell
+navig ask "turn off the desk lamp" --plan              # nothing changes
+navig ask "turn off the desk lamp" --commit <token>    # exactly once; replay = no-op
+navig ask "set the desk lamp brightness to 40" --profile fast
+navig ask "turn off everything" --plan                 # destructive batch: plan only
+navig ask "status" --json                              # one Answer, no assistant call
+```
+
+**Profiles** are approval presets, not quality weights: `safe` and `campaign` plan every mutation
+(`--commit` needed); `fast` auto-commits one reversible action and plans destructive batches;
+`approval.security_level = high` forces plan-only even for single mutations. Destructive/batch
+actions are plan-only in **every** profile.
+
+**Token store:** tokens live in the existing RuntimeStore (`~/.navig/runtime.db`, table
+`commit_plans`, TTL 300 s, claim-once, stored Answer result); no new database. Unknown/expired
+token → exit **2** with an actionable hint.
+
+Shipped tools (10): `home.on`, `home.off`, `home.toggle`, `home.set`, `home.status`, `tv.power`,
+`tv.volume`, `tv.play`, `assistant.status`, `campaigns.status` — each bound to a real `navig …`
+command, so the router can never shell a command that does not exist.
+
+### 27b.3 Campaign integration (read-only)
+
+`tasks.db` stays the single campaign writer. To turn a routed result into campaign evidence, write
+the Answer inside the campaign workspace and cite it with the existing checkpoint verb:
+
+```powershell
+navig tasks campaigns checkpoint <campaign-id> --evidence <workspace>/answer-<token>.json
+```
+
+No second policy language, no second store; the live campaign lane stays off until the owner
+enables `automations.campaigns.auto_run`.
+
+---
+
 <a id="28-operations-dashboard-tui"></a>
 ## 28. ⭐ Operations Dashboard TUI
 
@@ -12323,3 +12431,22 @@ Surfaces: the **Dashboard Suggestions card** (evidence, Build/Dismiss, empty sta
 (retired names answer with a "retired" notice and behave as Standard), and the `creative` agent
 tool (`lookup`/`decide` in both modes, `propose` Creative-only). Data lives under
 `data_dir()/creative/` (rebuildable index + proposal store); config under `creative.*`.
+
+## 60. NAVIG MIND (`navig mind`)
+
+The owner's personal cognitive/language preferences — how NAVIG talks to you and drafts personal
+correspondence. MIND never changes product, repository, or artifact language: the
+**artifact-language firewall** is non-negotiable and is reported on every status view.
+
+```powershell
+navig mind status                 # effective profile: languages, lexicon, DIGITALGHOST, firewall
+navig mind on | off               # enable/disable the whole MIND layer
+navig mind lexicon <density>      # off | minimal | balanced | detailed | intensive (default: balanced)
+navig mind digitalghost <mode>    # on | off | rare | balanced | deep | retrospective (default: balanced)
+```
+
+Defaults: conversation follows the active chat (`auto`); creative exploration `ru`; engineering `en`;
+professional correspondence to French-speaking recipients `fr`; DIGITALGHOST commentary `ru`. Input
+language never dictates every output language. Preference hierarchy: session > project
+(`.navig/config.yaml`) > global (`~/.navig/config.yaml`) > default. Config lives under `mind.*`; the
+resolved profile is `navig.mind.get_effective_mind()`.

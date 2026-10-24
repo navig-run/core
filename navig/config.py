@@ -326,6 +326,18 @@ class ConfigManager:
         return paths.config_dir()
 
     @property
+    def global_config_path(self) -> Path:
+        """LIVE path to the global ``config.yaml`` — resolved through the ONE resolver.
+
+        This property closes the last resolver/writer gap: ``paths.global_config_path()``
+        returns the authority (``<config_dir>/config.yaml``) and, only when that file is
+        absent, a ``config/config.yaml`` fallback. Loading, saving and mtime-checking the
+        global config all go through THIS property, so a fallback-only layout is written
+        where it is read instead of the writer silently creating a second file at the root.
+        """
+        return paths.global_config_path()
+
+    @property
     def active_space_file(self) -> Path:
         """Path to the active-space pointer — GLOBAL and resolved LIVE via ``config_dir()``.
 
@@ -580,7 +592,7 @@ class ConfigManager:
 
         Falls back silently to the slow path on any cache error.
         """
-        global_config_file = self.global_config_dir / "config.yaml"
+        global_config_file = self.global_config_path
         cache_file = self.global_config_dir / ".config_cache.pkl"
 
         # ── 1. Fast path: try the pickle cache ────────────────────────────────
@@ -705,7 +717,7 @@ class ConfigManager:
                       raw loaded dict (includes, env-var substitution, migrations
                       still applied).
         """
-        global_config_file = self.global_config_dir / "config.yaml"
+        global_config_file = self.global_config_path
 
         if not global_config_file.exists():
             return self._create_default_global_config()
@@ -812,9 +824,9 @@ class ConfigManager:
         return default_config
 
     def _global_config_file_mtime(self) -> "int | None":
-        """mtime of ~/.navig/config.yaml, or None when it does not exist yet."""
+        """mtime of the live global config file, or None when it does not exist yet."""
         try:
-            return (self.global_config_dir / "config.yaml").stat().st_mtime_ns
+            return self.global_config_path.stat().st_mtime_ns
         except OSError:
             return None
 
@@ -1017,7 +1029,7 @@ class ConfigManager:
         since it booted. Callers that use :meth:`set_global` refresh first, so their
         mtime matches and nothing is merged.
         """
-        global_config_file = self.global_config_dir / "config.yaml"
+        global_config_file = self.global_config_path
         self.global_config_dir.mkdir(parents=True, exist_ok=True)
 
         # ── The wipe guard ───────────────────────────────────────────────────

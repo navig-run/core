@@ -196,6 +196,26 @@ def build_morning(now: datetime, anchor: str = "") -> tuple[str, list[list[dict]
     return "\n".join(lines), keyboard
 
 
+def brief_plain(now: datetime, *, anchor: str = "") -> str:
+    """Today's brief as plain text — what a greeting card's **Open** reveals.
+
+    The same content as :func:`build_morning`, without the HTML: card bodies are
+    sent and edited without ``parse_mode``, so tags would read literally. An
+    empty return means there is no brief to show; the caller falls back to the
+    greeting's own text.
+    """
+    lines = [f"☀️ {_t('briefing.morning.title')}  ·  {_date_label(now)}", ""]
+    if anchor:
+        lines += [f"📌 {_t('briefing.morning.anchor')}", anchor, ""]
+    moves = _pool("briefing.morning.moves")
+    if not moves:
+        return ""
+    lines.append(_t("briefing.morning.first_moves"))
+    lines += [f"• {move}" for move in moves]
+    lines += ["", _pick("briefing.morning.closings")]
+    return "\n".join(lines)
+
+
 def build_evening(now: datetime, *, shipped: str = "",
                   priority: str = "") -> tuple[str, str, list[list[dict]]]:
     """``(title, html, keyboard)`` for the evening card.

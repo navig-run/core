@@ -432,26 +432,39 @@ def open_cmd(
     socket_path: str = typer.Option("", "--socket", help="Launch socket (default /run/navig-os/launch.sock)"),
     browser: str = typer.Option("", "--browser", help="Browser executable (default: Chromium)"),
     print_url: bool = typer.Option(
-        False, "--print-url", help="Print the one-time URL instead of opening it (works once, for 60 s)",
+        False,
+        "--print-url",
+        help="Print the URL instead of opening it — the one-time launch URL when launch codes "
+        "are available (it dies in 60 s), otherwise the login page",
     ),
 ) -> None:
     """Open NAVIG OS from this machine's local server — no password to type.
 
-    Needs a Linux install whose server hands out launch codes (the navig-os packages
-    set that up) and an account in the navig-launch group.
+    Launch codes (a Linux install whose server hands out codes over its unix socket, and
+    an account in the navig-launch group) are the passwordless path. Windows has no unix
+    socket and a bare `navig os serve` has no launch socket either — so when there is no
+    code but the server IS serving, open its login page instead (the password lives in the
+    vault: `navig os serve --new-password` sets one). Only when the server is down does
+    this fail, with the reason the launch actually failed.
     """
     from navig.os_host import launch
 
+    server_port = port or launch.server_port()
     try:
         code = launch.mint_code(socket_path or None)
+        open_url = launch.launch_url(code, port or None)
+        outcome = "Opened NAVIG OS" + (" (kiosk)" if kiosk else "")
     except launch.LaunchError as exc:
-        ch.error("Could not open NAVIG OS.", str(exc))
-        raise typer.Exit(1) from exc
+        if not probe(server_port).get("reachable"):
+            ch.error("Could not open NAVIG OS.", str(exc))
+            raise typer.Exit(1) from exc
+        # The server answered: the app is reachable, only the passwordless shortcut is not.
+        open_url = f"http://127.0.0.1:{server_port}/login"
+        outcome = "Opened the NAVIG OS login"
 
-    url = launch.launch_url(code, port or None)
     if print_url:
-        # Printed to the caller's own terminal; the code is single-use and dies in 60 s.
-        typer.echo(url)
+        # Printed to the caller's own terminal; a launch URL's code is single-use (60 s).
+        typer.echo(open_url)
         return
 
     found = launch.find_browser(browser)
@@ -462,7 +475,7 @@ def open_cmd(
         )
         raise typer.Exit(1)
 
-    argv = launch.browser_argv(found, url, kiosk=kiosk)
+    argv = launch.browser_argv(found, open_url, kiosk=kiosk)
     try:
         # Detached: an app window outlives this command, and the terminal stays usable.
         subprocess.Popen(  # noqa: S603 — fixed argv, no shell
@@ -475,7 +488,7 @@ def open_cmd(
     except OSError as exc:
         ch.error("Could not start the browser.", str(exc))
         raise typer.Exit(1) from exc
-    ch.success("Opened NAVIG OS" + (" (kiosk)" if kiosk else ""))
+    ch.success(outcome)
 
 
 # ---------------------------------------------------------------------------

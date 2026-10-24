@@ -50,15 +50,38 @@ def test_a_free_and_bindable_port_is_green():
     assert "bindable" in text, text
 
 
-def test_a_listening_port_is_green_and_says_so():
-    """A bound port means the gateway is up — genuinely healthy, and must not be
-    confused with the unusable case below."""
-    with patch.object(doctor.socket, "socket", return_value=_sock(listening=True)):
+def test_a_listening_port_is_green_when_this_install_owns_it():
+    """A bound port is healthy only when the listener is OURS.
+
+    This test used to assert "listening ⇒ green", full stop — which is the contract that
+    produced a green ✓ over a second NAVIG authority on 2026-10-22. The ownership question
+    is now part of the row, so the mock must answer it: a listening port whose PID is in
+    this install's pid files is genuinely healthy and must stay green.
+    """
+    with (
+        patch.object(doctor.socket, "socket", return_value=_sock(listening=True)),
+        patch.object(doctor, "_port_owner_pids", return_value={4242}),
+        patch.object(doctor, "_managed_daemon_pids", return_value={4242}),
+    ):
         results = doctor.check_sockets(target_port=8789)
 
     ok, text = _row(results, "Port Occupation")
-    assert ok is True
-    assert "bound" in text.lower(), text
+    assert ok is True, text
+    assert "this install" in text.lower(), text
+
+
+def test_a_listening_port_owned_by_anyone_else_is_RED():
+    """The 2026-10-22 symptom: something is listening on the gateway port and it is not us."""
+    with (
+        patch.object(doctor.socket, "socket", return_value=_sock(listening=True)),
+        patch.object(doctor, "_port_owner_pids", return_value={10792}),
+        patch.object(doctor, "_managed_daemon_pids", return_value={38248}),
+    ):
+        results = doctor.check_sockets(target_port=8789)
+
+    ok, text = _row(results, "Port Occupation")
+    assert ok is False, "a foreign listener must never be reported as a healthy gateway"
+    assert "second NAVIG authority" in text, text
 
 
 def test_free_but_UNBINDABLE_is_not_green():
@@ -115,8 +138,17 @@ def test_the_daemon_port_is_checked_too():
 
 
 def test_the_daemon_row_is_skipped_when_it_IS_the_target():
-    """No duplicate row when the two ports coincide (a custom gateway port of 8765)."""
+    """No duplicate PORT row when the two ports coincide (a custom gateway port of 8765).
+
+    The row count is no longer the assertion: check_sockets also reports the brain role
+    (client vs brain), which has nothing to do with port duplication. Assert on the
+    port rows this test is actually about, so an unrelated row cannot either hide a
+    duplicate or fail this test when it is added.
+    """
     with patch.object(doctor.socket, "socket", return_value=_sock(listening=False)):
         results = doctor.check_sockets(target_port=doctor._DAEMON_PORT)
 
-    assert len(results) == 1, results
+    port_rows = [r for r in results if r[0] is not None and "Port" in r[2] or "Daemon Port" in r[2]]
+    labels = [r[2] for r in results if "Port Occupation" in r[2] or "Daemon Port" in r[2]]
+    assert len(labels) == 1, results
+    assert "Daemon Port" not in " ".join(labels), "the daemon row must be skipped when it IS the target"

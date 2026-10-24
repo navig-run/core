@@ -132,28 +132,72 @@ def cap_result(
     return truncated + "".join(footer_parts)
 
 
-def cleanup_spillover(max_age: int = SPILLOVER_TTL) -> int:
-    """Remove spillover files older than *max_age* seconds.
+def cleanup_spillover(
+    max_age: int = SPILLOVER_TTL,
+    spillover_dir: Path | None = None,
+    trash_root: Path | None = None,
+    moved: dict[str, str] | None = None,
+    failed: list[str] | None = None,
+) -> int:
+    """Prune spillover files older than *max_age* seconds — moved to the trash, not deleted.
+
+    Args:
+        max_age:       TTL in seconds (default :data:`SPILLOVER_TTL`, 1 hour).
+        spillover_dir: Override the directory (tests / a custom layout). Defaults to
+                       :func:`_spillover_dir`, which honours the ``SPILLOVER_DIR`` seam.
+        trash_root:    Where pruned files go (``<trash>/retention-<stamp>/``). When given
+                       (the production sweep always does) files are MOVED there, honouring
+                       "delete → trash, never unlink"; ``None`` keeps the legacy unlink
+                       behaviour for a direct caller.
+        moved:         optional map original-path → trash-path for the trash manifest.
+        failed:        optional list that receives every file whose move FAILED, so a
+                       locked file is reported instead of silently disappearing from the
+                       counts.
 
     Returns:
-        Number of files removed.
+        Number of files pruned. A file younger than the window is never touched, and a
+        failed ``stat``/move is left in place rather than retried.
     """
-    spillover_dir = _spillover_dir()
-    if not spillover_dir.exists():
+    directory = spillover_dir if spillover_dir is not None else _spillover_dir()
+    if not directory.exists():
         return 0
 
     now = time.time()
     removed = 0
-    for fpath in spillover_dir.iterdir():
+    for fpath in directory.iterdir():
         if not fpath.is_file():
             continue
         try:
-            if now - fpath.stat().st_mtime > max_age:
+            if now - fpath.stat().st_mtime <= max_age:
+                continue
+        except OSError as exc:
+            logger.debug("cleanup_spillover: cannot stat %s: %s", fpath, exc)
+            continue
+        if trash_root is None:
+            try:
                 fpath.unlink()
                 removed += 1
-        except OSError as exc:
-            logger.debug("cleanup_spillover: cannot remove %s: %s", fpath, exc)
+            except OSError as exc:
+                logger.debug("cleanup_spillover: cannot remove %s: %s", fpath, exc)
+                if failed is not None:
+                    failed.append(str(fpath))
+            continue
+        destination = _trash_move(fpath, trash_root)
+        if destination is None:
+            if failed is not None:
+                failed.append(str(fpath))
+            continue
+        removed += 1
+        if moved is not None:
+            moved[str(fpath)] = str(destination)
     return removed
+
+
+def _trash_move(path: Path, trash_root: Path) -> Path | None:
+    """Move *path* into *trash_root* (one recoverable-delete helper, shared)."""
+    from navig.core.trash import move_to_trash
+
+    return move_to_trash(path, trash_root)
 
 
 # ─────────────────────────────────────────────────────────────

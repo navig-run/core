@@ -5,6 +5,11 @@ GET  /api/deck/store          → {"items": [StoreItem…], "summary": store_sta
    One list across modules (system plugins), installed plugins (all formats),
    skills, MCP servers, and connectors, each with a wire state
    (wired / unwired / available / broken) + badges (system/standalone/locked).
+   ?capabilities=1 additionally returns {"capabilities": […], "capability_errors":
+   […]} — the unified capability index (one row per logical capability, its
+   backends, CLI/MCP references and auth requirements) folded from the SAME
+   items by navig.hub.capabilities. Additive: clients that ignore the flag and
+   the extra key stay valid under STORE_API_VERSION 1.
 POST /api/deck/store/action   → {"id": "plugin:navig-social", "action": "disable"}
    Kind-dispatched enable/disable/install/remove (install accepts a `source`
    path — this is the drag-drop endpoint: the UI drops a folder/zip and posts
@@ -50,19 +55,33 @@ STORE_API_VERSION = 1
 
 
 async def handle_deck_store(request: "web.Request") -> "web.Response":
-    """Return every store item + the wiring summary."""
+    """Return every store item + the wiring summary.
+
+    ``?capabilities=1`` additionally folds the items into the unified
+    capability index (one row per logical capability with its backends) —
+    additive, so a client written against v1 without the flag stays valid.
+    The fold reuses the SAME item collection — no second sweep.
+    """
     try:
         from navig.hub import collect_store, store_status
 
         include_available = request.query.get("available", "1") not in ("0", "false")
         refresh = request.query.get("refresh") in ("1", "true", "yes")
+        want_capabilities = request.query.get("capabilities") in ("1", "true", "yes")
         items = collect_store(include_available=include_available, refresh=refresh)
-        return web.json_response({
+        payload = {
             "ok": True,
             "api_version": STORE_API_VERSION,
             "items": [i.to_dict() for i in items],
             "summary": store_status(items),  # fold over the same collection — no second sweep
-        })
+        }
+        if want_capabilities:
+            from navig.hub.capabilities import collect_capabilities
+
+            caps, cap_errors = collect_capabilities(items=items)
+            payload["capabilities"] = [c.to_dict() for c in caps]
+            payload["capability_errors"] = cap_errors
+        return web.json_response(payload)
     except Exception as exc:  # noqa: BLE001
         logger.exception("deck store endpoint failed")
         return _err(str(exc))

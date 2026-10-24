@@ -462,13 +462,9 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
         api=ModelApi.OPENAI_COMPLETIONS,
         # meta/llama-3.3-70b-instruct led this list until 2026-09-19; NVIDIA
         # retired it 2026-08-26 (HTTP 410) and every probe kept sending it.
+        # nemotron-3-super-120b-a12b led until 2026-10-21 (404, now in
+        # RETIRED_MODELS); the live sibling leads now.
         models=[
-            ModelDefinition(
-                id="nvidia/nemotron-3-super-120b-a12b",
-                name="Nemotron 3 Super 120B",
-                context_window=131072,
-                max_tokens=_STANDARD_MAX_OUTPUT_TOKENS,
-            ),
             ModelDefinition(
                 id="nvidia/nemotron-3.5-lightning-30b-a3b",
                 name="Nemotron 3.5 Lightning 30B",

@@ -117,6 +117,34 @@ def _ensure_api_key(cfg) -> str:
     return deck_key.ensure_in_config(cfg)
 
 
+def webhook_may_be_set() -> tuple[bool, str]:
+    """May THIS machine point the bot at a webhook?
+
+    Telegram delivery is owned by the Brain, not by whoever happens to run a
+    deploy. Historically ``navig lighthouse deploy`` re-ran ``setWebhook`` on
+    every machine, which is how a Windows install silently reclaimed a bot the
+    outpost was polling. With a shared authority configured, only its current
+    owner may set the mode; an owner that cannot be confirmed is treated as "no"
+    (fail closed), and a single-machine install without an authority keeps the
+    old behaviour.
+    """
+    try:
+        from navig.brain import authority, guard
+    except Exception:  # noqa: BLE001 - no brain module: legacy single-machine behaviour
+        return True, ""
+    try:
+        if not authority.configured():
+            return True, ""
+    except Exception:  # noqa: BLE001
+        return True, ""
+    try:
+        if guard.is_owner():
+            return True, ""
+    except Exception as exc:  # noqa: BLE001
+        return False, f"brain ownership could not be confirmed ({exc})"
+    return False, "this machine is not the Brain owner; the owner owns Telegram delivery"
+
+
 def configure_telegram_webhook(lighthouse_url: str) -> str | None:
     """Point the bot's webhook at ``<lighthouse>/tg/<hash>`` and persist config.
 
@@ -130,6 +158,10 @@ def configure_telegram_webhook(lighthouse_url: str) -> str | None:
     bot_token = (resolve_telegram_bot_token() or "").strip()
     if not bot_token:
         return None
+
+    allowed, why = webhook_may_be_set()
+    if not allowed:
+        raise RuntimeError(f"Telegram webhook not set — {why}")
 
     cfg = _config()
     api_key = _ensure_api_key(cfg)

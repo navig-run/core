@@ -86,13 +86,7 @@ def register(server: Any) -> None:
     )
 
     server._tool_handlers.update(
-        {
-            "memory_key_facts_remember": _tool_memory_remember,
-            "memory_key_facts_forget": _tool_memory_forget,
-            "memory_key_facts_retrieve": _tool_memory_retrieve,
-            "memory_key_facts_stats": _tool_memory_stats,
-            "memory_key_facts_update": _tool_memory_update,
-        }
+        {name: _routed(name, _local) for name, _local in RAW_TOOLS.items()}
     )
 
     # See navig.mcp_server._gate_tool — unlisted defaults to "safe".
@@ -101,15 +95,17 @@ def register(server: Any) -> None:
     # and assuming it exists raised AttributeError. cdp.py already guarded; these did not.
     if not hasattr(server, "_tool_safety"):
         server._tool_safety = {}
-    server._tool_safety.update({
-        "memory_key_facts_remember": "moderate",
-        "memory_key_facts_update": "moderate",
-        "memory_key_facts_forget": "moderate",   # soft delete — recoverable
-        # read-only — recorded explicitly so a missing entry is a build failure,
-        # not a silent default to "safe".
-        "memory_key_facts_retrieve": "safe",
-        "memory_key_facts_stats": "safe",
-    })
+    server._tool_safety.update(
+        {
+            "memory_key_facts_remember": "moderate",
+            "memory_key_facts_update": "moderate",
+            "memory_key_facts_forget": "moderate",  # soft delete — recoverable
+            # read-only — recorded explicitly so a missing entry is a build failure,
+            # not a silent default to "safe".
+            "memory_key_facts_retrieve": "safe",
+            "memory_key_facts_stats": "safe",
+        }
+    )
 
 
 def _memory_off_error() -> dict[str, Any] | None:
@@ -120,8 +116,8 @@ def _memory_off_error() -> dict[str, Any] | None:
     return {"error": reason, "isError": True} if reason else None
 
 
-def _tool_memory_remember(server: Any, args: dict[str, Any]) -> dict[str, Any]:
-    """Store a key fact via KeyFactStore.upsert()."""
+def _local_memory_remember(server: Any, args: dict[str, Any]) -> dict[str, Any]:
+    """Store a key fact via KeyFactStore.upsert() — the LOCAL authority path."""
     import logging as _logging
 
     _log = _logging.getLogger("navig.mcp.memory.remember")
@@ -151,7 +147,7 @@ def _tool_memory_remember(server: Any, args: dict[str, Any]) -> dict[str, Any]:
         return {"error": str(exc), "isError": True}
 
 
-def _tool_memory_forget(server: Any, args: dict[str, Any]) -> dict[str, Any]:
+def _local_memory_forget(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Soft-delete a key fact via KeyFactStore.soft_delete()."""
     import logging as _logging
 
@@ -177,7 +173,7 @@ def _tool_memory_forget(server: Any, args: dict[str, Any]) -> dict[str, Any]:
         return {"error": str(exc), "fact_id": args.get("fact_id"), "isError": True}
 
 
-def _tool_memory_retrieve(server: Any, args: dict[str, Any]) -> Any:
+def _local_memory_retrieve(server: Any, args: dict[str, Any]) -> Any:
     """Search key facts via FactRetriever.retrieve()."""
     import logging as _logging
 
@@ -213,7 +209,7 @@ def _tool_memory_retrieve(server: Any, args: dict[str, Any]) -> Any:
         return {"error": str(exc), "facts": [], "isError": True}
 
 
-def _tool_memory_stats(server: Any, args: dict[str, Any]) -> dict[str, Any]:
+def _local_memory_stats(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Return store statistics via KeyFactStore.get_stats()."""
     import logging as _logging
 
@@ -228,7 +224,7 @@ def _tool_memory_stats(server: Any, args: dict[str, Any]) -> dict[str, Any]:
         return {"error": str(exc), "isError": True}
 
 
-def _tool_memory_update(server: Any, args: dict[str, Any]) -> dict[str, Any]:
+def _local_memory_update(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Update an existing fact's content in-place (soft-delete + re-insert)."""
     import logging as _logging
 
@@ -265,3 +261,74 @@ def _tool_memory_update(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         _log.error("memory.key_facts.update failed: %s", exc, exc_info=True)
         return {"error": str(exc), "isError": True}
+
+
+# ── Brain routing ──────────────────────────────────────────────
+#
+# Key facts belong to the Brain (``navig.mcp.capability``): one row, one owner. Each tool
+# keeps its local implementation above — that implementation IS the authority when this
+# machine is the Brain, or when the install never linked one — and ``_routed`` asks the
+# capability router where the call must run before it touches a store. A linked client
+# reaches the Brain; a Brain that cannot answer produces a structured error and NOT a
+# local write, because two databases under one deck key is the defect being removed.
+
+RAW_TOOLS: dict[str, Any] = {
+    "memory_key_facts_remember": _local_memory_remember,
+    "memory_key_facts_forget": _local_memory_forget,
+    "memory_key_facts_retrieve": _local_memory_retrieve,
+    "memory_key_facts_stats": _local_memory_stats,
+    "memory_key_facts_update": _local_memory_update,
+}
+
+
+def _call_brain(client: Any, name: str, args: dict[str, Any]) -> Any:
+    """Translate one MCP tool call into the matching Brain request.
+
+    Arguments are passed through as the caller gave them: the Brain runs the very same
+    implementation that is above, so validating or reshaping here would create a second
+    definition of what ``limit`` or ``tags`` mean.
+    """
+    op = name.rsplit("_", 1)[-1]
+    if op == "remember":
+        return client.memory_remember(
+            str(args.get("fact", "")),
+            source=str(args.get("source", "mcp") or "mcp"),
+            tags=args.get("tags") or [],
+        )
+    if op == "forget":
+        return client.memory_forget(str(args.get("fact_id", "")))
+    if op == "retrieve":
+        try:
+            limit = int(args.get("limit", 10))
+        except (TypeError, ValueError):
+            limit = 10
+        return client.memory_retrieve(str(args.get("query", "")), limit=limit)
+    if op == "stats":
+        return client.memory_stats()
+    if op == "update":
+        return client.memory_update(
+            str(args.get("fact_id", "")), new_content=args.get("new_content")
+        )
+    return {"error": f"no Brain route for {name}", "isError": True}
+
+
+def _routed(name: str, local: Any) -> Any:
+    """The handler a client actually calls: route first, then run (here or on the Brain)."""
+
+    def run(server: Any, args: dict[str, Any]) -> Any:
+        from navig.brain.client import BrainUnavailable
+        from navig.mcp import capability
+
+        route = capability.resolve(name)
+        if route.is_refused:
+            return route.refusal
+        if route.is_brain and route.client is not None:
+            try:
+                return _call_brain(route.client, name, args or {})
+            except BrainUnavailable as exc:
+                return capability.failure_payload(exc, route.capability)
+        return local(server, args)
+
+    run.__name__ = getattr(local, "__name__", name)
+    run.__wrapped__ = local  # the brain-side route executes this, never the wrapper
+    return run

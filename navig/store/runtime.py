@@ -17,6 +17,7 @@ Tables:
     ai_state          — AI conversation state per user
     cache             — TTL key-value cache (lazy eviction)
     notes             — user notes
+    commit_plans      — NAVIG Reflex plan/commit tokens (v5, additive)
 """
 
 from __future__ import annotations
@@ -50,7 +51,7 @@ class RuntimeStore(BaseStore):
         store.add_interaction(role="user", content="Deploy the app")
     """
 
-    SCHEMA_VERSION = 4
+    SCHEMA_VERSION = 5
     PRAGMAS = {"cache_size": -8000}  # 8 MB
 
     def __init__(self, db_path: Path | None = None):
@@ -174,6 +175,25 @@ class RuntimeStore(BaseStore):
             );
             CREATE INDEX IF NOT EXISTS idx_notes_user
                 ON notes (user_id);
+
+            -- v5: NAVIG Reflex plan/commit tokens (the idempotency key for one action).
+            -- plan_json/result_json are the Answer envelope, stored so a replay returns the
+            -- SAME result instead of firing the action twice. expires_at is the canonical
+            -- '…Z' shape so it string-compares against the clock like every other TTL here.
+            CREATE TABLE IF NOT EXISTS commit_plans (
+                token        TEXT PRIMARY KEY,
+                created_at   TEXT NOT NULL,
+                expires_at   TEXT NOT NULL,
+                state        TEXT NOT NULL DEFAULT 'pending',
+                tool         TEXT,
+                profile      TEXT,
+                destructive  INTEGER DEFAULT 0,
+                plan_json    TEXT,
+                result_json  TEXT,
+                executed_at  TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_commit_plans_expires
+                ON commit_plans (expires_at);
         """
         )
 
@@ -256,6 +276,35 @@ class RuntimeStore(BaseStore):
                 changed,
             )
         return changed
+
+    def _migrate_v4_to_v5(self, conn: sqlite3.Connection) -> None:
+        """Add ``commit_plans`` — the NAVIG Reflex's plan/commit token table.
+
+        Additive and idempotent, following ``board.py``'s v5→v6 precedent: the table is
+        created by ``_create_schema`` (``IF NOT EXISTS``) on every open, so an existing
+        v4 database only needs this step to record that the schema moved; there is no
+        data to rewrite and nothing to backfill.
+        """
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS commit_plans (
+                token        TEXT PRIMARY KEY,
+                created_at   TEXT NOT NULL,
+                expires_at   TEXT NOT NULL,
+                state        TEXT NOT NULL DEFAULT 'pending',
+                tool         TEXT,
+                profile      TEXT,
+                destructive  INTEGER DEFAULT 0,
+                plan_json    TEXT,
+                result_json  TEXT,
+                executed_at  TEXT
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_commit_plans_expires"
+            " ON commit_plans (expires_at)"
+        )
 
     # ── Legacy migration ──────────────────────────────────────
 

@@ -112,8 +112,16 @@ class ConfigSingleton:
 
     @property
     def global_config_path(self) -> Path:
-        """Global ``config.yaml`` path (live — derives from :attr:`global_config_dir`)."""
-        return self.global_config_dir / "config.yaml"
+        """Global ``config.yaml`` path (live) — the SAME resolver the runtime writes/reads.
+
+        Deriving ``config_dir() / "config.yaml"`` here instead of asking
+        :func:`navig.platform.paths.global_config_path` re-opened the resolver/writer gap: a
+        fallback-only layout was read by the resolver and written at the root by this
+        surface. One resolver, one file.
+        """
+        from navig.platform.paths import global_config_path  # noqa: PLC0415 — no import cycle
+
+        return global_config_path()
 
     @property
     def cache_dir(self) -> Path:

@@ -414,6 +414,7 @@ def create_task(
     created_by: int | None = None,
     origin: str = "manual",
     origin_ref: str | None = None,
+    space: str | None = None,
 ) -> dict[str, Any] | None:
     """Add a task. ``text`` is typed language ("Pay rent friday #life"); ``title`` and
     the keyword fields are structured input. Returns None when ``origin_ref`` was
@@ -458,13 +459,14 @@ def create_task(
         origin_ref=origin_ref,
         list_id=list_key,
         created_by=created_by,
+        space=(str(space).strip() or None) if space else None,
     )
     _sync(item)
     _emit("task", item["id"], list_key)
     return item
 
 
-_TASK_FIELDS = {"title", "notes", "priority", "due_at", "category", "recur", "remind_before", "origin"}
+_TASK_FIELDS = {"title", "notes", "priority", "due_at", "category", "recur", "remind_before", "origin", "space"}
 
 
 def update(item_id: str, fields: dict[str, Any]) -> dict[str, Any]:

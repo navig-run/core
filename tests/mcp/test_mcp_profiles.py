@@ -31,7 +31,8 @@ def test_compact_profile_advertises_exactly_the_routers() -> None:
     handler = MCPProtocolHandler(profile="default")
     advertised = handler.advertised_tools()
     assert tuple(advertised) == COMPACT_TOOL_NAMES
-    assert len(advertised) == 15
+    assert len(advertised) == 17
+    assert {"navig_capabilities", "navig_run"} <= set(advertised)
     for name in advertised:
         assert name in handler._tool_handlers
 
@@ -71,8 +72,26 @@ def test_compact_instructions_name_the_full_profile() -> None:
     compact = MCPProtocolHandler(profile="default")._handle_initialize({})
     full = MCPProtocolHandler()._handle_initialize({})
     assert "--profile full" in compact["instructions"]
-    assert "fifteen domain tools" in compact["instructions"]
+    assert f"{len(COMPACT_TOOL_NAMES)} domain tools" in compact["instructions"]
+    assert "navig_capabilities" in compact["instructions"]
     assert compact["instructions"] != full["instructions"]
+
+
+def test_instructions_fall_back_to_static_text_when_the_digest_fails(monkeypatch) -> None:
+    import navig.capabilities as caps
+
+    def boom(*_a, **_k):
+        raise RuntimeError("broken plugin")
+
+    monkeypatch.setattr(caps, "digest", boom)
+    text = MCPProtocolHandler(profile="default")._handle_initialize({})["instructions"]
+    assert "--profile full" in text
+    assert "Installed:" not in text
+
+
+def test_capabilities_resource_is_served() -> None:
+    compact = MCPProtocolHandler(profile="default")
+    assert "navig://capabilities" in compact.resources
 
 
 def test_linux_full_profile_excludes_windows_only_tools(monkeypatch) -> None:

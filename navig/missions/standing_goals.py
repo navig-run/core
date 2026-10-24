@@ -139,6 +139,7 @@ def schedule(goal: dict[str, Any]) -> dict[str, Any]:
         command=cron_command(goal["id"]),
         timeout_seconds=CYCLE_TIMEOUT_SECONDS,
         replace=True,
+        space=goal.get("space"),
     )
 
 

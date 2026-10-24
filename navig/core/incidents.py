@@ -62,6 +62,10 @@ OS_REMOTE_BUDGET = "os_remote_budget"
 DECIDER_AUTH_FAILED = "decider_auth_failed"
 DECIDER_BUDGET = "decider_budget"
 RECALL_INGEST_FAILING = "recall_ingest_failing"
+BRAIN_OWNERSHIP_REFUSED = "brain_ownership_refused"
+KNOWLEDGE_DB_LEGACY_READ = "knowledge_db_legacy_read"
+KNOWLEDGE_DB_RETIRE_FAILED = "knowledge_db_retire_failed"
+RETENTION_SWEPT = "retention_swept"
 
 # Human-readable, operator-facing summaries (doctor prints these, not the raw ids).
 DESCRIPTIONS: dict[str, str] = {
@@ -158,6 +162,28 @@ DESCRIPTIONS: dict[str, str] = {
         "Recall's background reading (monitor recall_ingest) failed several passes in a row, "
         "so new conversations are not reaching the bank — run navig recall ingest to see the "
         "error, and navig recall sources --errors for the sources it could not read"
+    ),
+    BRAIN_OWNERSHIP_REFUSED: (
+        "a singleton service (daemon, gateway, Telegram or the scheduler) or a Telegram "
+        "delivery mode was REFUSED because this machine is not the Brain — two machines "
+        "answering as one NAVIG is the split brain this prevents. Run navig brain status; "
+        "if this machine should own it, navig brain takeover --from <owner> --reason <why>"
+    ),
+    KNOWLEDGE_DB_LEGACY_READ: (
+        "the knowledge base is being READ from a LEGACY copy while the canonical database "
+        "does not exist — rows written on another surface are invisible to it, so the "
+        "Knowledge view can look empty. Run `navig db local migrate --dry-run`, then "
+        "`navig db local migrate`, to move the populated copy onto the canonical path"
+    ),
+    KNOWLEDGE_DB_RETIRE_FAILED: (
+        "a knowledge.db copy was installed at the canonical path, but the LEGACY source "
+        "could not be retired (most likely a running service holds it) — writes to the old "
+        "file will not reach the canonical database until it is moved. Stop NAVIG "
+        "(`navig service stop`) and re-run `navig db local migrate`"
+    ),
+    RETENTION_SWEPT: (
+        "the boot retention sweep moved stale local records into the trash — nothing was "
+        "deleted; recover anything you still need from the reported trash directory"
     ),
 }
 

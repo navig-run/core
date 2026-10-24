@@ -215,10 +215,13 @@ _PROVIDER_DEFAULT_MODELS: dict[str, dict[str, str]] = {
     # google is unchanged: no credential on the auditing machine, so unjudged.
     "nvidia": {
         "small_talk": "openai/gpt-oss-20b",
-        "big_tasks": "nvidia/nemotron-3-super-120b-a12b",
-        "coding": "nvidia/nemotron-3-super-120b-a12b",
-        "summarize": "nvidia/nemotron-3-super-120b-a12b",
-        "research": "nvidia/nemotron-3-super-120b-a12b",
+        # nemotron-3-super-120b-a12b answered 404 on 2026-10-21 (heartbeat HIGH +
+        # sweep) and is now in RETIRED_MODELS; the lightning 30B is the live
+        # sibling that answered. Both entries below are probe-verified live.
+        "big_tasks": "nvidia/nemotron-3.5-lightning-30b-a3b",
+        "coding": "nvidia/nemotron-3.5-lightning-30b-a3b",
+        "summarize": "nvidia/nemotron-3.5-lightning-30b-a3b",
+        "research": "nvidia/nemotron-3.5-lightning-30b-a3b",
         "_default": "openai/gpt-oss-20b",
     },
     "xai": {"_default": "grok-3-mini"},

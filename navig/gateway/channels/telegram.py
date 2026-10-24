@@ -231,6 +231,21 @@ def _tidy_note(result: Any) -> None:
     chat_tidy.note(result)
 
 
+def _mark_raw_user_message(metadata: dict, text: str) -> None:
+    """Record the operator's own words for the conversation store.
+
+    The model-visible turn is deliberately enriched (web context, formatting
+    instructions, the explore suffix) so the cached system prompt stays stable.
+    That enrichment is NOT the user's message: before 2026-10-22 it was appended
+    to the turn that got persisted, so every later turn replayed system
+    instructions as if the operator had written them — the reply that described
+    "injected skill instructions and diagnostic context" was reading its own
+    enrichment back (incident 2026-10-22, history rows 18/20).
+    """
+    if text and not metadata.get("raw_user_message"):
+        metadata["raw_user_message"] = text
+
+
 def _orphan_progress_id(progress: Any, finalized_ph_id: int | None) -> int | None:
     """The progress bubble's id when it did NOT become the answer — an orphan
     to delete. ``None`` when there is no bubble or it was reused as the answer.
@@ -738,6 +753,34 @@ class TelegramChannel:
         # period is measured from actual start time, not from process boot.
         self._last_event_at = time.monotonic()
 
+        # ONE DELIVERY MODE PER BRAIN — checked BEFORE this channel registers anything.
+        # The incident: a client/workstation install kept running its own gateway, and
+        # that gateway re-ran setWebhook on every start. Telegram delivers to exactly one
+        # place, so the last boot won and the Brain silently lost the bot. A client
+        # install must not own delivery at all; the Brain owns it, and a mode switch is a
+        # recorded transition (`navig brain telegram polling|webhook`).
+        from navig.brain import telegram_mode as _brain_tg
+
+        _wanted_mode = _brain_tg.MODE_WEBHOOK if self._use_webhook else _brain_tg.MODE_POLLING
+        try:
+            _brain_tg.authorize_delivery_mode(_wanted_mode)
+        except _brain_tg.TelegramModeRefused as exc:
+            logger.error("Telegram delivery refused: %s", exc)
+            try:
+                from navig.core import incidents
+
+                incidents.record(
+                    incidents.BRAIN_OWNERSHIP_REFUSED,
+                    service="telegram",
+                    mode=_wanted_mode,
+                    reason=str(exc),
+                )
+            except Exception:  # noqa: BLE001 — an observation must never break the observed
+                pass
+            await self._session.close()
+            self._session = None
+            raise RuntimeError(f"Telegram delivery refused: {exc}") from exc
+
         # Token is valid — mark running and complete setup
         self._running = True
         self._bot_username = me.get("username", "")
@@ -1158,7 +1201,7 @@ class TelegramChannel:
                 if updates:
                     for update in updates:
                         self._last_update_id = update["update_id"]
-                        await self._process_update(update)
+                        await self._run_update_with_turn(update)
 
             except asyncio.CancelledError:
                 break
@@ -1574,6 +1617,31 @@ class TelegramChannel:
         except Exception:  # noqa: BLE001 — never block startup on this
             logger.debug("menu button self-heal skipped", exc_info=True)
 
+    def _drop_pending_on_webhook(self) -> bool:
+        """May ``setWebhook`` discard Telegram's queued backlog? **No**, by default.
+
+        Dropping is destructive, and it used to happen on EVERY boot
+        (``drop_pending_updates: True`` was a constant). A restart, or a second machine
+        booting later, therefore threw away real messages with no trace. The only place
+        that may discard is an explicit mode transition (``navig brain telegram webhook
+        --drop-pending``), which records what it did.
+
+        Config key: ``telegram.webhook.drop_pending`` (read through ``coerce_bool``
+        because `navig config set` stores the raw string "false").
+        """
+        raw: object = None
+        try:
+            manager = getattr(getattr(self, "gateway", None), "config_manager", None)
+            cfg = getattr(manager, "global_config", None) or {}
+            section = cfg.get("telegram") if isinstance(cfg, dict) else None
+            webhook = section.get("webhook") if isinstance(section, dict) else None
+            raw = webhook.get("drop_pending") if isinstance(webhook, dict) else None
+        except Exception:  # noqa: BLE001 — an unreadable config must not change behaviour
+            raw = None
+        from navig.core.coerce import coerce_bool
+
+        return coerce_bool(raw, default=False)
+
     async def _setup_webhook(self):
         """Register the webhook URL with Telegram and delete any pending updates.
 
@@ -1589,12 +1657,24 @@ class TelegramChannel:
             # A rotation was detected. It orphaned the Mini App button too.
             await self._heal_menu_button()
 
+        # Defense in depth: the channel start already checked the mode, but this is the
+        # method that TAKES the bot away from whoever is polling, so the guard lives
+        # here too — a future caller that reaches setWebhook directly must still be the
+        # Brain's delivery owner.
+        from navig.brain import telegram_mode as _brain_tg
+
+        _brain_tg.authorize_delivery_mode(_brain_tg.MODE_WEBHOOK)
+
         from navig.telegram.updates import ALLOWED_UPDATES
 
         params: dict[str, Any] = {
             "url": self.webhook_url,
             "allowed_updates": ALLOWED_UPDATES,
-            "drop_pending_updates": True,
+            # NOT True. This used to drop the backlog on EVERY boot, so a restart — or a
+            # second machine booting later — silently discarded real messages. The
+            # transition command (`navig brain telegram webhook --drop-pending`) is the
+            # only place that discards, and only when asked.
+            "drop_pending_updates": self._drop_pending_on_webhook(),
         }
         if self.webhook_secret:
             params["secret_token"] = self.webhook_secret
@@ -1674,7 +1754,7 @@ class TelegramChannel:
             return True  # ACK accepted → callers return 200 → Telegram stops retrying
 
         try:
-            await self._process_update(update)
+            await self._run_update_with_turn(update)
             return True
         except Exception as e:
             logger.error("Webhook update processing error: %s", e)
@@ -1742,6 +1822,60 @@ class TelegramChannel:
                 # Too old, not ours, or unchanged — the alert already explained it.
                 pass
         return False
+
+    @staticmethod
+    def _update_chat_id(update: dict) -> int | None:
+        """The chat an inbound *message* belongs to (callbacks/edits are not turns)."""
+        message = update.get("message") if isinstance(update, dict) else None
+        if not isinstance(message, dict):
+            return None
+        chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
+        chat_id = chat.get("id")
+        try:
+            return int(chat_id) if chat_id is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    async def _run_update_with_turn(self, update: dict) -> None:
+        """Process one update, marking the chat busy so digest cards wait for the reply.
+
+        The 2026-10-22 review card landed while the operator's 08:29 question was still
+        being answered (reply 08:32): a scheduled message visually replaced the answer.
+        """
+        chat_id = self._update_chat_id(update)
+        if chat_id is None:
+            await self._process_update(update)
+            return
+        from navig.telegram import receipts, turn_state
+
+        receipt = receipts.record_received(update)
+        turn_state.mark_started(chat_id)
+        status, detail = "responded", ""
+        try:
+            await self._process_update(update)
+        except BaseException as exc:  # noqa: BLE001 — record, then let the caller decide
+            status, detail = "failed", f"{type(exc).__name__}: {exc}"
+            raise
+        finally:
+            receipts.record_terminal(receipt, status, detail)
+            turn_state.mark_finished(chat_id)
+            await self._drain_deferred_cards(chat_id)
+
+    async def _drain_deferred_cards(self, chat_id: int) -> None:
+        """Deliver digest cards parked while this chat's turn was in flight."""
+        try:
+            from navig.telegram import turn_state
+
+            pending = turn_state.take_deferred(chat_id)
+            if not pending:
+                return
+            from navig.telegram import cards
+
+            for item in pending:
+                screen, context = turn_state.build_card(item)
+                await cards.send_card(chat_id, screen, context, channel=self, force=True)
+        except Exception:  # noqa: BLE001 — never let a drain break the turn's ack
+            logger.debug("deferred card drain failed", exc_info=True)
 
     async def _process_update(self, update: dict):
         """Process a single update from Telegram."""
@@ -1876,6 +2010,17 @@ class TelegramChannel:
             from navig.telegram import plugin_callbacks
 
             if await plugin_callbacks.dispatch(self, callback_query, cb_data):
+                return
+
+            # ── Card framework (navig/telegram/cards.py) ──────────────────
+            # One message that edits itself: Open/View expands, Back returns, Close
+            # collapses. The framework answers the press itself (no spinner left
+            # running) and applies the owning plugin's module switch, so the branch
+            # here is only the routing decision.
+            if cb_data.startswith("cd:"):
+                from navig.telegram import cards as card_actions
+
+                await card_actions.dispatch(self, callback_query, cb_data)
                 return
 
             # ── pr: prompt library card + picker (navig/telegram/prompt_actions.py) ──
@@ -2222,6 +2367,21 @@ class TelegramChannel:
                     except Exception as e:
                         logger.debug("Decoy responder error: %s", e)
             return
+
+        # ── A card waiting for a text reply (e.g. a rejection reason) ─────────
+        # After access control, so an unauthorised sender can never fill the slot.
+        # A card press asks for a reason because a button cannot; the next plain
+        # text message is that reason, and the card edits itself with the outcome.
+        # A slash command cancels the prompt (consume_reply returns False), so
+        # typing /status never becomes a rejected draft.
+        if text and message.get("text"):
+            try:
+                from navig.telegram import cards as _card_actions
+
+                if await _card_actions.consume_reply(self, message):
+                    return
+            except Exception as _card_reply_exc:  # noqa: BLE001
+                logger.warning("card reply hook errored, falling through: %s", _card_reply_exc)
 
         # ── Reply-keyword actions (replaced emoji reactions) ────────────────────
         # Reply to a message with a bare keyword (translate/summarize/explain/
@@ -3470,6 +3630,7 @@ class TelegramChannel:
         # stays the clean caption for original_text, limits and recording.
         _photo_ctx = str(metadata.get("photo_context") or "")
         _llm_message = f"{_photo_ctx}\n\n{text}" if _photo_ctx else text
+        _mark_raw_user_message(metadata, text)
         llm_t0 = time.monotonic()
         response = await self._stream_reply(
             chat_id,
@@ -3763,6 +3924,7 @@ class TelegramChannel:
         _fmt_hint = _TELEGRAM_FORMAT_HINT if _depth == "deep" else ""
         # Stream live like TALK. The EXPLORE_Q line the model appends is
         # turned into explore-question buttons by _finalize_streamed_message.
+        _mark_raw_user_message(metadata, text)
         response = await self._stream_reply(
             chat_id,
             user_id,
@@ -5457,6 +5619,31 @@ class TelegramChannel:
             message_id=message_id,
         )
 
+    async def _status_snapshot(self, chat_id: int, user_id: int = 0) -> dict:
+        """Delegate the snapshot collector (runtime MRO is [TelegramChannel, object])."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return await TelegramCommandsMixin._status_snapshot(self, chat_id, user_id)
+
+    async def _handle_status_detail(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        *,
+        kind: str = "brain",
+        message_id: int | None = None,
+    ) -> None:
+        """Delegate one /status detail card (brain | genesis | self)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_status_detail(
+            self,
+            chat_id,
+            user_id=user_id,
+            kind=kind,
+            message_id=message_id,
+        )
+
     async def _handle_ping(
         self,
         chat_id: int,
@@ -6744,6 +6931,23 @@ class TelegramChannel:
                 )
         except Exception:  # noqa: BLE001 — the length guard must never block a send
             pass
+
+        # Duplicate-delivery guard: an identical LONG outbound message to the same chat
+        # inside a short window is a retry, a loop, or a foreign test sender — not a new
+        # event (2026-10-22: 12 identical "Brief" sends inside 24 minutes). Short replies
+        # and anything answering a specific message are exempt: those repeat on purpose.
+        if not reply_to_message_id and not business_connection_id and len(text) >= 120:
+            try:
+                import hashlib
+
+                from navig.notify.dedupe import claim
+
+                fingerprint = hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+                if not claim(f"sendmsg:{chat_id}:{fingerprint}", 300.0):
+                    logger.info("duplicate outbound message withheld for chat %s", chat_id)
+                    return None
+            except Exception:  # noqa: BLE001 — the guard must never block a send
+                logger.debug("outbound duplicate guard skipped", exc_info=True)
 
         data = {
             "chat_id": chat_id,

@@ -196,3 +196,27 @@ def test_the_fast_list_says_no_repo_at_once_for_a_folder_without_git(
     plain.mkdir()
     monkeypatch.setattr(model, "_warm_git", lambda root: pytest.fail("queued a git read for a non-repo"))
     assert model._git_light(plain, fast=True) == {"repo": False}
+
+
+# ── worktrees (project ↔ session linking) ────────────────────────────────────
+
+
+def _norm(p: str | Path) -> str:
+    return str(Path(p).resolve()).lower()
+
+
+def test_worktrees_lists_the_main_checkout_and_every_worktree(tmp_path: Path) -> None:
+    repo = _repo(tmp_path / "repo")
+    wt = tmp_path / "wt"
+    _git(repo, "worktree", "add", "-q", "-b", "feature", str(wt))
+
+    got = {_norm(p) for p in gitinfo.worktrees(repo)}
+
+    assert _norm(repo) in got
+    assert _norm(wt) in got
+
+
+def test_worktrees_is_empty_for_a_folder_that_is_not_a_repo(tmp_path: Path) -> None:
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    assert gitinfo.worktrees(plain) == []

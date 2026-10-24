@@ -69,6 +69,11 @@ def test_service_start_refuses(home, monkeypatch) -> None:
     import navig.daemon.supervisor as supervisor
     from navig.commands import service
 
+    # This test is about the moved-marker guard, not about client/brain roles: isolate the
+    # brain-link precondition so a developer machine that really is a client never decides
+    # what this test asserts.
+    monkeypatch.setattr("navig.commands.service._read_brain_link", lambda: None)
+
     marker.write_moved({})
     monkeypatch.setattr(supervisor.NavigDaemon, "is_running", staticmethod(_never))
     result = CliRunner().invoke(service.service_app, ["start"], env={"COLUMNS": "200"})

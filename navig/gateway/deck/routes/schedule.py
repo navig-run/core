@@ -291,6 +291,7 @@ async def handle_deck_crons_create(request: "web.Request") -> "web.Response":
             command=command,
             enabled=bool(body.get("enabled", True)),
             timeout_seconds=timeout,
+            space=str(body.get("space") or "").strip() or None,
         )
         return _ok(job.to_dict(), status=201)
     except Exception as exc:
@@ -327,6 +328,8 @@ async def handle_deck_cron_update(request: "web.Request") -> "web.Response":
         if timeout <= 0:
             return _err("'timeout_seconds' must be positive", status=400)
         updates["timeout_seconds"] = timeout
+    if "space" in body:
+        updates["space"] = str(body.get("space") or "").strip() or None
 
     enabled = body.get("enabled")
     if not updates and enabled is None:

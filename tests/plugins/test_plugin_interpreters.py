@@ -137,6 +137,36 @@ def test_py_launcher_listing_is_parsed(monkeypatch, tmp_path):
     # the default marker is stripped, a missing exe is dropped, PATH's copy is deduped
     assert itp.list_interpreters() == [str(a), str(b)]
 
+def test_an_unreadable_candidate_is_skipped_not_fatal(monkeypatch, tmp_path):
+    r"""WinError 5 on one candidate must not abort the whole discovery.
+
+    A standard user cannot stat `C:\ProgramData\navig\tools\...`; the doctor used to
+    raise PermissionError out of `navig doctor` because of it.
+    """
+    good = tmp_path / "good" / "python.exe"
+    good.parent.mkdir(parents=True)
+    good.write_text("", encoding="utf-8")
+    locked = tmp_path / "locked" / "python.exe"
+
+    monkeypatch.setattr(itp.os, "name", "nt")
+    monkeypatch.setattr(itp.shutil, "which", lambda n: "py" if n == "py" else None)
+    monkeypatch.setattr(
+        itp.subprocess,
+        "run",
+        lambda *args, **kw: subprocess.CompletedProcess(
+            args, 0, stdout=f" -V:3.14 * {good}\n -V:3.13 {locked}\n", stderr=""
+        ),
+    )
+
+    real_is_file = itp.Path.is_file
+
+    def fake_is_file(self):
+        if str(self) == str(locked):
+            raise PermissionError(5, "Access is denied", str(self))
+        return real_is_file(self)
+
+    monkeypatch.setattr(itp.Path, "is_file", fake_is_file)
+    assert itp.list_interpreters() == [str(good)]
 
 # ── the doctor row ───────────────────────────────────────────────────────────
 
@@ -188,3 +218,5 @@ def test_a_dead_install_is_an_error_whose_fix_uninstalls_it(_row):
     assert row[0] == doctor._ERR
     assert f"{OTHER} -m pip uninstall -y navig-paperwork" in row.detail
     assert "pip install -e" not in row.detail, "nothing to reinstall when only a record is dead"
+
+

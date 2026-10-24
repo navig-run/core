@@ -346,6 +346,14 @@ class ChannelRouter:
         if _sto:
             agent._session_tier_overrides = _sto  # type: ignore[attr-defined]
 
+        # The operator's own words, when the channel enriched the model-visible
+        # message (web context / formatting). The agent stores these in the
+        # conversation instead of the enrichment — history rows 18/20 of the
+        # 2026-10-22 DM show system instructions replayed as if the user wrote them.
+        _raw_user = str(metadata.get("raw_user_message") or "").strip()
+        if _raw_user:
+            agent._raw_user_message = _raw_user
+
         # Try conversational processing first
         try:
             response = await agent.chat(

@@ -92,8 +92,13 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     # calendar now ships in the navig-calendar plugin via the `navig.commands`
     # entry-point group. Providers stay in core (navig.agent.proactive).
     "mode": ("navig.commands.mode", "mode_app"),
+    # mind: the owner's personal cognitive/language preferences (NAVIG MIND).
+    "mind": ("navig.commands.mind", "mind_app"),
     # email now ships in the navig-email plugin via the `navig.commands` entry-point.
     "voice": ("navig.commands.voice", "voice_app"),
+    # endpoints: one typed projection of the home inventory (never a second
+    # inventory) — `navig endpoints list|show|set`. See navig.endpoints.
+    "endpoints": ("navig.commands.endpoints", "endpoints_app"),
     "crash": ("navig.commands.crash", "crash_app"),
     "telegram": ("navig.commands.telegram", "telegram_app"),
     "tg": ("navig.commands.telegram", "telegram_app"),        # hidden alias
@@ -233,6 +238,9 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     # cdp/do/gmail (auto-login browser surfaces) are registered once above, near "auto".
     "import": ("navig.commands.import_cmd", "import_app"),
     "dispatch": ("navig.commands.dispatch", "dispatch_app"),
+    # What this install can do (plugins, connected accounts, next steps) — the operator's
+    # view of what MCP navig_capabilities tells a coding agent.
+    "capabilities": ("navig.commands.capabilities_cmd", "capabilities_app"),
     # `contacts` and `ct` are provided by the navig-contacts plugin, which owns
     # the address book AND the alias->route table dispatch reads. It is a HARD
     # dependency of core (see core/pyproject.toml), so the verb is always there.
@@ -262,6 +270,8 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "work": ("navig.commands.work", "work_app"),
     "plans": ("navig.commands.plans", "plans_app"),
     "plan": ("navig.commands.plan_mode", "app"),
+    # Collective coordination — durable inter-agent/inter-session mailbox (read/send/transition).
+    "coordination": ("navig.commands.coordination", "coordination_app"),
     "origin": ("navig.commands.origin", "origin_app"),
     "user": ("navig.commands.user", "user_app"),
     "node": ("navig.commands.node", "node_app"),

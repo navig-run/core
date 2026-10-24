@@ -154,8 +154,48 @@ def script_exists(token: str, account_id: str, name: str) -> bool:
     return resp.status_code == 200
 
 
+def durable_object_classes(token: str, account_id: str, name: str) -> set[str]:
+    """Which Durable Object classes this script already declares.
+
+    Needed because a DO class exists only once a *migration* declared it, and a
+    migration that is sent twice under the same tag is rejected — so an idempotent
+    redeploy must know whether ``OwnershipRecord`` is already there. The namespace
+    list is the honest source: a class that was never migrated has no namespace.
+    A failed read means "unknown" (empty set), which makes the next step send the
+    migration and surface Cloudflare's own answer rather than guessing nothing is
+    needed.
+    """
+    resp = requests.get(
+        f"{CF_API}/accounts/{account_id}/workers/durable_objects/namespaces",
+        headers=_headers(token),
+        timeout=_TIMEOUT,
+    )
+    if resp.status_code != 200:
+        return set()
+    try:
+        namespaces = _result(resp, "list durable object namespaces") or []
+    except DeployError:
+        return set()
+    classes: set[str] = set()
+    for item in namespaces:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("script") or "") != name:
+            continue
+        cls = str(item.get("class") or "").strip()
+        if cls:
+            classes.add(cls)
+    return classes
+
+
 def upload_worker(
-    token: str, account_id: str, name: str, script: bytes, *, with_migration: bool
+    token: str,
+    account_id: str,
+    name: str,
+    script: bytes,
+    *,
+    with_migration: bool,
+    first_deploy: bool = False,
 ) -> None:
     metadata: dict[str, Any] = {
         "main_module": "index.js",
@@ -166,12 +206,34 @@ def upload_worker(
                 "type": "durable_object_namespace",
                 "name": "BRAIN",
                 "class_name": "BrainSocket",
-            }
+            },
+            {
+                # The Brain ownership AUTHORITY. One instance per tenant; reachable
+                # while the brain is offline, because deciding who the Brain is
+                # must not depend on the Brain answering.
+                "type": "durable_object_namespace",
+                "name": "OWNERSHIP",
+                "class_name": "OwnershipRecord",
+            },
         ],
     }
     if with_migration:
-        # First deploy: declare the SQLite-backed DO class.
-        metadata["migrations"] = {"new_tag": "v1", "new_sqlite_classes": ["BrainSocket"]}
+        # v2 adds the OwnershipRecord class. A FIRST deploy declares both
+        # SQLite-backed classes in that one migration; an upgrade declares only
+        # the new one, because BrainSocket's namespace already exists.
+        metadata["migrations"] = {
+            "new_tag": "v2",
+            "new_sqlite_classes": ["BrainSocket", "OwnershipRecord"]
+            if first_deploy
+            else ["OwnershipRecord"],
+        }
+        if not first_deploy:
+            # Cloudflare treats the migration chain as a precondition on the
+            # script's CURRENT tag: an upgrade upload that names only the new tag
+            # is rejected with "got tag '' when expected tag is 'v1'". An
+            # existing Worker already carries v1 (BrainSocket), so the upgrade
+            # must say where it starts.
+            metadata["migrations"]["old_tag"] = "v1"
 
     files = {
         "metadata": ("metadata.json", json.dumps(metadata), "application/json"),
@@ -239,7 +301,19 @@ def deploy(
     acc = resolve_account_id(token, account_id)
     subdomain = get_workers_subdomain(token, acc)
     exists = script_exists(token, acc, worker_name)
-    upload_worker(token, acc, worker_name, script, with_migration=(fresh or not exists))
+    classes = durable_object_classes(token, acc, worker_name) if exists else set()
+    needs_ownership = "OwnershipRecord" not in classes
+    # A migration is only sent when a class it declares is genuinely missing: a
+    # repeated tag is rejected by Cloudflare, so an idempotent redeploy (the
+    # normal `navig lighthouse redeploy`) must not send one.
+    upload_worker(
+        token,
+        acc,
+        worker_name,
+        script,
+        with_migration=(fresh or not exists or needs_ownership),
+        first_deploy=(not exists),
+    )
     enable_workers_dev(token, acc, worker_name)
     url = f"https://{worker_name}.{subdomain}.workers.dev"
     logger.info("Lighthouse deployed: %s (account=%s, new=%s)", url, acc, not exists)

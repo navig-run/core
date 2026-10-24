@@ -276,6 +276,20 @@ def cache_dir() -> Path:
     return Path(xdg_cache) / "navig" if xdg_cache else home_dir() / ".cache" / "navig"
 
 
+def trash_dir() -> Path:
+    """The local recycle bin: ``<config_dir>/.trash`` (honours ``NAVIG_TRASH_DIR``).
+
+    The rule for this machine is "delete → trash, never unlink": anything NAVIG removes on
+    its own must stay recoverable. Matches the convention already on disk
+    (``~/.navig/.trash/skills-prune-<stamp>``) — every automatic operation gets its own dated
+    subdirectory, so a mistaken sweep is a directory move back, not lost history.
+    """
+    env = os.environ.get("NAVIG_TRASH_DIR")
+    if env:
+        return Path(env)
+    return config_dir() / ".trash"
+
+
 def workspace_dir() -> Path:
     """NAVIG workspace directory (identity, soul, agents, etc.)."""
     return config_dir() / "workspace"
@@ -286,16 +300,52 @@ def debug_log_path() -> Path:
     return log_dir() / "debug.log"
 
 
-def global_config_path() -> Path:
-    """Path to the main global config file.
+def knowledge_db_path() -> Path:
+    """The ONE local knowledge-base SQLite database: ``<data_dir>/knowledge.db``.
 
-    New layout:    ``config/config.yaml`` inside :func:`config_dir`.
-    Legacy layout: ``config.yaml`` directly inside :func:`config_dir`.
+    Three resolvers used to exist for the same logical store:
+
+    * the gateway / deck read AND wrote ``<config_dir>/knowledge.db`` (through
+      ``GatewayConfig.storage_dir``, whose default is ``config_dir()``);
+    * ``navig memory knowledge`` and the agent's memory-context reader used
+      ``<config_dir>/memory/knowledge.db``;
+    * ``KnowledgeBase``'s documented default was ``<data_dir>/knowledge.db`` — the only
+      one of the three with no file on a live install.
+
+    Consequence: a knowledge entry written on one surface was invisible on the other (the
+    split-state class this module exists to prevent). Both legacy files were observed live
+    on 2026-10-22, both opened by the running daemon.
+
+    ``data_dir()`` is the authority (it honours ``NAVIG_DATA_DIR``, like the other ~35 local
+    stores under the data root). Use
+    :func:`navig.memory.knowledge_migration.migrate_knowledge_dbs` to move the legacy
+    copies here — dry-run by default, never a blind merge.
     """
+    return data_dir() / "knowledge.db"
+
+
+def global_config_path() -> Path:
+    """Path to the LIVE global config file — exactly ONE authority.
+
+    The authority is ``<config_dir>/config.yaml``, because that is the file every runtime
+    reader AND writer uses: ``ConfigManager._load_global_config`` / ``_save_global_config``
+    (``navig/config.py``), ``SharedConfig`` (``navig/core/shared_config.py``) and the gateway
+    config watcher all resolve ``global_config_dir / "config.yaml"``.
+
+    This resolver used to PREFER ``<config_dir>/config/config.yaml`` whenever that file
+    existed, while nothing ever wrote it. The day anything created it (a migration, a
+    script, a doc-follower), ``navig paths`` / doctor / Telegram would report a stale file
+    as truth while the runtime kept reading the real one — a silent split brain.
+
+    New layout ``config/config.yaml`` is therefore only a READ FALLBACK for an install
+    that has it and no legacy file (no writer has materialised the authority yet); when
+    both exist, the authority wins. ``navig config`` never writes the fallback.
+    """
+    authority = config_dir() / "config.yaml"
+    if authority.exists():
+        return authority
     new_path = config_dir() / "config" / "config.yaml"
-    legacy = config_dir() / "config.yaml"
-    new_exists = new_path.exists()
-    return legacy if not new_exists and legacy.exists() else new_path
+    return new_path if new_path.exists() else authority
 
 
 def msg_trace_path() -> Path:
@@ -304,24 +354,52 @@ def msg_trace_path() -> Path:
 
 
 def genesis_json_path() -> Path:
-    """Path to ``genesis.json`` with legacy fallback."""
+    """Path to ``genesis.json`` — exactly ONE authority.
+
+    The WRITER is ``navig.onboarding.genesis.load_or_create``, which reads/writes
+    ``<navig_dir>/genesis.json`` (immune after first write), so that root path is the
+    authority. This resolver used to prefer ``state/genesis.json`` — a file nothing wrote —
+    so any caller adopting it would have read a different document than the identity the
+    install actually had.
+
+    ``state/genesis.json`` is a READ FALLBACK only for a layout where the authority is
+    absent (a future move that has not materialised its root file yet).
+    """
+    authority = config_dir() / "genesis.json"
+    if authority.exists():
+        return authority
     new_path = config_dir() / "state" / "genesis.json"
-    legacy = config_dir() / "genesis.json"
-    return legacy if not new_path.exists() and legacy.exists() else new_path
+    return new_path if new_path.exists() else authority
 
 
 def entity_json_path() -> Path:
-    """Path to ``entity.json`` with legacy fallback."""
-    new_path = config_dir() / "state" / "entity.json"
+    """Path to ``entity.json`` — exactly ONE authority: ``state/entity.json``.
+
+    Unlike its two siblings, the entity's WRITER already uses the ``state/`` layout
+    (``navig.identity.sigil_store`` resolves this helper), so ``state/`` is the authority
+    here and the root file is the legacy read fallback (an install that predates the move).
+    """
+    authority = config_dir() / "state" / "entity.json"
+    if authority.exists():
+        return authority
     legacy = config_dir() / "entity.json"
-    return legacy if not new_path.exists() and legacy.exists() else new_path
+    return legacy if legacy.exists() else authority
 
 
 def onboarding_json_path() -> Path:
-    """Path to ``onboarding.json`` with legacy fallback."""
+    """Path to ``onboarding.json`` — exactly ONE authority.
+
+    The WRITER is the onboarding engine (``navig.onboarding.engine`` /
+    ``steps`` / ``runner``), which reads/writes ``<navig_dir>/onboarding.json``, so that
+    root path is the authority. ``state/onboarding.json`` is the READ FALLBACK for a
+    layout where the authority is absent. (The old resolver preferred ``state/`` while
+    nothing wrote it — two answers to "is onboarding complete?".)
+    """
+    authority = config_dir() / "onboarding.json"
+    if authority.exists():
+        return authority
     new_path = config_dir() / "state" / "onboarding.json"
-    legacy = config_dir() / "onboarding.json"
-    return legacy if not new_path.exists() and legacy.exists() else new_path
+    return new_path if new_path.exists() else authority
 
 
 def builtin_store_dir() -> Path:

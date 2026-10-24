@@ -16,7 +16,16 @@ from typing import Any
 
 import typer
 
-from navig import __version__ as __version__
+try:
+    from navig import __version__ as __version__
+except ImportError:
+    # A cwd holding a folder named `navig/` shadows the package ROOT while the
+    # submodules still resolve — the root has no __version__ then, and this line
+    # used to end every `python -m navig …` run started from such a directory
+    # (NAVIG's own spawns inherit the caller's cwd). See navig.cli._version.
+    from navig.cli._version import resolve_version
+
+    __version__ = resolve_version()
 from navig.deprecation import deprecation_warning
 from navig.lazy_loader import lazy_import
 
@@ -1438,10 +1447,140 @@ def quickstart_command(ctx: typer.Context):
 # ── ai_app + ai_memory_app → navig.commands.ai  (all via _EXTERNAL_CMD_MAP)
 
 
+# ── NAVIG Reflex ↔ `navig ask` (additive: --commit/--profile/--json) ──────────
+
+
+def _reflex_router() -> Any:
+    """Build the NAVIG Reflex lazily — a plain ``navig ask`` only pays the classifier."""
+    from navig.reflex.service import ReflexRouter
+
+    return ReflexRouter()
+
+
+def _reflex_profile(value: str | None, ctx: typer.Context) -> str:
+    """Validate ``--profile``; an unknown name is a usage error (exit 2), not a default."""
+    from navig.reflex.errors import ReflexError
+    from navig.reflex.profiles import resolve_profile
+
+    configured = (ctx.obj or {}).get("profile") if isinstance(ctx.obj, dict) else None
+    try:
+        return resolve_profile(value or configured)
+    except ReflexError as exc:
+        ch.error(exc.message, exc.hint)
+        raise typer.Exit(2) from exc
+
+
+def _reflex_emit_json(payload: dict) -> None:
+    """One pure JSON document on stdout — the approved house emitter."""
+    ch.emit_json(payload)
+
+
+def _reflex_narrate(message: str, json_out: bool, *, style: str = "dim", detail: str = "") -> None:
+    """Human narration, on stderr when ``--json`` owns stdout."""
+    if json_out:
+        typer.echo(message if not detail else f"{message} {detail}", err=True)
+        return
+    if style == "warning":
+        ch.warning(message, detail or None)
+    elif style == "error":
+        ch.error(message, detail or None)
+    else:
+        ch.dim(message)
+
+
+def _reflex_plan_table(plan: dict) -> Any:
+    """The plan as a house-style field/value table (terminal-grade, one value column)."""
+    from navig.console_helper import Table
+
+    table = Table(box=None, show_header=True, padding=(0, 2))
+    table.add_column("Field", style="dim", no_wrap=True)
+    table.add_column("Value")
+    table.add_row("Tool", str(plan.get("tool") or "—"))
+    targets = ", ".join(
+        str(item.get("label") or item.get("id"))
+        + (f" ({item['id']})" if item.get("id") and item.get("label") else "")
+        for item in plan.get("targets") or []
+    )
+    table.add_row("Target", targets or "—")
+    blast = plan.get("blast_radius") or {}
+    table.add_row(
+        "Blast radius", f"{blast.get('kind', 'single')} (count={blast.get('count', 1)})"
+    )
+    table.add_row("Profile", str(plan.get("profile") or "—"))
+    table.add_row("Risk", str(plan.get("risk") or "—"))
+    table.add_row("Commit token", str(plan.get("commit_token") or plan.get("token") or "—"))
+    table.add_row("Command", " ".join(str(part) for part in plan.get("command") or []))
+    return table
+
+
+def _reflex_print_plan(answer: Any, json_out: bool) -> None:
+    """Print a plan envelope: JSON, or the human table plus the exact next command."""
+    from navig.reflex.answer_bridge import answer_as_dict
+
+    payload = answer_as_dict(answer)
+    plan = payload.get("plan") or {}
+    if json_out:
+        _reflex_emit_json(payload)
+        return
+    ch.console.print(_reflex_plan_table(plan))
+    token = plan.get("commit_token") or plan.get("token")
+    ch.dim(f"nothing was executed · next: navig ask --commit {token}")
+
+
+def _reflex_print_answer(answer: Any, json_out: bool) -> bool:
+    """Print a committed / slot-request Answer. Returns its ``ok`` flag."""
+    from navig.reflex.answer_bridge import answer_as_dict
+
+    payload = answer_as_dict(answer)
+    if json_out:
+        _reflex_emit_json(payload)
+        return bool(payload.get("ok", True))
+    ok = bool(payload.get("ok", True))
+    speech = str(payload.get("speech") or "")
+    if ok:
+        ch.success(speech)
+    else:
+        ch.error(speech)
+    table = payload.get("table")
+    if isinstance(table, dict):
+        from navig.console_helper import Table
+
+        rendered = Table(box=None, show_header=True, padding=(0, 2))
+        for column in table.get("columns") or []:
+            rendered.add_column(str(column))
+        for row in table.get("rows") or []:
+            rendered.add_row(*[str(cell) for cell in row])
+        ch.console.print(rendered)
+    for suggestion in (payload.get("suggestions") or [])[:2]:
+        ch.dim(f"next: {suggestion}")
+    return ok
+
+
+def _reflex_commit(router: Any, token: str, json_out: bool) -> None:
+    """Run ``--commit <token>``; token failures exit 2 with the exact next command."""
+    from navig.reflex.errors import PlanError
+
+    try:
+        answer = router.commit(token)
+    except PlanError as exc:
+        ch.error(exc.message, exc.hint or "mint a new plan with: navig ask \"<request>\" --plan")
+        raise typer.Exit(2) from exc
+    if not _reflex_print_answer(answer, json_out):
+        raise typer.Exit(1)
+
+
+def _reflex_plan_line(mode: str, confidence: float, reasons: list[str], json_out: bool) -> None:
+    """The pinned ``Intent route`` line — stdout normally, stderr when JSON owns stdout."""
+    _reflex_narrate(
+        f"Intent route: {mode} (confidence={confidence:.2f}; reasons={', '.join(reasons)})",
+        json_out,
+    )
+
+
 @app.command("ask")
 def ask_compat(
     ctx: typer.Context,
-    question: str = typer.Argument(..., help="Natural language question"),
+    question: str | None = typer.Argument(None, help="Natural language question"),
     model: str | None = typer.Option(
         None,
         "--model",
@@ -1464,11 +1603,43 @@ def ask_compat(
         "-e",
         help="Reasoning depth: low, medium, high, max, ultra  [default: auto]",
     ),
+    commit: str | None = typer.Option(
+        None,
+        "--commit",
+        "-c",
+        help="Finish a plan minted by --plan (runs exactly once; a replay is a no-op)",
+    ),
+    profile: str | None = typer.Option(
+        None,
+        "--profile",
+        "-p",
+        help="Routing profile: safe, fast, campaign  [default: fast]",
+    ),
+    json_out: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit one Answer JSON document (deterministic router only, no assistant)",
+    ),
 ):
-    """Ask AI about server/configuration."""
+    """Ask NAVIG Reflex about a device/action; unmatched questions go to the AI."""
     from navig.agent.effort import resolve_effort
     from navig.commands.ai import ask_ai
     from navig.llm.routing.detect import detect_mode
+
+    if commit is None and question is None:
+        # The plugins' documented contract is token-only commit
+        # (`navig ask --commit <token> --json` — voice RouterClient, Alexa/Alice
+        # `Backend.route`), so the utterance is optional ONLY when a token is supplied.
+        # Without either, keep the exact parse-time error this command has always produced
+        # (`Missing argument 'QUESTION'.`, exit 2) instead of falling through to the AI
+        # with an empty question. `click_submodule` is the sanctioned resolver: Typer >=
+        # 0.27 vendors click, so a bare ``import click`` is not importable on a fresh install.
+        from navig.core.click_compat import click_submodule  # noqa: PLC0415
+
+        raise click_submodule("exceptions").MissingParameter(
+            param_hint="'QUESTION'", param_type="argument"
+        )
+    text = question or ""
 
     if effort is not None:
         try:
@@ -1477,7 +1648,7 @@ def ask_compat(
             ch.error(str(exc))
             raise typer.Exit(2) from exc
 
-    mode, confidence, reasons = detect_mode(question)
+    mode, confidence, reasons = detect_mode(text)
     opts = dict(ctx.obj or {})
     opts["ask_detected_mode"] = mode
     opts["ask_detected_confidence"] = confidence
@@ -1485,16 +1656,95 @@ def ask_compat(
     if effort is not None:
         opts["effort"] = effort
 
+    active_profile = _reflex_profile(profile, ctx)
+    router = _reflex_router()
+
+    if commit is not None:
+        if plan:
+            ch.error(
+                "--commit and --plan are mutually exclusive.",
+                "run --plan first, then --commit <token>",
+            )
+            raise typer.Exit(2)
+        _reflex_commit(router, commit, json_out)
+        return
+
     if plan:
-        ch.dim(f"Intent route: {mode} (confidence={confidence:.2f}; reasons={', '.join(reasons)})")
-        if not execute:
+        result = router.plan(text, profile=active_profile)
+        if not result.matched:
+            # The legacy mode preview belongs to utterances the router declines; a
+            # matched plan speaks for itself (tool · target · blast radius · token).
+            _reflex_plan_line(mode, confidence, reasons, json_out)
+            if execute and not json_out:
+                ask_ai(text, model, opts)
+                return
+            if json_out:
+                from navig.reflex.answer_bridge import answer_as_dict, make_answer
+
+                _reflex_emit_json(
+                    answer_as_dict(
+                        make_answer(
+                            speech="No registered action matched.",
+                            display_text="No registered action matched.",
+                            ok=False,
+                            data={"matched": False},
+                        )
+                    )
+                )
+                return
             ch.warning(
                 "Plan preview only — command not executed.",
                 "Re-run with --plan --execute to continue.",
             )
             return
+        if result.needs_slot:
+            _reflex_print_answer(result.answer, json_out)
+            _reflex_narrate(
+                "Plan preview only — command not executed.",
+                json_out,
+                style="warning",
+                detail="name the device, or run --plan --execute to ask the assistant",
+            )
+            return
+        if execute:
+            _reflex_commit(router, str(result.plan.token if result.plan else ""), json_out)
+            return
+        _reflex_print_plan(result.answer, json_out)
+        _reflex_narrate(
+            "Plan preview only — command not executed.",
+            json_out,
+            style="warning",
+            detail="Re-run with --commit <token> to continue.",
+        )
+        return
 
-    ask_ai(question, model, opts)
+    result = router.route(text, profile=active_profile)
+    if not result.matched:
+        if json_out:
+            from navig.reflex.answer_bridge import answer_as_dict, make_answer
+
+            _reflex_emit_json(
+                answer_as_dict(
+                    make_answer(
+                        speech="No registered action matched — asking the assistant.",
+                        display_text="No registered action matched — asking the assistant.",
+                        ok=False,
+                        data={"matched": False},
+                    )
+                )
+            )
+            return
+        ch.dim("No registered action matched — asking the assistant.")
+        ask_ai(text, model, opts)
+        return
+    if result.needs_slot:
+        _reflex_print_answer(result.answer, json_out)
+        return
+    if result.committed:
+        if not _reflex_print_answer(result.answer, json_out):
+            raise typer.Exit(1)
+        return
+    _reflex_print_plan(result.answer, json_out)
 
 
 @app.command("chat", hidden=True)

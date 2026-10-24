@@ -2525,142 +2525,55 @@ class TelegramCommandsMixin:
             chat_id, path, message_id=((sent or {}).get("result") or {}).get("message_id"), day=day
         )
 
+    async def _status_snapshot(self, chat_id: int, user_id: int = 0) -> dict:
+        """Gather everything the /status card (and its detail cards) render.
+
+        The data collection lives in :mod:`navig.telegram.status_card` so it can be
+        tested without Telegram, and so the Genesis / Brain-unify / self-aware
+        initiatives each feed the card from their own artifact instead of the card
+        growing three more inline blocks.
+        """
+        from navig.spaces import get_default_space
+        from navig.telegram import status_card
+
+        if hasattr(self, "_get_user_tier_pref"):
+            tier = self._get_user_tier_pref(chat_id, user_id)
+        else:
+            tier = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
+        try:
+            from navig.personas.store import get_active_persona
+
+            persona = get_active_persona(user_id, chat_id) or "default"
+        except Exception:  # noqa: BLE001 — a persona store hiccup costs the name only
+            persona = "default"
+        return status_card.collect(
+            int(chat_id),
+            int(user_id),
+            space=get_default_space(),
+            tier=tier or "auto",
+            persona=persona,
+        )
+
     async def _handle_status(
         self,
         chat_id: int,
         user_id: int = 0,
         message_id: int | None = None,
     ) -> None:
-        """Session dashboard for the current user — context, AI, readiness (/status)."""
-        from navig.spaces import get_default_space
-
-        selected_space = get_default_space()
-
-        # ── Host the brain runs on ───────────────────────────────────────────
-        # The session lives wherever the daemon runs — the operator's own machine.
-        # This is NOT the active SSH target (that's an ops destination shown in
-        # /hosts); showing the SSH host here read as "connected to a remote box"
-        # and confused operators who expected to see their own PC.
-        import platform as _platform
+        """Session dashboard for the current user — context, brain, genesis, work (/status)."""
+        from navig.telegram import status_card
 
         try:
-            host_label = _platform.node() or "this machine"
-        except Exception:
-            host_label = "this machine"
-
-        # ── Model tier ───────────────────────────────────────────────────────
-        if hasattr(self, "_get_user_tier_pref"):
-            tier = self._get_user_tier_pref(chat_id, user_id)
-        else:
-            tier = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
-        model_label = tier or "auto"
-
-        # ── Active persona ───────────────────────────────────────────────────
-        try:
-            from navig.personas.store import get_active_persona
-
-            persona = get_active_persona(user_id, chat_id) or "default"
-        except Exception:
-            persona = "default"
-
-        # ── Active reminders ─────────────────────────────────────────────────
-        reminder_count: int | None = None
-        try:
-            from navig.store.runtime import get_runtime_store
-
-            reminder_count = len(get_runtime_store().get_user_reminders(user_id) or [])
-        except Exception:  # noqa: BLE001
-            pass  # best-effort; runtime store may not be available
-
-        # ── Setup readiness ────────────────────────────────────────────────────
-        readiness_state = "unknown"
-        readiness_score = 0
-        status_fix_issues: list[dict[str, str]] = []
-        try:
-            from navig.commands.init import get_init_status_payload
-
-            init_status = get_init_status_payload()
-            readiness = init_status.get("readiness", {}) if isinstance(init_status, dict) else {}
-            readiness_state = str(readiness.get("state") or "unknown")
-            readiness_score = int(readiness.get("score") or 0)
-            issues = readiness.get("issues", []) if isinstance(readiness, dict) else []
-            if isinstance(issues, list):
-                status_fix_issues = [i for i in issues if isinstance(i, dict)]
-        except Exception:  # noqa: BLE001
-            pass  # best-effort; init status may not be available
-
-        # ── Assemble message ────────────────────────────────────────────────────
-        from datetime import datetime
-        from datetime import timezone as _tz
-        now_utc = datetime.now(_tz.utc).strftime("%H:%M UTC, %d %b %Y")
-
-        # Readiness progress bar (10 chars wide)
-        filled = round(readiness_score / 10)
-        bar = "█" * filled + "░" * (10 - filled)
-        readiness_icon = "✅" if readiness_state == "ready" else ("⚠️" if readiness_score >= 50 else "🔴")
-        reminder_str = str(reminder_count) if reminder_count is not None else "—"
-        reminder_dot = "🔔" if reminder_count else "🔕"
-
-        # Pending fix hints (max 2, compact)
-        fix_hint_lines: list[str] = []
-        if status_fix_issues:
-            for issue in status_fix_issues[:2]:
-                if not isinstance(issue, dict):
-                    continue
-                summary = html.escape(str(issue.get("summary") or "").strip())
-                command = str(issue.get("command") or "").strip()
-                if summary and command:
-                    fix_hint_lines.append(f"  ⚡ {summary} — <code>{command}</code>")
-            remaining = len(status_fix_issues) - 2
-            if remaining > 0:
-                fix_hint_lines.append(f"  + {remaining} more issue(s)")
-
-        # Compose the full card
-        msg_parts: list[str] = [
-            "🧭 <b>NAVIG Status</b> — <i>Session Snapshot</i>",
-            f"<i>{now_utc}</i>",
-            "",
-            "<b>📍 Context</b>",
-            f"  Host     <code>{html.escape(host_label)}</code>",
-            f"  Space    <code>{html.escape(selected_space)}</code>",
-            "",
-            "<b>🤖 AI</b>",
-            f"  Model    <code>{html.escape(model_label)}</code>",
-            f"  Persona  <code>{html.escape(persona)}</code>",
-            "",
-            f"{reminder_dot} <b>Reminders</b>   <code>{reminder_str} active</code>",
-            "",
-            f"{readiness_icon} <b>Setup</b>   <code>{bar}</code>  {readiness_score}%  <code>{html.escape(readiness_state)}</code>",
-        ]
-        if fix_hint_lines:
-            msg_parts.append("  <b>Pending fixes:</b>")
-            msg_parts.extend(fix_hint_lines)
-
-        text = "\n".join(msg_parts)
-
-        # ── Inline keyboard ───────────────────────────────────────────────────
-        fix_buttons: list[list[dict[str, str]]] = []
-        for issue in status_fix_issues[:2]:
-            code = str(issue.get("code") or "").strip()
-            label = str(issue.get("summary") or "Run fix").strip()
-            if not code:
-                continue
-            if len(label) > 34:
-                label = label[:31] + "…"
-            fix_buttons.append([{"text": f"🛠 {label}", "callback_data": f"stfix:{code}"}])
-
-        # Session-scoped actions only. Deck-oriented buttons (Spaces, Switch AI,
-        # Home) were removed — they belong to the Deck/app surface, not the
-        # brain's own session card. Reminders used "slash:/reminders" (leading
-        # slash) which matched no registered command; the correct id is
-        # "slash:reminders" (as every other reminders button uses).
-        nav_keyboard: list[list[dict[str, str]]] = fix_buttons + [
-            [
-                {"text": "🔄 Refresh", "callback_data": "nav:open:status"},
-                {"text": "📋 Briefing", "callback_data": "nav:open:briefing"},
-                {"text": "⏰ Reminders", "callback_data": "slash:reminders"},
-            ],
-        ]
+            snapshot = await self._status_snapshot(chat_id, user_id)
+            text = status_card.render(snapshot)
+            nav_keyboard = status_card.keyboard(snapshot)
+        except Exception as exc:  # noqa: BLE001 — the card must still answer
+            logger.warning("status card render failed: %s", exc)
+            text = (
+                f"{status_card.CARD_HEADER}\n"
+                "<i>snapshot unavailable right now — try again in a moment</i>"
+            )
+            nav_keyboard = [[{"text": "🔄 Refresh", "callback_data": "nav:open:status"}]]
 
         # ── Deliver ───────────────────────────────────────────────────────────
         if message_id:
@@ -2686,6 +2599,36 @@ class TelegramCommandsMixin:
                 parse_mode="HTML",
                 keyboard=nav_keyboard,
             )
+
+    async def _handle_status_detail(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        *,
+        kind: str = "brain",
+        message_id: int | None = None,
+    ) -> None:
+        """One detail card behind the /status buttons: brain | genesis | self."""
+        from navig.telegram import status_card
+
+        try:
+            snapshot = await self._status_snapshot(chat_id, user_id)
+            text = status_card.render_detail(kind, snapshot)
+        except Exception as exc:  # noqa: BLE001 — a detail card may never wedge a chat
+            logger.warning("status detail %r failed: %s", kind, exc)
+            text = f"⚠️ Could not read the {kind} card right now."
+        keyboard = [
+            [
+                {"text": "🔄 Status", "callback_data": "nav:open:status"},
+                {"text": "🏠 Home", "callback_data": "nav:home"},
+            ]
+        ]
+        if message_id:
+            await self.edit_message(
+                chat_id, message_id, text, parse_mode="HTML", keyboard=keyboard
+            )
+            return
+        await self.send_message(chat_id, text, parse_mode="HTML", keyboard=keyboard)
 
     async def _handle_status_fix_callback(
         self,

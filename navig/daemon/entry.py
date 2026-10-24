@@ -212,6 +212,45 @@ def main() -> None:
         logger.info("Daemon start refused: %s", moved_message())
         return
 
+    # ONE BRAIN PER DEPLOYMENT. This is the entry point the Windows scheduled task runs
+    # on a repeating trigger, and the entry point that produced the incident: two
+    # machines each ran this daemon + a Telegram worker + a gateway, and the second one
+    # silently took the bot. The lease is the authority — held here if it is free or
+    # already ours, refused (with a distinct exit code) when another live machine owns
+    # it. Refusing must NOT touch the lease, so a task that fires again after a
+    # migration cannot re-claim.
+    #
+    # It runs BEFORE the "already running" short-circuit: a duplicate launch that is not
+    # the Brain is not a benign duplicate. See docs/architecture/brain-ownership.md.
+    from navig.brain.guard import OwnershipRefused, require_ownership
+
+    try:
+        lease = require_ownership(service="daemon")
+    except OwnershipRefused as exc:
+        logger.error("Daemon start refused: %s", exc)
+        try:  # under pythonw stdout may not exist — the log line above is the record
+            print(f"\n  [NAVIG] Daemon start refused — {exc}\n", flush=True)
+        except OSError:
+            pass
+        raise SystemExit(exc.exit_code) from None
+    if lease is not None:
+        logger.info(
+            "Brain ownership: %s (epoch %d, role %s)",
+            lease.owner_id,
+            lease.epoch,
+            lease.role,
+        )
+        # Keep the lease alive. A lease with no heartbeat expires, and expiry is
+        # precisely what permits a takeover — a long-running Brain that never renews
+        # silently turns its own guarantee off after one TTL. The supervisor is not an
+        # asyncio program, so the renewal loop lives on a daemon thread.
+        try:
+            from navig.brain import heartbeat as _brain_heartbeat
+
+            _brain_heartbeat.start_thread()
+        except Exception as exc:  # noqa: BLE001 - heartbeat is maintenance, not boot
+            logger.warning("brain lease heartbeat not started: %s", exc)
+
     # Already running? Then this launch is a duplicate — exit cleanly.
     #
     # THIS ENTRY POINT is what the Windows scheduled task runs

@@ -208,3 +208,41 @@ def test_card_history_and_subtasks_are_per_card_reads(store):
     subs = store.card_subtasks(c1["id"])
     assert [s["title"] for s in subs] == ["criterion"]
     assert store.card_subtasks(c2["id"]) == []
+
+
+# ── Project (Space) association — Slice A ────────────────────────────────────
+
+
+def test_cards_and_goals_can_be_scoped_to_one_project(store):
+    gaze = store.create_goal("GAZE release", space="gaze")
+    store.create_goal("unrelated")
+
+    linked = store.create_card("prepare production", space="gaze")
+    store.create_card("other work")
+
+    assert linked["space"] == "gaze"
+    assert [c["id"] for c in store.list_cards(space="gaze")] == [linked["id"]]
+    assert [g["id"] for g in store.list_goals(space="gaze")] == [gaze["id"]]
+    # Unscoped reads keep returning everything — the filter is additive.
+    assert len(store.list_cards()) == 2
+    assert len(store.list_goals()) == 2
+
+
+def test_chain_carries_the_project_and_promoted_todos_keep_their_origin(store):
+    chain = store.create_chain([
+        {"title": "one", "space": "gaze"},
+        {"title": "two", "space": "gaze"},
+    ])
+    assert [c["space"] for c in chain] == ["gaze", "gaze"]
+
+    todo = store.create_todo(
+        "reply to Rakib",
+        space="gaze",
+        origin="project",
+        origin_ref="gaze:.navig/plans/TASKS.md:3",
+    )
+    assert todo["space"] == "gaze"
+    # `project` must survive: it used to be coerced to `manual`, losing provenance.
+    assert todo["origin"] == "project"
+    assert [t["id"] for t in store.list_todos(space="gaze")] == [todo["id"]]
+

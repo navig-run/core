@@ -9,7 +9,292 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Do NOT add entries here by hand: drop a fragment in changelog.d/<slug>.<kind>.md (see changelog.d/README.md) -->
 <!-- and fold them in with `npm run changelog:assemble`. Direct edits of this block collide on every rebase. -->
 <!-- This file merges by UNION (.gitattributes): two branches inserting at the same line keep both entries on rebase. -->
-<!-- Run: git log v3.28.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+<!-- Run: git log v3.29.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+
+## [3.29.0] — 2026-10-24
+
+### Added
+- **Beatmaker tools — `navig audio comp · vocal-fit · chop · doubles · drum-replace · tap-beat ·
+  arrange`, `match --check`, a radio-ready vocal preset and scratch vocals from lyrics.** Comp the
+  best take of every bar into one; see how far a vocal is from a beat's tempo and key and move it;
+  chop a record into bar slices with a MIDI map; stack doubles that stay solid in mono; swap drum
+  hits for your own samples or turn tapping into a beat; build intro, breakdown and drop versions
+  in the beat's own key and tempo; check a mix against a reference (balance, width, low end); and
+  hear a hook spoken or sung on the beat before anyone records it. New enhance settings
+  `deplosive`, `deess` and `breath_control`.
+- **Capability awareness: "can you access <machine>?" now answers from runtime state, not
+  from prose.** When a message asks about reaching a machine (access/connect/read/ssh…
+  or names a computer/server/device), the user turn carries a small runtime-derived
+  block: configured routes (`ssh:<alias>`, a brain-link client relationship), the paired
+  NAVIG OS web devices (browsers, **not executors**), the fact that reachability was
+  **not probed in this turn** (the reply must say "not verified", never "offline"/"online"),
+  and that reading private files on another machine needs explicit operator consent.
+  Ordinary chat gets no block. The 2026-10-22 incident ("Can you read my DeepSeek
+  conversations on my computer Neuron?") is pinned by
+  `core/tests/agent/test_capability_awareness.py`.
+- **Unified Capability Index** — one coherent view of what NAVIG can do, folding the
+  Store's existing rows (plugins, modules, connectors, MCP servers, skills) into logical
+  capabilities with every backend that serves them. Perplexity is the reference: the
+  desktop app (CDP), the Sonar API connector and the plugin's skills now appear as ONE
+  `perplexity` capability with three backends, their auth requirements (names, never
+  values), CLI commands and MCP tools — instead of three unrelated rows.
+  `navig store capabilities [id] [--multi|--json|--no-mcp]` inspects it from the CLI;
+  `GET /api/deck/store?capabilities=1` serves the same fold to NAVIG OS (additive —
+  clients that ignore the flag see the exact old payload). Discovery is adapter-only:
+  no second registry, no cache to go stale, no untrusted plugin code imported to
+  describe it; a reader that fails costs one backend, not the index. Connector
+  discovery itself was repaired on the way — the Store showed ZERO connectors in a
+  fresh process (nothing bootstrapped the classes), and connector rows carried raw
+  ids instead of display names; both fixed via a manifests-only bootstrap that skips
+  the vault's 5-6 s first-open cost, with the MCP bridge and capability index on the
+  fast path and token refresh registering its provider config lazily.
+- **Creative Mode — proactive capability intelligence (`navig creative`).** A deterministic
+  layer over the registries NAVIG already ships: a rebuildable capability index
+  (`data_dir()/creative/`, provenance `source|runtime`, token-ranked `navig creative index --q`),
+  a reuse-first decision ladder (reuse → configure → compose → extend → create → no-op — reuse is
+  checked first, so a wrapper is never generated for an existing tool; thresholds ≥5 repeats/7d,
+  ≥3 failures/7d, ≥3 sequences/14d, below them is an explicit no-op), and detectors over your own
+  operation history and goal state (no chat content). Proposals persist with content-addressed ids
+  — dismissed/built are never re-proposed — rate-capped (≤5 open, ≤2/day), announced once through
+  the existing notify dedup, and surfaced as a **Dashboard Suggestions card** (evidence, solution,
+  reuse, benefit, risk, assumptions; Build/Dismiss; empty state first-class) plus the new
+  `creative_proposal` notification type (deck default). The `creative_scan` monitor (default on,
+  idle unless Creative Agent Mode, paced from the last scan) runs every 6 h. Building writes a
+  SKILL.md through the standard skill contracts — shared `lint_skill_path` with the CLI, runtime
+  parser security checks, atomic write with rollback on failure, overlap preflight — and
+  **publishing** is local-only until `publish-enable` allow-lists a destination: a deterministic
+  eight-check gate (allow-list · private visibility · branch · unchanged HEAD · no force · fresh
+  foreign lock · credentials · secret scan) with path-scoped commits so unrelated work in the
+  destination survives byte-for-byte. Surfaces: `navig creative status|index|list|show|build|
+  dismiss|publish|publish-enable|publish-disable`, the Settings → Brain publishing section, and
+  the `creative` agent tool (lookup/decide in both modes, propose Creative-only — verdicts are
+  re-derived from the index, never model-supplied). No LLM imports under `navig/creative/`
+  (guard-tested); mode changes never alter tool schemas or approvals.
+- **Translate a selection in place (`POST /api/deck/translate`).** The Dock's new Translate
+  feature sends the selected passage and a target language code (`en`, `fr`, `pt-BR` —
+  validated, prompt-safe) and gets the translation back to write over the selection: the
+  LLM seam runs the new builtin `translate/selection` prompt (faithful translation that
+  preserves line breaks, numbers, units, proper nouns and code, returns only the
+  translation, and treats the passage as delimited data — never as instructions), with a
+  5,000-character limit stated in the error instead of a silent truncation, the client's
+  `lang` hint passed on as a hint to verify (best-effort `navig_audio` detection when no
+  hint arrives, never a plugin dependency), `{text, source, target, chars}` back, and
+  honest failures: 400 `bad_target` / `bad_request` / `too_long`, 502
+  `translate_failed` with the engine's reason, 503 `llm_required` when no AI connection
+  answers.
+- **Podcaster tools — `navig audio chapters · qa · level-speakers · debleed · highlights · ad-slot ·
+  fix-word · sting`, plus breath, click and room-tone passes in `podcast-edit`.** Chapter an episode
+  and write its show notes from its own words; check it pass/fail before publishing; bring every
+  speaker to the same loudness; remove mic bleed from multi-track recordings; cut its strongest
+  moments into captioned vertical clips; place a sponsor read at a natural pause, level-matched;
+  re-speak one wrong word in the speaker's own voice (consent flag, clone deleted afterwards);
+  and compose an exact-length intro sting. Local unless the command says `--allow-cloud`.
+- **NAVIG Reflex — `navig endpoints` and `navig ask --plan/--commit`.** One typed model of every
+  controllable thing (`id·type·info·status·typed capabilities[]`), projected read-through from the
+  `navig home` inventory — `devices.yaml` stays the only storage, no second inventory and no YAML
+  parsing in core. `navig endpoints list|show|set` emits one Answer envelope (`--json`), and `set`
+  is idempotent (`changed:false` on replay). `navig ask` gains `--commit <token>` (`-c`), `--profile
+  safe|fast|campaign` (`-p`) and `--json` alongside the existing `--plan`/`--execute`: plan resolves
+  the target and blast radius and performs nothing; commit runs exactly once through the bound
+  `navig …` command; a replay returns the stored Answer from the existing RuntimeStore
+  (`runtime.db` `commit_plans`, 300 s TTL); unknown/expired tokens exit 2 with a hint. Destructive
+  batches are plan-only in every profile; unknown utterances still fall through to the assistant.
+  One `Answer` (schema version "1") renders to CLI, JSON, Alexa, Alice, the OpenAI-compatible
+  assistant endpoint, deck and Telegram. Campaign integration is read-only: evidence is written
+  inside the campaign workspace and cited with `navig tasks campaigns checkpoint --evidence` —
+  `tasks.db` stays the single campaign writer. Docs: `docs/reference/reflex-unified.md`.
+- **NAVIG doctor can see a plugin the daemon is missing.** A new "Runtime Plugins" section inventories every first-party source plugin against the **gateway's** Python, read as metadata — no plugin is imported to measure it, and the daemon's site-packages is located from its own process rather than from whatever interpreter ran the doctor. Each plugin reports a state (`not_installed` / `undiscoverable` / `activation_failed` / `inactive` / `healthy`), its declared entry point, both interpreters, whether its package files are present, and a repair command naming the interpreter to install into. Activation comes from the gateway log **bounded to the current boot** by `gateway.pid`; without that bound — or when gateways on different Pythons write one log — activation is reported `unknown` instead of green. The summary names what is absent (the `navig-msstore` shape: installed for the CLI, absent from the daemon), and `--json` carries every record on the row's `data`, a key that appears only where a check supplies one. Packages that declare no `navig.plugins` entry point (libraries core imports) are judged on presence alone and never called out for a load they never had.
+- **One security posture switch — `navig approve level` now moves everything.**
+  NAVIG had five level vocabularies for the same question: `approval.security_level`
+  (high/medium/low), reflex risk (per-tool low/medium/high/destructive), reflex
+  profiles (safe/fast/campaign), the agent `ApprovalPolicy`
+  (yolo/confirm_destructive/confirm_all), and MCP read-only/destructive hints. New
+  `navig.security.posture` is the single mapping: `high` → posture `strict`, reflex
+  profile `safe`, agent approval `confirm_all`; `medium` → `balanced`, profile `fast`,
+  `confirm_destructive`; `low` → `permissive`, profile `fast`,
+  `confirm_destructive` (the level's shell exemption is not a blanket YOLO). Reflex
+  `resolve_profile(None)` and a process-unset `get_approval_policy()` now derive from
+  it, while an explicit `--profile`, an explicit `set_approval_policy`, and granular
+  approval keys still win; per-action risk can never be lowered by a posture.
+  `navig approve status` prints the derived systems, `navig approve level` reports what
+  switched. Docs: `docs/architecture/security-posture.md`; tests:
+  `core/tests/security/test_posture.py` (10).
+- **`/status` now shows Telegram delivery health.** A new `📨 Delivery` line reports the
+  brain's delivery mode (`webhook`/`polling`, read from `brain/telegram_mode.json`), how
+  many accepted updates are still **unconfirmed** (`receipts.pending_count()` — the crash
+  recovery trace), and how long ago the last outgoing message was recorded. That answers
+  the 2026-10-22 question "is delivery healthy?" without reading logs; the incident's mode
+  churn (a 10-minute flip) would now be visible on the card. Collectors never raise and a
+  missing store renders zero. Tests: `tests/telegram/test_status_card.py` (delivery_health
+  + render) and `tests/telegram/test_receipts.py` (`pending_count`).
+- **The transport itself withholds a repeated long message.** A long, identical outbound
+  body to the same chat inside five minutes is a retry, a loop, or a foreign test sender,
+  not a new event — `TelegramChannel.send_message` now claims it through
+  `navig.notify.dedupe` (keyed by chat + body hash, `sendmsg:<chat>:<sha1>`), logs
+  `duplicate outbound message withheld`, and returns without calling the Bot API. Short
+  messages (<120 chars) and anything answering a specific message (`reply_to_message_id`)
+  or a business connection are exempt, because those repeat on purpose. This closes the
+  class that produced the 2026-10-22 "☀️ Brief" flood (12 sends in 24 minutes) from any
+  sender that uses the channel transport.
+- Tests: `tests/gateway/test_telegram_send_dedupe.py` (5); `tests/gateway` +
+  `tests/telegram` 4,374 passed.
+- **Every accepted Telegram update now has a recorded terminal state.**
+  `navig.telegram.receipts` writes `received → terminal (responded | failed)` rows at
+  the single choke point that already wraps every inbound message
+  (`TelegramChannel._run_update_with_turn`): one SQLite row per update id, chat/message
+  ids, timestamps, status and failure detail. `pending()` lists updates that never
+  reached a terminal state — the recovery trace after a worker crash — and a failing
+  handler records `failed` before the exception is re-raised. This closes the 2026-10-22
+  gap where nothing could answer "was the question processed and did the reply go out?".
+  Tests: `tests/telegram/test_receipts.py` (8).
+- **`navig vault login discover` — save the sign-ins you ALREADY have in your browser.**
+  Lists the sites you look signed into in Chrome/Edge/Brave (read from a throwaway copy of
+  the cookie database — only cookie NAMES and hosts, never values, never the live profile),
+  each with a ready `navig vault login capture <site> --from-chrome` line; sites already in
+  the vault are flagged and hidden unless `--all`. "Looks signed in" is a cookie-name
+  heuristic, labelled as such — a hint about where to look, not a verified login.
+  `capture --from-chrome` imports that sign-in without a new login (the real browser decrypts
+  its own cookies for that one host); where App-Bound Encryption blocks the clone-decrypt it
+  fails loudly and points at the interactive `capture`. Also: every `navig vault … --json`
+  payload now goes through `ch.emit_json`, so a value longer than the terminal is wide no
+  longer gets a newline wrapped into it (measured: `discover --json` piped at 80 columns
+  produced unparseable JSON).
+- **Video Lab — `navig video tighten · captions · reframe · beat-cut · broll · color-match ·
+  recap · stabilize · export-check · lipsync`.** Cut fillers and long pauses out of picture and
+  sound together (no sync drift); word-timed captions in SRT/VTT or burned in, in three styles,
+  with optional AI translation; reframe 16:9 to 9:16 / 1:1 / 4:5 following whoever is speaking;
+  cut a montage on a track's beat grid; find (and optionally generate) b-roll where the
+  narration names something; match one shot's colour to another through a reusable `.cube` LUT;
+  cut a recap from the liveliest windows; stabilise and de-flicker with the shake measured
+  before and after; check any clip against a platform's spec and fix it (`--fix`, safe-area
+  preview); and re-time a dubbed speaker's mouth (LatentSync on Replicate, `--allow-cloud`).
+
+### Changed
+- **Focus Modes retired — one agent mode `standard | creative` (owner decision 2026-10-20).**
+  The six chat-tone modes (work · deep-focus · planning · creative · relax · sleep) are gone from
+  every surface: Settings → Brain and the deck picker now offer **Agent Mode** with two choices
+  (Standard = everyday help; Creative = proactive capability intelligence), Telegram `/mode` lists
+  the same two and answers retired names with a "retired" notice while behaving as Standard, and
+  all six stored values migrate to `standard` on load — the old tone-`creative` never becomes the
+  capability Creative. Notification suppression decoupled: a new `dnd_enabled` preference carries
+  do-not-disturb (migrated deep-focus/sleep users stay held; the evening DND buttons write it
+  directly), and the five independent quiet-hours systems are untouched. The live agent prompt now
+  carries the mode (previously only a dead legacy path did); tool schemas are byte-identical across
+  modes, so switching can never widen the permission surface. Legacy reads stay graceful
+  (`POST /mode` accepts a stale client's old id as `standard` + `migrated`), obsolete choices are
+  removed from all seven locales (`settings.brain.mode.*` replaces `settings.brain.focus.*`).
+- **Brain ownership is now an AUTHORITY, not a file on each machine.**
+  `<config>/brain/lease.json` could not see a second machine with a copied config dir, so
+  two Brains could each believe they owned one deployment. The record now lives in a
+  Lighthouse Durable Object (`OwnershipRecord`, one per `sha256(deck.api_key)` tenant) with
+  an atomic compare-and-set on the epoch, and the local file is a read-only cache. When the
+  authority is configured but unreachable, singleton services **fail closed** (exit 77)
+  instead of promoting themselves; a `client` role can read status but never change
+  ownership; a migration writes its moved marker into the authority and cannot report
+  complete unless the authority names the target at a live epoch. Deploy the edge (1.8.0)
+  before relying on it — a single-machine install with no Lighthouse edge still works, and
+  `navig brain status` says `authority.mode: local`.
+- **`navig repo conflicts` stops simulating pairs that cannot conflict.** The cross-worktree radar ran one `git merge-tree` per pair — with 104 worktrees that is ~5,300 subprocesses, and measured runs of over 9 minutes with four sessions in the queue, so nobody could get a verdict. Pairs whose **both** sides are already ancestors of the default branch, and pairs at the same commit, are now skipped with a `note` (their verdict is still listed — `simulated` / `pruned` counts land in `--json`), and the rest run through a bounded 8-way pool. Soundness is the point of the design: squash-merged branches are *not* counted as in-default (`--is-ancestor` correctly refuses them) and neither are dirty sides (their ref is a `stash create` sha), because a false skip would hide a real conflict — four tests pin that, including a genuine collision still being reported. Honest limit, measured: when nearly every side is unmerged almost nothing is prunable, so the pool bounds each pair rather than the pair count; scoping the radar is a separate decision.
+- **Pilot migration run: the last private changelog retired; two store release-notes
+  indexed.** The navig-forge proposal sample (`.navig/archive/cleanup-2026-07-03/…`)
+  imported as a `sample_artifact` and retired to the vault backup after its single
+  true consumer (RESTORE.md) was re-pointed; `nuvopad/web-git` (13 entries) and
+  `snapthos/public` (1 entry) imported and **retained** as release notes (registered
+  in the spaces registry — they had `.navig/` but no id). Two defects the pilots
+  exposed are fixed: release headers with a non-date suffix (`## [1.0.0] — Unreleased`,
+  `## [3.38.34] — AI-Proposed Enhancement`) matched no parser family and were silently
+  skipped; and the consumer scan matched the BARE basename anywhere — 49 "consumers"
+  for a nested sample, 48 of which point at `core/CHANGELOG.md`. The scan is now
+  path-aware (≥2-segment tails, same-directory bare names, root files unchanged) and
+  skips its own source; `classify()` gained `sample_artifact` (self-declared samples
+  are retirable without inheriting the release-notes shield from a semver title).
+
+### Fixed
+- **`python -m navig …` runs from a folder that contains a `navig/` directory.** A cwd
+  holding a folder named `navig` (e.g. `C:\studio\navig`) made Python build a namespace
+  package for the package ROOT — no `__file__`, no attributes — while every submodule still
+  resolved, so the first `from navig import …` anywhere in core ended the run with
+  `ImportError: cannot import name '__version__' from 'navig' (unknown location)`. That
+  includes the `sys.executable -m navig` spawns NAVIG itself now uses for every CLI-shaped
+  cron job, whose cwd is whatever space they run in. `navig._shadow_root.repair_root()`
+  swaps the namespace root for the real package before anything reads it (`navig.main`
+  calls it first), and `navig.cli` / `navig.cli._callbacks` fall back to a file-relative
+  version so no single import can end a run. The console command was never affected.
+- **A client disconnecting mid-connect no longer prints a full traceback that looks like a
+  crash (Windows).** The accept guard keeps the listening socket alive through a `WinError 64`,
+  but Python's proactor also spins off a fire-and-forget helper task that awaits the same
+  accept — so the error was still left unretrieved and asyncio logged a
+  `Task exception was never retrieved` traceback. On the operator's machine this was misread
+  as "the daemon stopped suddenly" even though it kept serving for over half an hour after.
+  The guard now retrieves that helper task's duplicate exception (`navig.platform.accept_guard`),
+  so an aborted client leaves no crash-shaped noise in the log. A regression test proves the
+  helper's exception is retrieved and that the fix cannot pass vacuously.
+- **`navig guard status` / the doctor Repo Guard row report the hook that actually runs.**
+  The state check looked at the standard `.claude/hooks/` copy before the path the settings
+  wire, so a healthy guard wired to `scripts/agent-hooks/` was reported "outdated" (and the
+  reverse order could have hidden a drifted running hook). The wiring is authoritative now;
+  the standard copy is consulted only when nothing is wired.
+- **Five retired model ids removed from the catalog and the shipped routing defaults** — the
+  heartbeat was raising `[HIGH] nvidia's first catalog model → nvidia/nemotron-3-super-120b-a12b
+  is dead (404)` because that id was `models[0]` of the nvidia manifest (the substitution default
+  every mistyped slot falls back to) *and* the default for `big_tasks` / `coding` / `summarize` /
+  `research`. `navig ai models --check` now reports 5 retired ids instead of suggesting them:
+  `nvidia:nvidia/nemotron-3-super-120b-a12b` (404), `nvidia:moonshotai/kimi-k3` (410),
+  `nvidia:mistralai/mistral-nemotron` (410, listed "alive" on 2026-09-15),
+  `openrouter:deepseek/deepseek-r1` (404) and `openrouter:qwen/qwen3-235b-a22b` (404). All five
+  join `RETIRED_MODELS`, every manifest and router table that named them now points at a
+  probe-verified live sibling, and `model-catalog.generated.json` is regenerated. The liveness
+  guard's "live example" is now `nvidia/nemotron-3.5-lightning-30b-a3b`, because the previous one
+  is what this change retires — the same rotation that caught `meta/llama-3.1-70b-instruct`.
+- **Saving two Lenses at once no longer deletes one of them.** `LensStore.save` read
+  `index.json`, fetched the Lens's `@require` files, then wrote back the index it had read —
+  so a Lens saved, enabled or removed by anyone else in that window vanished from the index
+  (its folder stayed, orphaned). Every write to the index now holds one lock (threads and
+  processes: the daemon, the CLI and the agent), and the network fetch happens before the
+  lock is taken.
+- **`navig mcp serve --transport stdio` keeps stdout pure JSON-RPC.** The `--only`
+  catalogue note printed an info line to stdout — the channel IS the protocol in stdio
+  mode, so every client's line-1 parse failed (caught by the narrow-stdio Recall test
+  on the gate, 2026-10-20; the banner had landed hours earlier in the compact-surface
+  work). In stdio mode the note now goes to stderr; other transports keep the console
+  line.
+- **`navig os open` works on Windows, and wherever launch codes cannot be minted.** The command dead-ended at `✗ Launch codes need a unix socket, which this platform does not have` — on the operator's own OS, while the NAVIG OS server was answering on the port. It now asks the server's `/health` first: with no launch code but a serving server it opens (or, with `--print-url`, prints) the **login page**, where the stored password from `navig os serve` still gets you in. Only when nothing is serving does it fail, and then with the launch error's own reason. The docstring and `--print-url` help now say which of the two URLs you get.
+- **One digest card per chat per local day.** `navig.telegram.cards.send_card` already
+  withheld a byte-identical card for ten minutes; a daily digest (SUMMARY kind — the
+  review card) is rebuilt from live rows, so a second run the same day changes its text
+  and slipped through. The review cron (`navig tasks review`, outpost job_26 on
+  2026-10-22) therefore could deliver twice. SUMMARY cards now carry a per-(owner, chat,
+  local day) claim in `navig.notify.dedupe`; a changed digest the same day is withheld
+  and logged, while DETAIL cards (approvals, per-event notices) are not day-limited.
+  Tests: `tests/telegram/test_cards_send_once.py` (7).
+- **One Telegram card, one delivery.** `navig.telegram.cards.send_card` now claims a
+  durable fingerprint (owning prefix + card key + chat + text hash) in
+  `navig.notify.dedupe` for ten minutes and withholds a byte-identical repeat, so a
+  retried scheduled run or a second brain cannot deliver the same review/approval/triage
+  card twice; a changed card or another chat is a new delivery. The 2026-10-22 review
+  card was sent by the daily `navig tasks review` cron between two operator messages;
+  its duplicate rows were a separate, plugin-side issue (the `navig-tasks` tree is
+  read-only in this repo by contract — see `docs/dev/outpost-brain-update.md`).
+- **A scheduled digest card now waits for the reply it would interrupt.** On 2026-10-22
+  the daily review card arrived at 08:30 while the operator's 08:29 question was still
+  being answered (reply 08:32), so a scheduled message visually replaced the answer.
+  The channel now marks a chat "turn in flight" for the duration of an inbound message
+  (`navig/telegram/turn_state.py`, durable atomic state because the sender is a
+  different process); `cards.send_card` parks a **SUMMARY** card instead of sending it
+  while the turn is running, and the channel drains parked cards when the turn ends.
+  DETAIL cards (approvals, per-event notices) are unaffected, a crashed-worker marker
+  goes stale after 15 minutes, and the pending queue is bounded. Tests:
+  `tests/telegram/test_turn_state.py` (5), `tests/telegram/test_cards_defer_during_turn.py` (3).
+- **A Telegram conversation records the operator's words, not the model enrichment.**
+  The reply path deliberately enriches the model-visible turn (web context, `[UI note]`,
+  the formatting rules and the `EXPLORE_Q` mandate) so the cached system prompt stays
+  byte-stable. That enrichment was also being persisted as the user's message in
+  `ConversationHistory` and in the memory extractor: the 2026-10-22 DM stored ~1 KB of
+  system instructions as the operator's question, and the next turn replayed them as if
+  he had written them — which is why NAVIG answered about "injected skill instructions
+  and diagnostic context". Channels now declare `metadata["raw_user_message"]`; the
+  router hands it to the agent, which stores that (single use) at both history writes
+  and the memory-extractor write. The model still sees the enrichment.
 
 ## [3.28.0] — 2026-10-20
 

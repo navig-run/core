@@ -28,7 +28,7 @@ def _trace_log_path() -> Path:
     return (
         TRACE_LOG_PATH
         if TRACE_LOG_PATH is not None
-        else paths.config_dir() / "logs" / "router_traces.jsonl"
+        else paths.log_dir() / "router_traces.jsonl"
     )
 
 

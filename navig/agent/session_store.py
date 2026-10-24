@@ -15,8 +15,10 @@ Key features:
 * **Session listing**: :meth:`SessionStore.list_sessions` returns most-recent
   sessions across all workspaces; :meth:`SessionStore.find_by_workspace`
   narrows to a specific project.
-* **Auto-cleanup**: :func:`cleanup_old_sessions` removes sessions older than
-  a configurable TTL (default 90 days).
+* **Auto-cleanup**: :func:`cleanup_old_sessions` prunes sessions older than a configurable
+  TTL, MOVING them into the trash (``<trash>/retention-<stamp>/``) rather than deleting.
+  The gateway boot sweep uses ``retention.sessions_days`` (default 30 days); this helper's
+  own default is 90 for direct callers.
 
 Usage::
 
@@ -41,6 +43,7 @@ import secrets
 import tempfile
 import threading
 import time
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -500,15 +503,36 @@ class SessionStore:
 def cleanup_old_sessions(
     max_age_days: int = 90,
     base_dir: Path | None = None,
+    keep: Iterable[str] = (),
+    trash_root: Path | None = None,
+    moved: dict[str, str] | None = None,
+    failed: list[str] | None = None,
 ) -> int:
-    """Remove sessions older than *max_age_days*.
+    """Prune sessions older than *max_age_days* — MOVED to the trash, never deleted.
 
-    Returns the number of sessions removed.
+    A session is pruned only when BOTH its recorded ``last_active`` and the mtime of its
+    files are older than the cutoff, so a session that is being appended to right now can
+    never be pruned even if its stored timestamp looks stale. *keep* names session ids
+    (the active one a caller knows about) that are never touched.
+
+    Args:
+        max_age_days: age window; the gateway sweep passes ``retention.sessions_days``
+            (default 30 there — this helper's own default is 90 for direct callers).
+        base_dir:     sessions directory (defaults to ``<config_dir>/sessions``).
+        keep:         session ids that must survive.
+        trash_root:   where pruned files go (``<trash>/retention-<stamp>/``). ``None`` keeps
+            the legacy unlink behaviour for a direct caller that opted in; the production
+            sweep ALWAYS passes a trash root, honouring "delete → trash, never unlink".
+        moved:        optional map original-path → trash-path, recorded in the manifest.
+        failed:       optional list that receives every file whose move FAILED. A partially
+            moved pair still counts the session as pruned (its meta is gone), but the failed
+            file must be visible to the caller — it is reported, never silently dropped.
     """
     directory = base_dir or _default_base_dir()
     if not directory.exists():
         return 0
 
+    keep_set = {str(k) for k in keep}
     cutoff = time.time() - (max_age_days * 86_400)
     removed = 0
 
@@ -530,9 +554,39 @@ def cleanup_old_sessions(
             logger.debug("Skipping session with malformed meta %s", meta_path.name)
             continue
 
+        sid = meta_path.stem.replace(".meta", "")
+        if sid in keep_set:
+            logger.debug("Skipping protected session %s", sid)
+            continue
+
+        jsonl_path = directory / f"{sid}.jsonl"
+
+        # Age is the OLDER of the recorded last_active and the newest companion mtime:
+        # an ACTIVE session may have a stale timestamp in a cache the writer did not
+        # refresh (or a clock skew), but its files move. Never prune on one signal.
+        newest_mtime = _newest_mtime(meta_path, jsonl_path)
+        if newest_mtime is not None and newest_mtime >= cutoff:
+            logger.debug("Skipping active session %s (file mtime inside the window)", sid)
+            continue
+
         if last_active < cutoff:
-            sid = meta_path.stem.replace(".meta", "")
-            jsonl_path = directory / f"{sid}.jsonl"
+            if trash_root is not None:
+                trashed_any = False
+                for path in (jsonl_path, meta_path):  # data first, so a meta-only move never orphans it
+                    if not path.exists():
+                        continue
+                    destination = _trash_move(path, trash_root)
+                    if destination is None:
+                        if failed is not None:
+                            failed.append(str(path))
+                        continue
+                    trashed_any = True
+                    if moved is not None:
+                        moved[str(path)] = str(destination)
+                if trashed_any:
+                    removed += 1
+                    logger.debug("Moved old session %s to trash %s", sid, trash_root)
+                continue
             try:
                 meta_path.unlink(missing_ok=True)
                 jsonl_path.unlink(missing_ok=True)
@@ -542,3 +596,24 @@ def cleanup_old_sessions(
                 logger.debug("Failed to remove session %s: %s", sid, exc)
 
     return removed
+
+
+def _trash_move(path: Path, trash_root: Path) -> Path | None:
+    """Move *path* into *trash_root* (one recoverable-delete helper, shared)."""
+    from navig.core.trash import move_to_trash
+
+    return move_to_trash(path, trash_root)
+
+
+def _newest_mtime(*paths: Path) -> float | None:
+    """Newest of the existing mtimes, or None when none exists (unstatable file)."""
+    newest: float | None = None
+    for path in paths:
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if newest is None or mtime > newest:
+            newest = mtime
+    return newest
+

@@ -122,7 +122,7 @@ def list_interpreters() -> list[str]:
     unique: list[str] = []
     for exe in found:
         k = _key(exe)
-        if k not in seen and Path(exe).is_file():
+        if k not in seen and _is_readable_file(exe):
             seen.add(k)
             unique.append(exe)
     return unique
@@ -244,3 +244,19 @@ def audit_other_interpreters(
         seen.add(_key(real))
         audits.append(_judge(real, data, sources, floors, root))
     return audits
+
+
+
+def _is_readable_file(exe: str) -> bool:
+    r"""Is ``exe`` a file we may stat?
+
+    A candidate under an admin-only directory is a normal case on a locked-down
+    machine (``C:\ProgramData\navig\tools\...`` raises WinError 5 for a standard
+    user). "Cannot stat it" means "not a usable interpreter here", never a reason to
+    fail the whole audit — the doctor must keep reporting the others.
+    """
+    try:
+        return Path(exe).is_file()
+    except OSError:
+        return False
+

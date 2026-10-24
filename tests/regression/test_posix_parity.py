@@ -200,7 +200,15 @@ def test_importing_the_tray_leaves_the_process_alone(tmp_path) -> None:
         "assert not t.LOG_DIR.exists(), 'log dir was created'\n"
         "print('clean')\n"
     )
-    env = {**os.environ, "NAVIG_CONFIG_DIR": str(tmp_path / "cfg")}
+    env = {
+        **os.environ,
+        "NAVIG_CONFIG_DIR": str(tmp_path / "cfg"),
+        # tray.log now resolves through log_dir() (the canonical OS log dir), so isolate
+        # THAT too: otherwise this asserts against a log directory the dev machine really
+        # has, and passes or fails for the wrong reason. The property under test is "this
+        # import created nothing", not "no log dir exists anywhere".
+        "NAVIG_LOG_DIR": str(tmp_path / "logs"),
+    }
     r = subprocess.run(
         [sys.executable, "-c", probe], capture_output=True, text=True, env=env, timeout=120
     )

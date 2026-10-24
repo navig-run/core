@@ -3281,6 +3281,545 @@ data: ${data}
   }
 };
 
+// src/ownership_core.ts
+var SINGLETON_ROLES = ["brain", "all-in-one"];
+var DEFAULT_TTL_SECONDS = 300;
+var MAX_TAKEOVERS = 50;
+var SCHEMA = 1;
+function nowSeconds() {
+  return Date.now() / 1e3;
+}
+__name(nowSeconds, "nowSeconds");
+function asNumber(value, fallback = 0) {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+__name(asNumber, "asNumber");
+function asText(value) {
+  return typeof value === "string" ? value.trim() : value == null ? "" : String(value).trim();
+}
+__name(asText, "asText");
+function normalizeRole(value) {
+  const text = asText(value).toLowerCase().replace(/_/g, "-").replace(/ /g, "-");
+  if (!text) return "all-in-one";
+  const aliases = {
+    server: "brain",
+    "always-on": "brain",
+    allinone: "all-in-one",
+    local: "all-in-one",
+    node: "client",
+    worker: "executor"
+  };
+  return aliases[text] || text;
+}
+__name(normalizeRole, "normalizeRole");
+function isSingletonRole(role) {
+  return SINGLETON_ROLES.indexOf(normalizeRole(role)) !== -1;
+}
+__name(isSingletonRole, "isSingletonRole");
+function parseTakeover(raw2) {
+  if (typeof raw2 !== "object" || raw2 === null) return null;
+  const item = raw2;
+  return {
+    at: asNumber(item.at),
+    op: asText(item.op) || "takeover",
+    from_owner: asText(item.from_owner),
+    from_hostname: asText(item.from_hostname),
+    from_epoch: asNumber(item.from_epoch),
+    to_owner: asText(item.to_owner),
+    to_hostname: asText(item.to_hostname),
+    to_epoch: asNumber(item.to_epoch),
+    reason: asText(item.reason),
+    forced: Boolean(item.forced),
+    expired: Boolean(item.expired),
+    request_id: asText(item.request_id) || void 0
+  };
+}
+__name(parseTakeover, "parseTakeover");
+function parseMoved(raw2) {
+  if (typeof raw2 !== "object" || raw2 === null) return null;
+  const item = raw2;
+  const to = asText(item.to);
+  if (!to) return null;
+  return {
+    to,
+    migration: asText(item.migration),
+    reason: asText(item.reason),
+    at: asNumber(item.at),
+    from_owner: asText(item.from_owner)
+  };
+}
+__name(parseMoved, "parseMoved");
+function recordFromJson(raw2) {
+  if (typeof raw2 !== "object" || raw2 === null) return null;
+  const data = raw2;
+  if (!asText(data.owner_id)) return null;
+  const takeovers = Array.isArray(data.takeovers) ? data.takeovers.map(parseTakeover).filter((t) => t !== null) : [];
+  return {
+    schema: asNumber(data.schema, SCHEMA) || SCHEMA,
+    owner_id: asText(data.owner_id),
+    role: normalizeRole(data.role),
+    epoch: Math.max(1, Math.trunc(asNumber(data.epoch, 1))),
+    ttl: Math.max(30, Math.trunc(asNumber(data.ttl, DEFAULT_TTL_SECONDS))),
+    acquired_at: asNumber(data.acquired_at),
+    heartbeat_at: asNumber(data.heartbeat_at),
+    updated_at: asNumber(data.updated_at),
+    hostname: asText(data.hostname),
+    reason: asText(data.reason),
+    takeovers,
+    moved_marker: parseMoved(data.moved_marker),
+    released_at: data.released_at == null ? null : asNumber(data.released_at)
+  };
+}
+__name(recordFromJson, "recordFromJson");
+function emptyRecord(now, ownerId, role, ttl, reason, hostname) {
+  return {
+    schema: SCHEMA,
+    owner_id: ownerId,
+    role,
+    epoch: 1,
+    ttl,
+    acquired_at: now,
+    heartbeat_at: now,
+    updated_at: now,
+    hostname,
+    reason,
+    takeovers: [],
+    moved_marker: null,
+    released_at: null
+  };
+}
+__name(emptyRecord, "emptyRecord");
+function isReleased(record) {
+  return record === null || record.released_at !== null || !record.owner_id;
+}
+__name(isReleased, "isReleased");
+function isExpired(record, now) {
+  if (isReleased(record)) return true;
+  return now > record.heartbeat_at + record.ttl;
+}
+__name(isExpired, "isExpired");
+function isLive(record, now) {
+  return !isReleased(record) && !isExpired(record, now);
+}
+__name(isLive, "isLive");
+function expiresIn(record, now) {
+  if (isReleased(record)) return 0;
+  const left = record.heartbeat_at + record.ttl - now;
+  return Math.max(0, Math.trunc(left));
+}
+__name(expiresIn, "expiresIn");
+function statusOf(record, viewer, now, viewerRole = "all-in-one") {
+  const moved = record ? record.moved_marker : null;
+  let state;
+  if (record === null) state = "free";
+  else if (record.released_at !== null) state = moved ? "moved" : "released";
+  else if (isExpired(record, now)) state = "expired";
+  else state = "held";
+  const ownerId = record ? record.owner_id : "";
+  const ours = Boolean(record) && record.owner_id === viewer && record.released_at === null;
+  const canClaim = isSingletonRole(viewerRole) && (record === null || record.released_at !== null && !(moved && moved.from_owner === viewer) || ours);
+  const canTakeover = Boolean(record) && record.released_at === null && record.owner_id !== viewer && !isLive(record, now);
+  const summary = record === null ? "free \u2014 nobody owns this Brain" : `${record.hostname || "unknown-host"} (${record.owner_id}), role ${record.role}, epoch ${record.epoch}, ${state}, ${expiresIn(record, now)}s of TTL left`;
+  return {
+    state,
+    owner_id: ownerId,
+    owner_hostname: record ? record.hostname : "",
+    owner_role: record ? record.role : "",
+    epoch: record ? record.epoch : 0,
+    acquired_at: record ? record.acquired_at : 0,
+    heartbeat_at: record ? record.heartbeat_at : 0,
+    expires_in_s: expiresIn(record, now),
+    released_at: record ? record.released_at : null,
+    moved_marker: moved,
+    is_owner: ours,
+    can_claim: canClaim,
+    can_takeover: canTakeover,
+    summary
+  };
+}
+__name(statusOf, "statusOf");
+function ok(body) {
+  return { status: 200, body: { ok: true, ...body } };
+}
+__name(ok, "ok");
+function fail(status, code, error, extra) {
+  return { status, body: { ok: false, code, error, ...extra || {} } };
+}
+__name(fail, "fail");
+function auditEntry(op, from, toEpoch, actor, role, hostname, reason, now, requestId, forced, expired) {
+  return {
+    at: now,
+    op,
+    from_owner: from ? from.owner_id : "",
+    from_hostname: from ? from.hostname : "",
+    from_epoch: from ? from.epoch : 0,
+    to_owner: actor,
+    to_hostname: hostname,
+    to_epoch: toEpoch,
+    reason,
+    forced,
+    expired,
+    request_id: requestId || void 0
+  };
+}
+__name(auditEntry, "auditEntry");
+var OwnershipEngine = class {
+  static {
+    __name(this, "OwnershipEngine");
+  }
+  store;
+  constructor(store) {
+    this.store = store;
+  }
+  handle(request) {
+    const req = request && typeof request === "object" ? request : {};
+    const op = asText(req.op) || "status";
+    if (op === "status") return this.status(req);
+    if (["acquire", "renew", "release", "takeover", "mark_moved", "clear_moved"].indexOf(op) === -1) {
+      return fail(400, "unknown_op", `unknown ownership op ${JSON.stringify(op)}; known: status, acquire, renew, release, takeover, mark_moved, clear_moved`);
+    }
+    const requestId = asText(req.request_id);
+    if (requestId) {
+      const replay = this.store.loadIdempotent(requestId);
+      if (replay) return { status: 200, body: { ...replay, idempotent: true } };
+    }
+    const result = this.mutate(op, req);
+    if (requestId && result.status === 200) this.store.saveIdempotent(requestId, result.body);
+    return result;
+  }
+  status(req) {
+    const now = req.now ?? nowSeconds();
+    const record = this.store.loadRecord();
+    const viewer = asText(req.owner_id);
+    return ok({
+      authority: "lighthouse-ownership",
+      server_time: now,
+      record,
+      status: statusOf(record, viewer, now, normalizeRole(req.role))
+    });
+  }
+  mutate(op, req) {
+    const now = req.now ?? nowSeconds();
+    const ownerId = asText(req.owner_id);
+    const role = normalizeRole(req.role);
+    const hostname = asText(req.hostname);
+    const requestId = asText(req.request_id);
+    const reason = asText(req.reason);
+    if (!ownerId) return fail(400, "owner_id_required", "every mutation must name the machine (owner_id) it is for");
+    if (!isSingletonRole(role)) {
+      return fail(403, "role_forbidden", `this install is a ${role} \u2014 a ${role} may read ownership status but can never own the Brain or change its owner. A Brain role (brain / all-in-one) must do it.`);
+    }
+    const current = this.store.loadRecord();
+    const ttl = Math.max(30, Math.trunc(asNumber(req.ttl ?? (current ? current.ttl : DEFAULT_TTL_SECONDS), DEFAULT_TTL_SECONDS)));
+    if (op === "acquire") return this.acquire(req, current, ownerId, role, ttl, hostname, reason, now, requestId);
+    if (op === "renew") return this.renew(req, current, ownerId, role, ttl, hostname, now);
+    if (op === "release") return this.release(req, current, ownerId, role, hostname, reason, now, requestId);
+    if (op === "takeover") return this.takeover(req, current, ownerId, role, ttl, hostname, reason, now, requestId);
+    if (op === "mark_moved") return this.markMoved(req, current, ownerId, hostname, reason, now, requestId);
+    return this.clearMoved(req, current, ownerId, hostname, reason, now, requestId);
+  }
+  acquire(req, current, ownerId, role, ttl, hostname, reason, now, requestId) {
+    if (current === null) {
+      const record = emptyRecord(now, ownerId, role, ttl, reason || "first claim", hostname);
+      this.save(record, auditEntry("acquire", null, 1, ownerId, role, hostname, record.reason, now, requestId, false, false));
+      return ok({ record, epoch: record.epoch });
+    }
+    const moved = current.moved_marker;
+    if (moved && moved.from_owner === ownerId) {
+      return fail(409, "moved", `this Brain moved to ${moved.to}${moved.migration ? ` (migration ${moved.migration})` : ""}. The machine it left must not re-claim it \u2014 that is the fence the migration wrote. Roll the migration back explicitly if it truly has to come back.`, { record: current });
+    }
+    if (current.released_at !== null || !current.owner_id) {
+      const record = {
+        ...current,
+        owner_id: ownerId,
+        role,
+        epoch: current.epoch + 1,
+        ttl,
+        acquired_at: now,
+        heartbeat_at: now,
+        updated_at: now,
+        hostname,
+        reason: reason || "claimed a released record",
+        released_at: null,
+        // Arriving on the machine a move was recorded for is what completes a
+        // migration; the marker is cleared and the arrival is audited.
+        moved_marker: moved ? null : current.moved_marker
+      };
+      this.save(record, auditEntry("acquire", current, record.epoch, ownerId, role, hostname, record.reason, now, requestId, false, true));
+      return ok({ record, epoch: record.epoch, cleared_moved: moved !== null });
+    }
+    if (current.owner_id === ownerId) {
+      const record = { ...current, heartbeat_at: now, updated_at: now, ttl, role, hostname: hostname || current.hostname, reason: reason || current.reason };
+      this.store.saveRecord(record);
+      return ok({ record, epoch: record.epoch, renewed: true });
+    }
+    if (isLive(current, now)) {
+      return fail(
+        409,
+        "held",
+        `the Brain is owned by ${current.hostname || "another machine"} (${current.owner_id}), epoch ${current.epoch}, heartbeating (${expiresIn(current, now)}s of TTL left). Two Brains on one deployment is the bug this authority exists to prevent. If that machine is gone: navig brain takeover --from ${current.owner_id} --reason <why>`,
+        { record: current }
+      );
+    }
+    if (req.auto_promote === true) {
+      return this.takeover(req, current, ownerId, role, ttl, hostname, reason || `auto-promoted: the authority's record expired ${Math.trunc(now - current.heartbeat_at)}s ago`, now, requestId, false);
+    }
+    return fail(
+      409,
+      "expired",
+      `the Brain record held by ${current.hostname || "another machine"} (${current.owner_id}) has EXPIRED (last heartbeat ${Math.trunc(now - current.heartbeat_at)}s ago). Automatic promotion is off (auto_promote=false), so this cannot take it silently. Take it deliberately: navig brain takeover --from ${current.owner_id} --reason <why>`,
+      { record: current }
+    );
+  }
+  renew(req, current, ownerId, role, ttl, hostname, now) {
+    if (current === null) return fail(404, "no_record", "no ownership record exists for this deployment yet \u2014 nothing to renew");
+    if (req.epoch !== void 0 && asNumber(req.epoch) !== current.epoch) {
+      return fail(409, "stale_epoch", `stale epoch ${asNumber(req.epoch)}: the authority is at epoch ${current.epoch}. This process lost ownership (a takeover happened) and must stop writing.`, { record: current, epoch: current.epoch });
+    }
+    if (current.released_at !== null) return fail(409, "released", "the ownership record is released \u2014 claim it before renewing", { record: current });
+    if (current.owner_id !== ownerId) {
+      return fail(409, "not_owner", `this machine (${ownerId}) does not own the Brain \u2014 ${current.hostname || "another machine"} (${current.owner_id}) does`, { record: current });
+    }
+    const record = { ...current, heartbeat_at: now, updated_at: now, ttl, role, hostname: hostname || current.hostname };
+    this.store.saveRecord(record);
+    return ok({ record, epoch: record.epoch });
+  }
+  release(req, current, ownerId, role, hostname, reason, now, requestId) {
+    if (current === null) return fail(404, "no_record", "no ownership record exists \u2014 nothing to release");
+    if (req.epoch !== void 0 && asNumber(req.epoch) !== current.epoch) {
+      return fail(409, "stale_epoch", `stale epoch ${asNumber(req.epoch)} (authority at ${current.epoch}) \u2014 this process no longer owns the record`, { record: current, epoch: current.epoch });
+    }
+    if (current.owner_id !== ownerId) {
+      return fail(409, "not_owner", `refusing to release a record this machine (${ownerId}) does not hold \u2014 it belongs to ${current.owner_id}`, { record: current });
+    }
+    if (current.released_at !== null) return ok({ record: current, epoch: current.epoch, already_released: true });
+    const record = { ...current, released_at: now, updated_at: now, reason: reason || "released", hostname: hostname || current.hostname };
+    this.save(record, auditEntry("release", current, record.epoch, ownerId, role, hostname, record.reason, now, requestId, false, false));
+    return ok({ record, epoch: record.epoch });
+  }
+  takeover(req, current, ownerId, role, ttl, hostname, reason, now, requestId, requireExplicitReason = true) {
+    if (requireExplicitReason && !reason) {
+      return fail(400, "reason_required", "a takeover must state why: pass --reason <why>. It is written to the authority's audit trail and the migration receipt.");
+    }
+    const fromOwner = asText(req.from_owner);
+    if (current === null) {
+      const record2 = emptyRecord(now, ownerId, role, ttl, `takeover: ${reason}`, hostname);
+      this.save(record2, auditEntry("takeover", null, 1, ownerId, role, hostname, record2.reason, now, requestId, false, false));
+      return ok({ record: record2, epoch: record2.epoch });
+    }
+    if (current.owner_id === ownerId && current.released_at === null) {
+      const record2 = { ...current, heartbeat_at: now, updated_at: now, ttl, role, hostname: hostname || current.hostname };
+      this.store.saveRecord(record2);
+      return ok({ record: record2, epoch: record2.epoch, renewed: true });
+    }
+    const live = isLive(current, now);
+    if (live) {
+      if (req.force !== true) {
+        return fail(409, "live_requires_force", `${current.hostname || "another machine"} (${current.owner_id}) holds the Brain and is heartbeating (${expiresIn(current, now)}s of TTL left). Stop it first, or pass --force --from ${current.owner_id} if you are deliberately moving the Brain.`, { record: current });
+      }
+      if (fromOwner !== current.owner_id) {
+        return fail(409, "wrong_from", `refusing a forced takeover without matching the current holder: expected --from ${current.owner_id} (got ${fromOwner || "nothing"}). The record may have moved since you looked \u2014 re-run navig brain status and decide again.`, { record: current });
+      }
+    } else if (fromOwner && fromOwner !== current.owner_id) {
+      return fail(409, "wrong_from", `the expired record belongs to ${current.owner_id}, not ${fromOwner}. Re-run navig brain status and decide again.`, { record: current });
+    }
+    const record = {
+      ...current,
+      owner_id: ownerId,
+      role,
+      epoch: current.epoch + 1,
+      ttl,
+      acquired_at: now,
+      heartbeat_at: now,
+      updated_at: now,
+      hostname,
+      reason: reason || current.reason,
+      released_at: null,
+      takeovers: [...current.takeovers, auditEntry("takeover", current, current.epoch + 1, ownerId, role, hostname, reason, now, requestId, live, !live)].slice(-MAX_TAKEOVERS)
+    };
+    this.save(record, auditEntry("takeover", current, record.epoch, ownerId, role, hostname, reason, now, requestId, live, !live));
+    return ok({ record, epoch: record.epoch });
+  }
+  markMoved(req, current, ownerId, hostname, reason, now, requestId) {
+    if (current === null) return fail(404, "no_record", "no ownership record exists \u2014 nothing to mark as moved");
+    if (!reason) return fail(400, "reason_required", "a move must state why: pass --reason <why>");
+    const wanted = req.moved_marker || {};
+    const to = asText(wanted.to);
+    if (!to) return fail(400, "moved_to_required", "moved_marker.to is required \u2014 the authority must record where the Brain went");
+    if (req.epoch !== void 0 && asNumber(req.epoch) !== current.epoch) {
+      return fail(409, "stale_epoch", `stale epoch ${asNumber(req.epoch)} (authority at ${current.epoch}) \u2014 another machine owns this Brain now; not marking it moved from here`, { record: current, epoch: current.epoch });
+    }
+    if (current.owner_id !== ownerId) {
+      return fail(409, "not_owner", `only the current owner may record the move \u2014 ${current.owner_id} owns the record, not ${ownerId}`, { record: current });
+    }
+    const marker = {
+      to,
+      migration: asText(wanted.migration),
+      reason,
+      at: now,
+      from_owner: ownerId
+    };
+    const record = { ...current, moved_marker: marker, released_at: now, updated_at: now, reason, hostname: hostname || current.hostname };
+    this.save(record, auditEntry("mark_moved", current, record.epoch, ownerId, record.role, hostname, reason, now, requestId, false, false));
+    return ok({ record, epoch: record.epoch, moved_marker: marker });
+  }
+  clearMoved(req, current, ownerId, hostname, reason, now, requestId) {
+    if (current === null) return fail(404, "no_record", "no ownership record exists \u2014 nothing to clear");
+    if (!current.moved_marker) return ok({ record: current, epoch: current.epoch, already_clear: true });
+    if (req.epoch !== void 0 && asNumber(req.epoch) !== current.epoch) {
+      return fail(409, "stale_epoch", `stale epoch ${asNumber(req.epoch)} (authority at ${current.epoch})`, { record: current, epoch: current.epoch });
+    }
+    if (current.moved_marker.from_owner !== ownerId) {
+      return fail(403, "not_moved_owner", `only ${current.moved_marker.from_owner} \u2014 the machine the record says moved \u2014 may clear its own move marker`, { record: current });
+    }
+    const record = { ...current, moved_marker: null, updated_at: now, hostname: hostname || current.hostname };
+    this.save(record, auditEntry("clear_moved", current, record.epoch, ownerId, record.role, hostname, reason || "move rolled back", now, requestId, false, false));
+    return ok({ record, epoch: record.epoch, cleared: true });
+  }
+  save(record, entry) {
+    this.store.saveRecord(record);
+    const trail = this.store.loadAudit();
+    trail.push(entry);
+    this.store.saveAudit(trail);
+  }
+};
+
+// src/ownership.ts
+var MAX_BODY_BYTES = 8 * 1024;
+var AUDIT_CAP = 200;
+var IDEM_TTL_S = 600;
+function json(status, body) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" }
+  });
+}
+__name(json, "json");
+var SqliteEngineStore = class {
+  static {
+    __name(this, "SqliteEngineStore");
+  }
+  sql;
+  constructor(state) {
+    this.sql = state.storage.sql;
+    this.sql.exec(
+      `CREATE TABLE IF NOT EXISTS ownership_record (
+         id INTEGER PRIMARY KEY CHECK (id = 1),
+         json TEXT NOT NULL
+       );
+       CREATE TABLE IF NOT EXISTS ownership_audit (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         at REAL NOT NULL,
+         json TEXT NOT NULL
+       );
+       CREATE TABLE IF NOT EXISTS ownership_idem (
+         key TEXT PRIMARY KEY,
+         at REAL NOT NULL,
+         json TEXT NOT NULL
+       );`
+    );
+  }
+  loadRecord() {
+    const rows = this.sql.exec(`SELECT json FROM ownership_record WHERE id = 1`).toArray();
+    if (!rows.length) return null;
+    try {
+      return recordFromJson(JSON.parse(rows[0].json));
+    } catch {
+      return null;
+    }
+  }
+  saveRecord(record) {
+    this.sql.exec(
+      `INSERT INTO ownership_record (id, json) VALUES (1, ?)
+       ON CONFLICT(id) DO UPDATE SET json = excluded.json`,
+      JSON.stringify(record)
+    );
+  }
+  loadAudit() {
+    const rows = this.sql.exec(`SELECT json FROM ownership_audit ORDER BY id ASC`).toArray();
+    const out = [];
+    for (const row of rows) {
+      try {
+        const parsed = JSON.parse(row.json);
+        if (parsed && typeof parsed === "object") out.push(parsed);
+      } catch {
+      }
+    }
+    return out;
+  }
+  saveAudit(entries) {
+    const known = this.loadAudit().length;
+    const fresh = entries.slice(known);
+    for (const entry of fresh) {
+      this.sql.exec(
+        `INSERT INTO ownership_audit (at, json) VALUES (?, ?)`,
+        Number(entry.at) || 0,
+        JSON.stringify(entry)
+      );
+    }
+    this.sql.exec(
+      `DELETE FROM ownership_audit WHERE id <= (SELECT MAX(id) - ? FROM ownership_audit)`,
+      AUDIT_CAP
+    );
+  }
+  loadIdempotent(key) {
+    const rows = this.sql.exec(`SELECT json, at FROM ownership_idem WHERE key = ?`, key).toArray();
+    if (!rows.length) return null;
+    const age = Date.now() / 1e3 - Number(rows[0].at);
+    if (age > IDEM_TTL_S) {
+      this.sql.exec(`DELETE FROM ownership_idem WHERE key = ?`, key);
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(rows[0].json);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  saveIdempotent(key, body) {
+    this.sql.exec(
+      `INSERT INTO ownership_idem (key, at, json) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET at = excluded.at, json = excluded.json`,
+      key,
+      Date.now() / 1e3,
+      JSON.stringify(body)
+    );
+    this.sql.exec(`DELETE FROM ownership_idem WHERE at < ?`, Date.now() / 1e3 - IDEM_TTL_S);
+  }
+};
+var OwnershipRecord = class {
+  static {
+    __name(this, "OwnershipRecord");
+  }
+  engine;
+  constructor(state, _env) {
+    this.engine = new OwnershipEngine(new SqliteEngineStore(state));
+  }
+  async fetch(request) {
+    if (request.method !== "POST") {
+      return json(405, { ok: false, code: "method_not_allowed", error: "POST a JSON ownership request" });
+    }
+    const text = await request.text();
+    if (text.length > MAX_BODY_BYTES) {
+      return json(413, { ok: false, code: "body_too_large", error: `ownership requests are capped at ${MAX_BODY_BYTES} bytes` });
+    }
+    let body;
+    try {
+      const parsed = JSON.parse(text || "{}");
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return json(400, { ok: false, code: "invalid_json", error: "ownership request must be a JSON object" });
+      }
+      body = parsed;
+    } catch {
+      return json(400, { ok: false, code: "invalid_json", error: "ownership request must be valid JSON" });
+    }
+    const result = this.engine.handle(body);
+    return json(result.status, result.body);
+  }
+};
+
 // src/tenant.ts
 var TENANT_RE = /^[0-9a-f]{64}$/;
 function isTenantId(segment) {
@@ -3297,7 +3836,7 @@ async function sha256Hex(input) {
 __name(sha256Hex, "sha256Hex");
 
 // src/index.ts
-var LIGHTHOUSE_VERSION = "1.7.0";
+var LIGHTHOUSE_VERSION = "1.8.0";
 var app = new Hono3();
 app.use(
   "*",
@@ -3322,6 +3861,10 @@ function brainFor(env2, hashHex) {
   return env2.BRAIN.get(env2.BRAIN.idFromName(hashHex));
 }
 __name(brainFor, "brainFor");
+function ownershipFor(env2, hashHex) {
+  return env2.OWNERSHIP.get(env2.OWNERSHIP.idFromName(hashHex));
+}
+__name(ownershipFor, "ownershipFor");
 function viaTenantPath(c, tenant, internalPath) {
   if (!isTenantId(tenant)) {
     return new Response(JSON.stringify({ error: "not_found" }), {
@@ -3341,6 +3884,26 @@ async function viaBearer(c, internalPath) {
   return brainFor(c.env, hash).fetch(req);
 }
 __name(viaBearer, "viaBearer");
+async function viaOwnership(c) {
+  const key = bearer(c);
+  if (!key) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
+  const hash = await sha256Hex(key);
+  const headers = new Headers(c.req.raw.headers);
+  headers.delete("content-length");
+  let method = c.req.raw.method;
+  let body = null;
+  if (method === "GET" || method === "HEAD") {
+    const owner = new URL(c.req.url).searchParams.get("owner_id") || "";
+    method = "POST";
+    body = JSON.stringify({ op: "status", owner_id: owner });
+    headers.set("content-type", "application/json");
+  } else {
+    body = c.req.raw.body;
+  }
+  const req = new Request("https://ownership/__ownership", { method, headers, body });
+  return ownershipFor(c.env, hash).fetch(req);
+}
+__name(viaOwnership, "viaOwnership");
 app.get("/uplink", (c) => viaBearer(c, "/__uplink"));
 app.get("/api/events", async (c) => {
   const key = c.req.query("key") || bearer(c);
@@ -3348,6 +3911,8 @@ app.get("/api/events", async (c) => {
   const hash = await sha256Hex(key);
   return brainFor(c.env, hash).fetch(new Request("https://brain/__events", c.req.raw));
 });
+app.all("/api/ownership", (c) => viaOwnership(c));
+app.all("/api/ownership/*", (c) => viaOwnership(c));
 app.all("/api/*", (c) => viaBearer(c));
 app.all("/runtime/*", (c) => viaBearer(c));
 app.all("/mesh/*", (c) => viaBearer(c));
@@ -3371,6 +3936,7 @@ app.notFound((c) => c.json({ error: "not_found" }, 404));
 var index_default = app;
 export {
   BrainSocket,
+  OwnershipRecord,
   index_default as default
 };
 //# sourceMappingURL=index.js.map

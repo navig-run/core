@@ -110,19 +110,36 @@ def should_auto_run_onboarding(argv: Sequence[str] | None = None) -> bool:
 
 
 def configured_role(navig_dir) -> str:
-    """``onboarding.role`` from config.yaml — ``"brain"`` unless a join set ``"node"``.
+    """``onboarding.role`` / ``brain.role`` from config.yaml — ``"brain"`` unless joined.
 
-    Read straight from the file (this runs before the CLI dispatches; no
-    ConfigManager boot). Unreadable or absent → the default ``"brain"``.
+    Read straight from the file (this runs before the CLI dispatches; no ConfigManager
+    boot). Unreadable or absent → the default ``"brain"``.
+
+    The Brain roles (``brain`` / ``all-in-one`` / ``client`` / ``executor``) are the same
+    four choices the installer and ``navig brain roles`` expose, so this maps them onto
+    the one question the wizard asks: "is this a brain, or a node that joined one?".
+    Legacy ``node`` keeps meaning a joined device.
     """
     try:
         import yaml
 
         raw = yaml.safe_load((navig_dir / "config.yaml").read_text(encoding="utf-8")) or {}
-        role = ((raw.get("onboarding") or {}).get("role") or "").strip().lower()
+        role = ""
+        if isinstance(raw, dict):
+            role = str((raw.get("onboarding") or {}).get("role") or "")
+            if not role:
+                role = str((raw.get("brain") or {}).get("role") or "")
+        role = role.strip().lower()
     except Exception:  # noqa: BLE001 — a missing/garbled config is just "not a node"
         return "brain"
-    return "node" if role == "node" else "brain"
+    if not role:
+        return "brain"
+    try:
+        from navig.brain.lease import ROLE_CLIENT, ROLE_EXECUTOR, normalize_role
+
+        return "node" if normalize_role(role) in (ROLE_CLIENT, ROLE_EXECUTOR) else "brain"
+    except Exception:  # noqa: BLE001 — brain module unavailable: keep the legacy test
+        return "node" if role in ("node", "client", "executor") else "brain"
 
 
 def run_engine_onboarding(

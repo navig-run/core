@@ -179,6 +179,10 @@ from navig.gateway.deck.routes.decider import (
     handle_deck_decider_set,
 )
 from navig.gateway.deck.routes.dock import handle_deck_dock_bridge, handle_deck_dock_pair
+from navig.gateway.deck.routes.endpoints import (
+    handle_deck_endpoints_list,
+    handle_deck_endpoints_show,
+)
 from navig.gateway.deck.routes.formations import (
     handle_council_history,
     handle_council_run,
@@ -573,6 +577,13 @@ def register_deck_routes(
 
     # API routes
     if web:
+        # Brain ownership (owner/role/lease + claim/release/takeover): a small, separate
+        # module so the NAVIG OS Brain card and scripts read the SAME status document the
+        # CLI prints — no second description of the truth.
+        from navig.gateway.deck.routes.brain import register_brain_routes
+
+        register_brain_routes(app)
+
         app.router.add_get("/api/deck/status", handle_deck_status)
         app.router.add_get("/api/deck/settings", handle_deck_settings_get)
         app.router.add_post("/api/deck/settings", handle_deck_settings_post)
@@ -691,6 +702,16 @@ def register_deck_routes(
             "/api/deck/personalization/context", handle_personalization_context
         )
 
+        # NAVIG MIND — shared cognitive/language preferences (one document; see
+        # routes/mind.py). The artifact firewall is read-only here.
+        from navig.gateway.deck.routes.mind import (
+            handle_mind_get,
+            handle_mind_post,
+        )
+
+        app.router.add_get("/api/deck/mind", handle_mind_get)
+        app.router.add_post("/api/deck/mind", handle_mind_post)
+
         # Web-search control plane — status/config/test for the OS Search-engine
         # section, plus the Pi agent's web_search proxy (routes/search.py).
         from navig.gateway.deck.routes.search import (
@@ -774,6 +795,15 @@ def register_deck_routes(
         from navig.gateway.deck.routes import os_remote as _os_remote
 
         _os_remote.register(app)
+
+        # Brain data — the surface a linked machine calls when an MCP tool names a
+        # Brain-owned capability (memory key facts, recall). Same auth middleware as any
+        # deck route: a brain-link device token is validated there, and the routes
+        # themselves refuse a caller that is not linked and refuse to serve when this host
+        # is not the data authority.
+        from navig.gateway.deck.routes import brain_data as _brain_data
+
+        _brain_data.register(app)
 
         # Engine control — status, restart, doctor, heal. What NAVIG OS and the
         # Mini App drive the engine with (deck auth, unlike /api/daemon/*).
@@ -889,6 +919,9 @@ def register_deck_routes(
         app.router.add_post("/api/deck/planner/reminders", _planner.handle_planner_reminder_create)
         app.router.add_post("/api/deck/planner/reminders/{source}/{id}/snooze", _planner.handle_planner_reminder_snooze)
         app.router.add_delete("/api/deck/planner/reminders/{source}/{id}", _planner.handle_planner_reminder_cancel)
+        app.router.add_get("/api/deck/planner/followups", _planner.handle_planner_followups)
+        app.router.add_post("/api/deck/planner/followups/{id}/snooze", _planner.handle_planner_followup_snooze)
+        app.router.add_post("/api/deck/planner/followups/{id}/suggest", _planner.handle_planner_followup_suggest)
         app.router.add_get("/api/deck/apps/passport", handle_deck_apps_passport)
         app.router.add_get("/api/deck/apps/wallet", handle_deck_apps_wallet)
         app.router.add_post("/api/deck/apps/wallet/send", handle_deck_apps_wallet_send)
@@ -952,6 +985,11 @@ def register_deck_routes(
 
         # Hosts / Fleet endpoint
         app.router.add_get("/api/deck/hosts", handle_deck_hosts)
+
+        # Unified Endpoints — a READ-ONLY projection of the home inventory
+        # (mutations go through `navig endpoints set` / the NAVIG Reflex).
+        app.router.add_get("/api/deck/endpoints", handle_deck_endpoints_list)
+        app.router.add_get("/api/deck/endpoints/{endpoint_id}", handle_deck_endpoints_show)
 
         # Monitor routes — system resources (CPU, RAM, disk, uptime, services, ports)
         app.router.add_get("/api/deck/monitor", handle_deck_monitor_all)
@@ -1243,6 +1281,10 @@ def register_deck_routes(
         # (OS app "Projects"; the money view lives in Finance.)
         from navig.gateway.deck.routes import projects as _projects
         _projects.register(app)
+
+        # Coordination — durable inter-agent/inter-session messages (operator-authored).
+        from navig.gateway.deck.routes import coordination as _coordination
+        _coordination.register(app)
 
         # Recall session links — which Claude Code session touched / planned / committed what.
         # Local only; NAVIG Dev's "Sessions for this file" and OS Projects → Sessions read it.

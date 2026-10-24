@@ -227,6 +227,7 @@ def create_job(
     enabled: bool = True,
     timeout_seconds: int = 30,
     replace: bool = False,
+    space: str | None = None,
 ) -> dict[str, Any]:
     """Create a job in the LIVE store (via the running daemon when up).
 
@@ -243,6 +244,7 @@ def create_job(
             "command": command,
             "enabled": enabled,
             "timeout_seconds": timeout_seconds,
+            "space": space,
         }
         resp = _gateway_json("POST", _CRONS_ROUTE, body)
         if resp is not None:
@@ -256,6 +258,7 @@ def create_job(
         command=command,
         enabled=enabled,
         timeout_seconds=timeout_seconds,
+        space=space,
     )
     return job_obj.to_dict()
 

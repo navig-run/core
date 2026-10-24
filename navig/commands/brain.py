@@ -212,3 +212,14 @@ def prompts_reload() -> None:
     except Exception:
         # Daemon may not be running — that's fine, cache is in-process anyway.
         typer.echo("Daemon not running — prompt cache cleared on next start.")
+
+
+# ---------------------------------------------------------------------------
+# Ownership verbs — status / claim / release / takeover / verify / migrate /
+# telegram / roles. They live in their own module (the ownership surface is
+# large enough to keep apart) and register themselves onto THIS app, so
+# `navig brain` stays the single namespace an operator has to remember.
+# ---------------------------------------------------------------------------
+from navig.commands.brain_ownership import register_ownership_commands  # noqa: E402
+
+register_ownership_commands(brain_app)

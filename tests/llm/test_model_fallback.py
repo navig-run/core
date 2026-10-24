@@ -28,7 +28,7 @@ from navig.llm import model_health as mh
 from navig.llm.router import ResolvedLLMConfig
 from navig.llm.types import LLMResult, ModelSelection
 
-NEMO = "nvidia:nvidia/nemotron-3-super-120b-a12b"
+NEMO = "nvidia:nvidia/nemotron-3.5-lightning-30b-a3b"
 OPUS = "anthropic:claude-opus-4-8"
 
 
@@ -74,19 +74,19 @@ def _sel(provider="anthropic", model="claude-opus-4-8", mode="big_tasks"):
 def test_dead_ollama_and_healthy_nvidia_gives_a_fallback(env):
     """The operator's exact shape: the mode fallback is Ollama (not running) and
     the global chain is empty — the healthy nvidia model must now stand in."""
-    mh.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+    mh.record("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", "live", "ok")
     chain = g._assemble_fallback_chain(_sel(), [], model_override=None)
     assert chain == [NEMO]
 
 
 def test_unhealthy_and_same_provider_models_are_not_candidates(env):
-    mh.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "auth", "401")
+    mh.record("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", "auth", "401")
     mh.record("anthropic", "claude-sonnet-4-6", "live", "ok")  # same provider as the primary
     assert g._assemble_fallback_chain(_sel(), [], model_override=None) == []
 
 
 def test_never_from_mode_gets_no_model_fallback(env):
-    mh.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+    mh.record("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", "live", "ok")
     mf.save_policy(never_from=["big_tasks"])
     assert g._assemble_fallback_chain(_sel(), ["openai:gpt-4o"], model_override=None) == []
     # …but another mode still falls back.
@@ -105,7 +105,7 @@ def test_never_from_keeps_sibling_accounts(env, monkeypatch):
 
 
 def test_never_to_filters_provider_and_exact_model(env):
-    mh.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+    mh.record("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", "live", "ok")
     mh.record("openrouter", "openai/gpt-4o", "live", "ok")
     mf.save_policy(never_to=["nvidia"])
     assert g._assemble_fallback_chain(_sel(), [], model_override=None) == [
@@ -116,35 +116,43 @@ def test_never_to_filters_provider_and_exact_model(env):
 
 
 def test_prefer_order_comes_before_automatic_picks(env):
-    mh.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+    mh.record("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", "live", "ok")
     mf.save_policy(prefer=["openai:gpt-4.1", "groq:openai/gpt-oss-120b"])
     chain = g._assemble_fallback_chain(_sel(), [], model_override=None)
     assert chain == ["openai:gpt-4.1", "groq:openai/gpt-oss-120b", NEMO]
 
 
 def test_auto_off_drops_health_picks_but_keeps_prefer(env):
-    mh.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+    mh.record("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", "live", "ok")
     mf.save_policy(auto=False, prefer=["openai:gpt-4.1"])
     assert g._assemble_fallback_chain(_sel(), [], model_override=None) == ["openai:gpt-4.1"]
 
 
 def test_model_override_keeps_its_old_chain(env):
-    mh.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+    mh.record("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", "live", "ok")
     chain = g._assemble_fallback_chain(_sel(), ["openai:gpt-4o"], model_override=OPUS)
     assert chain == ["openai:gpt-4o"]  # no policy additions under --model
 
 
 def test_ranking_prefers_same_family_then_tier(env):
-    mh.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+    mh.record("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", "live", "ok")
     mh.record("openrouter", "anthropic/claude-opus-4.1", "live", "ok")
     mh.record("groq", "llama-3.1-8b-mini", "live", "ok")
+    # Tier 3 via "large", and not a Claude — so it separates the two rules: it is
+    # neither the same family nor a small model.
+    mh.record("mistral", "mistral-large-latest", "live", "ok")
     ranked = mf.rank_healthy("anthropic", "claude-opus-4-8")
     assert ranked[0] == "openrouter:anthropic/claude-opus-4.1"  # same family wins
-    assert ranked.index(NEMO) < ranked.index("groq:llama-3.1-8b-mini")  # closer tier
+    assert ranked[1] == "mistral:mistral-large-latest"  # closest size tier (3, like opus)
+    # nvidia's stand-in was the retired 120B flagship (tier 3) until 2026-10-21;
+    # its live sibling is a 30B/3B-active MoE, which `_tier` correctly calls 1 —
+    # the same tier as groq's 8B. With the tier key tied, the documented last rule
+    # decides: most recently seen answering, and groq's row was recorded last.
+    assert ranked.index("groq:llama-3.1-8b-mini") < ranked.index(NEMO)
 
 
 def test_stale_live_verdict_is_not_trusted(env, monkeypatch):
-    mh.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+    mh.record("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", "live", "ok")
     real = mh.time.time
     monkeypatch.setattr(mh.time, "time", lambda: real() + mh.HEALTHY_MAX_AGE_S + 60)
     assert mh.healthy() == []
@@ -154,12 +162,12 @@ def test_probe_model_records_its_verdict(env, monkeypatch):
     from navig.llm import liveness
 
     monkeypatch.setattr(liveness, "_probe_model_uncached", lambda p, m, timeout: ("live", "ok"))
-    assert liveness.probe_model("nvidia", "nvidia/nemotron-3-super-120b-a12b") == ("live", "ok")
+    assert liveness.probe_model("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b") == ("live", "ok")
     assert mh.status_of(NEMO)["status"] == "live"
     # a busy answer does not overwrite the verdict
     monkeypatch.setattr(liveness, "_probe_model_uncached",
                         lambda p, m, timeout: ("transient", "busy"))
-    liveness.probe_model("nvidia", "nvidia/nemotron-3-super-120b-a12b")
+    liveness.probe_model("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b")
     assert mh.status_of(NEMO)["status"] == "live"
 
 
@@ -280,7 +288,7 @@ def test_credential_change_is_free_when_nothing_degraded(env, monkeypatch):
 
 
 def test_run_llm_401_falls_back_records_and_notifies(env, monkeypatch):
-    mh.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+    mh.record("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", "live", "ok")
     monkeypatch.setattr(g, "_build_pipeline_context", lambda **kw: {})
     monkeypatch.setattr(g, "_enrich_messages_with_context", lambda m, c: m)
     monkeypatch.setattr(g, "_load_fallback_chain", lambda: [])
@@ -389,7 +397,7 @@ def _drive_agent(monkeypatch, accounts):
 
 
 def test_agent_401_falls_back_with_tools_and_records(env, monkeypatch):
-    mh.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+    mh.record("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", "live", "ok")
     reply, agent, state = _drive_agent(
         monkeypatch, {"anthropic": _Auth("invalid x-api-key"), "nvidia": "nemotron answer",
                       "ollama": "fast answer"},
@@ -397,7 +405,7 @@ def test_agent_401_falls_back_with_tools_and_records(env, monkeypatch):
     assert reply == "nemotron answer"
     # the policy fallback ran BEFORE the tool-less fast model, and kept the tools
     assert state["calls"][0][0] == "anthropic"
-    assert state["calls"][1] == ("nvidia", "nvidia/nemotron-3-super-120b-a12b", True)
+    assert state["calls"][1] == ("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", True)
     assert agent._last_account_fallback["kind"] == "model"
     assert agent._last_account_fallback["to"] == NEMO
     assert mf.degraded()[OPUS]["modes"] == ["coding"]
@@ -414,7 +422,7 @@ def test_agent_401_falls_back_with_tools_and_records(env, monkeypatch):
 
 
 def test_agent_never_from_fails_loudly(env, monkeypatch):
-    mh.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+    mh.record("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", "live", "ok")
     mf.save_policy(never_from=["coding"])
     reply, agent, state = _drive_agent(
         monkeypatch, {"anthropic": _Auth("invalid x-api-key"), "nvidia": "x", "ollama": "fast"},
@@ -464,7 +472,7 @@ def test_cli_set_and_never_from(env):
 
     modes = get_config_manager().get("llm_router.llm_modes")
     assert modes["big_tasks"]["fallback_provider"] == "nvidia"
-    assert modes["big_tasks"]["fallback_model"] == "nvidia/nemotron-3-super-120b-a12b"
+    assert modes["big_tasks"]["fallback_model"] == "nvidia/nemotron-3.5-lightning-30b-a3b"
 
     r = _cli(["--never-from", "coding"])
     assert r.exit_code == 0, r.output
@@ -563,7 +571,7 @@ def test_heartbeat_auth_verdict_reroutes_the_next_turn_up_front(env):
     # heartbeat's probe saw the 401. The old pre-check returned None here, so
     # every chat turn dialled the rejected login first.
     mh.record("anthropic", "claude-opus-4-8", "auth", "401", source="probe")
-    mh.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+    mh.record("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", "live", "ok")
     assert not fp.any_cooling()
     assert mf.preemptive_target("big_tasks", "anthropic", "claude-opus-4-8") == NEMO
 
@@ -578,7 +586,7 @@ def test_preemptive_switch_reports_the_real_reason(env, monkeypatch):
 
 
 def test_transient_or_stale_verdicts_do_not_reroute(env, monkeypatch):
-    mh.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+    mh.record("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", "live", "ok")
     mh.record("anthropic", "claude-opus-4-8", "transient", "503", source="probe")
     assert mf.preemptive_target("big_tasks", "anthropic", "claude-opus-4-8") is None
     mh.record("anthropic", "claude-opus-4-8", "auth", "401", source="probe")
@@ -589,7 +597,7 @@ def test_transient_or_stale_verdicts_do_not_reroute(env, monkeypatch):
 
 def test_never_from_mode_ignores_the_verdict(env):
     mh.record("anthropic", "claude-opus-4-8", "auth", "401", source="probe")
-    mh.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+    mh.record("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", "live", "ok")
     mf.save_policy(never_from=["big_tasks"])
     assert mf.preemptive_target("big_tasks", "anthropic", "claude-opus-4-8") is None
 
@@ -597,7 +605,7 @@ def test_never_from_mode_ignores_the_verdict(env):
 def test_reauth_forgets_the_rejected_verdict(env, monkeypatch):
     monkeypatch.setattr(mf.threading, "Thread", lambda **kw: pytest.fail("nothing degraded"))
     mh.record("anthropic", "claude-opus-4-8", "auth", "401", source="probe")
-    mh.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+    mh.record("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", "live", "ok")
     mf.on_credentials_changed(provider="anthropic", routable=True)  # a login that now works
     assert mf.broken_verdict("anthropic", "claude-opus-4-8") is None
     assert mf.preemptive_target("big_tasks", "anthropic", "claude-opus-4-8") is None

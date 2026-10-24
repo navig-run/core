@@ -64,6 +64,11 @@ ALLOWED_ESCAPES: dict[str, str] = {
         "detection as daemon/supervisor.py; absent in a wheel means 'not a git install'."
     ),
     "__init__.py": "pyproject.toml — version fallback when running from source (metadata otherwise).",
+    "cli/_version.py": (
+        "pyproject.toml — same source-checkout version preference, for the case where the "
+        "package root is shadowed by a cwd `navig/` folder and `navig.__init__` never ran "
+        "(metadata otherwise; the path is probed, never assumed)."
+    ),
     "license/__init__.py": (
         "tools/dev_license.py — detects the DEV licence-override tool, which is excluded from "
         "the wheel on purpose. Absent == not a dev checkout, which is the correct answer."

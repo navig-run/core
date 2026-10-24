@@ -11,3 +11,8 @@ from navig.hub.aggregator import (  # noqa: F401
     collect_store,
     store_status,
 )
+from navig.hub.capabilities import (  # noqa: F401
+    BackendRef,
+    CapabilityDescriptor,
+    collect_capabilities,
+)

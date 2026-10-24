@@ -50,12 +50,47 @@ _EXPECTED_PARAMS = (
 )
 
 _installed = False
-# The standard library's method, kept so tests (and a future uninstall) can reach it.
+# The standard library's methods, kept so tests (and a future uninstall) can reach them.
 stdlib_start_serving = None
+stdlib_accept = None
+
+# IocpProactor.accept(self, listener) — the signature this guard's wrapper was written
+# against. Checked before wrapping, so a future Python that changes it is left untouched.
+_EXPECTED_ACCEPT_PARAMS = ("self", "listener")
 
 
 def is_transient_accept_error(exc: BaseException) -> bool:
     return isinstance(exc, OSError) and getattr(exc, "winerror", None) in TRANSIENT_ACCEPT_WINERRORS
+
+
+def _consume_accept_helper_error(task) -> None:
+    """Retrieve the exception of the proactor's orphan accept-helper task.
+
+    ``IocpProactor.accept`` returns the overlapped accept future *and* spins off a
+    fire-and-forget task (``accept_coro``) whose only job is to close the accept socket
+    if that future is cancelled. The helper awaits the *same* future. So when accept
+    fails because a client went away before it was accepted — the WinError 64 this guard
+    exists for — the helper finishes holding that OSError and nobody retrieves it, and
+    asyncio logs a full "Task exception was never retrieved" traceback that looks exactly
+    like a crash, even though ``install`` kept the listener alive and re-armed accept.
+
+    The helper's exception is always a duplicate of the future's, which ``_start_serving``
+    already handles (re-arm when transient, "Accept failed on a socket" + close when not).
+    So retrieving the helper's copy loses nothing. Retrieve it; note the rare non-transient
+    case at debug so it is not wholly invisible, since the authoritative report comes from
+    the accept loop.
+    """
+    if task.cancelled():
+        return
+    try:
+        exc = task.exception()  # retrieving it is what prevents the __del__ warning
+    except Exception:  # pragma: no cover — a still-pending task cannot reach a done callback
+        return
+    if exc is None or is_transient_accept_error(exc):
+        return
+    logger.debug(
+        "accept helper task ended with %r (already handled by the accept loop)", exc
+    )
 
 
 def install() -> bool:
@@ -151,5 +186,52 @@ def install() -> bool:
     global stdlib_start_serving
     stdlib_start_serving = base._start_serving
     base._start_serving = _start_serving
+
+    _install_accept_helper_guard()
+
     _installed = True
     return True
+
+
+def _install_accept_helper_guard() -> None:
+    """Silence the orphan accept-helper task's duplicate exception (see
+    ``_consume_accept_helper_error``). Only wraps ``IocpProactor.accept`` when it has the
+    signature we expect; otherwise it is left exactly as the standard library ships it.
+    """
+    global stdlib_accept
+    try:
+        from asyncio import tasks
+        from asyncio.windows_events import IocpProactor
+    except ImportError:  # pragma: no cover — IocpProactor exists on every win32 Python
+        return
+    if tuple(inspect.signature(IocpProactor.accept).parameters) != _EXPECTED_ACCEPT_PARAMS:
+        logger.warning(
+            "accept-helper guard not installed: this Python's IocpProactor.accept has %s",
+            tuple(inspect.signature(IocpProactor.accept).parameters),
+        )
+        return
+
+    stdlib_accept = IocpProactor.accept
+
+    def accept(self, listener):
+        # accept() is synchronous and never awaits, and the proactor loop is
+        # single-threaded, so swapping tasks.ensure_future for the duration of this one
+        # call captures the helper task the stdlib spawns without any reentrancy risk.
+        created = []
+        real_ensure_future = tasks.ensure_future
+
+        def _capture(coro, *, loop=None):
+            created_task = real_ensure_future(coro, loop=loop)
+            created.append(created_task)
+            return created_task
+
+        tasks.ensure_future = _capture
+        try:
+            future = stdlib_accept(self, listener)
+        finally:
+            tasks.ensure_future = real_ensure_future
+        for helper_task in created:
+            helper_task.add_done_callback(_consume_accept_helper_error)
+        return future
+
+    IocpProactor.accept = accept

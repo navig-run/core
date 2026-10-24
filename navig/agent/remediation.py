@@ -23,6 +23,7 @@ from typing import Any
 
 from navig.debug_logger import DebugLogger
 from navig.platform.paths import config_dir as get_config_dir
+from navig.platform.paths import log_dir as get_log_dir
 
 
 class RemediationType(Enum):
@@ -116,7 +117,7 @@ class RemediationEngine:
         log_dir: Path | None = None,
     ):
         self.config_dir = config_dir or get_config_dir() / "workspace"
-        self.log_dir = log_dir or get_config_dir() / "logs"
+        self.log_dir = log_dir or get_log_dir()
         self.backup_dir = self.config_dir / "config-backup"
         self.actions_file = self.config_dir / "remediation_actions.json"
         self.remediation_log = self.log_dir / "remediation.log"

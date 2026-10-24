@@ -337,7 +337,9 @@ def _resolved_daemon_components(
             return cfg[key]
         return default
 
-    cfg["telegram_bot"] = _pick("telegram_bot", bot, DEFAULT_DAEMON_CONFIG.get("telegram_bot", True))
+    cfg["telegram_bot"] = _pick(
+        "telegram_bot", bot, DEFAULT_DAEMON_CONFIG.get("telegram_bot", True)
+    )
     cfg["gateway"] = _pick("gateway", gateway, DEFAULT_DAEMON_CONFIG.get("gateway", False))
     # `scheduler` is DEPRECATED and read by nothing: cron runs gateway-attached
     # (NavigGateway._start_cron), and the supervised scheduler child was a
@@ -345,7 +347,9 @@ def _resolved_daemon_components(
     # still written so existing configs, flags (`--scheduler`) and tests keep
     # round-tripping unchanged — entry.py simply ignores it.
     cfg["scheduler"] = _pick("scheduler", scheduler, DEFAULT_DAEMON_CONFIG.get("scheduler", False))
-    cfg["health_port"] = _pick("health_port", health_port, DEFAULT_DAEMON_CONFIG.get("health_port", 0))
+    cfg["health_port"] = _pick(
+        "health_port", health_port, DEFAULT_DAEMON_CONFIG.get("health_port", 0)
+    )
     return cfg
 
 
@@ -367,7 +371,9 @@ def service_install(
     # re-run it on a working install -- and it used to rewrite every one of these
     # from the flag defaults, silently turning OFF whatever they had enabled.
     # See _resolved_daemon_components().
-    bot: bool | None = typer.Option(None, "--bot/--no-bot", help="Include Telegram bot [default: on]"),
+    bot: bool | None = typer.Option(
+        None, "--bot/--no-bot", help="Include Telegram bot [default: on]"
+    ),
     gateway: bool | None = typer.Option(
         None, "--gateway/--no-gateway", help="Include gateway server [default: keep current]"
     ),
@@ -572,6 +578,7 @@ def _launch_daemon(daemon: object) -> tuple[bool, str]:
 # start (foreground or signal running daemon)
 # =========================================================================
 
+
 def _tail_service_logs() -> None:
     """Tail daemon.log and debug.log simultaneously until Ctrl+C."""
     import threading
@@ -633,6 +640,103 @@ def _tail_service_logs() -> None:
         ch.dim("Log streaming stopped.")
 
 
+def _autostart_optout_path():
+    """Where the operator's deliberate autostart opt-out lives.
+
+    Next to ``stop_requested``, so one directory holds every "do not start this"
+    decision a human made on purpose. While it exists, a start path may start the
+    daemon it was asked for but must not re-arm autostart: on 2026-10-22 that silent
+    re-arm turned a deliberate client machine into a second brain within one minute.
+    """
+    from pathlib import Path
+
+    from navig.daemon.supervisor import _daemon_dir
+
+    return Path(_daemon_dir()) / "autostart_optout"
+
+
+def _brain_link_path():
+    """Where the NAVIG OS app records that this install is a client of a remote brain.
+
+    Delegates to :mod:`navig.brain.link` — the same file, read by the same code that routes
+    MCP data. Two readers of one credential is how the start guard and the data path end up
+    disagreeing about whether this machine is a client.
+    """
+    from navig.brain.link import brain_link_path  # noqa: PLC0415
+
+    return brain_link_path()
+
+
+def _read_brain_link():
+    """The brain link, None when absent, or ``{"__corrupt__": True}`` when unreadable.
+
+    Absent and unreadable are different answers: absent means "this install is (or may
+    become) the brain"; unreadable means "cannot tell", and must never block a start.
+    """
+    from navig.brain.link import read_brain_link_state  # noqa: PLC0415
+
+    # Pass the path explicitly rather than letting the module default it: `_brain_link_path`
+    # stays the one seam a caller (or a test) can redirect.
+    return read_brain_link_state(_brain_link_path()).as_link_dict()
+
+
+def _client_brain_refusal(link, force: bool) -> str | None:
+    """Why this install must NOT start a local brain, or None when it may.
+
+    A brain-link file says "my brain lives elsewhere". Starting a local daemon from here
+    creates a second NAVIG authority holding the same deck key — the 2026-10-22 state, in
+    which both hosts answered /health with "canonical": true and the operator could not
+    tell which one the Telegram bot belonged to. Doctor reports that contradiction; this
+    refuses to create it. ``force=True`` is the operator saying "I mean it".
+    """
+    if force:
+        return None
+    if isinstance(link, dict) and link.get("__corrupt__"):
+        return None
+    if not link:
+        return None
+    name = link.get("brainName") or "a remote brain"
+    return (
+        f"This install is a CLIENT of {name} (brain-link.json), so starting a local daemon "
+        "would create a SECOND NAVIG authority with the same deck key. Nothing was started. "
+        f"Use `navig service start --force` if you really mean to run a brain here, or "
+        f"remove {_brain_link_path()} to unlink this client."
+    )
+
+
+def _autostart_enable_guarded() -> bool:
+    """Enable the autostart task UNLESS the operator opted out. The one enable gate.
+
+    Independent audit 2026-10-22: gating only `_ensure_autostart_enabled` left three
+    direct `task_scheduler_enable()` calls — `service start`'s launch path, and
+    `service restart` twice — which re-armed a client's autostart past the marker.
+    Every enable path goes through here now, so the opt-out cannot be bypassed by
+    choosing a different verb.
+    """
+    optout = _autostart_optout_path()
+    if optout.exists():
+        return False
+    try:
+        from navig.daemon.service_manager import task_scheduler_enable  # noqa: PLC0415
+
+        task_scheduler_enable()
+        return True
+    except Exception:  # noqa: BLE001 — never block a start on a repair probe
+        return False
+
+
+def _enforce_start_preconditions(force: bool) -> None:
+    """Refuse to start a brain on an install that is a client. Shared by start AND restart.
+
+    The audit found the refusal wired only into `service start`; `service restart` is
+    reachable as `navig gateway restart` and would have created the same second authority.
+    """
+    refusal = _client_brain_refusal(_read_brain_link(), force)
+    if refusal is not None:
+        ch.error(refusal)
+        raise typer.Exit(1)
+
+
 def _ensure_autostart_enabled() -> None:
     """Re-enable the autostart task when it is installed but DISABLED.
 
@@ -642,6 +746,13 @@ def _ensure_autostart_enabled() -> None:
     that deliberately never installed the task.
     """
     if os.name != "nt":
+        return
+    optout = _autostart_optout_path()
+    if optout.exists():
+        ch.warning(
+            f"Autostart left DISABLED on purpose - opt-out marker at {optout}. "
+            "Remove that file to let a start re-enable it."
+        )
         return
     try:
         from navig.daemon.service_manager import (  # noqa: PLC0415
@@ -690,6 +801,11 @@ def service_start(
         "-l",
         help="Stream daemon + gateway logs to stdout after starting (Ctrl+C to stop tailing)",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Start even though this install is a CLIENT of a remote brain (creates a second authority)",
+    ),
 ):
     """
     Start the NAVIG daemon.
@@ -704,6 +820,11 @@ def service_start(
     """
     from navig.daemon.supervisor import NavigDaemon
     from navig.move.marker import moved_message, read_moved
+
+    refusal = _client_brain_refusal(_read_brain_link(), force)
+    if refusal is not None:
+        ch.error(refusal)
+        raise typer.Exit(1)
 
     if read_moved() is not None:
         ch.error(moved_message())
@@ -743,7 +864,6 @@ def service_start(
             clear_stop_flag,
             clear_watchdog_deadline,
             stop_flag_is_set,
-            task_scheduler_enable,
         )
 
         if stop_flag_is_set():
@@ -779,7 +899,7 @@ def service_start(
         # `_launch_daemon`). Enabling here also arms logon/failure-restart on
         # every exit path below. Silent if the task is not installed.
         if os.name == "nt":
-            task_scheduler_enable()
+            _autostart_enable_guarded()
         ch.info("Starting NAVIG daemon in background...")
         from navig.daemon.restart_cause import record as _record_cause
 
@@ -918,6 +1038,11 @@ def service_restart(
         help="Relaunch elevated (UAC on Windows, sudo on POSIX) — needed when the "
         "daemon is running as Administrator.",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Restart even though this install is a CLIENT of a remote brain",
+    ),
 ):
     """
     Restart the NAVIG daemon.
@@ -930,6 +1055,9 @@ def service_restart(
     # service_restart()), where an unpassed typer.Option arrives as a truthy OptionInfo
     # object, not False. `is True` means "the CLI resolved --admin", never that default.
     admin = admin is True
+    # Same coercion for the same reason: `navig gateway restart` calls this directly.
+    force = force is True
+    _enforce_start_preconditions(force)
     # If asked to elevate and we're not already, relaunch the whole command with a
     # UAC/sudo prompt and hand off — the elevated child does the real restart.
     if admin and not _is_elevated():
@@ -956,7 +1084,10 @@ def service_restart(
         if _wait_for_daemon(NavigDaemon, attempts=_TASK_BOOT_WAIT_S):
             ch.success(f"Daemon restarted (pid={NavigDaemon.read_pid()}, via systemd)")
             return
-        ch.error("systemd restarted the unit but no daemon came up.", f"Check: journalctl -u {unit} -n 50")
+        ch.error(
+            "systemd restarted the unit but no daemon came up.",
+            f"Check: journalctl -u {unit} -n 50",
+        )
         raise typer.Exit(1)
 
     import time
@@ -965,7 +1096,6 @@ def service_restart(
         clear_stop_flag,
         clear_watchdog_deadline,
         task_scheduler_disable,
-        task_scheduler_enable,
     )
     from navig.daemon.supervisor import NavigDaemon
 
@@ -987,12 +1117,14 @@ def service_restart(
             # If elevation is the blocker, offer a one-step elevated retry.
             if not _is_elevated() and ("elevated" in reason.lower() or "denied" in reason.lower()):
                 if _stdin_is_tty() and typer.confirm("Retry as Administrator?", default=True):
-                    _report_elevated_and_exit(_relaunch_elevated(["service", "restart"]), "restarted")
+                    _report_elevated_and_exit(
+                        _relaunch_elevated(["service", "restart"]), "restarted"
+                    )
                 ch.info("Retry elevated:  navig service restart --admin")
             # Re-arm before bailing out: we disabled the task above, and a restart
             # that could not stop the daemon must not ALSO leave autostart off.
             if os.name == "nt":
-                task_scheduler_enable()
+                _autostart_enable_guarded()
             raise typer.Exit(1)
         time.sleep(1)
     else:
@@ -1032,7 +1164,7 @@ def service_restart(
     # task by preference (`schtasks /run` refuses a disabled task). A deliberate
     # `navig service stop` is a different command and still leaves it off.
     if os.name == "nt":
-        task_scheduler_enable()  # silent if task not installed
+        _autostart_enable_guarded()  # respects autostart_optout
 
     ch.info("Starting daemon...")
     _started, _how = _launch_daemon(NavigDaemon)
@@ -1085,8 +1217,10 @@ def reachability_summary() -> dict[str, str]:
     except Exception:  # noqa: BLE001
         pass
     mode = (
-        "lighthouse" if lighthouse
-        else "direct" if public
+        "lighthouse"
+        if lighthouse
+        else "direct"
+        if public
         else ("tunnel" if enabled else "local-only")
     )
     gateway_url = f"http://127.0.0.1:{port}"
@@ -1228,7 +1362,9 @@ def service_pids(
             )
     ch.console.print(tbl)
     total = sum(len(t["members"]) for t in trees)
-    ch.dim(f"{total} pid(s) across {len(trees)} tree(s) · a sweeper spares all of them: navig service pids --plain")
+    ch.dim(
+        f"{total} pid(s) across {len(trees)} tree(s) · a sweeper spares all of them: navig service pids --plain"
+    )
 
 
 # =========================================================================

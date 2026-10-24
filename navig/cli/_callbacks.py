@@ -7,7 +7,12 @@ import random
 
 import typer
 
-from navig import __version__
+try:
+    from navig import __version__
+except ImportError:  # shadowed root — see navig.cli._version
+    from navig.cli._version import resolve_version
+
+    __version__ = resolve_version()
 from navig.cli.help_dictionaries import HELP_REGISTRY
 from navig.lazy_loader import lazy_import
 

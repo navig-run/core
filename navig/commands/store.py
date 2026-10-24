@@ -204,6 +204,179 @@ def _store_status(
         raise typer.Exit(1)
 
 
+@store_app.command("capabilities")
+def _store_capabilities(
+    capability_id: str = typer.Argument(
+        None, help="One capability to detail (e.g. perplexity)"
+    ),
+    kind: str = typer.Option(
+        None, "--kind", "-k", help="Only capabilities whose primary backend is this kind"
+    ),
+    multi: bool = typer.Option(
+        False, "--multi", help="Only capabilities with more than one backend"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="JSON output"),
+    no_mcp: bool = typer.Option(
+        False, "--no-mcp", help="Skip MCP tool-name derivation (saves the ~1s tool-platform import)"
+    ),
+):
+    """The capability index — logical capabilities and every backend that serves them.
+
+    One row per capability (e.g. `perplexity`), folding the plugins, modules,
+    connectors, MCP servers and skills that implement it. A capability with
+    two backends (desktop + API) appears ONCE, with both listed.
+
+        navig store capabilities                    # every capability
+        navig store capabilities perplexity         # one capability, full detail
+        navig store capabilities --multi            # only multi-backend ones
+        navig store capabilities --json             # machine-readable
+    """
+    import json
+
+    from navig.hub.capabilities import collect_capabilities
+
+    caps, errors = collect_capabilities(mcp_probe=not no_mcp)
+
+    if capability_id:
+        # Accept the bare id or a partial match when unambiguous.
+        matches = [
+            c for c in caps if c.id == capability_id or c.id.startswith(capability_id)
+        ]
+        if not matches:
+            ch.error(f"No capability matches '{capability_id}'")
+            raise typer.Exit(1)
+        if len(matches) > 1 and not any(c.id == capability_id for c in matches):
+            names = ", ".join(c.id for c in matches[:8])
+            ch.error(f"'{capability_id}' is ambiguous: {names}")
+            raise typer.Exit(1)
+        cap = next((c for c in matches if c.id == capability_id), matches[0])
+        if json_output:
+            ch.console.print_json(json.dumps(cap.to_dict(), indent=2))
+            # Verdict after the payload, same as `store status --json`: the JSON
+            # is complete, the exit code still says a backend is broken.
+            if cap.health:
+                raise typer.Exit(1)
+            return
+        _render_capability_detail(cap)
+        return
+
+    if kind:
+        caps = [c for c in caps if c.backends and c.backends[0].kind == kind]
+    if multi:
+        caps = [c for c in caps if len(c.backends) > 1]
+
+    if json_output:
+        ch.console.print_json(
+            json.dumps(
+                {
+                    "capabilities": [c.to_dict() for c in caps],
+                    "errors": errors,
+                },
+                indent=2,
+            )
+        )
+        return
+
+    if not caps:
+        ch.info("Nothing matches.")
+        return
+
+    from rich.table import Table
+
+    multi_n = sum(1 for c in caps if len(c.backends) > 1)
+    ch.console.print(
+        f"  {len(caps)} capabilities · {multi_n} with multiple backends"
+        + (f"  ·  [red]{len(errors)} reader errors[/red]" if errors else "")
+        + "\n"
+    )
+
+    table = Table(show_lines=False, padding=(0, 2))
+    table.add_column("", width=2)
+    table.add_column("Capability", style="cyan", no_wrap=True)
+    table.add_column("Type", style="dim", no_wrap=True)
+    table.add_column("State")
+    table.add_column("Backends", justify="right", no_wrap=True)
+    table.add_column("Description")
+    for c in caps:
+        mark = _STATE_MARK.get(c.state, "?")
+        color = _STATE_COLOR.get(c.state, "white")
+        desc = c.description[:52] + "…" if len(c.description) > 52 else c.description
+        table.add_row(
+            mark,
+            c.id,
+            c.capability_type,
+            f"[{color}]{c.state}[/]" + (" [yellow]~[/yellow]" if c.degraded else ""),
+            str(len(c.backends)),
+            desc,
+        )
+    ch.console.print(table)
+    ch.dim(
+        "\n  Detail: navig store capabilities <id>  ·  JSON: --json  ·  "
+        "Multi-backend only: --multi"
+    )
+
+
+def _render_capability_detail(cap) -> None:
+    """One capability, full detail: backends, auth, commands, tools, health."""
+    from rich.table import Table
+
+    mark = _STATE_MARK.get(cap.state, "?")
+    ch.heading(cap.display_name, f"capability {cap.id}")
+    ch.console.print(
+        f"  {mark} [bold]{cap.state}[/bold]"
+        + (" [yellow](degraded)[/yellow]" if cap.degraded else "")
+        + f"  ·  type [dim]{cap.capability_type}[/dim]"
+        + f"  ·  runs [dim]{cap.execution}[/dim]"
+    )
+    if cap.description:
+        ch.console.print(f"  {cap.description}")
+    if cap.origins:
+        ch.console.print(f"  [dim]from:[/dim] {', '.join(cap.origins)}")
+
+    t = Table(box=None, show_header=True, padding=(0, 2))
+    t.add_column("Backend", style="cyan", no_wrap=True)
+    t.add_column("Kind", no_wrap=True)
+    t.add_column("State")
+    t.add_column("Auth", no_wrap=True)
+    t.add_column("Config")
+    for b in cap.backends:
+        state = f"[{_STATE_COLOR.get(b.state, 'white')}]{b.state}[/]"
+        auth = (b.auth or {}).get("mode", "") if b.auth else "—"
+        perms = b.permissions or {}
+        if perms:
+            rw = "/".join(p for p, on in (("read", perms.get("read")), ("write", perms.get("write"))) if on)
+            if rw:
+                auth = f"{auth} ({rw})" if auth != "—" else rw
+        t.add_row(b.label, b.kind, state, auth or "—", b.config_hint or "")
+    ch.console.print(t)
+
+    if cap.cli_commands:
+        ch.console.print(f"  [dim]CLI:[/dim] {len(cap.cli_commands)} commands, e.g. {cap.cli_commands[0]}")
+    if cap.mcp_tools:
+        shown = ", ".join(cap.mcp_tools[:6])
+        more = f" (+{len(cap.mcp_tools) - 6})" if len(cap.mcp_tools) > 6 else ""
+        ch.console.print(f"  [dim]MCP:[/dim] {shown}{more}")
+    if cap.skills:
+        names = ", ".join(s.partition(":")[2] for s in cap.skills[:5])
+        more = f" (+{len(cap.skills) - 5})" if len(cap.skills) > 5 else ""
+        ch.console.print(f"  [dim]skills:[/dim] {names}{more}")
+    for h in cap.health:
+        ch.error(f"  ✗ {h['backend']}: {h['error'][:70]}")
+    for o in cap.overlaps:
+        ch.warning(
+            f"  ~ {len(o['sources'])} {o['kind']} backends share this capability: "
+            + ", ".join(o["sources"])
+        )
+    ch.dim(f"\n  Wire a backend: navig store info <item-id>  ·  All: navig store capabilities --json")
+
+    # Same rule as `navig store status`: the full report prints either way and the
+    # exit code carries the verdict — `… && <use it>` must not proceed over a
+    # capability whose backend is broken. (The ch.error above would otherwise fall
+    # off the end: the user sees ✗, the shell sees 0.)
+    if cap.health:
+        raise typer.Exit(1)
+
+
 @store_app.command("info")
 def _store_info(
     item_id: str = typer.Argument(..., help="Item id (e.g. plugin:navig-social, module:finance)"),

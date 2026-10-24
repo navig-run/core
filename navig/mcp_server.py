@@ -265,6 +265,12 @@ class MCPProtocolHandler:
                 "description": "Current system state and recent errors",
                 "mimeType": "application/json",
             },
+            "navig://capabilities": {
+                "uri": "navig://capabilities",
+                "name": "NAVIG Capabilities",
+                "description": "Installed plugins and the accounts, keys and devices they can use",
+                "mimeType": "application/json",
+            },
             "navig://agent/status": {
                 "uri": "navig://agent/status",
                 "name": "NAVIG Agent Status",
@@ -386,27 +392,49 @@ class MCPProtocolHandler:
             # Without it the model meets a list of names and no context; with it, the
             # first call is usually the right domain instead of a guess. Kept short on
             # purpose — it costs tokens on every session.
-            "instructions": (
-                (
-                    "NAVIG exposes the machine it runs on through fifteen domain tools; each "
-                    "takes an `action` argument. Start with navig_fleet's context/list_hosts, "
-                    "search navig_knowledge for docs/wiki, navig_recall for past decisions and "
-                    "navig_memory for durable facts. State-changing domains are separate "
-                    "(*_update/*_action/*_apply and browser act tools) and are gated by NAVIG's "
-                    "approval layer; prefer read tools while exploring. `navig mcp serve "
-                    "--profile full` exposes the complete catalogue."
-                )
-                if getattr(self, "_profile", "full") == "default"
-                else (
-                    "NAVIG exposes the machine it runs on: SSH host and app inventory, a local "
-                    "wiki, persistent memory, and (on Windows) desktop and CDP browser control. "
-                    "Start with navig_get_context or navig_list_hosts to see what is configured. "
-                    "Tools whose names end in _act, _write, _delete, _exec, _install or _apply "
-                    "change state and are gated by NAVIG's approval layer; prefer the read-only "
-                    "tools while exploring."
-                )
-            ),
+            "instructions": self._instructions(),
         }
+
+    def _instructions(self) -> str:
+        """Static guidance plus a live, budgeted digest of installed plugins and accounts.
+
+        The digest is what makes an agent offer "post it to your Instagram" without the
+        operator naming the tool. It is best-effort: any failure (a broken plugin, a
+        read-only home) falls back to the static text, never to a failed ``initialize``.
+        """
+        if getattr(self, "_profile", "full") == "default":
+            from navig.mcp.routing import COMPACT_TOOL_NAMES
+
+            static = (
+                f"NAVIG exposes the machine it runs on through {len(COMPACT_TOOL_NAMES)} domain "
+                "tools; each takes an `action` argument. Start with navig_fleet's "
+                "context/list_hosts, search navig_knowledge for docs/wiki, navig_recall for past "
+                "decisions and navig_memory for durable facts. navig_capabilities lists installed "
+                "plugins (media, audio, video, social, email, phones) and connected accounts; "
+                "navig_run runs one of their commands. State-changing domains are separate "
+                "(*_update/*_action/*_apply, navig_run and browser act tools) and are gated by "
+                "NAVIG's approval layer; prefer read tools while exploring. `navig mcp serve "
+                "--profile full` exposes the complete catalogue."
+            )
+        else:
+            static = (
+                "NAVIG exposes the machine it runs on: SSH host and app inventory, a local "
+                "wiki, persistent memory, and (on Windows) desktop and CDP browser control. "
+                "Start with navig_get_context or navig_list_hosts to see what is configured. "
+                "Tools whose names end in _act, _write, _delete, _exec, _install or _apply "
+                "change state and are gated by NAVIG's approval layer; prefer the read-only "
+                "tools while exploring."
+            )
+        if "navig_capabilities_overview" not in getattr(self, "_tool_handlers", {}):
+            return static  # a narrow `--only` server does not carry the capabilities bundle
+        try:
+            from navig.capabilities import digest
+
+            live = digest()
+        except Exception as exc:  # noqa: BLE001 — initialize must always answer
+            logger.debug("capability digest unavailable: %s", exc)
+            return static
+        return f"{static}\n\n{live}" if live else static
 
     @staticmethod
     def _server_version() -> str:
@@ -622,6 +650,12 @@ class MCPProtocolHandler:
                 return
             original, safety = target
             route = {"router": tool_name, "action": arguments.get("action"), "original": original}
+        elif tool_name == "navig_run_cli":
+            # Full profile: the same per-command level the navig_run router resolves.
+            from navig.mcp.routing import run_cli_gate
+
+            original, safety = run_cli_gate(arguments)
+            route = {"original": original}
         if safety == "safe":
             return
         transport = getattr(self, "_transport", TransportContext())
@@ -680,6 +714,8 @@ class MCPProtocolHandler:
             return "# Wiki Index\n\n" + "\n".join(f"- [{p['title']}]({p['path']})" for p in pages)
         elif uri == "navig://context":
             return json.dumps(self._execute_tool("navig_get_context", {}), indent=2)
+        elif uri == "navig://capabilities":
+            return json.dumps(self._execute_tool("navig_capabilities_overview", {}), indent=2)
         elif uri in ("navig://agent/status", "agent://status"):
             return json.dumps(self._execute_tool("navig_agent_status_get", {}), indent=2)
         elif uri in ("navig://agent/goals", "agent://goals"):

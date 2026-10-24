@@ -185,6 +185,10 @@ DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
         "cdp_stop",
         "cdp_login",
         "cdp_inject",
+        # Runs an installed CLI command (navig.mcp.tools.capabilities): it may publish,
+        # send mail or delete. The MCP gate narrows this per command; the agent gate
+        # cannot see the path, so it keeps the worst case.
+        "navig_run_cli",
         # ── The rest of the MCP tools classified "dangerous" ──────────────────
         # There are TWO gates and they read different registries: the MCP server
         # asks `_tool_safety` (mcp_server._gate_tool), the agent loop asks this set
@@ -454,14 +458,29 @@ ApprovalBackend = Callable[[ApprovalRequest], Awaitable[ApprovalDecision]]
 # Policy helpers
 # =============================================================================
 
-_policy: ApprovalPolicy = ApprovalPolicy.CONFIRM_DESTRUCTIVE
+#: ``None`` means "not set in this process yet" — the security posture supplies the
+#: default (medium => confirm_destructive, the shipped behaviour). A caller that sets
+#: an explicit policy still wins.
+_policy: ApprovalPolicy | None = None
 _policy_lock = threading.Lock()
 
 
 def get_approval_policy() -> ApprovalPolicy:
-    """Return the active approval policy for this process."""
+    """Return the active approval policy for this process.
+
+    When nothing set one explicitly, the security posture decides — so
+    ``navig approve level strict`` tightens the chat gate as well.
+    """
     with _policy_lock:
-        return _policy
+        active = _policy
+    if active is not None:
+        return active
+    try:
+        from navig.security import posture  # noqa: PLC0415
+
+        return ApprovalPolicy(posture.approval_policy())
+    except Exception:  # noqa: BLE001 — an unreadable posture keeps the shipped default
+        return ApprovalPolicy.CONFIRM_DESTRUCTIVE
 
 
 def set_approval_policy(policy: ApprovalPolicy | str) -> None:

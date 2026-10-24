@@ -24,7 +24,7 @@ from navig.llm import fallback_policy as fp
 from navig.llm import model_fallback as mf
 from navig.llm import model_health as mh
 
-NEMO = "nvidia:nvidia/nemotron-3-super-120b-a12b"
+NEMO = "nvidia:nvidia/nemotron-3.5-lightning-30b-a3b"
 PATH = "/api/deck/llm/fallbacks"
 
 
@@ -65,7 +65,7 @@ async def _post(client, body):
 
 
 async def test_get_shape(isolated):
-    mh.record("nvidia", "nvidia/nemotron-3-super-120b-a12b", "live", "ok")
+    mh.record("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b", "live", "ok")
     mf.note_fallback("big_tasks", "anthropic:claude-opus-4-8", NEMO, "auth")
     async with TestClient(TestServer(_app())) as client:
         res = await client.get(PATH)

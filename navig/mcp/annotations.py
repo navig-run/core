@@ -55,6 +55,8 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "navig_runtime_list_nodes",
         "navig_runtime_list_receipts",
         "navig_runtime_trust_score",
+        # coordination (read-only mailbox inspection)
+        "coordination_inbox",
         # memory (retrieval only)
         "memory_key_facts_retrieve",
         "memory_key_facts_stats",
@@ -91,6 +93,14 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "perplexity_status",
         "perplexity_models",
         "perplexity_capabilities",
+        # the YouTube Music desktop app bridge — status/now/search/playlists/export read the
+        # app; music_play/pause/next/queue change what the operator hears. music_import only
+        # reads local tags and app search results; music_download writes local files.
+        "music_status",
+        "music_now_playing",
+        "music_search",
+        "music_export",
+        "music_import",
         # Spaces — metadata and one file, read through the linked-context guard. The gate
         # still classifies navig_space_read as `moderate` because file content enters the
         # conversation; privacy is a reason to ask, not a reason to call a read destructive.
@@ -113,6 +123,12 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "navig_web_search",
         "firecrawl_scrape",
         "firecrawl_search",
+        # capabilities — the installed command manifest and presence-only account probes
+        # (navig_run_cli is NOT here: it executes a command)
+        "navig_capabilities_overview",
+        "navig_capabilities_find",
+        "navig_capabilities_command_help",
+        "navig_capabilities_suggest",
     }
 )
 
@@ -128,6 +144,8 @@ OPEN_WORLD_TOOLS: frozenset[str] = frozenset(
         # a question or a brief typed into the Perplexity app leaves the machine
         "perplexity_ask",
         "perplexity_write",
+        # an installed command may publish, send mail or call a provider API
+        "navig_run_cli",
         # NOTE: connector_* tools are absent on purpose — they are generated per provider
         # and arrive pre-annotated by ``connector_annotations`` below. Listing them here
         # too would be two sources of truth for the same verdict.

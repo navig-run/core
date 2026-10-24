@@ -187,9 +187,9 @@ def _search_knowledge(query: str, top_k: int) -> list[dict[str, Any]]:
         # RAGPipeline needs a KnowledgeBase instance
         try:
             from navig.memory.knowledge_base import KnowledgeBase
-            from navig.memory.manager import _get_memory_dir
+            from navig.memory.knowledge_migration import resolve_readable_knowledge_db_path
 
-            kb_path = _get_memory_dir() / "knowledge.db"
+            kb_path = resolve_readable_knowledge_db_path()
             if kb_path.exists():
                 kb = KnowledgeBase(db_path=kb_path, embedding_provider=None)
                 rag.knowledge_base = kb
@@ -207,9 +207,9 @@ def _search_knowledge(query: str, top_k: int) -> list[dict[str, Any]]:
     # Fallback: direct KnowledgeBase.search (text-only, no embeddings)
     try:
         from navig.memory.knowledge_base import KnowledgeBase
-        from navig.memory.manager import _get_memory_dir
+        from navig.memory.knowledge_migration import resolve_readable_knowledge_db_path
 
-        kb_path = _get_memory_dir() / "knowledge.db"
+        kb_path = resolve_readable_knowledge_db_path()
         if not kb_path.exists():
             return []
 

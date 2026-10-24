@@ -43,9 +43,9 @@ from navig.platform import paths
 from navig.platform.opener import open_path
 
 # ---------------------------------------------------------------------------
-# Logging — ~/.navig/logs/tray.log, configured by main(), never at import
+# Logging — <log_dir>/tray.log, configured by main(), never at import
 # ---------------------------------------------------------------------------
-LOG_DIR = paths.config_dir() / "logs"
+LOG_DIR = paths.log_dir()
 LOG_FILE = LOG_DIR / "tray.log"
 log = logging.getLogger("navig-tray")
 

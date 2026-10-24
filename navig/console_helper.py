@@ -27,12 +27,103 @@ _BarColumn = None
 _TaskProgressColumn = None
 _Syntax = None
 _Markdown = None
+_SafeConsole = None
+
+
+def _drop_buffer(console_obj):
+    """Discard a render buffer that could not be written, emitting it unstyled if possible."""
+    buffer = getattr(console_obj, "_buffer", None)
+    text = ""
+    if isinstance(buffer, list):
+        try:
+            text = "".join(segment.text for segment in buffer)
+        except Exception:  # noqa: BLE001 — a segment shape we do not know; drop it
+            text = ""
+        try:
+            del buffer[:]
+        except Exception:  # noqa: BLE001 — buffer is a rich implementation detail
+            pass
+    if not text:
+        return
+    stream = getattr(console_obj, "file", None)
+    if stream is None:
+        return
+    try:
+        stream.write(text)
+        stream.flush()
+    except (OSError, ValueError):
+        pass  # the output handle is gone; there is nowhere left to report that
+
+
+def _make_safe_console(base):
+    """Return a ``Console`` subclass whose writes can never abort the process.
+
+    Rich picks the *legacy* Win32 renderer on Windows when it believes stdout is a
+    legacy console, then flushes through ``WriteConsoleW``. When that handle is a
+    captured pipe, or the console it was handed has gone away, the flush raises
+    ``OSError: [Errno 22] Invalid argument`` — and that exception used to escape
+    ``console.print``, so every command run with redirected output could end in an
+    unhandled exception plus a crash dump (10 of them on 2026-10-22 alone, all from
+    ``rich/_win32_console.py:403``).
+
+    Output is the least important thing in the process: losing the styled payload
+    must never lose the command.
+    """
+
+    class SafeConsole(base):
+        def _check_buffer(self):  # type: ignore[override]
+            try:
+                super()._check_buffer()
+            except (OSError, ValueError):
+                _drop_buffer(self)
+
+    return SafeConsole
+
+
+def _harden_console_base(base):
+    """Patch rich's ``Console`` class so EVERY instance survives a dead output handle.
+
+    ``console_helper.console`` being a SafeConsole was not enough: typer builds its own
+    Console for help rendering (``typer.rich_utils._get_rich_console``) and ``typer.echo``
+    flushes ``sys.stdout`` directly, so ``navig run --help``, ``navig secret --help`` and
+    ``navig kill`` still died with OSError 22 after the singleton was fixed. One
+    class-level wrapper covers every console in the process, libraries' included.
+
+    Idempotent: the wrapper is installed at most once per process.
+    """
+    if getattr(base, "_navig_safe_buffer", False):
+        return
+    original = base._check_buffer
+
+    def _check_buffer_safe(self):  # type: ignore[no-untyped-def]
+        try:
+            original(self)
+        except (OSError, ValueError):
+            _drop_buffer(self)
+
+    base._check_buffer = _check_buffer_safe  # type: ignore[method-assign]
+    base._navig_safe_buffer = True
+
+
+def harden_console_writes():
+    """Install the dead-handle guard NOW, before anything prints (called from main()).
+
+    Importing rich here costs nothing measurable: typer already imports it for help
+    output. Failure is swallowed — output hardening must never block the CLI.
+    """
+    try:
+        from rich.console import Console as _C
+
+        _harden_console_base(_C)
+    except Exception:  # noqa: BLE001 — hardening is best-effort, never load-bearing
+        return
 
 
 def _ensure_rich():
     """Import core Rich classes on first call, then cache globally."""
     global _Console, _Panel, _Table, _Tree
     global _Progress, _SpinnerColumn, _TextColumn, _BarColumn, _TaskProgressColumn
+    global _SafeConsole
     if _Console is not None:
         return
     from rich.console import Console as _C
@@ -54,6 +145,8 @@ def _ensure_rich():
     _TextColumn = _TC
     _BarColumn = _BC
     _TaskProgressColumn = _TPC
+    _SafeConsole = _make_safe_console(_C)
+    _harden_console_base(_C)
 
 
 def _get_syntax():
@@ -99,7 +192,7 @@ class _LazyConsole:
                 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
-        real = _Console()
+        real = _SafeConsole() if _SafeConsole is not None else _Console()
         object.__setattr__(self, "_real", real)
         return real
 

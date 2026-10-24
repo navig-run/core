@@ -1,7 +1,7 @@
 {
-  "navigVersion": "3.28.0",
-  "sourceCommit": "c86baf6240",
-  "generatedAt": "2026-10-20",
+  "navigVersion": "3.29.0",
+  "sourceCommit": "657ce16632",
+  "generatedAt": "2026-10-24",
   "source": "local",
   "items": [
     {
@@ -2615,7 +2615,7 @@
       "commands": [
         "navig pentest"
       ],
-      "readme": "The authorized-only offensive-security toolkit: passive recon (RDAP/whois, DNS, crt.sh subdomains, HTTP fingerprint) plus gated active recon (port scan, subdomain probe, template checks) behind a written-authorization engagement gate. Wired into `navig pentest` (+ `navig-warroom` / `warroom-osint` conveniences)\n\n## Commands\n\n- `navig pentest`\n\n## Install\n\n```\npip install navig-pentest\n```"
+      "readme": "The authorized-only offensive-security toolkit: passive recon (RDAP/whois, DNS, crt.sh subdomains, HTTP fingerprint), gated active recon (port scan, subdomain probe, template checks) behind a written-authorization engagement gate, plus direct active Wi-Fi verbs (monitor, capture, bounded deauth, cracking) with practical guardrails. Wired into `navig pentest` (+ `navig-warroom` / `warroom-osint` conveniences)\n\n## Commands\n\n- `navig pentest`\n\n## Install\n\n```\npip install navig-pentest\n```"
     },
     {
       "slug": "navig-pipeline",
@@ -5597,7 +5597,7 @@
           "commands": [
             "navig pentest"
           ],
-          "readme": "The authorized-only offensive-security toolkit: passive recon (RDAP/whois, DNS, crt.sh subdomains, HTTP fingerprint) plus gated active recon (port scan, subdomain probe, template checks) behind a written-authorization engagement gate. Wired into `navig pentest` (+ `navig-warroom` / `warroom-osint` conveniences)\n\n## Commands\n\n- `navig pentest`\n\n## Install\n\n```\npip install navig-pentest\n```"
+          "readme": "The authorized-only offensive-security toolkit: passive recon (RDAP/whois, DNS, crt.sh subdomains, HTTP fingerprint), gated active recon (port scan, subdomain probe, template checks) behind a written-authorization engagement gate, plus direct active Wi-Fi verbs (monitor, capture, bounded deauth, cracking) with practical guardrails. Wired into `navig pentest` (+ `navig-warroom` / `warroom-osint` conveniences)\n\n## Commands\n\n- `navig pentest`\n\n## Install\n\n```\npip install navig-pentest\n```"
         },
         {
           "slug": "navig-pipeline",

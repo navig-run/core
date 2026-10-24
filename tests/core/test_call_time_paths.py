@@ -339,9 +339,11 @@ def test_audio_menu_store_dir(cfg):
 
 def test_ipc_pipe_paths(cfg):
     from navig.ipc_pipe import _promoted_flag, _shadow_log
+    from navig.platform import paths
 
     assert _promoted_flag() == cfg / ".ipc_promoted"
-    assert _shadow_log() == cfg / "shadow_ipc_anomalies.log"
+    # the anomaly log follows the canonical log dir, not the config dir
+    assert _shadow_log() == paths.log_dir() / "shadow_ipc_anomalies.log"
 
 
 # ---------------------------------------------------------------------------
@@ -357,8 +359,10 @@ def test_profiler_perf_dir(cfg):
 
 def test_trace_log_path(cfg):
     from navig.llm.routing.trace import _trace_log_path
+    from navig.platform import paths
 
-    assert _trace_log_path() == cfg / "logs" / "router_traces.jsonl"
+    # router traces live in the canonical log dir (writers were retargeted 2026-10-22)
+    assert _trace_log_path() == paths.log_dir() / "router_traces.jsonl"
 
 
 def test_onboarding_pinged_marker(cfg):
@@ -473,7 +477,10 @@ def test_service_manager_paths(cfg):
     )
 
     assert _navig_home() == cfg
-    assert _log_dir() == cfg / "logs"
+    from navig.platform import paths
+
+    # the service manager writes the daemon log to the canonical log dir, not <config>/logs
+    assert _log_dir() == paths.log_dir()
     assert daemon_dir() == cfg / "daemon"
     assert _stop_flag_path() == cfg / "daemon" / "stop_requested"
     assert _watchdog_deadline_path() == cfg / "daemon" / "stop_watchdog_deadline"

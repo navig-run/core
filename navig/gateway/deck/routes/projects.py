@@ -734,6 +734,153 @@ async def handle_run_stream(request: web.Request) -> web.StreamResponse:
             return resp
 
 
+def _cron_service(request: "web.Request"):
+    """The live gateway CronService when available, else a detached instance.
+
+    Mirrors the schedule route's helper: project work is a READ of the same store,
+    never a second scheduler.
+    """
+    gateway = request.app.get("gateway") if hasattr(request, "app") else None
+    svc = getattr(gateway, "cron_service", None)
+    if svc is not None:
+        return svc
+    from navig.platform import paths  # noqa: PLC0415
+    from navig.scheduler.cron_service import CronService  # noqa: PLC0415
+
+    return CronService(gateway, paths.config_dir() / "scheduler")
+
+
+def _runtime_store():
+    """The RuntimeStore that already holds missions and signed receipts."""
+    from navig.contracts.store import get_runtime_store  # noqa: PLC0415
+
+    return get_runtime_store()
+
+
+def _evidence(cards: list[dict[str, Any]], goals: list[dict[str, Any]], runtime) -> list[dict[str, Any]]:
+    """Missions + execution receipts behind this project's cards and goals.
+
+    This is a READ projection over RuntimeStore; the card never stores a mission id
+    (the link lives in ``mission.metadata.card_id``), and a standing goal carries
+    ``last_receipt_id``. Nothing is written and no execution path changes.
+    """
+    card_ids = {str(c.get("id")) for c in cards}
+    goal_ids = {str(g.get("id")) for g in goals}
+    rows: list[dict[str, Any]] = []
+    try:
+        missions = runtime.list_missions(limit=500)
+        receipts = {r.mission_id: r for r in runtime.list_receipts(limit=500)}
+        for m in missions:
+            meta = getattr(m, "metadata", None) or {}
+            cid = str(meta.get("card_id") or "")
+            gid = str(meta.get("goal_id") or "")
+            if cid not in card_ids and gid not in goal_ids:
+                continue
+            r = receipts.get(m.mission_id)
+            kind = "card" if cid in card_ids else "goal"
+            rows.append({
+                "kind": kind,
+                "id": cid if kind == "card" else gid,
+                "mission_id": m.mission_id,
+                "title": m.title,
+                "status": getattr(m.status, "value", str(m.status)),
+                "receipt_id": r.receipt_id if r else None,
+                "outcome": getattr(r.outcome, "value", str(r.outcome)) if r else None,
+                "completed_at": m.completed_at,
+                "error": r.error if r else None,
+            })
+        known = {r.get("receipt_id") for r in rows}
+        for g in goals:
+            rid = g.get("last_receipt_id")
+            if not rid or rid in known:
+                continue
+            r = runtime.get_receipt(str(rid))
+            if r is None:
+                continue
+            rows.append({
+                "kind": "goal",
+                "id": str(g.get("id")),
+                "mission_id": r.mission_id,
+                "title": r.title,
+                "status": getattr(r.outcome, "value", str(r.outcome)),
+                "receipt_id": r.receipt_id,
+                "outcome": getattr(r.outcome, "value", str(r.outcome)),
+                "completed_at": r.completed_at,
+                "error": r.error,
+            })
+    except Exception:  # noqa: BLE001 — evidence must never 500 the work rollup
+        logger.warning("project work: could not read execution evidence", exc_info=True)
+    rows.sort(key=lambda e: str(e.get("completed_at") or ""), reverse=True)
+    return rows[:50]
+
+
+def _next_action(cards: list[dict[str, Any]], todos: list[dict[str, Any]], jobs: list[dict[str, Any]]) -> dict | None:
+    """The soonest known scheduled moment across this project's work."""
+    candidates: list[tuple[str, str, str, str]] = []
+    for t in todos:
+        if t.get("due_at"):
+            candidates.append((str(t["due_at"]), "todo", str(t.get("id")), str(t.get("title") or "todo")))
+    for j in jobs:
+        if j.get("next_run"):
+            candidates.append((str(j["next_run"]), "cron", str(j.get("id")), str(j.get("name") or "cron")))
+    if not candidates:
+        return None
+    at, kind, rid, title = min(candidates, key=lambda x: x[0])
+    return {"at": at, "kind": kind, "id": rid, "title": title}
+
+
+async def handle_project_work(request: "web.Request") -> "web.Response":
+    """Read-only work rollup for one project.
+
+    Reads the existing stores by the existing ``space`` reference: board goals,
+    cards (kind='card') and PIM todos (kind='todo') from BoardStore, plus cron jobs
+    tagged with the project and the missions/receipts already recorded for them.
+    No new store, no write, no second scheduler.
+    """
+    def _work() -> dict[str, Any]:
+        from navig.store.board import get_board_store  # noqa: PLC0415
+
+        pid, root = _root(request.match_info["id"])
+        store = get_board_store()
+        goals = store.list_goals(space=pid)
+        cards = store.list_cards(space=pid)
+        todos = store.list_todos(space=pid)
+        try:
+            from navig.projects.gitinfo import worktrees  # noqa: PLC0415
+            checkouts = worktrees(root)
+        except Exception:  # noqa: BLE001 — a repo read must not 500 the rollup
+            logger.warning("project work: could not read git worktrees", exc_info=True)
+            checkouts = []
+        try:
+            jobs = [
+                j.to_dict() for j in _cron_service(request).list_jobs()
+                if getattr(j, "space", None) == pid
+            ]
+        except Exception:  # noqa: BLE001 — a rollup must not 500 because cron is down
+            logger.warning("project work: could not read cron jobs", exc_info=True)
+            jobs = []
+        return {
+            "project": {"id": pid, "root": str(root)},
+            "worktrees": checkouts,
+            "goals": goals,
+            "cards": cards,
+            "todos": todos,
+            "crons": jobs,
+            "evidence": _evidence(cards, goals, _runtime_store()),
+            "next_action": _next_action(cards, todos, jobs),
+            "counts": {
+                "goals": len(goals),
+                "cards": len(cards),
+                "open_cards": sum(1 for c in cards if not c.get("completed_at")),
+                "todos": len(todos),
+                "open_todos": sum(1 for t in todos if not t.get("completed_at")),
+                "crons": len(jobs),
+            },
+        }
+
+    return await _run(_work)
+
+
 def register(app: web.Application) -> None:
     """Mount the project routes. Static segments before ``{id}``."""
     r = app.router
@@ -746,6 +893,7 @@ def register(app: web.Application) -> None:
     r.add_get("/api/deck/projects/runs/{run}/log", handle_run_log)
     r.add_get("/api/deck/projects/runs/{run}/stream", handle_run_stream)
     r.add_get("/api/deck/projects/{id}", handle_project_get)
+    r.add_get("/api/deck/projects/{id}/work", handle_project_work)
     r.add_patch("/api/deck/projects/{id}/prefs", handle_project_prefs)
     r.add_post("/api/deck/projects/{id}/environments", handle_project_environments_op)
     r.add_get("/api/deck/projects/{id}/docs", handle_project_docs)

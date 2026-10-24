@@ -56,6 +56,37 @@ def send(
         )
         raise typer.Exit(1)
 
+    # Duplicate-send guard. A scheduled daily card is keyed per DAY (one briefing a day,
+    # whatever the body says), so a retry loop or a caller running twice cannot flood the
+    # operator — the 2026-10-22 incident sent the same briefing 12 times in 25 minutes.
+    # Other types are keyed by content for a short cooldown, which absorbs retries while
+    # still letting a genuinely different message through.
+    import hashlib  # noqa: PLC0415
+    import time  # noqa: PLC0415
+
+    from navig.notify import dedupe  # noqa: PLC0415
+
+    daily = {"briefing", "digest", "checkin", "review"}
+    if type_key in daily:
+        day = time.strftime("%Y-%m-%d")
+        dedupe_key = f"send:{type_key}:{day}"
+        window_s = 20 * 3600
+    else:
+        digest = hashlib.sha256(f"{title}\n{body}".encode()).hexdigest()[:16]
+        dedupe_key = f"send:{type_key}:{digest}"
+        window_s = 15 * 60
+
+    if not dedupe.claim(dedupe_key, window_s):
+        if json_out:
+            import json  # noqa: PLC0415
+
+            ch.console.print_json(
+                json.dumps({"skipped": "duplicate", "type": type_key, "key": dedupe_key})
+            )
+        else:
+            ch.info(f"{type_key}: already delivered — duplicate send suppressed.")
+        return
+
     outcome = asyncio.run(dispatch(type_key, title, body))
     channels = (outcome or {}).get("channels") or []
 
@@ -66,8 +97,9 @@ def send(
         return
 
     if not channels:
-        # Not an error: a type the operator muted everywhere legitimately reaches
-        # nothing. Say so plainly instead of implying a send happened.
+        # Nothing reached a channel (muted everywhere / quiet hours): give the claim
+        # back, or a legitimate later send would be suppressed for the whole window.
+        dedupe.release(dedupe_key)
         ch.warning(
             f"{type_key}: delivered to no channel.",
             "Every channel for this type is off, or quiet hours are active.",
@@ -86,6 +118,7 @@ def send(
         # and a cron that retries on partial success would double-notify.
         ch.warning(f"failed: {', '.join(failed)}")
         if not delivered:
+            dedupe.release(dedupe_key)
             raise typer.Exit(1)
 
 

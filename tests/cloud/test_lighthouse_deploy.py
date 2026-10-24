@@ -39,9 +39,10 @@ def _err(msg):
 class FakeRequests:
     """Routes by (method, url-substring) to canned (status, payload)."""
 
-    def __init__(self, routes, exists_status=404):
+    def __init__(self, routes, exists_status=404, do_classes=()):
         self._routes = routes
         self._exists_status = exists_status
+        self._do_classes = list(do_classes)
         self.calls = []
         self.last_put_files = None
 
@@ -59,6 +60,19 @@ class FakeRequests:
 
     def get(self, url, **kw):
         self.calls.append(("GET", url))
+        if url.endswith("/workers/durable_objects/namespaces"):
+            # What the (already deployed) script declares. `OwnershipRecord` only
+            # exists after the DO migration that added it, so this is the honest
+            # signal a redeploy uses to decide whether to send another migration.
+            return FakeResp(
+                200,
+                _ok(
+                    [
+                        {"class": cls, "script": "navig-lighthouse", "name": cls.lower()}
+                        for cls in self._do_classes
+                    ]
+                ),
+            )
         if "/workers/scripts/" in url and "/subdomain" not in url:
             return FakeResp(self._exists_status, _ok(None))
         return FakeResp(*self._match("GET", url))
@@ -102,24 +116,49 @@ def test_deploy_first_time_includes_migration(monkeypatch):
     assert result.account_id == "acc123"
     meta = _put_metadata(fake)
     assert meta["main_module"] == "index.js"
-    assert meta["bindings"][0]["class_name"] == "BrainSocket"
-    assert meta["migrations"] == {"new_tag": "v1", "new_sqlite_classes": ["BrainSocket"]}
+    # Two Durable Objects travel with every deploy: the brain socket (transport)
+    # and the ownership AUTHORITY (the shared owner record).
+    classes = {b["name"]: b["class_name"] for b in meta["bindings"]}
+    assert classes == {"BRAIN": "BrainSocket", "OWNERSHIP": "OwnershipRecord"}
+    # First deploy: both SQLite-backed classes declared in one migration.
+    assert meta["migrations"] == {
+        "new_tag": "v2",
+        "new_sqlite_classes": ["BrainSocket", "OwnershipRecord"],
+    }
     # workers.dev route must be enabled
     assert ("POST", "https://api.cloudflare.com/client/v4/accounts/acc123/workers/scripts/navig-lighthouse/subdomain") in [
         (m, u) for (m, u) in fake.calls
     ]
 
 
-def test_redeploy_omits_migration(monkeypatch):
-    fake = FakeRequests(_routes(), exists_status=200)  # script already exists
+def test_redeploy_omits_migration_once_both_classes_exist(monkeypatch):
+    fake = FakeRequests(
+        _routes(), exists_status=200, do_classes=("BrainSocket", "OwnershipRecord")
+    )
     monkeypatch.setattr(ld, "requests", fake)
     result = ld.deploy(token="tok")
     assert result.created is False
     assert "migrations" not in _put_metadata(fake)
 
 
+def test_upgrading_an_existing_edge_declares_only_the_ownership_class(monkeypatch):
+    """The normal v1.7.0 → v1.8.0 path: BrainSocket exists, OwnershipRecord doesn't."""
+    fake = FakeRequests(_routes(), exists_status=200, do_classes=("BrainSocket",))
+    monkeypatch.setattr(ld, "requests", fake)
+    ld.deploy(token="tok")
+    # Cloudflare rejects an upgrade that omits the tag it starts from
+    # ("got tag '' when expected tag is 'v1'"). The live v1.7.0 edge carries v1.
+    assert _put_metadata(fake)["migrations"] == {
+        "new_tag": "v2",
+        "new_sqlite_classes": ["OwnershipRecord"],
+        "old_tag": "v1",
+    }
+
+
 def test_fresh_forces_migration_even_when_exists(monkeypatch):
-    fake = FakeRequests(_routes(), exists_status=200)
+    fake = FakeRequests(
+        _routes(), exists_status=200, do_classes=("BrainSocket", "OwnershipRecord")
+    )
     monkeypatch.setattr(ld, "requests", fake)
     ld.deploy(token="tok", fresh=True)
     assert "migrations" in _put_metadata(fake)
@@ -167,3 +206,4 @@ def test_multiple_accounts_requires_explicit_id(monkeypatch):
     monkeypatch.setattr(ld, "requests", fake)
     with pytest.raises(ld.DeployError, match="multiple accounts"):
         ld.deploy(token="tok")
+

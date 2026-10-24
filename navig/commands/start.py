@@ -52,10 +52,18 @@ def run_quick_start(
             ch.info("  Add to .env file: TELEGRAM_BOT_TOKEN=your-token")
             raise typer.Exit(1)
 
-    if gateway and port is None:
+    host = "127.0.0.1"
+    if gateway:
         from navig.commands.gateway import _load_gateway_cli_defaults
 
-        port, _host = _load_gateway_cli_defaults()
+        _port, _configured_host = _load_gateway_cli_defaults()
+        if port is None:
+            port = _port
+        # A configured host is an explicit decision (a deliberate mesh node binds
+        # wider on purpose). The DEFAULT is loopback: the gateway's /health is
+        # anonymous, so a laptop on café Wi-Fi must not answer the whole LAN — and
+        # remote access belongs to the Lighthouse uplink, not to a bare port.
+        host = _configured_host or host
 
     if bot and background:
         # One policy for every background bot launch (navig.daemon.launch) — the
@@ -90,4 +98,4 @@ def run_quick_start(
         from navig.commands.gateway import gateway_start
 
         ch.info(f"Starting NAVIG Gateway on port {port}...")
-        gateway_start(port=port, host="0.0.0.0", background=background)
+        gateway_start(port=port, host=host, background=background)

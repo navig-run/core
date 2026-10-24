@@ -1324,3 +1324,22 @@ def test_split_exec_command_keeps_windows_paths(monkeypatch):
         "03:30",
     ]
     assert cron_service.split_exec_command("   ") == []
+
+
+# ─── CronJob project association (Slice A) ───────────────────────────────────
+
+
+def test_job_space_roundtrips_through_the_store(tmp_path):
+    svc = _svc(tmp_path)
+    job = svc.add_job("GAZE status", "0 9 * * *", "navig status", space="gaze")
+    assert job.space == "gaze"
+    assert svc.add_job("unscoped", "0 9 * * *", "navig status").space is None
+
+    reloaded = CronService(gateway=None, storage_path=tmp_path)
+    stored = reloaded.get_job(job.id)
+    assert stored is not None and stored.space == "gaze"
+    assert stored.to_dict()["space"] == "gaze"
+
+    reloaded.update_job(job.id, space=None)
+    assert reloaded.get_job(job.id).space is None
+

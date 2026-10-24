@@ -235,7 +235,9 @@ def _modules() -> list[StoreItem]:
             source=str(m.get("source", "builtin")),
             actions=actions,
             detail={"kind": m.get("kind"), "category": m.get("category"),
-                    "capability": m.get("capability"), "icon": m.get("icon")},
+                    "capability": m.get("capability"), "icon": m.get("icon"),
+                    # e.g. ["cli:perplexity"] — which surfaces host this module.
+                    "surfaces": list(m.get("surfaces") or [])},
         ))
     return items
 
@@ -276,11 +278,17 @@ def _plugins() -> list[StoreItem]:
 
 
 def _skills() -> list[StoreItem]:
-    from navig.plugins.package import installed_plugin_roots
+    from navig.plugins.package import plugin_capability_dir_owners
     from navig.skills.loader import load_all_skills
 
-    # Resolve each root ONCE, not per-skill (root.resolve() is loop-invariant).
-    resolved_roots = {root.name: root.resolve() for root in installed_plugin_roots()}
+    # Resolve each owner dir ONCE (both install shapes: package dirs AND pip
+    # entry-point packages — the old root-only map attributed every pip-plugin
+    # skill to "local", so navig-perplexity's skills never grouped with the
+    # plugin they ship inside).
+    resolved_owners = {
+        str(dir_path): owner
+        for dir_path, owner in plugin_capability_dir_owners("skills").items()
+    }
     items: list[StoreItem] = []
     for skill in load_all_skills():
         sid = getattr(skill, "id", None) or getattr(skill, "name", None)
@@ -290,10 +298,11 @@ def _skills() -> list[StoreItem]:
         provider = None
         if path is not None:
             try:
-                skill_path = Path(path).resolve()  # once per skill
-                for name, root in resolved_roots.items():
-                    if skill_path.is_relative_to(root):
-                        provider = name
+                skill_path = str(Path(path).resolve())  # once per skill
+                # Longest matching dir wins so a nested dir can't steal the row.
+                for dir_path in sorted(resolved_owners, key=len, reverse=True):
+                    if skill_path.startswith(dir_path):
+                        provider = resolved_owners[dir_path]
                         break
             except Exception:  # noqa: BLE001
                 pass
@@ -305,7 +314,11 @@ def _skills() -> list[StoreItem]:
             state=WireState.WIRED.value,
             provider=provider,
             source="plugin" if provider else "local",
-            detail={"path": str(path) if path else None},
+            detail={
+                "path": str(path) if path else None,
+                # safe | elevated | destructive — the skill's own declared risk.
+                "safety": str(getattr(skill, "safety", "") or "") or None,
+            },
         ))
     return items
 
@@ -382,14 +395,37 @@ def _mcp_servers() -> list[StoreItem]:
 
 
 def _connectors() -> list[StoreItem]:
+    from navig.connectors.bootstrap import ensure_manifests_loaded
     from navig.connectors.registry import get_connector_registry
 
+    # Manifests only — no OAuth/vault. Without this the collector saw an EMPTY
+    # registry in a fresh process (`navig store list` showed zero connectors
+    # while `navig connector list` showed seventeen), because nothing had
+    # bootstrapped the classes yet. The manifests path registers classes in
+    # ~0.4 s; the full load's vault phase costs 5-6 s and is not listing work.
+    ensure_manifests_loaded()
+    registry = get_connector_registry()
+
     items: list[StoreItem] = []
-    for c in get_connector_registry().list_all():
-        cid = str(c.get("id", ""))
-        if not cid:
+    for cid, cls in sorted(registry.all_classes().items()):
+        # Read every manifest field INSIDE a guard: one property that raises
+        # costs that connector a row, not the catalogue.
+        try:
+            m = cls.manifest
+            label = str(m.display_name or cid)
+            description = str(m.description or "")
+            domain = str(m.domain.value if hasattr(m.domain, "value") else m.domain or "")
+            auth_mode = str(getattr(m, "auth_mode", "") or "")
+            requires_oauth = bool(getattr(m, "requires_oauth", False))
+            can_search = bool(getattr(m, "can_search", False))
+            can_fetch = bool(getattr(m, "can_fetch", False))
+            can_act = bool(getattr(m, "can_act", False))
+            key_fields = [str(getattr(kf, "name", kf)) for kf in (getattr(m, "key_fields", ()) or ())]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("connector %s: manifest access failed (%s) — skipping", cid, exc)
             continue
-        status = str(c.get("status", "disconnected"))
+        inst = registry.peek_instance(cid)
+        status = inst.status.value if inst else "disconnected"
         if status in {"connected", "degraded"}:
             state = WireState.WIRED
         elif status in {"error", "failed"}:
@@ -399,12 +435,22 @@ def _connectors() -> list[StoreItem]:
         items.append(StoreItem(
             id=f"connector:{cid}",
             kind="connector",
-            label=str(c.get("name") or cid),
-            description=str(c.get("description") or ""),
+            label=label,
+            description=description,
             state=state.value,
             degraded=status == "degraded",
-            source=str(c.get("domain", "")),
-            detail={"status": status},
+            source=domain,
+            detail={
+                "status": status,
+                # Names only, never values: auth_mode is "oauth"/"api_key"/…,
+                # key_fields are field NAMES ("api_key"), not credentials.
+                "auth_mode": auth_mode,
+                "requires_oauth": requires_oauth,
+                "key_fields": key_fields,
+                "can_search": can_search,
+                "can_fetch": can_fetch,
+                "can_act": can_act,
+            },
         ))
     return items
 

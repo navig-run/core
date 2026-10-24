@@ -388,6 +388,19 @@ class ConnectorAuthManager:
         # Attempt refresh
         config = self.get_provider_config(connector_id)
         if not config:
+            # Discovery surfaces (MCP listing, the Store) register connector
+            # classes without the OAuth phase; a refresh in such a process
+            # must still find the provider config. Register it lazily, once,
+            # for this connector only — the full load would open the vault
+            # again for six other connectors nobody asked about.
+            try:
+                from navig.connectors.bootstrap import register_oauth_providers
+
+                register_oauth_providers(only=connector_id)
+            except Exception as _reg_exc:  # noqa: BLE001 — fall through to the same error
+                logger.debug("Lazy OAuth provider registration failed: %s", _reg_exc)
+            config = self.get_provider_config(connector_id)
+        if not config:
             raise ConnectorNotFoundError(connector_id)
 
         if not creds.refresh:

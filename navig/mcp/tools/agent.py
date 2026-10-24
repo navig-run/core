@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from navig.core.yaml_io import atomic_write_text
-from navig.platform.paths import config_dir
+from navig.platform.paths import config_dir, log_dir
 
 
 def register(server: Any) -> None:
@@ -398,7 +398,7 @@ def _tool_agent_goal_cancel(server: Any, args: dict[str, Any]) -> dict[str, Any]
 
 def _read_recent_remediation_log(limit: int = 100) -> list[dict[str, Any]]:
     """Parse recent remediation log lines into structured entries."""
-    log_path = config_dir() / "logs" / "remediation.log"
+    log_path = log_dir() / "remediation.log"
     if not log_path.exists():
         return []
 
@@ -456,10 +456,9 @@ def _tool_agent_learning_run(server: Any, args: dict[str, Any]) -> dict[str, Any
     cutoff = datetime.now() - timedelta(days=days)
     from navig.platform.paths import debug_log_path
 
-    # Same split as commands/agent.py: debug.log is in log_dir(), remediation.log is not.
-    log_dir = config_dir() / "logs"
+    # Both files live in log_dir(); remediation.log used to be under config_dir()/logs.
     debug_log = debug_log_path()
-    remediation_log = log_dir / "remediation.log"
+    remediation_log = log_dir() / "remediation.log"
 
     patterns = {
         "connection_failed": r"connection.*(failed|refused|timeout)",

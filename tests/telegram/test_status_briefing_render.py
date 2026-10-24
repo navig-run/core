@@ -38,14 +38,19 @@ async def test_status_snapshot_render(monkeypatch):
     assert platform.node() in text
     # Progression belongs to the Deck/OS surface — gone from the session card.
     assert "Progression" not in text
-    # Deck-only buttons removed.
+    # The session card now carries its own surfaces: spaces (a brain concept, not a
+    # deck-only one), plans, and the three initiative detail cards. Deck-only
+    # "Switch AI" stays out.
     assert "Switch AI" not in labels
-    assert "Spaces" not in labels
-    assert "Home" not in labels
+    assert "Spaces" in labels and "Plans" in labels
+    assert "Brain" in labels and "Genesis" in labels and "Self" in labels
     # Reminders button now points at the registered command id (was slash:/reminders,
     # a leading-slash typo that matched nothing).
     assert "slash:reminders" in callbacks
     assert "slash:/reminders" not in callbacks
+    # The new detail cards are wired to their own callbacks.
+    for wanted in ("nav:brain", "nav:genesis", "nav:self"):
+        assert wanted in callbacks, (wanted, callbacks)
 
 
 async def test_briefing_names_the_host_and_trims_deck_buttons(monkeypatch):

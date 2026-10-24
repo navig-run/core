@@ -45,8 +45,9 @@ def _get_kb(gw):
         return getter()
     if not hasattr(gw, "_knowledge_base"):
         from navig.memory import KnowledgeBase
+        from navig.memory.knowledge_migration import resolve_readable_knowledge_db_path
 
-        db_path = gw.config.storage_dir / "knowledge.db"
+        db_path = resolve_readable_knowledge_db_path()
         gw._knowledge_base = KnowledgeBase(db_path, embedding_provider=None)
     return gw._knowledge_base
 

@@ -356,7 +356,9 @@ WantedBy=default.target
         """Generate launchd plist file content."""
         python_exe = sys.executable
         navig_module = "navig"
-        log_dir = self.home / ".navig" / "logs"
+        from navig.platform.paths import log_dir as _log_dir_path
+
+        log_dir = _log_dir_path()
         log_dir.mkdir(parents=True, exist_ok=True)
 
         return f"""<?xml version="1.0" encoding="UTF-8"?>

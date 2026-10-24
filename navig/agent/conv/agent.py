@@ -332,6 +332,11 @@ class ConversationalAgent:
         self._ai_client = ai_client
         self._on_status_update: Callable[[StatusEvent], Awaitable[None]] | None = None
         self._session_id: str = str(uuid.uuid4())[:8]
+        #: The operator's own words for the current turn. A channel that
+        #: enriches the model-visible message (web context, formatting) sets
+        #: this through the router so the conversation store keeps the real
+        #: user turn, not the enrichment (incident 2026-10-22).
+        self._raw_user_message: str = ""
         self.on_status_update = on_status_update  # triggers property setter — shim applied
         self._soul_loader = soul_loader or get_soul_loader()
         self._history = history or ConversationHistory(user_id="default")
@@ -360,6 +365,9 @@ class ConversationalAgent:
         self._last_detected_language: str = "en"
         self._session_fallback_language: str = ""
         self._has_text_detected: bool = False
+        # Lazy NAVIG MIND prompt context (None = unresolved). Resolved once per
+        # session so the system prompt stays byte-stable for the prompt cache.
+        self._mind_block: str | None = None
         self._last_user_message = self._tier_override = ""
         # Set by run_agentic when it rotated to a sibling account (e.g. a capped
         # Claude Max subscription → another one). Callers may read it to surface
@@ -900,13 +908,20 @@ class ConversationalAgent:
         # — they're query- or time-specific, so appending them to the cached system
         # block would bust the tools+system prompt cache every turn.
         ctx = self._soul_context()
-        return self._soul_loader.build_prompt(
+        prompt = self._soul_loader.build_prompt(
             ctx,
             lang_instruction=lang_instruction,
             awareness=self._build_session_context(),
             capabilities=self._capability_summary(),
             style=style,
         )
+        if self._mind_block is None:
+            from navig.mind import mind_prompt_context
+
+            self._mind_block = mind_prompt_context()
+        if self._mind_block:
+            prompt = f"{prompt}\n\n{self._mind_block}"
+        return prompt
 
     def _soul_context(self) -> "SoulContext":
         """This session's resolved identity, falling back to the loader default.
@@ -939,12 +954,43 @@ class ConversationalAgent:
             logger.debug("_capability_summary skipped: %s", exc)
             return ""
 
+    def _capability_awareness_block(self, message: str) -> str:
+        """Runtime-derived access facts when the operator asks whether NAVIG can reach a machine.
+
+        Incident 2026-10-22: "Can you read my DeepSeek conversations on my computer
+        Neuron?" needs configured-route vs authorization vs reachability kept apart.
+        The facts ride the user turn (never the cached system block) and are not
+        persisted — the conversation records the operator's words only.
+        """
+        try:
+            from navig.agent.capability_awareness import prompt_block
+
+            return prompt_block(message)
+        except Exception:  # noqa: BLE001 — awareness must never break a turn
+            logger.debug("capability awareness skipped", exc_info=True)
+            return ""
+
     def _planner_fallback(self) -> str:
         """Return a planner-generated response, or an actionable 'no provider' message."""
         result = self._planner.plan(self._last_user_message)
         if result:
             return json.dumps(result)
         return "No AI provider configured — run `navig config show` to check your setup."
+
+    def _consume_raw_user_text(self, message: str) -> str:
+        """The text the conversation records as the user's turn.
+
+        The model sees an enriched message (the cached system prompt stays
+        stable, so volatile context rides the user turn). The *conversation*
+        records what the operator actually typed: persisting the enrichment
+        replayed formatting rules and web-search context as if the user had
+        written them, which is what produced the "system context dump" reply on
+        2026-10-22. Single use — a stale raw message must never label an
+        agent-to-agent turn.
+        """
+        raw = str(getattr(self, "_raw_user_message", "") or "")
+        self._raw_user_message = ""
+        return raw or message
 
     async def chat(
         self, message: str, tier_override: str = "", *, on_partial=None, effort: str = ""
@@ -982,7 +1028,8 @@ class ConversationalAgent:
 
         # Fallback: single-shot path (no tools configured / registration failed).
         self._last_user_message, self._tier_override = message, tier_override
-        self._history.add("user", message)
+        _user_turn = self._consume_raw_user_text(message)
+        self._history.add("user", _user_turn)
         response = await self._get_ai_response(message)
         # (The former soul `shape_response`/`ContextSignal`/`get_mood_profile` post-processing
         # was removed from navig.agent.soul; this block always fell into its except and
@@ -1400,6 +1447,8 @@ class ConversationalAgent:
                 prefix_parts.append(skills_block)
             if recall := self._recall_block(message):
                 prefix_parts.append(recall)
+            if capability_block := self._capability_awareness_block(message):
+                prefix_parts.append(capability_block)
         if prefix_parts:
             _user_content = "\n\n".join([*prefix_parts, message])
 
@@ -2671,7 +2720,8 @@ class ConversationalAgent:
 
         # Persist both turns through the canonical add() path so JSONL is always updated.
         # Previously the setter path was used which bypassed JSONL persistence entirely.
-        self._history.add("user", message)
+        _user_turn = self._consume_raw_user_text(message)
+        self._history.add("user", _user_turn)
         self._history.add("assistant", final_response)
 
         # Deeper memory (write path): feed the turn to the auto-extractor and let
@@ -2680,7 +2730,7 @@ class ConversationalAgent:
         try:
             _, _extractor = self._get_memory_components()
             if _extractor is not None:
-                _extractor.record_turn("user", message)
+                _extractor.record_turn("user", _user_turn)
                 _extractor.record_turn("assistant", final_response)
                 _task = asyncio.create_task(_extractor.maybe_extract())
                 # Swallow background errors so an extraction failure never surfaces.

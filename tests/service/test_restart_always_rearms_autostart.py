@@ -37,6 +37,10 @@ from navig.commands import service as service_cmd
 
 DISABLE = "task_scheduler_disable"
 ENABLE = "task_scheduler_enable"
+# Since 2026-10-22 every enable path goes through one gate, so a re-arm may be either the
+# raw call or the guarded wrapper. The invariant is "the task is re-armed on every exit",
+# not "by which name" -- so both count.
+REARM_NAMES = (ENABLE, "_autostart_enable_guarded")
 
 
 def _restart_tree() -> ast.AST:
@@ -52,6 +56,14 @@ def _call_lines(tree: ast.AST, name: str) -> list[int]:
             called = getattr(func, "id", None) or getattr(func, "attr", None)
             if called == name:
                 out.append(node.lineno)
+    return sorted(out)
+
+
+def _rearm_lines(tree: ast.AST) -> list[int]:
+    """Every line that re-arms autostart, raw or through the opt-out gate."""
+    out: list[int] = []
+    for name in REARM_NAMES:
+        out += _call_lines(tree, name)
     return sorted(out)
 
 
@@ -85,7 +97,7 @@ def test_every_exit_after_the_disable_rearms_autostart() -> None:
     """
     tree = _restart_tree()
     disable_at = min(_call_lines(tree, DISABLE))
-    enables = _call_lines(tree, ENABLE)
+    enables = _rearm_lines(tree)
     assert enables, f"service_restart never calls {ENABLE}() -- autostart stays off"
 
     unguarded = [
@@ -109,7 +121,7 @@ def test_the_final_rearm_is_not_conditional_on_a_successful_start() -> None:
     failed still has to leave autostart armed, because it disabled it.
     """
     tree = _restart_tree()
-    last_enable = max(_call_lines(tree, ENABLE))
+    last_enable = max(_rearm_lines(tree))
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.If):

@@ -564,6 +564,34 @@ class NavigGateway:
         print(c("38;5;240", BL + H * (inner + 2) + BR), flush=True)
         print("", flush=True)
 
+    def _run_startup_retention(self) -> None:
+        """Prune stale local state (sessions / tool spillover) ONCE per gateway boot.
+
+        Both cleanups shipped with a documented TTL and no caller, so ``sessions/`` reached
+        5,395 files on a live install while ``tmp/tool_spillover`` kept files past its 1-hour
+        TTL. This is the production caller: windows come from ``retention.sessions_days`` /
+        ``retention.spillover_days`` (defaults 30 / 14 days), sessions currently loaded in
+        this gateway are protected by key, and the sweep is a no-op under pytest (see
+        :mod:`navig.agent.retention`).
+
+        Best-effort by contract: a sweep failure is logged at WARNING and the boot continues —
+        housekeeping must never be able to stop the daemon from starting.
+        """
+        try:
+            from navig.agent.retention import run_retention  # noqa: PLC0415
+
+            report = run_retention(
+                gateway_sessions_dir=self.sessions.storage_dir,
+                keep_session_keys=tuple(self.sessions.sessions),
+                config=self.config_manager,
+            )
+            if report.removed:
+                logger.info("Startup retention: %s", report.summary())
+            elif report.skipped_reason:
+                logger.debug("Startup retention skipped: %s", report.skipped_reason)
+        except Exception as exc:  # noqa: BLE001 — housekeeping must never block boot
+            logger.warning("Startup retention sweep failed (boot continues): %s", exc)
+
     async def start(self):
         """Start the gateway server and all subsystems."""
         if self.running:
@@ -593,6 +621,10 @@ class NavigGateway:
         _t0_mono = _time_mod.monotonic()
 
         logger.info("Starting NAVIG Gateway...")
+
+        # Housekeeping before anything is reachable: prune session/tool-spillover files past
+        # their retention windows (retention.<days> knobs). No-op under pytest; never raises.
+        self._run_startup_retention()
 
         # Narrator: a styled, TTY-only "boot story" so the operator can read
         # what's coming up at a glance. Silent when piped/cron/file — the
@@ -792,6 +824,24 @@ class NavigGateway:
         logger.debug("[startup] Channels: %.2fs", _dt)
         _boot_step("channels", _dt, icon="radio")
 
+        # Keep the Brain lease alive: a lease that stops heartbeating expires, and
+        # expiry is exactly what permits a takeover. Only the owner holds it, so a
+        # non-owner (or a deployment with no authority configured) simply skips
+        # this — maintenance must never break the boot.
+        self._brain_heartbeat_task: asyncio.Task | None = None
+        try:
+            from navig.brain import guard as _brain_guard  # noqa: PLC0415
+            from navig.brain import heartbeat as _brain_heartbeat  # noqa: PLC0415
+
+            if _brain_guard.is_owner():
+                self._brain_heartbeat_task = asyncio.create_task(
+                    _brain_heartbeat.heartbeat_loop(),
+                    name="brain-lease-heartbeat",
+                )
+                logger.info("brain lease heartbeat started")
+        except Exception as exc:  # noqa: BLE001 - heartbeat is maintenance, not boot
+            logger.debug("brain lease heartbeat not started: %s", exc)
+
         # Wire unified comms dispatcher
         await self._init_comms()
         _boot_step("comms dispatcher", icon="gear")
@@ -986,6 +1036,19 @@ class NavigGateway:
             except Exception:  # noqa: BLE001 — shutdown must not fail on telemetry
                 pass
             self._event_bridge_handle = None
+
+        # Stop the Brain lease heartbeat (started in start()). Losing it only
+        # means the lease will expire later — never a shutdown failure.
+        _brain_hb = getattr(self, "_brain_heartbeat_task", None)
+        if _brain_hb is not None:
+            _brain_hb.cancel()
+            try:
+                await _brain_hb
+            except asyncio.CancelledError:
+                pass
+            except Exception:  # noqa: BLE001 - shutdown must not fail on cleanup
+                pass
+            self._brain_heartbeat_task = None
 
         # Stop queue processor
         if self._queue_task:
@@ -2459,6 +2522,17 @@ class NavigGateway:
             )
             return {"sent": True}
 
+        @self.task_worker.handler("coord:delegate")
+        async def handle_coord_delegate(params):
+            """Run a registered coordination operation and post its evidence to the parent.
+
+            OFF the loop: the operation may touch SQLite (coordination store), so it runs in a
+            thread. It never escalates beyond the registered operation's own behavior.
+            """
+            from navig.coordination.delegation import operation_result  # noqa: PLC0415
+
+            return await asyncio.to_thread(operation_result, params)
+
     def _telegram_approval_responder(self):
         """Resolve an approval button tap through the manager, or None if there is none.
 
@@ -2786,11 +2860,21 @@ class NavigGateway:
         return self._conversation_store
 
     def _get_knowledge_base(self):
-        """Get or create knowledge base."""
+        """Get or create knowledge base, through the one knowledge.db READ resolver.
+
+        This used to be ``self.config.storage_dir / "knowledge.db"``, i.e. a second store at
+        ``<config_dir>/knowledge.db`` while ``navig memory knowledge`` wrote
+        ``<config_dir>/memory/knowledge.db``: a row added on one surface was invisible on the
+        other. Reads now go through ``resolve_readable_knowledge_db_path()``: the canonical
+        ``<data_dir>/knowledge.db`` when it has rows, otherwise a populated LEGACY copy (with
+        an incident + a one-line warning pointing at ``navig db local migrate``) so the switch
+        to the canonical path can never show an EMPTY Knowledge view while rows exist.
+        """
         if not hasattr(self, "_knowledge_base"):
             from navig.memory import KnowledgeBase
+            from navig.memory.knowledge_migration import resolve_readable_knowledge_db_path
 
-            db_path = self.config.storage_dir / "knowledge.db"
+            db_path = resolve_readable_knowledge_db_path()
             self._knowledge_base = KnowledgeBase(db_path, embedding_provider=None)
         return self._knowledge_base
 

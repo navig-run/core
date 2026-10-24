@@ -8,6 +8,18 @@
       "pip": "navig-agentctl",
       "description": "Agent Control Center — sessions, worktrees & tasks (read-only Observer)"
     },
+    "alexa": {
+      "plugin": "navig-alexa",
+      "module": null,
+      "pip": "navig-alexa",
+      "description": "Alexa custom skill server — host the official skill that runs NAVIG by voice, with request verification, interaction-model generation and a tunnel runbook."
+    },
+    "alice": {
+      "plugin": "navig-alice",
+      "module": null,
+      "pip": "navig-alice",
+      "description": "A Yandex Dialog (навык Алисы) webhook for NAVIG, plus Yandex Station and smart-home control through api.iot.yandex.net."
+    },
     "android": {
       "plugin": "navig-mobile",
       "module": null,
@@ -19,6 +31,12 @@
       "module": null,
       "pip": "navig-antivirus",
       "description": "NAVIG Antivirus module — browser-extension malware/PUP scanning, Chrome extension-registry auditing, Chrome profile-index recovery, and a system malware scan (Windows Defender; Malwarebytes best-effort). Wired into `navig antivirus`. A first-party navig plugin (free, toggleable)."
+    },
+    "assistant": {
+      "plugin": "navig-voice",
+      "module": null,
+      "pip": "navig-voice",
+      "description": "A local voice stack for NAVIG, mounted as `navig assistant`: wake word, speech to text, a rules NLU with skills, TTS, and an OpenAI-compatible endpoint that turns Home Assistant Assist into a NAVIG satellite."
     },
     "audio": {
       "plugin": "navig-audio",
@@ -49,6 +67,12 @@
       "module": "chats",
       "pip": "navig-chats",
       "description": "AI chat library — import ChatGPT exports, search every message, folders, export"
+    },
+    "companion": {
+      "plugin": "navig-companion",
+      "module": null,
+      "pip": "navig-companion",
+      "description": "NAVIG's voice companion — speak, brief, think, quiz, music. A first-party navig plugin (free)."
     },
     "contacts": {
       "plugin": "navig-contacts",
@@ -158,11 +182,29 @@
       "pip": "navig-glass",
       "description": "NAVIG Glass viewer — discover the standalone file viewer and open files through it"
     },
+    "google": {
+      "plugin": "navig-google",
+      "module": null,
+      "pip": "navig-google",
+      "description": "AI answers grounded in Google Search through the Gemini API: cited sources, one key, billed per request — the sanctioned alternative to scraping Google's AI Overviews."
+    },
+    "home": {
+      "plugin": "navig-home",
+      "module": null,
+      "pip": "navig-home",
+      "description": "One control plane for the whole home: find every device on the LAN, keep one inventory, read the Livebox DHCP truth, and drive lamps, switches, the robot vacuum, climate, humidifier, purifier, washer, dryer, dishwasher, wake-up light, projector, scenes and speech."
+    },
     "ios": {
       "plugin": "navig-mobile",
       "module": null,
       "pip": "navig-mobile",
       "description": "NAVIG Mobile — pro-grade Android + iOS device operations: connect, device info, apps, file pull, screenshots, backups, plus forensics / spyware-scan / root-jailbreak assist / OSINT, and app UI automation (a11y snapshots, tap/fill, `ui assert` machine checks, evidence capture). Wired into `navig mobile` (+ `navig android` / `navig ios`). A first-party navig plugin (free, toggleable)."
+    },
+    "lights": {
+      "plugin": "navig-lights",
+      "module": null,
+      "pip": "navig-lights",
+      "description": "Control your lamps: Govee over the LAN API or developer cloud, and anything Home Assistant knows — the clean bridge to Alexa and Matter."
     },
     "mobile": {
       "plugin": "navig-mobile",
@@ -175,6 +217,12 @@
       "module": null,
       "pip": "navig-msstore",
       "description": "navig mstore -- Microsoft Store publishing verbs for NAVIG, wrapping the msstore-publish block."
+    },
+    "music": {
+      "plugin": "navig-youtube-music",
+      "module": null,
+      "pip": "navig-youtube-music",
+      "description": "Drive the YouTube Music desktop app (Venipa ytmdesktop2) over its authenticated local API and existing CDP endpoint: verified playback and library/playlist/queue writes, search, downloads, owned-audio uploads, player extras (speed/skip/radio/lyrics/comments), local stats, M3U export, an explainable mood/occasion vibe engine with local feedback, MCP tools, agent skill and structured export."
     },
     "notes": {
       "plugin": "navig-notes",
@@ -198,7 +246,7 @@
       "plugin": "navig-pentest",
       "module": null,
       "pip": "navig-pentest",
-      "description": "NAVIG Pentest — the authorized-only offensive-security toolkit: passive recon (RDAP/whois, DNS, crt.sh subdomains, HTTP fingerprint) plus gated active recon (port scan, subdomain probe, template checks) behind a written-authorization engagement gate. Wired into `navig pentest` (+ `navig-warroom` / `warroom-osint` conveniences)."
+      "description": "NAVIG Pentest — the authorized-only offensive-security toolkit: passive recon (RDAP/whois, DNS, crt.sh subdomains, HTTP fingerprint), gated active recon (port scan, subdomain probe, template checks) behind a written-authorization engagement gate, plus direct active Wi-Fi verbs (monitor, capture, bounded deauth, cracking) with practical guardrails. Wired into `navig pentest` (+ `navig-warroom` / `warroom-osint` conveniences)."
     },
     "perplexity": {
       "plugin": "navig-perplexity",
@@ -209,11 +257,29 @@
     "pipeline": {
       "alias_of": "content"
     },
+    "router": {
+      "plugin": "navig-router",
+      "module": null,
+      "pip": "navig-router",
+      "description": "NAVIG Router: one native OpenAI- and Anthropic-compatible LLM endpoint over every provider you already have keys for — aliases, fallbacks, retries, cost and latency accounting."
+    },
+    "sessions": {
+      "plugin": "navig-sessions",
+      "module": null,
+      "pip": "navig-sessions",
+      "description": "Read and finish the Claude Code sessions open in VS Code over CDP: one finishing prompt per idle session, working sessions never interrupted."
+    },
     "social": {
       "plugin": "navig-social",
       "module": "social",
       "pip": "navig-social",
       "description": "Compose, schedule & publish across social networks (Studio + fan-out)"
+    },
+    "tasks": {
+      "plugin": "navig-tasks",
+      "module": null,
+      "pip": "navig-tasks",
+      "description": "navig-tasks: project-scoped tasks, triggers, actions and a Telegram review loop for NAVIG."
     },
     "telegram-exports": {
       "plugin": "navig-explore",
@@ -235,6 +301,12 @@
     },
     "tt": {
       "alias_of": "tiktok"
+    },
+    "tv": {
+      "plugin": "navig-tv",
+      "module": null,
+      "pip": "navig-tv",
+      "description": "Full control of a Fire TV or Android TV over ADB — power, d-pad, media keys, app launch, text entry, volume and screenshots, no vendor cloud."
     },
     "unpack": {
       "plugin": "navig-mobile",

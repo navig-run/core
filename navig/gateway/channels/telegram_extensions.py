@@ -116,6 +116,10 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
             # "osr:" answers "allow this new device to use NAVIG OS?". Core, so switching
             # extensions off can never strand a device request without its buttons.
             "osr:",
+            # "cd:" is the card framework (navig/telegram/cards.py): Open/Back/Close and
+            # the plugin action on an in-place card. Core, because the plumbing answers
+            # every press; the owning plugin's own module switch decides what runs.
+            "cd:",
             # "eng:" is /doctor's Heal / Re-check / Restart buttons (engine control).
             "eng:",
             # One prefix per LINE: a shared line holds 10 prefixes at once, so a

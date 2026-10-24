@@ -60,6 +60,26 @@ def _git(root: Path, *args: str) -> str | None:
         return None
 
 
+def worktrees(root: str | Path) -> list[str]:
+    """Every checkout of *root*'s repository — the main one first, then worktrees.
+
+    A project is one repository even when work happens in a ``.dev/worktrees/<slug>``
+    checkout, so session/project linking must see all of them. Reads only; returns
+    ``[]`` for a non-repo or an unreadable git rather than raising.
+    """
+    base = Path(root)
+    out = _git(base, "worktree", "list", "--porcelain")
+    if not out:
+        return []
+    paths: list[str] = []
+    for line in out.splitlines():
+        if line.startswith("worktree "):
+            p = line[len("worktree "):].strip()
+            if p and p not in paths:
+                paths.append(p)
+    return paths
+
+
 def has_own_repo(root: Path) -> bool:
     """Cheap pre-check: does *root* hold its OWN `.git` (dir, or a worktree's file)?
 

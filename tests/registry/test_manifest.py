@@ -690,8 +690,39 @@ def test_runnable_top_level_verbs_are_in_the_manifest() -> None:
     missing = sorted(f"navig {n}" for n in runtime if f"navig {n}" not in fresh)
     assert not missing, f"the manifest walk skips runnable top-level verbs: {missing}"
 
-    public = {c["path"] for c in build_public_manifest(validate=False)["commands"]}
-    bare = {p for p in public if len(p.split()) == 2}
+    import importlib.util
+
+    manifest = build_public_manifest(validate=False)["commands"]
+    public = {c["path"] for c in manifest}
+    tree_root = Path(__file__).resolve().parents[3]
+
+    def _shipped_by_this_tree(module: str | None) -> bool:
+        """Is *module* part of the tree under test?
+
+        A machine-level plugin (an editable install from another checkout) appears in
+        the runtime CLI, but its commands are not this tree's to document in
+        commands.md; requiring them would make the gate depend on whatever happens to
+        be installed beside the tree.
+        """
+        if not module:
+            return True
+        try:
+            spec = importlib.util.find_spec(module)
+        except (ImportError, ValueError):
+            return False
+        origin = getattr(spec, "origin", None)
+        if not origin:
+            return False
+        try:
+            Path(origin).resolve().relative_to(tree_root)
+        except ValueError:
+            return False
+        return True
+
+    modules = {c["path"]: c.get("module") for c in manifest}
+    bare = {
+        p for p in public if len(p.split()) == 2 and _shipped_by_this_tree(modules.get(p))
+    }
     md_path = Path(__file__).resolve().parents[2] / "generated" / "commands.md"
     documented = set(re.findall(r"^## `(navig [^`]+)`$", md_path.read_text(encoding="utf-8"), re.M))
     stale = sorted(bare - documented)

@@ -163,3 +163,70 @@ def test_a_registered_merge_driver_is_green(repo: Path, monkeypatch) -> None:
     rows = _driver_rows(check_repo_guard())
     assert rows == [(True, rows[0][1])]
     assert "registered: navig-manifest" in rows[0][1]
+
+
+# ── the wiring decides what runs, so it decides the report ────────────────────
+
+
+def _wired(settings_dir: Path, *, root: Path, hooked: str, command: str) -> dict:
+    """A settings file pointing at *hooked*, plus the two files that could disagree."""
+    from navig.commands.repo import _guard_script_state
+    from navig.guard import template_text
+
+    settings_dir.mkdir(parents=True, exist_ok=True)
+    (settings_dir / "settings.json").write_text(
+        json.dumps({"hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": command}]}]}}),
+        encoding="utf-8",
+    )
+    settings = json.loads((settings_dir / "settings.json").read_text(encoding="utf-8"))
+    template = template_text("agent_lock.py")
+    standard = root / ".claude" / "hooks" / "agent_lock.py"
+    standard.parent.mkdir(parents=True, exist_ok=True)
+    standard.write_text(template, encoding="utf-8")  # current unless a test overwrites it
+    wired = root / hooked
+    wired.parent.mkdir(parents=True, exist_ok=True)
+    wired.write_text(template, encoding="utf-8")
+    assert callable(_guard_script_state)
+    return settings
+
+
+def test_a_stale_unwired_copy_cannot_make_a_current_guard_read_outdated(tmp_path: Path) -> None:
+    """The failure this repo showed on 2026-10-20: settings wire `scripts/agent-hooks/`,
+    whose file matched the template byte for byte, but an older copy sat in `.claude/hooks/`
+    and was checked first — so `guard status` called a healthy guard outdated and told the
+    operator to re-install. The unwired copy is not what runs."""
+    from navig.commands.repo import _guard_script_state
+    from navig.guard import template_text
+
+    root = tmp_path
+    settings = _wired(
+        root / ".claude", root=root, hooked="scripts/agent-hooks/agent_lock.py",
+        command='python "${CLAUDE_PROJECT_DIR}/scripts/agent-hooks/agent_lock.py"',
+    )
+    (root / ".claude" / "hooks" / "agent_lock.py").write_text(
+        template_text("agent_lock.py") + "# an older, unwired build\n", encoding="utf-8"
+    )
+
+    state, path = _guard_script_state(root, settings, "agent_lock.py")
+    assert state == "current", f"a stale unwired copy reported the running guard as {state}"
+    assert path is not None and "agent-hooks" in path.replace("\\", "/"), path
+
+
+def test_a_stale_WIRED_hook_is_reported_even_when_the_standard_copy_is_current(tmp_path: Path) -> None:
+    """The other direction is the dangerous one: a current `.claude/hooks/` copy must not
+    hide a drifted hook that Claude Code actually executes."""
+    from navig.commands.repo import _guard_script_state
+    from navig.guard import template_text
+
+    root = tmp_path
+    settings = _wired(
+        root / ".claude", root=root, hooked="scripts/agent-hooks/agent_lock.py",
+        command='python "${CLAUDE_PROJECT_DIR}/scripts/agent-hooks/agent_lock.py"',
+    )
+    (root / "scripts" / "agent-hooks" / "agent_lock.py").write_text(
+        template_text("agent_lock.py") + "# drifted from the template\n", encoding="utf-8"
+    )
+
+    state, path = _guard_script_state(root, settings, "agent_lock.py")
+    assert state == "outdated", "the hook that runs drifted and must be reported"
+    assert path is not None and "agent-hooks" in path.replace("\\", "/"), path

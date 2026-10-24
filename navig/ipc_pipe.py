@@ -86,7 +86,7 @@ _SHADOW_LOG: Path | None = None
 
 def _shadow_log() -> Path:
     return (
-        _SHADOW_LOG if _SHADOW_LOG is not None else paths.config_dir() / "shadow_ipc_anomalies.log"
+        _SHADOW_LOG if _SHADOW_LOG is not None else paths.log_dir() / "shadow_ipc_anomalies.log"
     )
 
 

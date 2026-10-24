@@ -873,6 +873,18 @@ def _isolate_navig_config_dir(tmp_path_factory):
     isolated_log.mkdir(parents=True, exist_ok=True)
     os.environ["NAVIG_LOG_DIR"] = str(isolated_log)
 
+    # The SIXTH root, found the hard way on 2026-10-24: the Brain link.
+    # `navig.mcp.capability` resolves memory and recall against
+    # ~/.navig-os/brain-link.json — a home path that none of the roots above reaches,
+    # so isolating config+data+cache+logs left it reading the OPERATOR'S real link.
+    # Measured: on this workstation `tests/recall/test_recall_surfaces` resolved the
+    # live Outpost link, every MCP recall call became a network POST, and five tests
+    # failed closed for a reason unrelated to their own code. A test that wants a link
+    # writes one (or sets NAVIG_BRAIN_LINK_FILE); the floor every other test gets is
+    # "this machine is not linked", which is also the state a fresh install is in.
+    old_link = os.environ.get("NAVIG_BRAIN_LINK_FILE")
+    os.environ["NAVIG_BRAIN_LINK_FILE"] = str(isolated / "brain-link.json")
+
     # The THIRD leg, and the one no env var can reach: app-root detection.
     #
     # `base_dir` — the parent of hosts_dir / apps_dir / cache_dir — is NOT
@@ -992,6 +1004,10 @@ def _isolate_navig_config_dir(tmp_path_factory):
         os.environ.pop("NAVIG_LOG_DIR", None)
     else:
         os.environ["NAVIG_LOG_DIR"] = old_log
+    if old_link is None:
+        os.environ.pop("NAVIG_BRAIN_LINK_FILE", None)
+    else:
+        os.environ["NAVIG_BRAIN_LINK_FILE"] = old_link
 
 
 @pytest.fixture(autouse=True)

@@ -26,6 +26,7 @@ Stats:
 
 from __future__ import annotations
 
+import inspect
 from typing import TYPE_CHECKING
 
 from navig.debug_logger import get_debug_logger
@@ -202,8 +203,19 @@ def _create_mission(gw: NavigGateway):
 
             mission = Mission.from_dict(body)
             store = get_runtime_store()
-            created = store.create_mission(mission)
-            store.flush()
+            # ONE execution authority: when the executor is live, a mission created
+            # through the API goes through it (autonomy resolution, approval gate,
+            # receipts, SSE) instead of being a bare QUEUED row the scheduler might
+            # later sweep at a globally-resolved autonomy level. `iscoroutinefunction`
+            # keeps the fallback honest for gateways whose executor is a stub/mock.
+            executor = getattr(gw, "mission_executor", None)
+            submit = getattr(executor, "submit", None)
+            if callable(submit) and inspect.iscoroutinefunction(submit):
+                await submit(mission)
+                created = mission
+            else:
+                created = store.create_mission(mission)
+                store.flush()
             return json_ok(created.to_dict(), status=201)
         except (KeyError, ValueError, TypeError) as exc:
             logger.warning("create_mission error: %s", exc)

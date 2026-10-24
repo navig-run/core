@@ -126,3 +126,37 @@ async def test_agenda_create_and_accept() -> None:
     assert [a["id"] for a in listed] == [appt["id"]]
     tasks = _body(await planner.handle_planner_tasks(_Req(query={"list": "*"})))["data"]
     assert tasks == []  # an appointment is never in a to-do list
+
+
+async def test_followups_are_operator_only_and_wire_the_followup_service(monkeypatch) -> None:
+    from navig.pim import followups
+
+    monkeypatch.setattr(
+        "navig.gateway.deck.auth._deck_config",
+        {"allowed_users": [42], "allowed_users_configured": True},
+    )
+    refused = await planner.handle_planner_followups(_Req(local=False, user_id=99))
+    assert refused.status == 403
+
+    monkeypatch.setattr(
+        followups, "candidates",
+        lambda: [{"id": "t1", "verification": {"state": "unverified"}}],
+    )
+    listed = _body(await planner.handle_planner_followups(_Req()))["data"]
+    assert listed["count"] == 1
+    assert listed["followups"][0]["id"] == "t1"
+
+    monkeypatch.setattr(followups, "snooze", lambda *_a, **_k: True)
+    snoozed = _body(await planner.handle_planner_followup_snooze(
+        _Req({"hours": 4}, match_info={"id": "t1"})
+    ))["data"]
+    assert snoozed == {"snoozed": True, "hours": 4.0}
+
+    async def fake_suggest(**_kwargs):  # noqa: ANN003
+        return [{"todo_id": "t1", "status": "delivered", "channels": ["deck"]}]
+
+    monkeypatch.setattr(followups, "suggest", fake_suggest)
+    suggested = _body(await planner.handle_planner_followup_suggest(
+        _Req(match_info={"id": "t1"})
+    ))["data"]
+    assert suggested["results"][0]["status"] == "delivered"

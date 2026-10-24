@@ -472,6 +472,34 @@ def main() -> None:
         help="Run Telegram bot without gateway HTTP server",
     )
     args = parser.parse_args()
+
+    # ONE BRAIN PER DEPLOYMENT. The worker holds the bot's token and delivery, so a
+    # second machine running it is precisely the incident: the Windows worker + gateway
+    # kept answering as the bot while the outpost was supposed to own it. Refuse unless
+    # this machine holds the lease; the Telegram channel adds a second, mode-level guard
+    # (`navig.brain.telegram_mode`) so a client install cannot set the webhook either.
+    import logging as _logging
+
+    _log = _logging.getLogger("navig.daemon.telegram_worker")
+    from navig.brain.guard import OwnershipRefused, require_ownership
+
+    try:
+        _lease = require_ownership(service="telegram")
+    except OwnershipRefused as exc:
+        _log.error("Telegram worker start refused: %s", exc)
+        try:  # under pythonw stdout may not exist — the log line above is the record
+            print(f"\n  [NAVIG] Telegram worker start refused — {exc}\n", flush=True)
+        except OSError:
+            pass
+        raise SystemExit(exc.exit_code) from None
+    if _lease is not None:
+        _log.info(
+            "Brain ownership: %s (epoch %d, role %s) — this process may run the bot",
+            _lease.owner_id,
+            _lease.epoch,
+            _lease.role,
+        )
+
     # Identity for a STANDALONE worker (navig bot start --background with no service
     # installed): `navig service pids` lists it and a sweeper that follows the
     # contract spares it. Under the supervisor it is already a descendant of

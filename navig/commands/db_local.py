@@ -15,6 +15,7 @@ Subcommands:
 from __future__ import annotations
 
 import time
+from typing import Any
 
 import typer
 
@@ -246,6 +247,71 @@ def store_backup(
 # ── Migrate ───────────────────────────────────────────────────
 
 
+def _print_knowledge_report(report: dict[str, Any]) -> None:
+    """Human-readable summary of the knowledge.db consolidation step."""
+    status = report.get("status", "?")
+    canonical = report.get("canonical", "")
+    if status == "nothing-to-do":
+        console.print(f"  [dim]knowledge.db: nothing to migrate (canonical {canonical})[/dim]")
+        return
+    if status == "already-canonical":
+        console.print(f"  [green]✓[/green] knowledge.db already canonical: {canonical}")
+    elif status == "dry-run":
+        console.print("[yellow]knowledge.db consolidation (dry run — no files written):[/yellow]")
+        console.print(f"  candidate: {report.get('candidate')}")
+        console.print(f"  → {canonical}")
+        console.print(f"  backups would land in {report.get('backup_dir')}")
+        console.print(
+            "  [dim]re-run without --dry-run to apply the consolidation "
+            "(every existing copy is backed up first)[/dim]"
+        )
+    elif status == "applied":
+        console.print(f"  [green]✓[/green] knowledge.db consolidated → {canonical}")
+        console.print(f"  backups: {report.get('backup_dir')}")
+    elif status == "retired-now":
+        console.print(
+            f"  [green]✓[/green] knowledge.db: leftover legacy source retired; "
+            f"canonical kept at {canonical}"
+        )
+        console.print(f"  backups: {report.get('backup_dir')}")
+        for retired in report.get("retired", [])[:3]:
+            console.print(f"  [dim]moved aside: {retired}[/dim]")
+    elif status == "retire-pending":
+        # Dry run of the CONVERGENCE path: nothing is installed over the canonical DB.
+        console.print(
+            "[yellow]knowledge.db: canonical is already populated; the leftover legacy "
+            "source would be retired (no install)[/yellow]"
+        )
+        console.print(f"  leftover source: {report.get('candidate')}")
+        console.print(f"  backups would land in {report.get('backup_dir')}")
+        console.print(
+            "  [dim]re-run without --dry-run to retire it "
+            "(every existing copy is backed up first)[/dim]"
+        )
+    elif status == "applied-partial":
+        # NOT a success: the canonical DB was written but the legacy source is still live,
+        # so writes through the old path would silently be lost. Say exactly that.
+        console.print(
+            "  [yellow]![/yellow] knowledge.db installed at the canonical path, "
+            "but the LEGACY source could NOT be retired"
+        )
+        for error in report.get("errors", [])[:3]:
+            console.print(f"     [dim]{error}[/dim]")
+        console.print(
+            "  [yellow]  writes to the old file will NOT reach the canonical database. "
+            "Stop NAVIG (`navig service stop`) and re-run `navig db local migrate`.[/yellow]"
+        )
+    elif status == "conflict":
+        console.print("  [red]✗[/red] knowledge.db conflict — no merge performed")
+        for copy in report.get("copies", []):
+            if copy.get("rows"):
+                console.print(f"     {copy['path']} ({copy['rows']} rows)")
+    else:
+        console.print("  [red]✗[/red] knowledge.db migration blocked")
+    for note in report.get("notes", []):
+        console.print(f"  [dim]{note}[/dim]")
+
+
 @db_local_app.command("migrate")
 def store_migrate(
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without changes"),
@@ -253,23 +319,23 @@ def store_migrate(
 ):
     """Run pending data migrations (legacy bot_data.db, daily_log.db → runtime.db)."""
     navig = config_dir()
-    results = {}
+    results: dict[str, Any] = {}
 
-    # 1. RuntimeStore auto-migration handles bot_data.db + daily_log.db
+    # 1. knowledge.db: three historical paths → paths.knowledge_db_path().
+    #    The library function is DRY-RUN BY DEFAULT and never merges: it backs every copy
+    #    up, moves the single populated one, and reports a conflict instead of guessing.
+    #    This verb only applies it when --dry-run was NOT passed.
+    from navig.memory.knowledge_migration import migrate_knowledge_dbs
+
+    knowledge_report = migrate_knowledge_dbs(apply=not dry_run)
+    results["knowledge_db"] = knowledge_report
+
+    # 2. RuntimeStore auto-migration handles bot_data.db + daily_log.db
     legacy_files = [
         navig / "bot" / "bot_data.db",
         navig / "daily_log.db",
     ]
     pending = [f for f in legacy_files if f.exists() and not f.with_suffix(".db.migrated").exists()]
-
-    if not pending:
-        msg = "No pending migrations — all legacy databases have been migrated."
-        if json_output:
-            console.print_json(f'{{"status": "clean", "message": "{msg}"}}')
-        else:
-            console.print(f"  [green]✓[/green] {msg}")
-        raise typer.Exit()
-
     for f in pending:
         results[str(f.relative_to(navig))] = "pending"
 
@@ -277,35 +343,52 @@ def store_migrate(
         if json_output:
             import json
 
-            console.print_json(json.dumps({"dry_run": True, "pending": results}))
+            console.print_json(json.dumps(results, indent=2))
         else:
-            console.print("[yellow]Dry run — would migrate:[/yellow]")
-            for name in results:
-                console.print(f"  → {name}")
+            _print_knowledge_report(knowledge_report)
+            if pending:
+                console.print("[yellow]Dry run — would migrate:[/yellow]")
+                for name in pending:
+                    console.print(f"  → {str(name.relative_to(navig))}")
+                console.print(
+                    "  [dim]re-run without --dry-run to apply these migrations[/dim]"
+                )
+            else:
+                console.print(
+                    "  [dim]No legacy bot_data.db / daily_log.db migrations pending.[/dim]"
+                )
         raise typer.Exit()
 
-    # Trigger migration by opening RuntimeStore (auto-migrates on init)
-    from navig.store.runtime import RuntimeStore
+    # Trigger the runtime migration by opening RuntimeStore (auto-migrates on init)
+    if pending:
+        from navig.store.runtime import RuntimeStore
 
-    store = RuntimeStore(navig / "runtime.db")
-    store.close()
+        store = RuntimeStore(navig / "runtime.db")
+        store.close()
 
-    # Check results
-    for f in pending:
-        migrated = f.with_suffix(".db.migrated").exists()
-        rel = str(f.relative_to(navig))
-        results[rel] = "migrated" if migrated else "failed"
+        # Check results
+        for f in pending:
+            migrated = f.with_suffix(".db.migrated").exists()
+            rel = str(f.relative_to(navig))
+            results[rel] = "migrated" if migrated else "failed"
 
     if json_output:
         import json
 
-        console.print_json(json.dumps(results))
+        console.print_json(json.dumps(results, indent=2))
     else:
+        _print_knowledge_report(knowledge_report)
         for name, status in results.items():
+            if name == "knowledge_db":
+                continue
             if status == "migrated":
                 console.print(f"  [green]✓[/green] {name} → runtime.db")
             else:
                 console.print(f"  [red]✗[/red] {name} — migration failed")
+        if not pending:
+            console.print(
+                "  [dim]No legacy bot_data.db / daily_log.db migrations pending.[/dim]"
+            )
 
     # 2. Vector embedding migration (if sqlite-vec available)
     try:

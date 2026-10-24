@@ -217,10 +217,14 @@ def test_a_settled_file_is_served_from_the_stamp(tmp_path: Path, monkeypatch) ->
     a = UserStateTracker(state_dir=tmp_path)
     a.record_proactive_event("greeting")
     f = _state_file(tmp_path)
-    old = time.time() - 60
-    os.utime(f, (old, old))
 
     b = UserStateTracker(state_dir=tmp_path)
+    # Loading a pre-migration file persists the agent-mode migration ONCE (it stamps
+    # `mode_migrated` and rewrites `user_state.json`), so age the file AFTER
+    # constructing `b`. A settled stamp is what this test is about, not that
+    # one-time migration write.
+    old = time.time() - 60
+    os.utime(f, (old, old))
     b.hours_since("greeting")  # first read stamps the file
 
     reads = 0

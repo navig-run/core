@@ -6,13 +6,16 @@ from navig.mcp.tools import (
     agent,
     bay,
     blocks,
+    capabilities,
     cdp,
     connectors,
+    coordination,
     desktop,
     dock,
     filesystem,
     inventory,
     memory,
+    music,
     perplexity,
     recall,
     runtime,
@@ -41,7 +44,8 @@ def all_bundles() -> list[Any]:
     against it, and a reviewer reads it as a promise.
     """
     bundles: list[Any] = [inventory, wiki, system, agent, bay, blocks, runtime, memory, recall,
-                          filesystem, spaces, cdp, dock, perplexity]
+                          filesystem, spaces, cdp, dock, perplexity, music, coordination,
+                          capabilities]
     if sys.platform == "win32":
         bundles.append(desktop)
         from navig.mcp.tools import windows  # noqa: PLC0415

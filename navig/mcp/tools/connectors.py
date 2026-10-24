@@ -540,11 +540,15 @@ def register(server: Any) -> None:
     if not hasattr(server, "_tool_handlers"):
         server._tool_handlers = {}
 
-    # Bootstrap all built-in connectors so they appear in the MCP tool list
-    # even when the CLI has not been invoked (e.g. pure MCP server startup).
-    from navig.connectors.bootstrap import ensure_connectors_loaded
+    # Register connector CLASSES so they appear in the MCP tool list even when
+    # the CLI has not been invoked (e.g. pure MCP server startup). Manifests
+    # only: listing tools needs the capability flags, not OAuth provider
+    # configs — and the full load resolves app credentials through the vault,
+    # which costs 5-6 s on first open. Token hydration/refresh at CALL time
+    # registers the provider config lazily (ConnectorAuthManager.get_access_token).
+    from navig.connectors.bootstrap import ensure_manifests_loaded
 
-    ensure_connectors_loaded()
+    ensure_manifests_loaded()
 
     tool_list = list_connector_tools()
 

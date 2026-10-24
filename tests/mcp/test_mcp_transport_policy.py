@@ -60,12 +60,14 @@ def test_loopback_without_token_serves_read_only_tools(captured: dict[str, Any])
         "navig_automation",
         "navig_browser_debug",
         "navig_connectors",
+        "navig_capabilities",
     }
     for name in names:
         annotations = handler.tools[name]["annotations"]
         assert annotations["readOnlyHint"] is True
         assert annotations["destructiveHint"] is False
     assert "navig_runtime_action" not in names
+    assert "navig_run" not in names  # executes commands: never on a token-less exposure
     assert not handler._transport.token_present
 
 

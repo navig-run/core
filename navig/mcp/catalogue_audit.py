@@ -19,7 +19,8 @@ from typing import Any
 #: which sibling continues the workflow.
 SIBLING_TOOL = re.compile(
     r"\b(connector_[a-z0-9_]+|navig_[a-z0-9_]+|cdp_[a-z0-9_]+|desktop_[a-z0-9_]+|"
-    r"recall_[a-z0-9_]+|memory_[a-z0-9_]+|firecrawl_[a-z0-9_]+|perplexity_[a-z0-9_]+)\b"
+    r"recall_[a-z0-9_]+|memory_[a-z0-9_]+|firecrawl_[a-z0-9_]+|perplexity_[a-z0-9_]+|"
+    r"music_[a-z0-9_]+)\b"
 )
 
 #: A description that says what comes back.

@@ -30,6 +30,7 @@ build. Every one of the eleven fixed above was that shape.
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 import click
@@ -41,8 +42,8 @@ from typer.main import get_command
 KNOWN_MISSING_GROUPS = {
     "sys": "planned Windows-ops surface (defender/nssm/nvidia/procmon/screenshot/vivetool/perf) — 7 skills",
     "disk": "disk-reclaim — the skill is the companion doc to the `navig disk` feature being "
-            "built on skill/disk-reclaim; the guard's staleness check below fails the day the "
-            "verb lands, so this entry cannot rot",
+    "built on skill/disk-reclaim; the guard's staleness check below fails the day the "
+    "verb lands, so this entry cannot rot",
 }
 # Verbs under a group that DOES exist, but which were never implemented either.
 # ⚠ Four of these were first written as missing GROUPS and the staleness check below
@@ -118,6 +119,27 @@ def _known_missing(words: list[str]) -> bool:
     if words[0] in KNOWN_MISSING_GROUPS:
         return True
     return len(words) >= 2 and (words[0], words[1]) in KNOWN_MISSING_VERBS
+
+
+def _repo_command_file(node) -> str:
+    """The file that defines this command, when that file is inside this repository.
+
+    ``KNOWN_MISSING`` records what THIS repository does not ship yet. A developer who has an
+    unrelated plugin installed (``pip install -e plugins/navig-disk``, an entry-point package)
+    adds commands to the tree this test can see, and a staleness check that counted those
+    would refuse every landing on that workstation — and would be measuring the machine, not
+    the repo. Returning "" for such a command is what keeps the check honest in both
+    directions: when the group lands in ``core`` the entry goes stale, as it should.
+    """
+    callback = getattr(node, "callback", None)
+    module_name = str(getattr(callback, "__module__", "") or "")
+    module = sys.modules.get(module_name)
+    source = getattr(module, "__file__", "") or ""
+    if not source:
+        return ""
+    core_dir = Path(__file__).resolve().parents[2]
+    resolved = Path(source).resolve()
+    return str(resolved) if str(resolved).startswith(str(core_dir)) else ""
 
 
 def _check(root, words: list[str], flags: list[str]) -> str | None:
@@ -206,12 +228,15 @@ def test_known_missing_entries_are_still_missing(root) -> None:
     """A stale entry is worse than none — it silently exempts a command that now exists."""
     stale = []
     for group, reason in KNOWN_MISSING_GROUPS.items():
-        if _resolve(root, [group])[0] is not None:
+        node, _ = _resolve(root, [group])
+        if node is not None and _repo_command_file(node):
             stale.append(f"group `{group}` now EXISTS — drop it ({reason})")
     for (group, verb), reason in KNOWN_MISSING_VERBS.items():
-        if _resolve(root, [group])[0] is None:
+        node, _ = _resolve(root, [group])
+        if node is None:
             continue  # the whole group is missing; covered by the group entry
-        if _resolve(root, [group, verb])[0] is not None:
+        verb_node, _ = _resolve(root, [group, verb])
+        if verb_node is not None and _repo_command_file(verb_node):
             stale.append(f"`{group} {verb}` now EXISTS — drop it ({reason})")
     assert not stale, "KNOWN_MISSING is out of date:\n  " + "\n  ".join(stale)
 
@@ -241,7 +266,10 @@ def _space_plugin_refs():
     )["commands"]
     files = subprocess.run(
         ["git", "-C", str(repo), "ls-files", "--", "registry/spaces"],
-        capture_output=True, text=True, encoding="utf-8", check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
     ).stdout.split()
     for rel in files:
         if not rel.endswith((".md", ".yaml", ".yml")):
@@ -258,7 +286,9 @@ def _space_plugin_refs():
 def test_space_plugin_refs_are_found():
     """A vacuity floor: a scan that silently finds nothing would pass forever."""
     refs = list(_space_plugin_refs())
-    assert len(refs) >= 40, f"only {len(refs)} plugin-command refs in registry/spaces — has the shape moved?"
+    assert len(refs) >= 40, (
+        f"only {len(refs)} plugin-command refs in registry/spaces — has the shape moved?"
+    )
     assert any(words[0] == "cabinet" for _rel, _raw, words, _f in refs)
 
 
@@ -321,7 +351,10 @@ def _space_texts():
     assert (repo / "registry" / "spaces").is_dir(), repo  # structural anchor
     files = subprocess.run(
         ["git", "-C", str(repo), "ls-files", "--", "registry/spaces"],
-        capture_output=True, text=True, encoding="utf-8", check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
     ).stdout.split()
     for rel in files:
         if rel.endswith((".md", ".yaml", ".yml")):
@@ -342,7 +375,9 @@ def _space_planned(root, words: list[str], flags: list[str]) -> str | None:
 
 def test_space_refs_are_found():
     refs = list(_space_refs())
-    assert len(refs) >= 300, f"only {len(refs)} command refs in registry/spaces — has the shape moved?"
+    assert len(refs) >= 300, (
+        f"only {len(refs)} command refs in registry/spaces — has the shape moved?"
+    )
 
 
 def test_registry_spaces_name_only_real_or_recorded_commands(root) -> None:
@@ -371,7 +406,12 @@ def test_space_planned_families_are_not_stale(root) -> None:
         if _resolve(root, [group, verb])[0] is not None:
             stale.append(f"`{group} {verb}` now EXISTS — drop it ({reason})")
     used = {_space_planned(root, w, f) for _r, _raw, w, f in _space_refs() if _check(root, w, f)}
-    every = ({g for g in SPACE_PLANNED_GROUPS} | {" ".join(k) for k in SPACE_PLANNED_VERBS}
-             | {" ".join(k) + " --flags" for k in SPACE_PLANNED_FLAGS})
-    stale += [f"`{fam}` is referenced by no space any more — drop it" for fam in sorted(every - used)]
+    every = (
+        {g for g in SPACE_PLANNED_GROUPS}
+        | {" ".join(k) for k in SPACE_PLANNED_VERBS}
+        | {" ".join(k) + " --flags" for k in SPACE_PLANNED_FLAGS}
+    )
+    stale += [
+        f"`{fam}` is referenced by no space any more — drop it" for fam in sorted(every - used)
+    ]
     assert not stale, "SPACE_PLANNED is out of date:\n  " + "\n  ".join(stale)

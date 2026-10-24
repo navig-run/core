@@ -561,7 +561,10 @@ async def test_status_shows_setup_readiness_and_fix_commands(monkeypatch):
     assert "needs-attention" in output
     assert "Pending fixes:" in output
     assert "navig init --provider" in output
-    assert "navig host add <name>" in output
+    # The command is HTML-escaped before it goes inside <code>: a raw `<name>` is an
+    # unknown tag to Telegram, which refuses the message and the fallback resend turns
+    # the whole card into literal markup (the 2026-10-09 leak class).
+    assert "navig host add &lt;name&gt;" in output
 
     keyboard = bot.messages[-1][3].get("keyboard")
     assert keyboard

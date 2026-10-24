@@ -45,11 +45,16 @@ def test_is_retired_matches_known_and_ignores_live():
     assert is_retired("qwen/qwen3-coder-480b-a35b-instruct")
     assert is_retired("deepseek-ai/deepseek-r1")
     assert is_retired("qwen/qwen2.5-coder-32b-instruct")
+    # Retired 2026-10-21 — 404 twice (heartbeat HIGH at 01:11 + the sweep). This
+    # id WAS the "live" example below, exactly as `meta/llama-3.1-70b-instruct`
+    # was until NVIDIA withdrew it; the live examples keep needing re-verification.
+    assert is_retired("nvidia/nemotron-3-super-120b-a12b")
+    assert is_retired("nvidia/nemotron-3-super-120b-a12b", "nvidia")
     # live models must not be flagged.
     # ⚠ This list used `meta/llama-3.1-70b-instruct` as its "live" example until
     # NVIDIA retired it (410, EOL 2026-08-26) and it was added to the denylist —
     # so pick ids that are probe-verified live, and expect to revisit them.
-    assert not is_retired("nvidia/nemotron-3-super-120b-a12b")
+    assert not is_retired("nvidia/nemotron-3.5-lightning-30b-a3b")
     assert not is_retired("claude-opus-4-8")
     assert not is_retired("gpt-4o")
     # A namespaced retired id must NOT flag a different provider's similar id.

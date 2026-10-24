@@ -275,6 +275,9 @@ def test_service_logs_rejects_zero_lines():
 def test_service_start_polls_for_pid_on_slow_start(monkeypatch):
     """service start must succeed even if the daemon PID file appears after
     the first check — i.e., it polls rather than doing a single fixed wait."""
+    # The brain-link precondition is not what this test measures (PID polling): isolate it,
+    # so the result depends on the code under test and not on the machine running it.
+    monkeypatch.setattr("navig.commands.service._read_brain_link", lambda: None)
     call_count = {"n": 0}
 
     class SlowDaemon:
@@ -465,6 +468,10 @@ def test_stop_failure_message_falls_back_to_kill_hint(monkeypatch):
 
 
 def test_service_restart_admin_relaunches_when_not_elevated(monkeypatch):
+    # This machine is a real client (brain-link -> outpost), and the opt-out marker
+    # exists; isolate both so the test measures restart, not the host.
+    monkeypatch.setattr("navig.commands.service._read_brain_link", lambda: None)
+    monkeypatch.setattr("navig.commands.service._autostart_optout_path", lambda: __import__("pathlib").Path("__nope__"))
     from navig.commands import service
 
     calls: dict[str, object] = {}
@@ -521,6 +528,10 @@ def test_service_restart_admin_does_not_relaunch_when_already_elevated(monkeypat
 
 
 def test_service_restart_direct_call_ignores_optioninfo_default(monkeypatch):
+    # This machine is a real client (brain-link -> outpost), and the opt-out marker
+    # exists; isolate both so the test measures restart, not the host.
+    monkeypatch.setattr("navig.commands.service._read_brain_link", lambda: None)
+    monkeypatch.setattr("navig.commands.service._autostart_optout_path", lambda: __import__("pathlib").Path("__nope__"))
     # `navig gateway restart` calls service_restart() DIRECTLY. An unpassed
     # typer.Option arrives as a truthy OptionInfo, not False — the coercion must stop
     # that from auto-popping UAC. Guards the alias regression.

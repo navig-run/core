@@ -16,6 +16,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -592,6 +593,12 @@ class TestCleanup:
         meta = store.get_metadata()
         meta.last_active = time.time() - (days_old * 86_400)
         store._save_meta(meta)
+        # Age the FILES too. cleanup_old_sessions requires BOTH the recorded last_active and
+        # the newest companion mtime to be old, so a session being appended to (a live file)
+        # can never be pruned on a stale timestamp alone.
+        stamp = time.time() - (days_old * 86_400)
+        for suffix in ("meta.json", "jsonl"):
+            os.utime(session_dir / f"{sid}.{suffix}", (stamp, stamp))
 
     def test_cleanup_removes_old(self, session_dir: Path):
         self._create_old_session(session_dir, "ancient", days_old=100)

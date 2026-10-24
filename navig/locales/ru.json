@@ -834,5 +834,14 @@
   "prompts.btn.fav": "☆ В избранное",
   "prompts.btn.unfav": "★ В избранном",
   "prompts.btn.file": "📄 файл .md",
-  "prompts.btn.next": "▶ Следующий шаг"
+  "prompts.btn.next": "▶ Следующий шаг",
+  "status.button.refresh": "🔄 Обновить",
+  "status.button.briefing": "📋 Брифинг",
+  "status.button.reminders": "⏰ Напоминания",
+  "status.button.spaces": "🗂 Пространства",
+  "status.button.brain": "🧠 Мозг",
+  "status.button.self": "🧘 Я",
+  "status.button.genesis": "🌱 Генезис",
+  "status.button.plans": "📋 Планы",
+  "status.button.home": "🏠 Главная"
 }

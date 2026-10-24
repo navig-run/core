@@ -2231,6 +2231,23 @@ class CallbackHandler:
             await self.channel._handle_models_command(chat_id, user_id, message_id=message_id)
             return
 
+        if action in {"brain", "genesis", "self"}:
+            # Detail cards behind the /status buttons. Each one reads its own artifact
+            # (Brain-unify lease / Genesis identity / self-aware receipts) and falls back
+            # to the session card if the channel has no detail handler.
+            await self._answer(cb_id, "")
+            detail = getattr(self.channel, "_handle_status_detail", None)
+            if detail is not None:
+                await detail(
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    kind=action,
+                    message_id=message_id,
+                )
+            else:
+                await self.channel._handle_status(chat_id, user_id, message_id)
+            return
+
         if action == "space" and target:
             await self._answer(cb_id, f"\u2713 Switched to {target}")
             try:

@@ -406,6 +406,27 @@ def gateway_start(
         ch.error(moved_message())
         raise typer.Exit(1)
 
+    # ONE BRAIN PER DEPLOYMENT. `navig gateway start` is what the Windows autostart task
+    # and the supervisor run, and a gateway is the process that re-registers the Telegram
+    # webhook and owns cron — so a second machine running it silently takes the bot and
+    # splits the scheduler. The lease decides: claim it if it is free or already ours,
+    # otherwise refuse with a distinct exit code and a named remedy.
+    from navig.brain.guard import OwnershipRefused, require_ownership
+
+    try:
+        _lease = require_ownership(service="gateway")
+    except OwnershipRefused as exc:
+        ch.error(str(exc))
+        ch.dim(
+            "Only one Brain per deployment. Inspect it with `navig brain status`; if this "
+            "machine should own it: navig brain takeover --from <owner> --reason <why>"
+        )
+        raise typer.Exit(exc.exit_code) from None
+    if _lease is not None:
+        ch.dim(
+            f"Brain ownership: {_lease.owner_id} · epoch {_lease.epoch} · role {_lease.role}"
+        )
+
     if background:
         # This used to print "Background mode not yet implemented" and run in the
         # FOREGROUND — the opposite of what the flag asked for. Same ladder as the
@@ -1701,6 +1722,22 @@ def approve_status(
     ch.console.print()
     ch.console.print(ladder)
 
+    # The derived systems — one switch, one truth. Showing them here is what makes the
+    # switch trustworthy: the operator sees that a level change also moved reflex and
+    # the chat agent's approval default.
+    try:
+        from navig.security import posture as posture_mod
+
+        unified = posture_mod.describe(configured["security_level"])
+        ch.console.print()
+        ch.info(
+            f"Posture {unified['posture']}: reflex profile {unified['reflex_profile']}"
+            f" · agent approval {unified['approval_policy']}"
+            f" · read-only bypass {'on' if unified['read_only_bypass'] else 'off'}"
+        )
+    except Exception as exc:  # noqa: BLE001 — status must render even if the posture cannot
+        ch.dim(f"Posture could not be resolved ({type(exc).__name__})")
+
     if drift or state == "outdated":
         ch.dim("\nNext: navig service restart — the gateway is still on its old policy")
     else:
@@ -1745,6 +1782,17 @@ def approve_level(
         ch.success(f"Security level: {before} → {parsed} — {_level_summary(parsed)}")
     if parsed == "low":
         ch.warning("Terminal commands — including writes — will no longer ask.")
+    try:
+        from navig.security import posture as posture_mod
+
+        unified = posture_mod.describe(parsed)
+        ch.info(
+            f"Everything switched: reflex profile {unified['reflex_profile']}"
+            f" · agent approval {unified['approval_policy']}"
+            f" · read-only bypass {'on' if unified['read_only_bypass'] else 'off'}"
+        )
+    except Exception:  # noqa: BLE001 — the save already succeeded; the summary is extra
+        pass
     ch.dim("Applies when the gateway restarts: navig service restart · check: navig approve status")
 
 

@@ -178,12 +178,12 @@ ALL_PROVIDERS: list[ProviderManifest] = [
             # DeepSeek
             "deepseek/deepseek-chat-v3.1",
             "deepseek/deepseek-chat-v3-0324",
-            "deepseek/deepseek-r1",
+            # "deepseek/deepseek-r1" — 404, swept 2026-10-21.
             # Mistral
             "mistralai/mistral-medium-3.1",
             "mistralai/mistral-small-3.1-24b-instruct",
             # Qwen
-            "qwen/qwen3-235b-a22b",
+            # "qwen/qwen3-235b-a22b" — 404, swept 2026-10-21.
             "qwen/qwen-2.5-72b-instruct",
             # Xiaomi MiMo — audited live 2026-10-13: each answered a 1-token
             # call on the operator's key (flash 3.9s, pro 2.1s, ultraspeed
@@ -263,20 +263,20 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         #   {"model": ..., "messages": [{"role":"user","content":"ping"}], "max_tokens": 1}
         # Every entry below returned 200. Warm latency in the comment.
         models=[
-            # NVIDIA Nemotron — general purpose; first entry is the default
-            "nvidia/nemotron-3-super-120b-a12b",  # 0.6s — big and the fastest
-            "nvidia/nemotron-3.5-lightning-30b-a3b",  # 8.5s
+            # NVIDIA Nemotron — general purpose; first entry is the default.
+            # `nvidia/nemotron-3-super-120b-a12b` led here until 2026-10-21, when
+            # it answered 404 twice (heartbeat HIGH + the sweep) and joined
+            # RETIRED_MODELS. A dead models[0] silently repoints every substituted
+            # routing slot at a dead model, so the live sibling leads now.
+            "nvidia/nemotron-3.5-lightning-30b-a3b",  # 8.5s — substitution default
             # Small / fast
             # "minimaxai/minimax-m3" — 410 EOL 2026-09-09, one day after it was added.
             # Code
             "poolside/laguna-xs-2.1",  # 0.5s
             # Others
-            "moonshotai/kimi-k3",  # 11.6s
             "openai/gpt-oss-20b",  # 12.9s
-            # ⚠ Flakiest entry here. Measured 2026-09-15, 8 probes: 5x 200, 1x 500,
-            # 1x 502, 1x timeout. Alive, so listed — but not a good default, and
-            # the probe retry is what keeps it from reading as broken.
-            "mistralai/mistral-nemotron",  # 5.7s warm
+            # "moonshotai/kimi-k3" (11.6s) and "mistralai/mistral-nemotron"
+            # (5.7s, "alive" on 2026-09-15) both answered 410 on 2026-10-21.
         ],
         emoji="🟩",
     ),

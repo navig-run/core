@@ -109,6 +109,11 @@ _LEGACY_PROFILE_MODULES: dict[str, list[str]] = {
 
 #: The four public installation profiles. Key order = the order they are
 #: documented and listed in error messages.
+#:
+#: ``config`` carries the profile's Brain role. That is the ONE persisted statement of
+#: what this machine is (``brain.role``), and it is what the ownership guard reads — so
+#: a "cli" install can never quietly run a second Brain. Written one-time only (never
+#: re-imposed on a role the operator already chose), same rule as ``mode``.
 INSTALL_PROFILES: dict[str, dict[str, Any]] = {
     "cli": {
         "summary": "CLI only — config dirs + CLI verification, no shell edits, no service",
@@ -119,7 +124,8 @@ INSTALL_PROFILES: dict[str, dict[str, Any]] = {
         "extras": ["interactive"],
         "daemon": None,
         "mode": "node",
-        "config": {"vault.role": "client"},
+        "role": "client",
+        "config": {"vault.role": "client", "brain.role": "client"},
     },
     "minimal": {
         "summary": "CLI + shell PATH integration, no service",
@@ -131,7 +137,8 @@ INSTALL_PROFILES: dict[str, dict[str, Any]] = {
         "extras": ["interactive"],
         "daemon": None,
         "mode": "node",
-        "config": {"vault.role": "client"},
+        "role": "client",
+        "config": {"vault.role": "client", "brain.role": "client"},
     },
     "server": {
         "summary": "Headless server — full config stack + MCP, no desktop, daemon with the gateway, no public tunnel",
@@ -149,10 +156,15 @@ INSTALL_PROFILES: dict[str, dict[str, Any]] = {
         # printed a warning on every server install.
         "daemon": {"bot": True, "gateway": True},
         "mode": "operator",
+        "role": "brain",
         # vault.role client: a server is meant to `navig vault join` an authority and read
         # only its grants. Never "authority" by default — serving secrets is an explicit
         # opt-in (vault.authority.enabled).
-        "config": {"cloud.enabled": False, "vault.role": "client"},
+        "config": {
+            "cloud.enabled": False,
+            "vault.role": "client",
+            "brain.role": "brain",
+        },
     },
     "full": {
         "summary": "Everything the default (operator) install runs today",
@@ -160,9 +172,10 @@ INSTALL_PROFILES: dict[str, dict[str, Any]] = {
         "extras": ["interactive", "desktop", "telegram"],
         "daemon": {},
         "mode": None,
+        "role": "all-in-one",
         # The desktop install keeps its own vault; it can become the authority with
         # vault.authority.enabled, or a client with `navig vault join`.
-        "config": {"vault.role": "local"},
+        "config": {"vault.role": "local", "brain.role": "all-in-one"},
     },
 }
 
@@ -302,6 +315,27 @@ def validate_profile_manifest(name: str, manifest: dict[str, Any]) -> list[str]:
                     errors.append(
                         f"config {key!r} must be a scalar default, got {type(value).__name__}"
                     )
+
+    # ── role: the ONE persisted statement of what this machine is ─────────
+    role = manifest.get("role", None)
+    if role is not None:
+        try:
+            from navig.brain.lease import ROLES  # noqa: PLC0415
+
+            if role not in ROLES:
+                errors.append(
+                    f"unknown brain role {role!r} — roles: {', '.join(ROLES)}"
+                )
+        except Exception:  # noqa: BLE001 — an optional subsystem must not fail a manifest
+            pass
+        # `role` and `config['brain.role']` are two spellings of one fact; drift here
+        # means the installer says "client" and the guard reads "brain".
+        declared = (manifest.get("config") or {}).get("brain.role")
+        if declared is not None and declared != role:
+            errors.append(
+                f"role {role!r} disagrees with config {{'brain.role': {declared!r}}} — "
+                "the installer would write one and the ownership guard read the other"
+            )
 
     # ── mode (best-effort: optional subsystem) ────────────────────────────
     mode = manifest.get("mode", None)

@@ -43,11 +43,13 @@ EXPECTED_OWNED: frozenset[str] = frozenset({
     "workspace_dir",        # SOUL/IDENTITY/USER workspace anchors
     "audio_configs_dir",
     "media_budget_path",
+    "knowledge_db_path",  # the ONE knowledge store; three resolvers existed before it
     "genesis_json_path",
     "entity_json_path",
     "onboarding_json_path",
     "global_config_path",
     "msg_trace_path",
+    "trash_dir",  # the brain's own recycle bin (retention sweeps move here)
     # Screenshots and browser profiles: both are `config_dir()/...` and both are
     # MKDIR'd by BrowserController / StealthBrowser / DesktopController __init__, so a
     # second brain sharing them would write into the first brain's home. They were

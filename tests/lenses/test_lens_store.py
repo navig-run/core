@@ -337,3 +337,35 @@ def test_only_the_chrome_host_isolates_a_lens_granted_navig_capture() -> None:
     assert compile_lens(m, granted, host="playwright").world == "MAIN"
     plain = _src()
     assert compile_lens(parse_manifest(plain), plain, host="chrome").world == "MAIN"
+
+
+def test_concurrent_saves_never_drop_a_lens_from_the_index(store: LensStore) -> None:
+    # A save with a slow @require used to read index.json, fetch for a while, then write
+    # back the index it read, deleting every Lens saved by anyone else in between.
+    import threading
+
+    fetching = threading.Event()
+    release = threading.Event()
+
+    def slow_fetch(url: str) -> str:
+        fetching.set()
+        assert release.wait(5), "the second save never finished"
+        return "window.__lib = 1;"
+
+    errors: list[BaseException] = []
+
+    def save_slow() -> None:
+        try:
+            store.save(_src("Slow", extra="// @require https://cdn.test/lib.js\n"), fetch=slow_fetch)
+        except BaseException as exc:  # noqa: BLE001 - surfaced in the assert below
+            errors.append(exc)
+
+    t = threading.Thread(target=save_slow)
+    t.start()
+    assert fetching.wait(5), "the slow save never reached its fetch"
+    fast = store.save(_src("Fast"))  # runs while the slow save is mid-fetch
+    release.set()
+    t.join(10)
+    assert not t.is_alive() and not errors, errors
+    ids = {r.id for r in store.records()}
+    assert ids == {fast.id, "slow"}, f"index lost a Lens: {sorted(ids)}"

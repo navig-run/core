@@ -304,6 +304,42 @@ def plugin_capability_dirs(kind: str) -> list[Path]:
     return out
 
 
+def plugin_capability_dir_owners(kind: str) -> dict[Path, str]:
+    """``{resolved capability dir: plugin id}`` across BOTH install shapes.
+
+    Attribution seam for the Store / capability index: a skill (or persona,
+    prompt, …) loaded from one of these dirs *belongs to* the plugin whose id
+    is the value. Package-format plugins are keyed by their plugin id; pip
+    entry-point plugins by their distribution name (the same key the
+    disabled-plugins list uses, so a disabled pip plugin attributes the same
+    way it unwires).
+
+    Directories that fail to resolve are keyed by their unresolved path so a
+    caller comparing resolved skill paths degrades to "no owner" instead of
+    crashing. Best-effort: a broken dist skips its rows, never raises.
+    """
+    out: dict[Path, str] = {}
+    try:
+        for root in installed_plugin_roots(include_disabled=True):
+            try:
+                out[root.resolve()] = _plugin_id_of(root)
+            except Exception:  # noqa: BLE001
+                continue
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        for dist_name, pkg_root in _entry_point_package_roots():
+            cap = pkg_root / kind
+            if cap.is_dir():
+                try:
+                    out[cap.resolve()] = dist_name
+                except Exception:  # noqa: BLE001
+                    continue
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 

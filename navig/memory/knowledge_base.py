@@ -99,7 +99,7 @@ class KnowledgeBase:
     Usage:
         from navig.platform import paths
         kb = KnowledgeBase(
-            db_path=paths.data_dir() / 'knowledge.db',
+            db_path=paths.knowledge_db_path(),  # <data_dir>/knowledge.db — the ONE store
             embedding_provider=LocalEmbeddingProvider(),
         )
 

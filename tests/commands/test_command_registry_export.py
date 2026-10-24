@@ -327,3 +327,20 @@ def test_markdown_renderer_covers_every_manifest_command():
         f"only in markdown: {sorted(rendered_paths - manifest_paths)}; "
         f"missing from markdown: {sorted(manifest_paths - rendered_paths)}"
     )
+
+
+def test_committed_manifest_reflects_this_tree_not_a_drifted_installed_plugin():
+    """A plugin install that has drifted ahead of this checkout used to leak its
+    commands into the committed manifest (``export_registry`` bound ``navig`` to this
+    tree but left the first-party plugins resolving through the interpreter's
+    installed copies). It now pins every ``plugins/navig-*/`` dir onto ``sys.path``,
+    so the committed artifact carries only THIS tree's commands — plus the new
+    ``navig mind`` group this branch adds.
+    """
+    paths = {c["path"] for c in _shipped_manifest()["commands"]}
+    assert "navig mind status" in paths
+    # ``navig email otp …`` exists only in a drifted navig_email install; this tree's
+    # plugin does not ship it, so it must not appear in the committed manifest.
+    assert not [p for p in paths if p.startswith("navig email otp")]
+    # Same class of contamination: a command from a newer navig_social build.
+    assert not [p for p in paths if p.startswith("navig social cards")]

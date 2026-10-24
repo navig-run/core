@@ -39,6 +39,17 @@ MAX_NO_RESULT_RATIO = 0.0
 #: Batch-1 tools: descriptions rebuilt from the handler in ``navig/mcp/annotations.py``.
 #: ``navig_list_databases`` is deliberately absent — it has no sibling tool to route to, and
 #: inventing one in prose would be a lie.
+#: Tools that legitimately have **no sibling tool to route to** — the same judgement the
+#: batch-1 list records for ``navig_list_databases``. The census keeps counting them (a
+#: published number must stay true); the budget subtracts them so a real regression
+#: elsewhere still fails. Add a name here only with the reason it has no companion.
+SIBLING_EXEMPT = {
+    # Read-only coordinator inbox (phase 6): no send/ack MCP tool exists yet, so naming
+    # one in the description would be prose for a tool the agent cannot call.
+    "coordination_inbox",
+}
+
+
 BATCH_ONE = frozenset(
     {
         "navig_search_wiki",
@@ -90,10 +101,16 @@ def test_batch_one_tools_keep_routing_and_their_result_contract(handler: MCPProt
 
 
 def test_catalogue_stays_inside_the_definition_budget(handler: MCPProtocolHandler) -> None:
-    totals = counts({name: signals(tool) for name, tool in handler.tools.items()})
+    signals_by_name = {name: signals(tool) for name, tool in handler.tools.items()}
+    totals = counts(signals_by_name)
     assert totals["undocumented_params"] == 0, f"{totals['undocumented_params']} tools hide a parameter"
     assert totals["non_strict_schema"] == 0, f"{totals['non_strict_schema']} tools accept unknown arguments"
-    no_sibling_ratio = totals["no_sibling_hint"] / totals["tools"]
+    exempt = sum(
+        1
+        for name in SIBLING_EXEMPT
+        if name in signals_by_name and not signals_by_name[name]["mentions_sibling_tool"]
+    )
+    no_sibling_ratio = (totals["no_sibling_hint"] - exempt) / totals["tools"]
     no_result_ratio = totals["no_result_statement"] / totals["tools"]
     assert no_sibling_ratio <= MAX_NO_SIBLING_RATIO, (
         f"{totals['no_sibling_hint']}/{totals['tools']} tools give no routing hint "

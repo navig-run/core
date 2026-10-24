@@ -275,6 +275,25 @@ ROUTER_SPECS: dict[str, RouterSpec] = {
             ActionSpec("fetch", connector="fetch"),
         ),
     ),
+    "navig_capabilities": RouterSpec(
+        name="navig_capabilities",
+        title="Capabilities: plugins, accounts and next steps",
+        kind=KIND_READ,
+        summary=(
+            "Discover what this NAVIG install can do beyond the core domains: installed "
+            "plugins (media generation, audio, video, social posting, email, phones, …), "
+            "the accounts, keys and devices they can use, the exact command for a goal, and "
+            "next steps for a file you produced. Read-only. Check here before telling the "
+            "operator something is impossible; run a command with navig_run. Returns plugins "
+            "with account states, matching command paths, usage, or ranked next steps."
+        ),
+        actions=(
+            ActionSpec("overview", "navig_capabilities_overview"),
+            ActionSpec("find", "navig_capabilities_find"),
+            ActionSpec("command_help", "navig_capabilities_command_help"),
+            ActionSpec("suggest", "navig_capabilities_suggest"),
+        ),
+    ),
     "navig_memory_update": RouterSpec(
         name="navig_memory_update",
         title="Memory: change facts",
@@ -369,6 +388,21 @@ ROUTER_SPECS: dict[str, RouterSpec] = {
         ),
         open_world=True,
         actions=(ActionSpec("act", connector="act"),),
+    ),
+    "navig_run": RouterSpec(
+        name="navig_run",
+        title="Run an installed NAVIG command",
+        kind=KIND_ACT,
+        summary=(
+            "Run one installed NAVIG CLI command (plugins included) with a list of "
+            "arguments: generate media, process audio or video, check a device, prepare or "
+            "publish a post. State-changing; publishing, sending and deleting commands "
+            "require approval, read commands do not. Use navig_capabilities find/suggest to "
+            "get the exact path first. Returns exit code, stdout/stderr, and parsed JSON when "
+            "the command printed JSON."
+        ),
+        open_world=True,
+        actions=(ActionSpec("run", "navig_run_cli"),),
     ),
 }
 
@@ -732,8 +766,29 @@ def gate_target(server: Any, router: str, arguments: Mapping[str, Any]) -> tuple
     original, _problem = _target_for(server, action_spec, provider)
     if original is None:
         return None
+    if original == "navig_run_cli":
+        return run_cli_gate(arguments)
     level = getattr(server, "_tool_safety", {}).get(original, "safe")
     return original, level
+
+
+def run_cli_gate(arguments: Mapping[str, Any]) -> tuple[str, str]:
+    """Gate target for ``navig_run``: the exact command path at its own level.
+
+    The approval prompt and audit log then name ``cli:navig social upload``, not a
+    generic runner, and a read such as ``navig mobile devices`` is not gated at all. A path
+    that is not an installed command resolves to ``dangerous`` — the handler refuses it
+    anyway, so the gate must never be the weaker of the two checks.
+    """
+    from navig.capabilities.safety import classify
+    from navig.mcp.tools.capabilities import resolve_run_target
+
+    path, _problem = resolve_run_target(
+        arguments.get("path") if isinstance(arguments, Mapping) else None
+    )
+    if path is None:
+        return "navig_run_cli", "dangerous"
+    return f"cli:{path}", classify(path)
 
 
 def _make_handler(spec: RouterSpec):

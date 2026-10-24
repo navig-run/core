@@ -19,6 +19,12 @@ from datetime import datetime, time
 from enum import Enum
 from typing import Any
 
+# Imported for its side effect: registers the greeting / daily-tip / host-health
+# card handlers (``cd:ngr:``, ``cd:ntp:``, ``cd:nop:``). Every process that may
+# receive a press must have them registered, and this module is loaded by the
+# gateway and by the telegram worker alike.
+from navig.telegram import notice_cards as _notice_cards  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 
@@ -77,6 +83,9 @@ class Notification:
     metadata: dict[str, Any] = field(default_factory=dict)
     # Inline keyboard rows sent alongside the message (Telegram inline_keyboard format).
     keyboard: list[list[dict]] | None = field(default=None)
+    # When set, ``(Screen, Context)`` from ``navig.telegram.cards``: the message goes
+    # out as an in-place card (Open/View, Back, Close) instead of plain text.
+    card: tuple[Any, Any] | None = field(default=None, compare=False, repr=False)
     # When True, ``message`` is already fully formatted — skip the title/emoji wrapper.
     raw_message: bool = False
     # Delivery bookkeeping for the queue drain (see TelegramNotifier._settle).
@@ -583,16 +592,28 @@ class TelegramNotifier(ChannelNotifier):
                 else nullcontext()
             )
             with routine:
-                sent = await self.channel.send_message(
-                    self.chat_id,
-                    message,
-                    keyboard=notification.keyboard or None,
-                )
+                if notification.card is not None:
+                    # One message that edits itself: Open/View expands, Back returns,
+                    # Close collapses and clears the keyboard. A rejected card send
+                    # returns an empty dict (the Bot API answers None without raising).
+                    from navig.telegram.cards import send_card
+
+                    screen, context = notification.card
+                    sent = await send_card(
+                        self.chat_id, screen, context, channel=self.channel
+                    )
+                else:
+                    sent = await self.channel.send_message(
+                        self.chat_id,
+                        message,
+                        keyboard=notification.keyboard or None,
+                    )
             # send_message returns None on a REJECTED send WITHOUT raising (rate-limit,
-            # API error, timeout) — the `except` below never sees it. A proactive alert
+            # API error, timeout) — the `except` below never sees it, and a card send
+            # reports the same rejection as an empty message object. A proactive alert
             # that silently fails to deliver is exactly the "healed at 3am, told nobody"
             # trap; at minimum surface it so it's diagnosable instead of looking sent.
-            if sent is None:
+            if not sent:
                 logger.warning(
                     "Notification NOT delivered — Telegram rejected the send: %r [%s]",
                     notification.title,
@@ -887,6 +908,44 @@ class TelegramNotifier(ChannelNotifier):
             if title == title_key:  # no locale entry — fall back to the old shape
                 title = f"NAVIG — {action.replace('_', ' ').title()}"
 
+            # Two of these notices are day-bound and were arriving TWICE: the
+            # greeting, measured at 07:13 and 07:17 on one morning. A cooldown in
+            # process memory cannot stop a second process (or a restarted one)
+            # from greeting again, so both consult the durable daily claim
+            # BEFORE sending and are dropped for the rest of the local day.
+            card = None
+            if action == "greeting":
+                from navig.telegram.daily_once import daily_once
+
+                if not daily_once("briefing:morning"):
+                    logger.debug(
+                        "engagement: morning greeting already sent today — suppressed"
+                    )
+                    return None
+                anchor = ""
+                try:
+                    from navig.agent.proactive.eve_log import get_yesterday
+
+                    anchor = (get_yesterday().get("priority") or "").strip()
+                except Exception:  # noqa: BLE001 — the card still reads without it
+                    pass
+                from navig.telegram import notice_cards
+
+                card = notice_cards.greeting_card(title, result.message, anchor=anchor)
+            elif action == "capability_promo":
+                from navig.telegram.daily_once import daily_once
+
+                if not daily_once("tip:daily"):
+                    logger.debug("engagement: daily tip already sent today — suppressed")
+                    return None
+                from navig.telegram import notice_cards as tip_cards
+
+                card = tip_cards.tip_card(
+                    title,
+                    result.message,
+                    feature=str((result.metadata or {}).get("feature") or ""),
+                )
+
             # A nudge that ASKS something must ship the way to answer it.
             # These go out as one-way push Notifications: nothing anywhere records
             # a pending question, so a plain "yes" lands in the ordinary chat
@@ -900,7 +959,7 @@ class TelegramNotifier(ChannelNotifier):
             # `suggested_command` get one; the rest stay plain statements.
             keyboard = None
             suggested = (result.metadata or {}).get("suggested_command")
-            if suggested:
+            if suggested and card is None:
                 # i18n.t takes **fields for formatting, not a default — a missing
                 # key comes back AS the key, which is the fallback shape used for
                 # the title above.
@@ -921,6 +980,8 @@ class TelegramNotifier(ChannelNotifier):
                 metadata={**(result.metadata or {}),
                           "tidy_kind": _ENGAGEMENT_TIDY_KINDS.get(action, "notice")},
                 keyboard=keyboard,
+                card=card,
+                raw_message=card is not None,
             )
         except Exception as e:
             logger.error("Engagement tick failed: %s", e)

@@ -1,6 +1,6 @@
 # NAVIG Command Reference
 
-_Generated 2026-10-20T13:09:29.728657+00:00_
+_Generated 2026-10-22T08:16:35.983782+00:00_
 
 ## `navig action add`
 **Status:** `stable` · **Since:** 
@@ -242,6 +242,14 @@ Acknowledge a failed run so it stops lighting the Dock indicator.
 navig agentctl ack
 ```
 
+## `navig agentctl answer`
+**Status:** `stable` · **Since:** 
+Answer one session's open question card, verified (never guesses an option).
+**Examples:**
+```sh
+navig agentctl answer
+```
+
 ## `navig agentctl bind`
 **Status:** `stable` · **Since:** 
 Claim a task for a session. Rebinding MOVES the owner (one claim per task).
@@ -256,6 +264,30 @@ Active task <-> session claims (one claim per task — no duplicate execution).
 **Examples:**
 ```sh
 navig agentctl bindings
+```
+
+## `navig agentctl capabilities`
+**Status:** `stable` · **Since:** 
+What the conductor can and cannot do — declared, never implied.
+**Examples:**
+```sh
+navig agentctl capabilities
+```
+
+## `navig agentctl conduct`
+**Status:** `stable` · **Since:** 
+The process: organize the columns, start work, wait, review, repeat — bounded.
+**Examples:**
+```sh
+navig agentctl conduct
+```
+
+## `navig agentctl dispatch`
+**Status:** `stable` · **Since:** 
+Send the finish instruction to Building sessions, up to the WIP budget.
+**Examples:**
+```sh
+navig agentctl dispatch
 ```
 
 ## `navig agentctl hooks install`
@@ -282,6 +314,70 @@ Remove only the Agent Monitor hooks; every other hook is left as it was.
 navig agentctl hooks uninstall
 ```
 
+## `navig agentctl lane`
+**Status:** `stable` · **Since:** 
+Move one card between lanes — ledger AND the actual editor column (verified).
+**Examples:**
+```sh
+navig agentctl lane
+```
+
+## `navig agentctl lanes`
+**Status:** `stable` · **Since:** 
+The four-column board: Building · In Process (WIP) · Review · Later.
+**Examples:**
+```sh
+navig agentctl lanes
+```
+
+## `navig agentctl nudge`
+**Status:** `stable` · **Since:** 
+Ask a session that stopped without SESSION CLOSED to finish and close itself.
+**Examples:**
+```sh
+navig agentctl nudge
+```
+
+## `navig agentctl observe`
+**Status:** `stable` · **Since:** 
+Settle finished In Process turns into Review (a dispatched message is not done).
+**Examples:**
+```sh
+navig agentctl observe
+```
+
+## `navig agentctl organize`
+**Status:** `stable` · **Since:** 
+Organize the columns: column 2 = only the sessions actually working (cap 8).
+**Examples:**
+```sh
+navig agentctl organize
+```
+
+## `navig agentctl questions`
+**Status:** `stable` · **Since:** 
+Sessions waiting on a human answer, with the question they are asking.
+**Examples:**
+```sh
+navig agentctl questions
+```
+
+## `navig agentctl resolve`
+**Status:** `stable` · **Since:** 
+Resolve EVERY card: dispatch Building, nudge until SESSION CLOSED, review, repeat.
+**Examples:**
+```sh
+navig agentctl resolve
+```
+
+## `navig agentctl review`
+**Status:** `stable` · **Since:** 
+Run the review engine; the verdict is SESSION CAN BE CLOSED SAFELY or why not.
+**Examples:**
+```sh
+navig agentctl review
+```
+
 ## `navig agentctl run`
 **Status:** `stable` · **Since:** 
 Run a command as a monitored, verified process:  navig agentctl run -- <command…>
@@ -296,6 +392,14 @@ Agent runs: sessions, subagents, commands and lands, live and historical.
 **Examples:**
 ```sh
 navig agentctl runs
+```
+
+## `navig agentctl scan`
+**Status:** `stable` · **Since:** 
+Read the four editor columns into the lane ledger (read-only).
+**Examples:**
+```sh
+navig agentctl scan
 ```
 
 ## `navig agentctl sessions`
@@ -922,6 +1026,182 @@ navig ai show
 navig ai suggest
 ```
 
+## `navig alexa announce`
+**Status:** `stable` · **Since:** 
+Speak through Echo speakers one at a time, reporting each device separately.
+**Examples:**
+```sh
+navig alexa announce
+```
+
+## `navig alexa devices`
+**Status:** `stable` · **Since:** 
+List every Echo device and every Alexa smart-home appliance on the account.
+**Examples:**
+```sh
+navig alexa devices
+```
+
+## `navig alexa login`
+**Status:** `stable` · **Since:** 
+Log in to Amazon for Alexa Media Player (interactive; 2FA/OTP supported).
+**Examples:**
+```sh
+navig alexa login
+```
+
+## `navig alexa model`
+**Status:** `stable` · **Since:** 
+Generate the Interaction Model JSON for the Alexa Developer Console.
+**Examples:**
+```sh
+navig alexa model
+```
+
+## `navig alexa routine`
+**Status:** `stable` · **Since:** 
+Start one Alexa routine (utterance-triggered routines only — see the README).
+**Examples:**
+```sh
+navig alexa routine
+```
+
+## `navig alexa routines`
+**Status:** `stable` · **Since:** 
+List the Alexa routines (automations) this account exposes.
+**Examples:**
+```sh
+navig alexa routines
+```
+
+## `navig alexa serve`
+**Status:** `stable` · **Since:** 
+Serve the skill endpoint (POST /alexa, GET /health) until Ctrl+C.
+**Examples:**
+```sh
+navig alexa serve
+```
+
+## `navig alexa setup`
+**Status:** `stable` · **Since:** 
+Print the exact steps to make “Alexa, ask NAVIG …” live.
+**Examples:**
+```sh
+navig alexa setup
+```
+
+## `navig alexa speak`
+**Status:** `stable` · **Since:** 
+Speak through navig-home (or Home Assistant notify) — and say honestly if it did not.
+**Examples:**
+```sh
+navig alexa speak
+```
+
+## `navig alexa status`
+**Status:** `stable` · **Since:** 
+Skill id, running server, dispatch backend, tunnel — one table.
+**Examples:**
+```sh
+navig alexa status
+```
+
+## `navig alexa test`
+**Status:** `stable` · **Since:** 
+Run one utterance through the handler locally and print the Alexa response JSON.
+**Examples:**
+```sh
+navig alexa test
+```
+
+## `navig alice model`
+**Status:** `stable` · **Since:** 
+Print the exact Yandex Dialogs console fields, phrases and intents.
+**Examples:**
+```sh
+navig alice model
+```
+
+## `navig alice serve`
+**Status:** `stable` · **Since:** 
+Serve the webhook (POST /alice, GET /health) until Ctrl+C.
+**Examples:**
+```sh
+navig alice serve
+```
+
+## `navig alice setup`
+**Status:** `stable` · **Since:** 
+Print the exact steps to make “Алиса, попроси NAVIG …” live.
+**Examples:**
+```sh
+navig alice setup
+```
+
+## `navig alice station command`
+**Status:** `stable` · **Since:** 
+Send a spoken command to a Yandex Station (quasar server_action capability).
+**Examples:**
+```sh
+navig alice station command
+```
+
+## `navig alice station devices`
+**Status:** `stable` · **Since:** 
+Every device in the Yandex smart home, with room, type and online state.
+**Examples:**
+```sh
+navig alice station devices
+```
+
+## `navig alice station off`
+**Status:** `stable` · **Since:** 
+Turn one Yandex smart-home device off.
+**Examples:**
+```sh
+navig alice station off
+```
+
+## `navig alice station on`
+**Status:** `stable` · **Since:** 
+Turn one Yandex smart-home device on.
+**Examples:**
+```sh
+navig alice station on
+```
+
+## `navig alice station speak`
+**Status:** `stable` · **Since:** 
+Say text on a Yandex Station (quasar tts capability).
+**Examples:**
+```sh
+navig alice station speak
+```
+
+## `navig alice station status`
+**Status:** `stable` · **Since:** 
+Smart-home overview, or the capability states of one device.
+**Examples:**
+```sh
+navig alice station status
+```
+
+## `navig alice status`
+**Status:** `stable` · **Since:** 
+Skill id, running webhook, dispatch backend, tunnel, token — one table.
+**Examples:**
+```sh
+navig alice status
+```
+
+## `navig alice test`
+**Status:** `stable` · **Since:** 
+Run one utterance through the handler locally and print the Dialogs response.
+**Examples:**
+```sh
+navig alice test
+```
+
 ## `navig android connect`
 **Status:** `stable` · **Since:** 
 adb connect over TCP/IP.
@@ -1140,10 +1420,146 @@ navig approve yes
 
 ## `navig ask`
 **Status:** `stable` · **Since:** 
-Ask AI about server/configuration.
+Ask NAVIG Reflex about a device/action; unmatched questions go to the AI.
 **Examples:**
 ```sh
 navig ask
+```
+
+## `navig assistant alarms cancel`
+**Status:** `stable` · **Since:** 
+Cancel one alarm (by label/id) or all of them.
+**Examples:**
+```sh
+navig assistant alarms cancel
+```
+
+## `navig assistant alarms check`
+**Status:** `stable` · **Since:** 
+Print the alarms that came due — for cron or a supervisor.
+**Examples:**
+```sh
+navig assistant alarms check
+```
+
+## `navig assistant alarms list`
+**Status:** `stable` · **Since:** 
+List the active alarms.
+**Examples:**
+```sh
+navig assistant alarms list
+```
+
+## `navig assistant alarms set`
+**Status:** `stable` · **Since:** 
+Set one alarm for the next occurrence of a clock time.
+**Examples:**
+```sh
+navig assistant alarms set
+```
+
+## `navig assistant ask`
+**Status:** `stable` · **Since:** 
+Run one text turn: normalise → NLU → skill → reply.
+**Examples:**
+```sh
+navig assistant ask
+```
+
+## `navig assistant doctor`
+**Status:** `stable` · **Since:** 
+Which engines exist, which are missing, and the exact install command.
+**Examples:**
+```sh
+navig assistant doctor
+```
+
+## `navig assistant listen`
+**Status:** `stable` · **Since:** 
+Wake → record → transcribe → ask → speak, using the optional audio extras.
+**Examples:**
+```sh
+navig assistant listen
+```
+
+## `navig assistant profile clear`
+**Status:** `stable` · **Since:** 
+Forget the durable profile.
+**Examples:**
+```sh
+navig assistant profile clear
+```
+
+## `navig assistant profile set-name`
+**Status:** `stable` · **Since:** 
+Persist the name — the same write the 'call me …' intent performs.
+**Examples:**
+```sh
+navig assistant profile set-name
+```
+
+## `navig assistant profile show`
+**Status:** `stable` · **Since:** 
+Show the durable profile (empty until 'call me …' is said).
+**Examples:**
+```sh
+navig assistant profile show
+```
+
+## `navig assistant say`
+**Status:** `stable` · **Since:** 
+Speak with the first available engine and report exactly which one did.
+**Examples:**
+```sh
+navig assistant say
+```
+
+## `navig assistant serve`
+**Status:** `stable` · **Since:** 
+Serve the OpenAI-compatible endpoint, /ask, /health and /skills until Ctrl+C.
+**Examples:**
+```sh
+navig assistant serve
+```
+
+## `navig assistant skills`
+**Status:** `stable` · **Since:** 
+The skill manifests: what the voice accepts and what each one reads.
+**Examples:**
+```sh
+navig assistant skills
+```
+
+## `navig assistant timers cancel`
+**Status:** `stable` · **Since:** 
+Cancel one timer (by label/id) or all of them.
+**Examples:**
+```sh
+navig assistant timers cancel
+```
+
+## `navig assistant timers check`
+**Status:** `stable` · **Since:** 
+Print (and exit 0) the timers that came due — for cron or a supervisor.
+**Examples:**
+```sh
+navig assistant timers check
+```
+
+## `navig assistant timers list`
+**Status:** `stable` · **Since:** 
+List the running timers.
+**Examples:**
+```sh
+navig assistant timers list
+```
+
+## `navig assistant timers set`
+**Status:** `stable` · **Since:** 
+Set one timer.
+**Examples:**
+```sh
+navig assistant timers set
 ```
 
 ## `navig audio ad-slot`
@@ -2202,6 +2618,22 @@ Stop OUR running NAVIG bot/gateway processes (this config dir only).
 navig bot stop
 ```
 
+## `navig brain claim`
+**Status:** `stable` · **Since:** 
+Make this machine the Brain — only if the lease is free or already ours.
+**Examples:**
+```sh
+navig brain claim
+```
+
+## `navig brain migrate`
+**Status:** `stable` · **Since:** 
+Move the Brain: Discover → Inspect → Back up → Transfer → Validate → Cut over → Verify → Complete.
+**Examples:**
+```sh
+navig brain migrate
+```
+
 ## `navig brain prompts get`
 **Status:** `stable` · **Since:** 
 Output prompt content — intended for programmatic consumption by navig-bridge/CLI.
@@ -2232,6 +2664,54 @@ Write or overwrite a prompt file.
 **Examples:**
 ```sh
 navig brain prompts set
+```
+
+## `navig brain release`
+**Status:** `stable` · **Since:** 
+Give the Brain up cleanly, so another machine can claim it.
+**Examples:**
+```sh
+navig brain release
+```
+
+## `navig brain roles`
+**Status:** `stable` · **Since:** 
+The four install choices, with what each one means for you.
+**Examples:**
+```sh
+navig brain roles
+```
+
+## `navig brain status`
+**Status:** `stable` · **Since:** 
+Who owns this Brain, what role this machine has, and what it may do.
+**Examples:**
+```sh
+navig brain status
+```
+
+## `navig brain takeover`
+**Status:** `stable` · **Since:** 
+Take the Brain over explicitly: bumps the epoch and records who/why in the audit.
+**Examples:**
+```sh
+navig brain takeover
+```
+
+## `navig brain telegram`
+**Status:** `stable` · **Since:** 
+Show or transition Telegram delivery ownership (polling vs webhook).
+**Examples:**
+```sh
+navig brain telegram
+```
+
+## `navig brain verify`
+**Status:** `stable` · **Since:** 
+Prove this Brain is the owner AND that its capabilities are really there.
+**Examples:**
+```sh
+navig brain verify
 ```
 
 ## `navig bridge connect`
@@ -2456,6 +2936,30 @@ Nothing to sync: events are read live from your provider on every `list`.
 **Examples:**
 ```sh
 navig calendar sync
+```
+
+## `navig capabilities`
+**Status:** `stable` · **Since:** 
+Installed plugins and the accounts each can act as.
+**Examples:**
+```sh
+navig capabilities
+```
+
+## `navig capabilities find`
+**Status:** `stable` · **Since:** 
+Installed commands that match a goal.
+**Examples:**
+```sh
+navig capabilities find
+```
+
+## `navig capabilities suggest`
+**Status:** `stable` · **Since:** 
+Next steps for a file, using only installed commands and connected accounts.
+**Examples:**
+```sh
+navig capabilities suggest
 ```
 
 ## `navig card add`
@@ -3064,6 +3568,70 @@ Self-host the Mini App via Tailscale Funnel — stable HTTPS, no domain needed.
 **Examples:**
 ```sh
 navig cloud tailscale
+```
+
+## `navig companion brief`
+**Status:** `stable` · **Since:** 
+Read your unread notifications aloud.
+**Examples:**
+```sh
+navig companion brief
+```
+
+## `navig companion say`
+**Status:** `stable` · **Since:** 
+Speak one line through NAVIG's TTS engines.
+**Examples:**
+```sh
+navig companion say
+```
+
+## `navig companion send`
+**Status:** `stable` · **Since:** 
+Send what you're looking at to a tagged contact.
+**Examples:**
+```sh
+navig companion send
+```
+
+## `navig companion share`
+**Status:** `stable` · **Since:** 
+Parse a spoken share request and do it.
+**Examples:**
+```sh
+navig companion share
+```
+
+## `navig companion skills`
+**Status:** `stable` · **Since:** 
+List the declarative companion skills.
+**Examples:**
+```sh
+navig companion skills
+```
+
+## `navig companion thoughts`
+**Status:** `stable` · **Since:** 
+One grounded thought from NAVIG's current context.
+**Examples:**
+```sh
+navig companion thoughts
+```
+
+## `navig companion voice-note`
+**Status:** `stable` · **Since:** 
+Generate an AI voice note and send it to a tagged contact.
+**Examples:**
+```sh
+navig companion voice-note
+```
+
+## `navig companion voices`
+**Status:** `stable` · **Since:** 
+List the TTS voices this install can use.
+**Examples:**
+```sh
+navig companion voices
 ```
 
 ## `navig config`
@@ -3736,6 +4304,46 @@ Show Contribution Mode configuration and fork status.
 **Examples:**
 ```sh
 navig contribute status
+```
+
+## `navig coordination`
+**Status:** `stable` · **Since:** 
+Show the operator's coordination inbox when run with no subcommand.
+**Examples:**
+```sh
+navig coordination
+```
+
+## `navig coordination inbox`
+**Status:** `stable` · **Since:** 
+List a participant's durable coordination messages.
+**Examples:**
+```sh
+navig coordination inbox
+```
+
+## `navig coordination send`
+**Status:** `stable` · **Since:** 
+Send one coordination message (operator-authorized; data only, never executed).
+**Examples:**
+```sh
+navig coordination send
+```
+
+## `navig coordination tick`
+**Status:** `stable` · **Since:** 
+Run one delivery pass (route persisted messages, retry/expire/dead-letter).
+**Examples:**
+```sh
+navig coordination tick
+```
+
+## `navig coordination transition`
+**Status:** `stable` · **Since:** 
+Advance one message's delivery state (forward-only, terminal states block).
+**Examples:**
+```sh
+navig coordination transition
 ```
 
 ## `navig copilot ask`
@@ -4848,6 +5456,54 @@ List active conversation threads.
 navig dispatch threads
 ```
 
+## `navig display`
+**Status:** `stable` · **Since:** 
+Show every monitor and its current brightness.
+**Examples:**
+```sh
+navig display
+```
+
+## `navig display bright`
+**Status:** `stable` · **Since:** 
+Make monitors brighter — an exact level, a step, or the default 20-point step.
+**Examples:**
+```sh
+navig display bright
+```
+
+## `navig display dim`
+**Status:** `stable` · **Since:** 
+Make monitors darker — an exact level, a step, or the default 20-point step.
+**Examples:**
+```sh
+navig display dim
+```
+
+## `navig display list`
+**Status:** `stable` · **Since:** 
+List connected monitors and their brightness.
+**Examples:**
+```sh
+navig display list
+```
+
+## `navig display restore`
+**Status:** `stable` · **Since:** 
+Put back the brightness saved before the first change.
+**Examples:**
+```sh
+navig display restore
+```
+
+## `navig display set`
+**Status:** `stable` · **Since:** 
+Set every selected monitor to an exact brightness.
+**Examples:**
+```sh
+navig display set
+```
+
 ## `navig distribution adapters`
 **Status:** `stable` · **Since:** 
 Reviewed form maps on disk and whether each one is usable.
@@ -5054,6 +5710,102 @@ Cross-project health: channels, campaigns, publications and the policy.
 **Examples:**
 ```sh
 navig distribution status
+```
+
+## `navig distribution telegram accounts`
+**Status:** `stable` · **Since:** 
+List the account registry, or add / enable / disable one account.
+**Examples:**
+```sh
+navig distribution telegram accounts
+```
+
+## `navig distribution telegram approve`
+**Status:** `stable` · **Since:** 
+Record your yes in NAVIG, bound to the exact rendered words.
+**Examples:**
+```sh
+navig distribution telegram approve
+```
+
+## `navig distribution telegram draft`
+**Status:** `stable` · **Since:** 
+Queue one message for one target. Nothing is sent.
+**Examples:**
+```sh
+navig distribution telegram draft
+```
+
+## `navig distribution telegram drafts`
+**Status:** `stable` · **Since:** 
+The draft queue, with each draft's next step.
+**Examples:**
+```sh
+navig distribution telegram drafts
+```
+
+## `navig distribution telegram log`
+**Status:** `stable` · **Since:** 
+The post journal: what went out, where, and whether it is still live.
+**Examples:**
+```sh
+navig distribution telegram log
+```
+
+## `navig distribution telegram post`
+**Status:** `stable` · **Since:** 
+Run the gate, send, then journal. Refuses anything the gate blocks.
+**Examples:**
+```sh
+navig distribution telegram post
+```
+
+## `navig distribution telegram reject`
+**Status:** `stable` · **Since:** 
+Record a rejection and its reason. Nothing is sent.
+**Examples:**
+```sh
+navig distribution telegram reject
+```
+
+## `navig distribution telegram review`
+**Status:** `stable` · **Since:** 
+Send the queue to your own Telegram as cards: Open / Approve / Reject / Close.
+**Examples:**
+```sh
+navig distribution telegram review
+```
+
+## `navig distribution telegram status`
+**Status:** `stable` · **Since:** 
+Queue, quota and target health in one view.
+**Examples:**
+```sh
+navig distribution telegram status
+```
+
+## `navig distribution telegram target-add`
+**Status:** `stable` · **Since:** 
+Register a destination for a project (re-adding updates it).
+**Examples:**
+```sh
+navig distribution telegram target-add
+```
+
+## `navig distribution telegram targets`
+**Status:** `stable` · **Since:** 
+List the destination registry, or enable / disable one target.
+**Examples:**
+```sh
+navig distribution telegram targets
+```
+
+## `navig distribution telegram verify`
+**Status:** `stable` · **Since:** 
+Ask Telegram whether each journalled message is still live.
+**Examples:**
+```sh
+navig distribution telegram verify
 ```
 
 ## `navig do`
@@ -5862,6 +6614,30 @@ One incremental pass over new mail: rules → labels / Telegram / run. For cron 
 **Examples:**
 ```sh
 navig email watch
+```
+
+## `navig endpoints list`
+**Status:** `stable` · **Since:** 
+List every controllable endpoint with its typed capabilities.
+**Examples:**
+```sh
+navig endpoints list
+```
+
+## `navig endpoints set`
+**Status:** `stable` · **Since:** 
+Apply one directive through the home plugin (idempotent; a replay changes nothing).
+**Examples:**
+```sh
+navig endpoints set
+```
+
+## `navig endpoints show`
+**Status:** `stable` · **Since:** 
+Show one endpoint: live state and the directives it supports.
+**Examples:**
+```sh
+navig endpoints show
 ```
 
 ## `navig eval run`
@@ -7888,6 +8664,22 @@ Everything about one goal, including its latest report and receipt.
 navig goal show
 ```
 
+## `navig google ask`
+**Status:** `stable` · **Since:** 
+Ask Google's AI, grounded in Google Search, with the sources it used.
+**Examples:**
+```sh
+navig google ask
+```
+
+## `navig google status`
+**Status:** `stable` · **Since:** 
+Is a Google API key configured, and which model/endpoint is used?
+**Examples:**
+```sh
+navig google status
+```
+
 ## `navig guard install`
 **Status:** `stable` · **Since:** 
 Register Navig-Guard (at logon) and Navig-ProcSweep (hourly) as scheduled tasks.
@@ -8190,6 +8982,478 @@ Undo a reversible (green) operation — confirm-gated.
 **Examples:**
 ```sh
 navig history undo
+```
+
+## `navig home add`
+**Status:** `stable` · **Since:** 
+Add (or replace) one device in the inventory.
+**Examples:**
+```sh
+navig home add
+```
+
+## `navig home climate`
+**Status:** `stable` · **Since:** 
+Set one climate field: temp <n>, mode <m>, fan <f>.
+**Examples:**
+```sh
+navig home climate
+```
+
+## `navig home import`
+**Status:** `stable` · **Since:** 
+Import devices from Home Assistant, Govee, a LAN scan, or a YAML file.
+**Examples:**
+```sh
+navig home import
+```
+
+## `navig home lg devices`
+**Status:** `stable` · **Since:** 
+List the LG appliances visible to the signed-in account.
+**Examples:**
+```sh
+navig home lg devices
+```
+
+## `navig home lg login`
+**Status:** `stable` · **Since:** 
+Sign in to the LG account (OAuth); stores the refresh token owner-only.
+**Examples:**
+```sh
+navig home lg login
+```
+
+## `navig home lg logout`
+**Status:** `stable` · **Since:** 
+Forget the LG sign-in (deletes the stored refresh token).
+**Examples:**
+```sh
+navig home lg logout
+```
+
+## `navig home lg pause`
+**Status:** `stable` · **Since:** 
+Pause the running cycle (ThinQ Connect PAT; only where the model allows it).
+**Examples:**
+```sh
+navig home lg pause
+```
+
+## `navig home lg start`
+**Status:** `stable` · **Since:** 
+Start a pre-selected cycle (ThinQ Connect PAT; Remote Start must be enabled).
+**Examples:**
+```sh
+navig home lg start
+```
+
+## `navig home lg status`
+**Status:** `stable` · **Since:** 
+Read one appliance's state, remaining time and course.
+**Examples:**
+```sh
+navig home lg status
+```
+
+## `navig home lg stop`
+**Status:** `stable` · **Since:** 
+Stop the running cycle (ThinQ Connect PAT).
+**Examples:**
+```sh
+navig home lg stop
+```
+
+## `navig home lg watch`
+**Status:** `stable` · **Since:** 
+Poll one appliance's state and remaining time; optionally announce transitions.
+**Examples:**
+```sh
+navig home lg watch
+```
+
+## `navig home list`
+**Status:** `stable` · **Since:** 
+The inventory: what NAVIG is allowed to control.
+**Examples:**
+```sh
+navig home list
+```
+
+## `navig home off`
+**Status:** `stable` · **Since:** 
+Turn one device off.
+**Examples:**
+```sh
+navig home off
+```
+
+## `navig home on`
+**Status:** `stable` · **Since:** 
+Turn one device on.
+**Examples:**
+```sh
+navig home on
+```
+
+## `navig home projector`
+**Status:** `stable` · **Since:** 
+Drive one PJLink projector.
+**Examples:**
+```sh
+navig home projector
+```
+
+## `navig home providers`
+**Status:** `stable` · **Since:** 
+Which providers can act, what each one needs, and the speech channels.
+**Examples:**
+```sh
+navig home providers
+```
+
+## `navig home remove`
+**Status:** `stable` · **Since:** 
+Remove one device from the inventory.
+**Examples:**
+```sh
+navig home remove
+```
+
+## `navig home router devices`
+**Status:** `stable` · **Since:** 
+List DHCP leases and connected hosts, with vendor and state.
+**Examples:**
+```sh
+navig home router devices
+```
+
+## `navig home router import`
+**Status:** `stable` · **Since:** 
+Map DHCP leases to inventory candidates — preview first, never silently add.
+**Examples:**
+```sh
+navig home router import
+```
+
+## `navig home router login`
+**Status:** `stable` · **Since:** 
+Verify the router admin password and store it owner-only.
+**Examples:**
+```sh
+navig home router login
+```
+
+## `navig home router networks`
+**Status:** `stable` · **Since:** 
+SSIDs, bands, security and subnets the Livebox serves — never a key.
+**Examples:**
+```sh
+navig home router networks
+```
+
+## `navig home scan`
+**Status:** `stable` · **Since:** 
+Discover every reachable LAN, read-only: never writes the inventory.
+**Examples:**
+```sh
+navig home scan
+```
+
+## `navig home scene list`
+**Status:** `stable` · **Since:** 
+Scenes defined in ~/.navig/home/scenes.yaml.
+**Examples:**
+```sh
+navig home scene list
+```
+
+## `navig home scene run`
+**Status:** `stable` · **Since:** 
+Run one scene, in order, across every provider.
+**Examples:**
+```sh
+navig home scene run
+```
+
+## `navig home set`
+**Status:** `stable` · **Since:** 
+Set attributes: brightness, color, temp (K), target_temp, mode, fan, humidity, dp.<n>.
+**Examples:**
+```sh
+navig home set
+```
+
+## `navig home somneo`
+**Status:** `stable` · **Since:** 
+Control the Somneo light directly.
+**Examples:**
+```sh
+navig home somneo
+```
+
+## `navig home speak`
+**Status:** `stable` · **Since:** 
+Speak a line through Home Assistant TTS, falling back to Telegram.
+**Examples:**
+```sh
+navig home speak
+```
+
+## `navig home status`
+**Status:** `stable` · **Since:** 
+Reachability and state, per device, with per-provider readiness.
+**Examples:**
+```sh
+navig home status
+```
+
+## `navig home toggle`
+**Status:** `stable` · **Since:** 
+Flip one device (only where the provider can read its state first).
+**Examples:**
+```sh
+navig home toggle
+```
+
+## `navig home vacuum`
+**Status:** `stable` · **Since:** 
+Drive one robot vacuum: start, pause, stop, dock, spot, locate.
+**Examples:**
+```sh
+navig home vacuum
+```
+
+## `navig home wake plan`
+**Status:** `stable` · **Since:** 
+Show the full timeline with absolute clock times.
+**Examples:**
+```sh
+navig home wake plan
+```
+
+## `navig home wake run`
+**Status:** `stable` · **Since:** 
+Run the whole wake-up now.
+**Examples:**
+```sh
+navig home wake run
+```
+
+## `navig home wake schedule`
+**Status:** `stable` · **Since:** 
+Print the exact command that schedules the wake-up.
+**Examples:**
+```sh
+navig home wake schedule
+```
+
+## `navig home wake test`
+**Status:** `stable` · **Since:** 
+A 2-second demo: lamps to 10% then 100%, then the greeting.
+**Examples:**
+```sh
+navig home wake test
+```
+
+## `navig home watch`
+**Status:** `stable` · **Since:** 
+Poll the house and announce meaningful changes. Ctrl+C stops it.
+**Examples:**
+```sh
+navig home watch
+```
+
+## `navig home wifi adapters`
+**Status:** `stable` · **Since:** 
+List wireless interfaces and say honestly whether monitor mode is possible.
+**Examples:**
+```sh
+navig home wifi adapters
+```
+
+## `navig home wifi analytics`
+**Status:** `stable` · **Since:** 
+Privacy-safe aggregate: vendors, bands, security, probes, dwell buckets.
+**Examples:**
+```sh
+navig home wifi analytics
+```
+
+## `navig home wifi capture`
+**Status:** `stable` · **Since:** 
+Capture pcap + csv + netxml in one passive run (receive-only).
+**Examples:**
+```sh
+navig home wifi capture
+```
+
+## `navig home wifi channels`
+**Status:** `stable` · **Since:** 
+Per-channel AP density/overlap and a 1/6/11 recommendation (not airtime).
+**Examples:**
+```sh
+navig home wifi channels
+```
+
+## `navig home wifi doctor`
+**Status:** `stable` · **Since:** 
+Diagnose the host's routing/internet; --fix only touches NAVIG's own changes.
+**Examples:**
+```sh
+navig home wifi doctor
+```
+
+## `navig home wifi fingerprint`
+**Status:** `stable` · **Since:** 
+Classify nearby devices from probe/beacon IEs with tshark (evidence + confidence).
+**Examples:**
+```sh
+navig home wifi fingerprint
+```
+
+## `navig home wifi heatmap sample`
+**Status:** `stable` · **Since:** 
+Take a labeled survey and store its RSSI samples.
+**Examples:**
+```sh
+navig home wifi heatmap sample
+```
+
+## `navig home wifi history`
+**Status:** `stable` · **Since:** 
+RSSI/beacon history from past surveys (SQLite, no raw MACs).
+**Examples:**
+```sh
+navig home wifi history
+```
+
+## `navig home wifi join`
+**Status:** `stable` · **Since:** 
+Join a Livebox network, internet-safely (snapshot → guard → verify → rollback).
+**Examples:**
+```sh
+navig home wifi join
+```
+
+## `navig home wifi known add`
+**Status:** `stable` · **Since:** 
+Add a device by MAC; the file stores only its salted hash.
+**Examples:**
+```sh
+navig home wifi known add
+```
+
+## `navig home wifi known list`
+**Status:** `stable` · **Since:** 
+List known devices (hashes and labels only).
+**Examples:**
+```sh
+navig home wifi known list
+```
+
+## `navig home wifi known remove`
+**Status:** `stable` · **Since:** 
+Remove a known device by hash or label.
+**Examples:**
+```sh
+navig home wifi known remove
+```
+
+## `navig home wifi leave`
+**Status:** `stable` · **Since:** 
+Disconnect, delete NAVIG profiles, restore the metric, verify internet.
+**Examples:**
+```sh
+navig home wifi leave
+```
+
+## `navig home wifi monitor`
+**Status:** `stable` · **Since:** 
+List client devices heard in probe requests (visibility, not association).
+**Examples:**
+```sh
+navig home wifi monitor
+```
+
+## `navig home wifi presence`
+**Status:** `stable` · **Since:** 
+Compare observed stations with known hashes: arrivals/departures.
+**Examples:**
+```sh
+navig home wifi presence
+```
+
+## `navig home wifi restore`
+**Status:** `stable` · **Since:** 
+Alias of `wifi leave`: put the host's routing back the way it was.
+**Examples:**
+```sh
+navig home wifi restore
+```
+
+## `navig home wifi rogue`
+**Status:** `stable` · **Since:** 
+Flag multiple BSSIDs, security changes and unknown BSSIDs (evil-twin hints).
+**Examples:**
+```sh
+navig home wifi rogue
+```
+
+## `navig home wifi status`
+**Status:** `stable` · **Since:** 
+Show the Livebox's SSIDs/subnets and the current Windows connection (no keys).
+**Examples:**
+```sh
+navig home wifi status
+```
+
+## `navig home wifi survey`
+**Status:** `stable` · **Since:** 
+Passively survey nearby APs (receive-only; no deauth, injection or handshake).
+**Examples:**
+```sh
+navig home wifi survey
+```
+
+## `navig home wifi vm config`
+**Status:** `stable` · **Since:** 
+Store the Wi-Fi survey VM path/user (the password stays in NAVIG_VM_PASSWORD).
+**Examples:**
+```sh
+navig home wifi vm config
+```
+
+## `navig home wifi vm start`
+**Status:** `stable` · **Since:** 
+Start the configured survey VM (headless).
+**Examples:**
+```sh
+navig home wifi vm start
+```
+
+## `navig home wifi vm status`
+**Status:** `stable` · **Since:** 
+Show whether the survey VM is configured and running.
+**Examples:**
+```sh
+navig home wifi vm status
+```
+
+## `navig home wifi vm stop`
+**Status:** `stable` · **Since:** 
+Stop the configured survey VM (soft shutdown).
+**Examples:**
+```sh
+navig home wifi vm stop
+```
+
+## `navig home wifi wids`
+**Status:** `stable` · **Since:** 
+Passive WIDS: deauth/disassoc rates, beacon/BSSID anomalies (receive-only).
+**Examples:**
+```sh
+navig home wifi wids
 ```
 
 ## `navig host`
@@ -9083,6 +10347,78 @@ Compare the deployed edge to the version bundled in this navig release.
 navig lighthouse version
 ```
 
+## `navig lights brightness`
+**Status:** `stable` · **Since:** 
+Set brightness (0–100).
+**Examples:**
+```sh
+navig lights brightness
+```
+
+## `navig lights color`
+**Status:** `stable` · **Since:** 
+Set an RGB colour.
+**Examples:**
+```sh
+navig lights color
+```
+
+## `navig lights discover`
+**Status:** `stable` · **Since:** 
+Find lamps on the LAN (Govee LAN Control must be on), optionally with the cloud list.
+**Examples:**
+```sh
+navig lights discover
+```
+
+## `navig lights off`
+**Status:** `stable` · **Since:** 
+Turn one light (or --all) off.
+**Examples:**
+```sh
+navig lights off
+```
+
+## `navig lights on`
+**Status:** `stable` · **Since:** 
+Turn one light (or --all) on.
+**Examples:**
+```sh
+navig lights on
+```
+
+## `navig lights scene`
+**Status:** `stable` · **Since:** 
+Apply a Govee cloud scene (cloud provider only).
+**Examples:**
+```sh
+navig lights scene
+```
+
+## `navig lights scenes`
+**Status:** `stable` · **Since:** 
+List the scenes a Govee cloud device supports.
+**Examples:**
+```sh
+navig lights scenes
+```
+
+## `navig lights status`
+**Status:** `stable` · **Since:** 
+Which providers are usable (LAN, Govee cloud, Home Assistant).
+**Examples:**
+```sh
+navig lights status
+```
+
+## `navig lights temp`
+**Status:** `stable` · **Since:** 
+Set colour temperature.
+**Examples:**
+```sh
+navig lights temp
+```
+
 ## `navig local`
 **Status:** `stable` · **Since:** 
 Local system management - run without subcommand for help.
@@ -9953,6 +11289,54 @@ Show which migration steps have been completed.
 **Examples:**
 ```sh
 navig migrate status
+```
+
+## `navig mind`
+**Status:** `stable` · **Since:** 
+Show the profile when run without a subcommand.
+**Examples:**
+```sh
+navig mind
+```
+
+## `navig mind digitalghost`
+**Status:** `stable` · **Since:** 
+Set DIGITALGHOST commentary on/off/frequency.
+**Examples:**
+```sh
+navig mind digitalghost
+```
+
+## `navig mind lexicon`
+**Status:** `stable` · **Since:** 
+Set vocabulary-learning density (only in explanatory prose).
+**Examples:**
+```sh
+navig mind lexicon
+```
+
+## `navig mind off`
+**Status:** `stable` · **Since:** 
+Disable the MIND layer (the agent reverts to its default prompt).
+**Examples:**
+```sh
+navig mind off
+```
+
+## `navig mind on`
+**Status:** `stable` · **Since:** 
+Enable the MIND layer.
+**Examples:**
+```sh
+navig mind on
+```
+
+## `navig mind status`
+**Status:** `stable` · **Since:** 
+Show the effective MIND profile (preference hierarchy + firewall).
+**Examples:**
+```sh
+navig mind status
 ```
 
 ## `navig mini deploy`
@@ -10859,6 +12243,350 @@ Show the current submission status via the Microsoft Store Developer CLI.
 navig mstore status
 ```
 
+## `navig music attach`
+**Status:** `stable` · **Since:** 
+Pair NAVIG with the app's local API; the token is stored in NAVIG's vault.
+**Examples:**
+```sh
+navig music attach
+```
+
+## `navig music autoplay`
+**Status:** `stable` · **Since:** 
+Read or set the Up-next autoplay switch, verified by the switch's own state.
+**Examples:**
+```sh
+navig music autoplay
+```
+
+## `navig music capabilities`
+**Status:** `stable` · **Since:** 
+What this app build really supports, per capability and per transport.
+**Examples:**
+```sh
+navig music capabilities
+```
+
+## `navig music comments`
+**Status:** `stable` · **Since:** 
+Read the player page's comments for the current track.
+**Examples:**
+```sh
+navig music comments
+```
+
+## `navig music detach`
+**Status:** `stable` · **Since:** 
+Forget the stored pairing token (revoke the client in the app too, if you wish).
+**Examples:**
+```sh
+navig music detach
+```
+
+## `navig music doctor`
+**Status:** `stable` · **Since:** 
+Diagnose every layer; exit non-zero when a required check fails.
+**Examples:**
+```sh
+navig music doctor
+```
+
+## `navig music download`
+**Status:** `stable` · **Since:** 
+Download audio locally (yt-dlp + FFmpeg), tagged and verified.
+**Examples:**
+```sh
+navig music download
+```
+
+## `navig music export`
+**Status:** `stable` · **Since:** 
+Export state/history as JSON, JSONL, CSV, Markdown or a checksummed archive.
+**Examples:**
+```sh
+navig music export
+```
+
+## `navig music history`
+**Status:** `stable` · **Since:** 
+Observed/rendered listening history — with honest provenance, never a false claim.
+**Examples:**
+```sh
+navig music history
+```
+
+## `navig music import`
+**Status:** `stable` · **Since:** 
+Match your local files against YouTube Music (read-only).
+**Examples:**
+```sh
+navig music import
+```
+
+## `navig music library`
+**Status:** `stable` · **Since:** 
+Read the library, save/unsave albums and playlists, list or delete uploads.
+**Examples:**
+```sh
+navig music library
+```
+
+## `navig music like`
+**Status:** `stable` · **Since:** 
+Like/unlike the current track, verified by the app's own state.
+**Examples:**
+```sh
+navig music like
+```
+
+## `navig music lyrics`
+**Status:** `stable` · **Since:** 
+Read the player page's lyrics for the current track.
+**Examples:**
+```sh
+navig music lyrics
+```
+
+## `navig music mute`
+**Status:** `stable` · **Since:** 
+Mute (volume 0) or restore the remembered volume. Derived from volume, and says so.
+**Examples:**
+```sh
+navig music mute
+```
+
+## `navig music next`
+**Status:** `stable` · **Since:** 
+Skip to the next track and verify the track id changed.
+**Examples:**
+```sh
+navig music next
+```
+
+## `navig music now`
+**Status:** `stable` · **Since:** 
+Current track and playback state as typed JSON.
+**Examples:**
+```sh
+navig music now
+```
+
+## `navig music pause`
+**Status:** `stable` · **Since:** 
+Pause playback and verify the app reports paused.
+**Examples:**
+```sh
+navig music pause
+```
+
+## `navig music play`
+**Status:** `stable` · **Since:** 
+Play music, verifying the resulting track and playback state.
+**Examples:**
+```sh
+navig music play
+```
+
+## `navig music playlists`
+**Status:** `stable` · **Since:** 
+List, show, play or edit the library playlists (create/rename/delete/add/remove).
+**Examples:**
+```sh
+navig music playlists
+```
+
+## `navig music previous`
+**Status:** `stable` · **Since:** 
+Go back one track and verify the track id changed.
+**Examples:**
+```sh
+navig music previous
+```
+
+## `navig music queue`
+**Status:** `stable` · **Since:** 
+List the queue, add tracks, insert one next, remove the current entry or clear.
+**Examples:**
+```sh
+navig music queue
+```
+
+## `navig music radio`
+**Status:** `stable` · **Since:** 
+Start a YouTube Music mix from the current track or a page row.
+**Examples:**
+```sh
+navig music radio
+```
+
+## `navig music repeat`
+**Status:** `stable` · **Since:** 
+Set or cycle repeat, verified against the player bar's exact mode.
+**Examples:**
+```sh
+navig music repeat
+```
+
+## `navig music screenshot`
+**Status:** `stable` · **Since:** 
+Capture the YouTube Music page (never the desktop) as a PNG.
+**Examples:**
+```sh
+navig music screenshot
+```
+
+## `navig music search`
+**Status:** `stable` · **Since:** 
+Search the app's own UI and return typed candidates with ids.
+**Examples:**
+```sh
+navig music search
+```
+
+## `navig music seek`
+**Status:** `stable` · **Since:** 
+Seek within the current track, then verify the reported position.
+**Examples:**
+```sh
+navig music seek
+```
+
+## `navig music selftest`
+**Status:** `stable` · **Since:** 
+Read-only checks of identity, API, CDP, events; never changes playback.
+**Examples:**
+```sh
+navig music selftest
+```
+
+## `navig music session-end`
+**Status:** `stable` · **Since:** 
+End the local session and fold observed behaviour into the feedback store.
+**Examples:**
+```sh
+navig music session-end
+```
+
+## `navig music session-start`
+**Status:** `stable` · **Since:** 
+Start a vibe session: one mix, a local record and feedback from behaviour.
+**Examples:**
+```sh
+navig music session-start
+```
+
+## `navig music session-status`
+**Status:** `stable` · **Since:** 
+Elapsed/remaining time and observed behaviour for the local vibe session.
+**Examples:**
+```sh
+navig music session-status
+```
+
+## `navig music shuffle`
+**Status:** `stable` · **Since:** 
+Enable/disable shuffle, verified against the player bar.
+**Examples:**
+```sh
+navig music shuffle
+```
+
+## `navig music skip`
+**Status:** `stable` · **Since:** 
+Skip forward 30 s (or back 10 s), verified by the observed progress.
+**Examples:**
+```sh
+navig music skip
+```
+
+## `navig music snapshot`
+**Status:** `stable` · **Since:** 
+One JSON object with app, playback, queue and capability facts.
+**Examples:**
+```sh
+navig music snapshot
+```
+
+## `navig music speed`
+**Status:** `stable` · **Since:** 
+Read or set the player's playback speed, verified from the page.
+**Examples:**
+```sh
+navig music speed
+```
+
+## `navig music stats`
+**Status:** `stable` · **Since:** 
+Aggregate NAVIG's locally observed listening events (not a complete history).
+**Examples:**
+```sh
+navig music stats
+```
+
+## `navig music stats-for-nerds`
+**Status:** `stable` · **Since:** 
+Read the player's own playback diagnostics panel.
+**Examples:**
+```sh
+navig music stats-for-nerds
+```
+
+## `navig music status`
+**Status:** `stable` · **Since:** 
+Installed app, process, verified ports, transports and what is playing.
+**Examples:**
+```sh
+navig music status
+```
+
+## `navig music toggle`
+**Status:** `stable` · **Since:** 
+Toggle play/pause and verify the state changed.
+**Examples:**
+```sh
+navig music toggle
+```
+
+## `navig music upload`
+**Status:** `stable` · **Since:** 
+Upload your own audio files to the YouTube Music library.
+**Examples:**
+```sh
+navig music upload
+```
+
+## `navig music version`
+**Status:** `stable` · **Since:** 
+Plugin/app version information.
+**Examples:**
+```sh
+navig music version
+```
+
+## `navig music vibe`
+**Status:** `stable` · **Since:** 
+Choose music from explicit words, local time/occasion and listening behaviour.
+**Examples:**
+```sh
+navig music vibe
+```
+
+## `navig music volume`
+**Status:** `stable` · **Since:** 
+Read or set the player volume, verified by re-reading it.
+**Examples:**
+```sh
+navig music volume
+```
+
+## `navig music watch`
+**Status:** `stable` · **Since:** 
+Stream normalized playback events (track_changed, playback_started, …).
+**Examples:**
+```sh
+navig music watch
+```
+
 ## `navig net speedtest`
 **Status:** `stable` · **Since:** 
 Measure internet speed with speedtest-cli (Ookla) and/or iperf3.
@@ -11619,6 +13347,166 @@ RDAP lookup (the modern whois) — public registry records.
 navig pentest whois
 ```
 
+## `navig pentest wifi aps`
+**Status:** `stable` · **Since:** 
+Access points from the local dataset, strongest signal first.
+**Examples:**
+```sh
+navig pentest wifi aps
+```
+
+## `navig pentest wifi capture`
+**Status:** `stable` · **Since:** 
+Bounded airodump-ng capture for the explicit BSSID.
+**Examples:**
+```sh
+navig pentest wifi capture
+```
+
+## `navig pentest wifi clients`
+**Status:** `stable` · **Since:** 
+Client stations from the local dataset, strongest signal first.
+**Examples:**
+```sh
+navig pentest wifi clients
+```
+
+## `navig pentest wifi collect`
+**Status:** `stable` · **Since:** 
+Copy a guest capture directory into <dataset>/captures/<session> (never into git).
+**Examples:**
+```sh
+navig pentest wifi collect
+```
+
+## `navig pentest wifi crack`
+**Status:** `stable` · **Since:** 
+Crack the supplied capture, filtered to the explicit BSSID.
+**Examples:**
+```sh
+navig pentest wifi crack
+```
+
+## `navig pentest wifi deauth`
+**Status:** `stable` · **Since:** 
+Bounded deauth of ONE explicit client of ONE explicit BSSID.
+**Examples:**
+```sh
+navig pentest wifi deauth
+```
+
+## `navig pentest wifi import`
+**Status:** `stable` · **Since:** 
+Ingest airodump-ng CSVs and Kismet databases into the local recon store.
+**Examples:**
+```sh
+navig pentest wifi import
+```
+
+## `navig pentest wifi inject`
+**Status:** `stable` · **Since:** 
+Injection SELF-TEST only (aireplay-ng --test). Explicit BSSID required.
+**Examples:**
+```sh
+navig pentest wifi inject
+```
+
+## `navig pentest wifi lab-runbook`
+**Status:** `stable` · **Since:** 
+Print the practical own-lab sequence, guardrails and legal boundary.
+**Examples:**
+```sh
+navig pentest wifi lab-runbook
+```
+
+## `navig pentest wifi monitor start`
+**Status:** `stable` · **Since:** 
+Put an interface into monitor mode (passive setup; no target traffic).
+**Examples:**
+```sh
+navig pentest wifi monitor start
+```
+
+## `navig pentest wifi monitor stop`
+**Status:** `stable` · **Since:** 
+Stop monitor mode and restore the managed interface.
+**Examples:**
+```sh
+navig pentest wifi monitor stop
+```
+
+## `navig pentest wifi probes`
+**Status:** `stable` · **Since:** 
+SSIDs probed by client stations, with the number of distinct clients.
+**Examples:**
+```sh
+navig pentest wifi probes
+```
+
+## `navig pentest wifi report`
+**Status:** `stable` · **Since:** 
+Dataset summary (markdown/HTML): sessions, security, strongest APs, probes.
+**Examples:**
+```sh
+navig pentest wifi report
+```
+
+## `navig pentest wifi scope`
+**Status:** `stable` · **Since:** 
+Show the own-network exclusion policy (NAVIG_WARROOM_EXCLUDE) and its matches.
+**Examples:**
+```sh
+navig pentest wifi scope
+```
+
+## `navig pentest wifi status`
+**Status:** `stable` · **Since:** 
+Wireless tools, interfaces, platform and the local recon dataset — no radio traffic.
+**Examples:**
+```sh
+navig pentest wifi status
+```
+
+## `navig pentest wifi survey`
+**Status:** `stable` · **Since:** 
+One-shot passive survey: VM up → airodump in guest → collect → import → report.
+**Examples:**
+```sh
+navig pentest wifi survey
+```
+
+## `navig pentest wifi vm start`
+**Status:** `stable` · **Since:** 
+Power the War Room VM on (nogui) — idempotent: a running VM is left alone.
+**Examples:**
+```sh
+navig pentest wifi vm start
+```
+
+## `navig pentest wifi vm status`
+**Status:** `stable` · **Since:** 
+VM power state, VMware Tools, guest IP and the recon dataset (read-only).
+**Examples:**
+```sh
+navig pentest wifi vm status
+```
+
+## `navig pentest wifi vm stop`
+**Status:** `stable` · **Since:** 
+Power the War Room VM off (soft by default) — idempotent when already stopped.
+**Examples:**
+```sh
+navig pentest wifi vm stop
+```
+
+## `navig pentest wifi vm usb`
+**Status:** `stable` · **Since:** 
+Idempotently set usb.autoConnect.device0 in the .vmx (backs it up; VM off).
+**Examples:**
+```sh
+navig pentest wifi vm usb
+```
+
 ## `navig pentest wordlist`
 **Status:** `stable` · **Since:** 
 Find installed wordlists, or generate one from a target site (cewl).
@@ -11673,6 +13561,14 @@ Which transport a delegation would use, and what it can do.
 **Examples:**
 ```sh
 navig perplexity backend
+```
+
+## `navig perplexity brief`
+**Status:** `stable` · **Since:** 
+Generate the daily brief: one answer per topic, one dated document.
+**Examples:**
+```sh
+navig perplexity brief
 ```
 
 ## `navig perplexity capabilities`
@@ -11741,7 +13637,7 @@ navig perplexity new
 
 ## `navig perplexity open`
 **Status:** `stable` · **Since:** 
-Open a conversation from the app's sidebar by index.
+Open a document in Typora — the place to read the long texts Perplexity writes.
 **Examples:**
 ```sh
 navig perplexity open
@@ -13091,6 +14987,86 @@ Return the MAIN checkout to the default branch and fast-forward it.
 navig repo sync
 ```
 
+## `navig router aliases`
+**Status:** `stable` · **Since:** 
+The names clients ask for, and the chain behind each of them.
+**Examples:**
+```sh
+navig router aliases
+```
+
+## `navig router keys init`
+**Status:** `stable` · **Since:** 
+Mint a local router token — it is shown exactly once.
+**Examples:**
+```sh
+navig router keys init
+```
+
+## `navig router keys revoke`
+**Status:** `stable` · **Since:** 
+Revoke a local router token.
+**Examples:**
+```sh
+navig router keys revoke
+```
+
+## `navig router keys status`
+**Status:** `stable` · **Since:** 
+Which provider keys resolve (present/missing), and the router's own token.
+**Examples:**
+```sh
+navig router keys status
+```
+
+## `navig router log`
+**Status:** `stable` · **Since:** 
+The redacted request log: no prompt, no completion, no key.
+**Examples:**
+```sh
+navig router log
+```
+
+## `navig router models`
+**Status:** `stable` · **Since:** 
+What ``GET /v1/models`` answers, without starting the daemon.
+**Examples:**
+```sh
+navig router models
+```
+
+## `navig router providers`
+**Status:** `stable` · **Since:** 
+Every configured upstream: API shape, key presence, models and traffic.
+**Examples:**
+```sh
+navig router providers
+```
+
+## `navig router stats`
+**Status:** `stable` · **Since:** 
+Requests, errors, latency and spend per provider, model and alias.
+**Examples:**
+```sh
+navig router stats
+```
+
+## `navig router status`
+**Status:** `stable` · **Since:** 
+The router at a glance: config, module, keys, aliases and spend.
+**Examples:**
+```sh
+navig router status
+```
+
+## `navig router test`
+**Status:** `stable` · **Since:** 
+Resolve an alias (or send one tiny live prompt through it).
+**Examples:**
+```sh
+navig router test
+```
+
 ## `navig run`
 **Status:** `stable` · **Since:** 
 Execute arbitrary shell command on remote server.
@@ -13355,6 +15331,22 @@ Remove NAVIG daemon service.
 navig service uninstall
 ```
 
+## `navig sessions finish`
+**Status:** `stable` · **Since:** 
+Send one finishing prompt to each idle session (working sessions are skipped).
+**Examples:**
+```sh
+navig sessions finish
+```
+
+## `navig sessions list`
+**Status:** `stable` · **Since:** 
+Every Claude Code session mounted in VS Code, with its working state.
+**Examples:**
+```sh
+navig sessions list
+```
+
 ## `navig settings`
 **Status:** `stable` · **Since:** 
 View or edit layered NAVIG settings (VSCode-style, 5 layers).
@@ -13425,6 +15417,46 @@ Sign a sample event and POST it to the local gateway to prove the round-trip.
 **Examples:**
 ```sh
 navig signals test
+```
+
+## `navig signing guide`
+**Status:** `stable` · **Since:** 
+Where the project's enrollment guide lives, and the checklist.
+**Examples:**
+```sh
+navig signing guide
+```
+
+## `navig signing readiness`
+**Status:** `stable` · **Since:** 
+Run the project's signing-readiness report (enrollment, tools, certificate).
+**Examples:**
+```sh
+navig signing readiness
+```
+
+## `navig signing sign`
+**Status:** `stable` · **Since:** 
+Sign one artifact using the project's own policy-enforcing signer.
+**Examples:**
+```sh
+navig signing sign
+```
+
+## `navig signing status`
+**Status:** `stable` · **Since:** 
+Policy summary for a project: domain, enforcement, publisher, latest artifact.
+**Examples:**
+```sh
+navig signing status
+```
+
+## `navig signing verify`
+**Status:** `stable` · **Since:** 
+Read-only signature verification through the project's verifier.
+**Examples:**
+```sh
+navig signing verify
 ```
 
 ## `navig skill`
@@ -14139,6 +16171,14 @@ Run navig store
 navig store
 ```
 
+## `navig store capabilities`
+**Status:** `stable` · **Since:** 
+The capability index — logical capabilities and every backend that serves them.
+**Examples:**
+```sh
+navig store capabilities
+```
+
 ## `navig store disable`
 **Status:** `stable` · **Since:** 
 Disable / unwire an item without uninstalling.
@@ -14345,6 +16385,318 @@ Validate task syntax (retired — redirects to `navig block verify`).
 **Examples:**
 ```sh
 navig task test
+```
+
+## `navig tasks actions add`
+**Status:** `stable` · **Since:** 
+Add an action to a trigger. Risky kinds always need an approval card.
+**Examples:**
+```sh
+navig tasks actions add
+```
+
+## `navig tasks actions disable`
+**Status:** `stable` · **Since:** 
+Disable an action.
+**Examples:**
+```sh
+navig tasks actions disable
+```
+
+## `navig tasks actions enable`
+**Status:** `stable` · **Since:** 
+Enable an action.
+**Examples:**
+```sh
+navig tasks actions enable
+```
+
+## `navig tasks actions list`
+**Status:** `stable` · **Since:** 
+List actions, optionally for one trigger.
+**Examples:**
+```sh
+navig tasks actions list
+```
+
+## `navig tasks actions remove`
+**Status:** `stable` · **Since:** 
+Remove one action.
+**Examples:**
+```sh
+navig tasks actions remove
+```
+
+## `navig tasks add`
+**Status:** `stable` · **Since:** 
+Create one task in a project, optionally inside a campaign phase.
+**Examples:**
+```sh
+navig tasks add
+```
+
+## `navig tasks approvals`
+**Status:** `stable` · **Since:** 
+List approvals waiting for a human yes.
+**Examples:**
+```sh
+navig tasks approvals
+```
+
+## `navig tasks approve`
+**Status:** `stable` · **Since:** 
+Approve and execute one pending action.
+**Examples:**
+```sh
+navig tasks approve
+```
+
+## `navig tasks campaigns advance`
+**Status:** `stable` · **Since:** 
+Move to the next phase: its tasks done, or the verifier exits 0.
+**Examples:**
+```sh
+navig tasks campaigns advance
+```
+
+## `navig tasks campaigns checkpoint`
+**Status:** `stable` · **Since:** 
+Record the {round,status,done,next,evidence,risks} checkpoint.
+**Examples:**
+```sh
+navig tasks campaigns checkpoint
+```
+
+## `navig tasks campaigns create`
+**Status:** `stable` · **Since:** 
+Create a multi-phase campaign. Budgets are spend caps, not round caps.
+**Examples:**
+```sh
+navig tasks campaigns create
+```
+
+## `navig tasks campaigns done`
+**Status:** `stable` · **Since:** 
+Complete a campaign: tasks done (or verifier 0) and a checkpoint on record.
+**Examples:**
+```sh
+navig tasks campaigns done
+```
+
+## `navig tasks campaigns list`
+**Status:** `stable` · **Since:** 
+List campaigns with their phase progress and budget use.
+**Examples:**
+```sh
+navig tasks campaigns list
+```
+
+## `navig tasks campaigns pause`
+**Status:** `stable` · **Since:** 
+Pause a campaign: the clock and its tasks stop advancing.
+**Examples:**
+```sh
+navig tasks campaigns pause
+```
+
+## `navig tasks campaigns resume`
+**Status:** `stable` · **Since:** 
+Resume from the last checkpoint and re-arm the campaign's due tasks.
+**Examples:**
+```sh
+navig tasks campaigns resume
+```
+
+## `navig tasks campaigns show`
+**Status:** `stable` · **Since:** 
+Show a campaign: phases, tasks, checkpoint, receipts and events.
+**Examples:**
+```sh
+navig tasks campaigns show
+```
+
+## `navig tasks campaigns verify`
+**Status:** `stable` · **Since:** 
+Run the operator's shell proof; only exit 0 permits advance/completion.
+**Examples:**
+```sh
+navig tasks campaigns verify
+```
+
+## `navig tasks cancel`
+**Status:** `stable` · **Since:** 
+Cancel a task without deleting its history.
+**Examples:**
+```sh
+navig tasks cancel
+```
+
+## `navig tasks delegate`
+**Status:** `stable` · **Since:** 
+Hand a task to the agent; it stays in the review queue until done.
+**Examples:**
+```sh
+navig tasks delegate
+```
+
+## `navig tasks digest`
+**Status:** `stable` · **Since:** 
+Build one newsletter brief by hand (same routine the trigger runs).
+**Examples:**
+```sh
+navig tasks digest
+```
+
+## `navig tasks done`
+**Status:** `stable` · **Since:** 
+Complete a task. A recurring task reopens at its next due time.
+**Examples:**
+```sh
+navig tasks done
+```
+
+## `navig tasks ingest`
+**Status:** `stable` · **Since:** 
+Feed a received message into matching triggers (the mail-watch bridge).
+**Examples:**
+```sh
+navig tasks ingest
+```
+
+## `navig tasks list`
+**Status:** `stable` · **Since:** 
+List tasks, newest due first.
+**Examples:**
+```sh
+navig tasks list
+```
+
+## `navig tasks log`
+**Status:** `stable` · **Since:** 
+The redacted event log: trigger fires, action results and approvals.
+**Examples:**
+```sh
+navig tasks log
+```
+
+## `navig tasks projects`
+**Status:** `stable` · **Since:** 
+List projects and their open work.
+**Examples:**
+```sh
+navig tasks projects
+```
+
+## `navig tasks reject`
+**Status:** `stable` · **Since:** 
+Reject one pending action; nothing runs.
+**Examples:**
+```sh
+navig tasks reject
+```
+
+## `navig tasks review`
+**Status:** `stable` · **Since:** 
+Send the review card: due, overdue and snoozes about to wake, grouped by project.
+**Examples:**
+```sh
+navig tasks review
+```
+
+## `navig tasks run`
+**Status:** `stable` · **Since:** 
+Fire one trigger now, leaving its schedule untouched.
+**Examples:**
+```sh
+navig tasks run
+```
+
+## `navig tasks schedule`
+**Status:** `stable` · **Since:** 
+Install/refresh the daily review in NAVIG's cron.
+**Examples:**
+```sh
+navig tasks schedule
+```
+
+## `navig tasks show`
+**Status:** `stable` · **Since:** 
+Show one task with its recent events.
+**Examples:**
+```sh
+navig tasks show
+```
+
+## `navig tasks snooze`
+**Status:** `stable` · **Since:** 
+Push a task out of the review queue for a while.
+**Examples:**
+```sh
+navig tasks snooze
+```
+
+## `navig tasks status`
+**Status:** `stable` · **Since:** 
+Cross-project counts: tasks, due work, triggers and pending approvals.
+**Examples:**
+```sh
+navig tasks status
+```
+
+## `navig tasks tick`
+**Status:** `stable` · **Since:** 
+One scheduler pass — safe to run from cron every minute.
+**Examples:**
+```sh
+navig tasks tick
+```
+
+## `navig tasks triggers add`
+**Status:** `stable` · **Since:** 
+Create a trigger, optionally with its first action.
+**Examples:**
+```sh
+navig tasks triggers add
+```
+
+## `navig tasks triggers disable`
+**Status:** `stable` · **Since:** 
+Disable a trigger without removing it.
+**Examples:**
+```sh
+navig tasks triggers disable
+```
+
+## `navig tasks triggers enable`
+**Status:** `stable` · **Since:** 
+Enable a trigger.
+**Examples:**
+```sh
+navig tasks triggers enable
+```
+
+## `navig tasks triggers list`
+**Status:** `stable` · **Since:** 
+List triggers and what each one does.
+**Examples:**
+```sh
+navig tasks triggers list
+```
+
+## `navig tasks triggers remove`
+**Status:** `stable` · **Since:** 
+Remove a trigger and its actions.
+**Examples:**
+```sh
+navig tasks triggers remove
+```
+
+## `navig tasks worker`
+**Status:** `stable` · **Since:** 
+Claim one active campaign and run ONE budgeted agent action.
+**Examples:**
+```sh
+navig tasks worker
 ```
 
 ## `navig telegram briefings`
@@ -15337,6 +17689,142 @@ Restart tunnel (canonical command).
 **Examples:**
 ```sh
 navig tunnel update
+```
+
+## `navig tv apps`
+**Status:** `stable` · **Since:** 
+Installed apps on the TV.
+**Examples:**
+```sh
+navig tv apps
+```
+
+## `navig tv back`
+**Status:** `stable` · **Since:** 
+Back.
+**Examples:**
+```sh
+navig tv back
+```
+
+## `navig tv connect`
+**Status:** `stable` · **Since:** 
+Connect to a TV over ADB (accept the prompt on the TV if it appears).
+**Examples:**
+```sh
+navig tv connect
+```
+
+## `navig tv current`
+**Status:** `stable` · **Since:** 
+What is on screen right now.
+**Examples:**
+```sh
+navig tv current
+```
+
+## `navig tv devices`
+**Status:** `stable` · **Since:** 
+Every ADB device this machine can see.
+**Examples:**
+```sh
+navig tv devices
+```
+
+## `navig tv discover`
+**Status:** `stable` · **Since:** 
+Scan the LAN for TVs exposing ADB (port 5555).
+**Examples:**
+```sh
+navig tv discover
+```
+
+## `navig tv home`
+**Status:** `stable` · **Since:** 
+Go to the TV home screen.
+**Examples:**
+```sh
+navig tv home
+```
+
+## `navig tv install-adb`
+**Status:** `stable` · **Since:** 
+Download the official Android platform-tools (adb) into NAVIG's tools folder.
+**Examples:**
+```sh
+navig tv install-adb
+```
+
+## `navig tv key`
+**Status:** `stable` · **Since:** 
+Send one remote key.
+**Examples:**
+```sh
+navig tv key
+```
+
+## `navig tv launch`
+**Status:** `stable` · **Since:** 
+Open an app on the TV.
+**Examples:**
+```sh
+navig tv launch
+```
+
+## `navig tv next`
+**Status:** `stable` · **Since:** 
+Next track / chapter.
+**Examples:**
+```sh
+navig tv next
+```
+
+## `navig tv play`
+**Status:** `stable` · **Since:** 
+Play / pause.
+**Examples:**
+```sh
+navig tv play
+```
+
+## `navig tv power`
+**Status:** `stable` · **Since:** 
+Toggle power (or --on to wake).
+**Examples:**
+```sh
+navig tv power
+```
+
+## `navig tv screenshot`
+**Status:** `stable` · **Since:** 
+Screenshot the TV.
+**Examples:**
+```sh
+navig tv screenshot
+```
+
+## `navig tv status`
+**Status:** `stable` · **Since:** 
+Which TVs are connected, and what is on screen.
+**Examples:**
+```sh
+navig tv status
+```
+
+## `navig tv text`
+**Status:** `stable` · **Since:** 
+Type text into the TV's focused field.
+**Examples:**
+```sh
+navig tv text
+```
+
+## `navig tv volume`
+**Status:** `stable` · **Since:** 
+Volume up/down (steps) or mute.
+**Examples:**
+```sh
+navig tv volume
 ```
 
 ## `navig undo`

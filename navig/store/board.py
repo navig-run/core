@@ -79,7 +79,7 @@ LIST_KIND_BIZ_CHAT = "biz_chat"
 # Where a todo came from. An AI guess must never be indistinguishable from something
 # the operator typed — that is the difference between a suggestion they can dismiss
 # and a task they think they wrote.
-VALID_ORIGINS = ("manual", "ai", "agent", "chat")
+VALID_ORIGINS = ("manual", "ai", "agent", "chat", "project")
 
 #: The origins that mean "proposed, not yet agreed to". Every surface that marks a
 #: suggestion reads THIS — three places used to decide it separately and two checked
@@ -790,8 +790,19 @@ class BoardStore(BaseStore):
 
     # ── Goals ────────────────────────────────────────────────────────────────
 
-    def list_goals(self) -> list[dict[str, Any]]:
-        rows = self._read_all("SELECT * FROM board_goal ORDER BY sort_order, created_at")
+    def list_goals(self, *, space: str | None = None) -> list[dict[str, Any]]:
+        """Goals, optionally scoped to one project/space.
+
+        ``space`` is the Space id — the same id the Projects hub uses — so a project
+        rollup can read only its own goals without a new store or a second query.
+        """
+        if space is None:
+            rows = self._read_all("SELECT * FROM board_goal ORDER BY sort_order, created_at")
+        else:
+            rows = self._read_all(
+                "SELECT * FROM board_goal WHERE space = ? ORDER BY sort_order, created_at",
+                (space,),
+            )
         return [self._goal_to_dict(r) for r in rows]
 
     def get_goal(self, goal_id: str) -> dict[str, Any] | None:
@@ -911,17 +922,22 @@ class BoardStore(BaseStore):
 
     # ── Cards ────────────────────────────────────────────────────────────────
 
-    def list_cards(self) -> list[dict[str, Any]]:
+    def list_cards(self, *, space: str | None = None) -> list[dict[str, Any]]:
         """Board cards only.
 
         The `kind` filter is what keeps "Buy milk" out of the desktop Kanban's Backlog
         column. Without it the PIM would flood the board the first time it is used,
         which is precisely why people end up running two task apps.
+
+        ``space`` (a Space/project id) narrows the result to one project's cards; the
+        column already existed, this only exposes it as a read filter.
         """
-        rows = self._read_all(
-            "SELECT * FROM board_card WHERE kind = ? ORDER BY sort_order, created_at",
-            (KIND_CARD,),
-        )
+        sql = "SELECT * FROM board_card WHERE kind = ?"
+        params: list[Any] = [KIND_CARD]
+        if space is not None:
+            sql += " AND space = ?"
+            params.append(space)
+        rows = self._read_all(f"{sql} ORDER BY sort_order, created_at", tuple(params))
         terminal = self._terminal_stages()
         # Fetch all edges once, group by card — avoids an N+1 per-card query.
         edges: dict[str, list[str]] = {}
@@ -990,17 +1006,19 @@ class BoardStore(BaseStore):
 
     def create_card(self, title: str, *, goal_id: str | None = None, notes: str = "", stage: str = "backlog",
                     priority: str = "normal", due_at: str | None = None, reminder_id: int | None = None,
-                    ai_mode: str = "inherit", auto_advance: bool = False, mission_id: str | None = None) -> dict[str, Any]:
+                    ai_mode: str = "inherit", auto_advance: bool = False, mission_id: str | None = None,
+                    space: str | None = None) -> dict[str, Any]:
         cid, now = _new_id(), _utcnow()
         nxt = self._read_one("SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM board_card WHERE stage = ?", (stage,))
         completed = now if stage in self._terminal_stages() else None
         self._write(
             "INSERT INTO board_card(id, goal_id, title, notes, stage, priority, due_at, reminder_id, ai_mode,"
-            " auto_advance, mission_id, agent_status, agent_result, sort_order, created_at, updated_at, completed_at)"
-            " VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', '', ?, ?, ?, ?)",
+            " auto_advance, mission_id, agent_status, agent_result, sort_order, created_at, updated_at, completed_at,"
+            " space)"
+            " VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', '', ?, ?, ?, ?, ?)",
             (cid, goal_id, title, notes or "", stage or "backlog", priority or "normal", due_at, reminder_id,
              ai_mode if ai_mode in VALID_AI_MODES else "inherit", 1 if auto_advance else 0, mission_id,
-             int(nxt["n"]) if nxt else 0, now, now, completed),
+             int(nxt["n"]) if nxt else 0, now, now, completed, space),
         )
         return self.get_card(cid)  # type: ignore[return-value]
 
@@ -1016,7 +1034,7 @@ class BoardStore(BaseStore):
             title = spec.pop("title", "").strip() or "Untitled"
             card = self.create_card(title, **{k: v for k, v in spec.items() if k in {
                 "goal_id", "notes", "stage", "priority", "due_at", "reminder_id",
-                "ai_mode", "auto_advance", "mission_id",
+                "ai_mode", "auto_advance", "mission_id", "space",
             }})
             if prev_id is not None:
                 self.add_dependency(card["id"], prev_id)

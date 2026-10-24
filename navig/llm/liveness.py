@@ -109,6 +109,16 @@ RETIRED_MODELS: frozenset[str] = frozenset({
     "anthropic:claude-haiku-3-20250422",            # anthropic — 404 (router small_talk/summarize)
     "groq:llama-3.1-70b-versatile",                 # groq — 400 decommissioned (router _default)
     "xai:grok-2-latest",                            # xAI — 404 (router _default; control grok-3 live)
+    # 2026-10-21 sweep (`navig ai models --check`), retry-verified: 410 is
+    # definitive on one call, a 404 had to survive the retry to land here. Five
+    # catalog ids were gone — the nvidia one twice over (heartbeat HIGH at 01:11
+    # and the sweep), and it was `models[0]` of the nvidia manifest, i.e. the
+    # substitution default every mistyped slot falls back to.
+    "nvidia:nvidia/nemotron-3-super-120b-a12b",     # NVIDIA — 404 (was models[0] + router defaults)
+    "nvidia:moonshotai/kimi-k3",                    # NVIDIA — 410 EOL
+    "nvidia:mistralai/mistral-nemotron",            # NVIDIA — 410 EOL (listed "alive" 2026-09-15)
+    "openrouter:deepseek/deepseek-r1",              # OpenRouter — 404
+    "openrouter:qwen/qwen3-235b-a22b",              # OpenRouter — 404
 })
 
 # Provider-side failures that say nothing about the model or the credential —

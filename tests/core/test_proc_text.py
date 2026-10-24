@@ -14,7 +14,7 @@ import sys
 
 import pytest
 
-from navig.core.proc_text import console_encoding, decode_console_output
+from navig.core.proc_text import console_encoding, decode_console_output, oem_encoding
 
 # b'BUILTIN\\' + "Администраторы" in cp866. Kept as bytes, never as a source literal in the
 # decoded form — a mangled literal saved into a source file is its own separate defect
@@ -60,11 +60,19 @@ def test_decode_console_output_falls_back_to_the_live_console_page() -> None:
     UTF-8 console a tool really would write UTF-8, so the function was right and the
     assertion was measuring the environment. The contract — "UTF-8 first, the live console
     page second" — holds either way, and that is what is pinned.
+
+    The expectation mirrors the WHOLE contract, not just `console_encoding()`: when the
+    console page is UTF-8 and these bytes are not valid UTF-8, `decode_console_output`
+    falls back to the OEM page (its documented 65001 case), so the expected text is
+    `decode(oem_encoding())`, not `decode('utf-8', errors='replace')` — the latter is
+    twelve U+FFFD and fails exactly when the gate runs under a UTF-8 console (measured
+    2026-10-21 under `conhost --headless`; the sibling test had the same gap).
     """
     enc = console_encoding()
+    want = oem_encoding() if enc == "utf-8" else enc
     assert decode_console_output(OEM_GROUP_LINE) == OEM_GROUP_LINE.decode(
-        enc, errors="replace"
-    ), f"decode did not use console_encoding() (it reported {enc!r})"
+        want, errors="replace"
+    ), f"decode did not use the contract page (console {enc!r}, want {want!r})"
     if enc.startswith("cp") and enc != "cp65001":
         # On an OEM console the recovered text must be the real name, not replacements.
         assert decode_console_output(OEM_GROUP_LINE) == EXPECTED, (
@@ -190,8 +198,20 @@ def test_decode_console_result_reads_console_bytes() -> None:
 
     # Against the live console page, for the reason given on the sibling test above: the
     # fixture is cp866 and the console is not guaranteed to be.
+    #
+    # The expectation follows the DOCUMENTED contract (decode_console_output): when the
+    # console page is UTF-8 (chcp 65001, or another process on this shared console moved it
+    # — tests/install/test_install_scripts.py does, and xdist workers share one console)
+    # and the bytes are not valid UTF-8, the OEM page is the only candidate. Expecting
+    # `console_encoding()` alone turned that legitimate state into a failure: measured 4 of
+    # 25 runs when this test ran beside the install suite, 0 of 25 alone.
     out = decode_console_result(subprocess.CompletedProcess([], 0, OEM_GROUP_LINE, b""))
-    assert out.stdout == OEM_GROUP_LINE.decode(console_encoding(), errors="replace")
+    from navig.core.proc_text import oem_encoding
+
+    enc = console_encoding()
+    if enc == "utf-8":
+        enc = oem_encoding()
+    assert out.stdout == OEM_GROUP_LINE.decode(enc, errors="replace")
 
 
 def test_decode_console_result_tolerates_uncaptured_streams() -> None:

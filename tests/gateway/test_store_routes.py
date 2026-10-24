@@ -169,3 +169,56 @@ async def test_failed_action_fires_no_contract(monkeypatch):
     resp = await store.handle_deck_store_action(_Req({"action": "install", "id": "x"}))
     assert resp.status == 400
     assert rearms == [] and events == []  # failed mutation → nothing rearmed / refreshed
+
+
+# ── the capability index (additive, ?capabilities=1) ─────────────────────────
+
+
+class _Cap:
+    def __init__(self):
+        self.id = "perplexity"
+
+    def to_dict(self):
+        return {"id": self.id, "backends": []}
+
+
+async def test_capabilities_flag_is_off_by_default(monkeypatch):
+    """A v1 client that never heard of the flag must see the exact old payload."""
+    import navig.hub as hub
+
+    monkeypatch.setattr(hub, "collect_store", lambda **kwargs: [])
+    monkeypatch.setattr(hub, "store_status", lambda items: {"total": 0})
+
+    resp = await store.handle_deck_store(_GetReq())
+    body = _body(resp)
+    assert resp.status == 200
+    assert "capabilities" not in body
+    assert "capability_errors" not in body
+
+
+async def test_capabilities_flag_adds_the_index(monkeypatch):
+    """?capabilities=1 folds the SAME items — no second store sweep."""
+    import navig.hub as hub
+    import navig.hub.capabilities as caps_mod
+
+    sweeps = []
+
+    def _collect(**kwargs):
+        sweeps.append(1)
+        return []
+
+    monkeypatch.setattr(hub, "collect_store", _collect)
+    monkeypatch.setattr(hub, "store_status", lambda items: {"total": 0})
+    monkeypatch.setattr(
+        caps_mod, "collect_capabilities", lambda items=None, **kw: ([_Cap()], [])
+    )
+
+    req = _GetReq()
+    req.query = {"capabilities": "1"}
+    resp = await store.handle_deck_store(req)
+    body = _body(resp)
+    assert resp.status == 200
+    assert body["capabilities"] == [{"id": "perplexity", "backends": []}]
+    assert body["capability_errors"] == []
+    assert body["api_version"] == store.STORE_API_VERSION
+    assert len(sweeps) == 1, "the fold must reuse the collected items, not re-sweep"

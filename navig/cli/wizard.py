@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from navig.core.file_permissions import set_owner_only_file_permissions
-from navig.platform.paths import config_dir
+from navig.platform.paths import config_dir, log_dir
 
 _log = logging.getLogger(__name__)
 
@@ -667,9 +667,9 @@ def _install_launchd() -> bool:
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>{Path.home()}/.navig/logs/gateway.log</string>
+    <string>{log_dir()}/gateway.log</string>
     <key>StandardErrorPath</key>
-    <string>{Path.home()}/.navig/logs/gateway.error.log</string>
+    <string>{log_dir()}/gateway.error.log</string>
 </dict>
 </plist>
 """

@@ -28,13 +28,26 @@ navig agent telegram start
 navig agent telegram status
 navig agent transcribe
 navig agentctl ack
+navig agentctl answer
 navig agentctl bind
 navig agentctl bindings
+navig agentctl capabilities
+navig agentctl conduct
+navig agentctl dispatch
 navig agentctl hooks install
 navig agentctl hooks status
 navig agentctl hooks uninstall
+navig agentctl lane
+navig agentctl lanes
+navig agentctl nudge
+navig agentctl observe
+navig agentctl organize
+navig agentctl questions
+navig agentctl resolve
+navig agentctl review
 navig agentctl run
 navig agentctl runs
+navig agentctl scan
 navig agentctl sessions
 navig agentctl show
 navig agentctl status
@@ -113,6 +126,28 @@ navig ai providers
 navig ai run
 navig ai show
 navig ai suggest
+navig alexa announce
+navig alexa devices
+navig alexa login
+navig alexa model
+navig alexa routine
+navig alexa routines
+navig alexa serve
+navig alexa setup
+navig alexa speak
+navig alexa status
+navig alexa test
+navig alice model
+navig alice serve
+navig alice setup
+navig alice station command
+navig alice station devices
+navig alice station off
+navig alice station on
+navig alice station speak
+navig alice station status
+navig alice status
+navig alice test
 navig android connect
 navig android fastboot
 navig android logcat
@@ -141,6 +176,23 @@ navig approve policy
 navig approve status
 navig approve yes
 navig ask
+navig assistant alarms cancel
+navig assistant alarms check
+navig assistant alarms list
+navig assistant alarms set
+navig assistant ask
+navig assistant doctor
+navig assistant listen
+navig assistant profile clear
+navig assistant profile set-name
+navig assistant profile show
+navig assistant say
+navig assistant serve
+navig assistant skills
+navig assistant timers cancel
+navig assistant timers check
+navig assistant timers list
+navig assistant timers set
 navig audio ad-slot
 navig audio ambience
 navig audio arrange
@@ -273,10 +325,18 @@ navig bot
 navig bot start
 navig bot status
 navig bot stop
+navig brain claim
+navig brain migrate
 navig brain prompts get
 navig brain prompts list
 navig brain prompts reload
 navig brain prompts set
+navig brain release
+navig brain roles
+navig brain status
+navig brain takeover
+navig brain telegram
+navig brain verify
 navig bridge connect
 navig bridge rotate-token
 navig bridge status
@@ -305,6 +365,9 @@ navig calendar add
 navig calendar auth
 navig calendar list
 navig calendar sync
+navig capabilities
+navig capabilities find
+navig capabilities suggest
 navig card add
 navig card claim
 navig card deps add
@@ -381,6 +444,14 @@ navig cloud disconnect
 navig cloud key
 navig cloud status
 navig cloud tailscale
+navig companion brief
+navig companion say
+navig companion send
+navig companion share
+navig companion skills
+navig companion thoughts
+navig companion voice-note
+navig companion voices
 navig config
 navig config audit
 navig config backup
@@ -465,6 +536,11 @@ navig continuation start
 navig continuation status
 navig contribute scan
 navig contribute status
+navig coordination
+navig coordination inbox
+navig coordination send
+navig coordination tick
+navig coordination transition
 navig copilot ask
 navig copilot explain
 navig copilot review
@@ -603,6 +679,12 @@ navig discord status
 navig dispatch send
 navig dispatch status
 navig dispatch threads
+navig display
+navig display bright
+navig display dim
+navig display list
+navig display restore
+navig display set
 navig distribution adapters
 navig distribution analytics
 navig distribution channel
@@ -629,6 +711,18 @@ navig distribution research validate
 navig distribution schedule
 navig distribution seed
 navig distribution status
+navig distribution telegram accounts
+navig distribution telegram approve
+navig distribution telegram draft
+navig distribution telegram drafts
+navig distribution telegram log
+navig distribution telegram post
+navig distribution telegram reject
+navig distribution telegram review
+navig distribution telegram status
+navig distribution telegram target-add
+navig distribution telegram targets
+navig distribution telegram verify
 navig do
 navig dock status
 navig dock unpair
@@ -730,6 +824,9 @@ navig email status
 navig email styles
 navig email tag
 navig email watch
+navig endpoints list
+navig endpoints set
+navig endpoints show
 navig eval run
 navig evolve fix
 navig evolve optimize
@@ -983,6 +1080,8 @@ navig goal session resume
 navig goal session set
 navig goal session show
 navig goal show
+navig google ask
+navig google status
 navig guard install
 navig guard run
 navig guard status
@@ -1021,6 +1120,65 @@ navig history replay
 navig history show
 navig history stats
 navig history undo
+navig home add
+navig home climate
+navig home import
+navig home lg devices
+navig home lg login
+navig home lg logout
+navig home lg pause
+navig home lg start
+navig home lg status
+navig home lg stop
+navig home lg watch
+navig home list
+navig home off
+navig home on
+navig home projector
+navig home providers
+navig home remove
+navig home router devices
+navig home router import
+navig home router login
+navig home router networks
+navig home scan
+navig home scene list
+navig home scene run
+navig home set
+navig home somneo
+navig home speak
+navig home status
+navig home toggle
+navig home vacuum
+navig home wake plan
+navig home wake run
+navig home wake schedule
+navig home wake test
+navig home watch
+navig home wifi adapters
+navig home wifi analytics
+navig home wifi capture
+navig home wifi channels
+navig home wifi doctor
+navig home wifi fingerprint
+navig home wifi heatmap sample
+navig home wifi history
+navig home wifi join
+navig home wifi known add
+navig home wifi known list
+navig home wifi known remove
+navig home wifi leave
+navig home wifi monitor
+navig home wifi presence
+navig home wifi restore
+navig home wifi rogue
+navig home wifi status
+navig home wifi survey
+navig home wifi vm config
+navig home wifi vm start
+navig home wifi vm status
+navig home wifi vm stop
+navig home wifi wids
 navig host
 navig host add
 navig host all
@@ -1132,6 +1290,15 @@ navig lighthouse redeploy
 navig lighthouse status
 navig lighthouse url
 navig lighthouse version
+navig lights brightness
+navig lights color
+navig lights discover
+navig lights off
+navig lights on
+navig lights scene
+navig lights scenes
+navig lights status
+navig lights temp
 navig local
 navig local audit
 navig local dns
@@ -1241,6 +1408,12 @@ navig migrate addons
 navig migrate all
 navig migrate config
 navig migrate status
+navig mind
+navig mind digitalghost
+navig mind lexicon
+navig mind off
+navig mind on
+navig mind status
 navig mini deploy
 navig mini list
 navig mini logs
@@ -1354,6 +1527,49 @@ navig mstore publish
 navig mstore sales
 navig mstore show
 navig mstore status
+navig music attach
+navig music autoplay
+navig music capabilities
+navig music comments
+navig music detach
+navig music doctor
+navig music download
+navig music export
+navig music history
+navig music import
+navig music library
+navig music like
+navig music lyrics
+navig music mute
+navig music next
+navig music now
+navig music pause
+navig music play
+navig music playlists
+navig music previous
+navig music queue
+navig music radio
+navig music repeat
+navig music screenshot
+navig music search
+navig music seek
+navig music selftest
+navig music session-end
+navig music session-start
+navig music session-status
+navig music shuffle
+navig music skip
+navig music snapshot
+navig music speed
+navig music stats
+navig music stats-for-nerds
+navig music status
+navig music toggle
+navig music upload
+navig music version
+navig music vibe
+navig music volume
+navig music watch
 navig net speedtest
 navig node add
 navig node list
@@ -1449,6 +1665,26 @@ navig pentest surface
 navig pentest tools
 navig pentest urls
 navig pentest whois
+navig pentest wifi aps
+navig pentest wifi capture
+navig pentest wifi clients
+navig pentest wifi collect
+navig pentest wifi crack
+navig pentest wifi deauth
+navig pentest wifi import
+navig pentest wifi inject
+navig pentest wifi lab-runbook
+navig pentest wifi monitor start
+navig pentest wifi monitor stop
+navig pentest wifi probes
+navig pentest wifi report
+navig pentest wifi scope
+navig pentest wifi status
+navig pentest wifi survey
+navig pentest wifi vm start
+navig pentest wifi vm status
+navig pentest wifi vm stop
+navig pentest wifi vm usb
 navig pentest wordlist
 navig pentest wpscan
 navig perplexity artifacts
@@ -1456,6 +1692,7 @@ navig perplexity ask
 navig perplexity attach
 navig perplexity automations
 navig perplexity backend
+navig perplexity brief
 navig perplexity capabilities
 navig perplexity capture
 navig perplexity comet
@@ -1633,6 +1870,16 @@ navig repo remove
 navig repo stale
 navig repo sweep
 navig repo sync
+navig router aliases
+navig router keys init
+navig router keys revoke
+navig router keys status
+navig router log
+navig router models
+navig router providers
+navig router stats
+navig router status
+navig router test
 navig run
 navig scaffold
 navig scaffold apply
@@ -1666,6 +1913,8 @@ navig service start
 navig service status
 navig service stop
 navig service uninstall
+navig sessions finish
+navig sessions list
 navig settings
 navig signals add
 navig signals connect
@@ -1675,6 +1924,11 @@ navig signals presets
 navig signals remove
 navig signals rotate
 navig signals test
+navig signing guide
+navig signing readiness
+navig signing sign
+navig signing status
+navig signing verify
 navig skill
 navig skill auto
 navig skill benchmark
@@ -1764,6 +2018,7 @@ navig start
 navig stats
 navig status
 navig store
+navig store capabilities
 navig store disable
 navig store enable
 navig store info
@@ -1790,6 +2045,45 @@ navig task remove
 navig task run
 navig task show
 navig task test
+navig tasks actions add
+navig tasks actions disable
+navig tasks actions enable
+navig tasks actions list
+navig tasks actions remove
+navig tasks add
+navig tasks approvals
+navig tasks approve
+navig tasks campaigns advance
+navig tasks campaigns checkpoint
+navig tasks campaigns create
+navig tasks campaigns done
+navig tasks campaigns list
+navig tasks campaigns pause
+navig tasks campaigns resume
+navig tasks campaigns show
+navig tasks campaigns verify
+navig tasks cancel
+navig tasks delegate
+navig tasks digest
+navig tasks done
+navig tasks ingest
+navig tasks list
+navig tasks log
+navig tasks projects
+navig tasks reject
+navig tasks review
+navig tasks run
+navig tasks schedule
+navig tasks show
+navig tasks snooze
+navig tasks status
+navig tasks tick
+navig tasks triggers add
+navig tasks triggers disable
+navig tasks triggers enable
+navig tasks triggers list
+navig tasks triggers remove
+navig tasks worker
 navig telegram briefings
 navig telegram business alerts
 navig telegram business deleted
@@ -1914,6 +2208,23 @@ navig tunnel remove
 navig tunnel run
 navig tunnel show
 navig tunnel update
+navig tv apps
+navig tv back
+navig tv connect
+navig tv current
+navig tv devices
+navig tv discover
+navig tv home
+navig tv install-adb
+navig tv key
+navig tv launch
+navig tv next
+navig tv play
+navig tv power
+navig tv screenshot
+navig tv status
+navig tv text
+navig tv volume
 navig undo
 navig unpack doctor
 navig unpack game

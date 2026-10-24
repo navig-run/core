@@ -834,5 +834,14 @@
   "prompts.btn.fav": "☆ Favori",
   "prompts.btn.unfav": "★ Favori",
   "prompts.btn.file": "📄 fichier .md",
-  "prompts.btn.next": "▶ Étape suivante"
+  "prompts.btn.next": "▶ Étape suivante",
+  "status.button.refresh": "🔄 Actualiser",
+  "status.button.briefing": "📋 Briefing",
+  "status.button.reminders": "⏰ Rappels",
+  "status.button.spaces": "🗂 Espaces",
+  "status.button.brain": "🧠 Cerveau",
+  "status.button.self": "🧘 Soi",
+  "status.button.genesis": "🌱 Genèse",
+  "status.button.plans": "📋 Plans",
+  "status.button.home": "🏠 Accueil"
 }

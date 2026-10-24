@@ -133,6 +133,68 @@ async def test_start_stop_lifecycle(gateway, monkeypatch: pytest.MonkeyPatch):
     assert queue_task.cancelled is True
 
 
+async def test_start_runs_the_retention_sweep_once(gateway, monkeypatch: pytest.MonkeyPatch):
+    """Boot is the production caller the two retention helpers never had.
+
+    The unit behaviour lives in tests/agent/test_agent_retention.py; this pins the WIRING:
+    `start()` runs exactly one sweep, hands it the gateway's session dir (SessionManager
+    files may live outside config_dir()/sessions on a custom storage_dir), the live config
+    (for the retention.* knobs) and the in-memory session keys it must not prune.
+    """
+    gw, sv = gateway
+    gw.running = False
+
+    from navig.agent import retention as retention_mod
+
+    calls: list[dict] = []
+
+    def _fake_run_retention(**kwargs):
+        calls.append(kwargs)
+        return retention_mod.RetentionReport(skipped_reason="wiring-test")
+
+    monkeypatch.setattr(retention_mod, "run_retention", _fake_run_retention)
+
+    monkeypatch.setattr(gw, "_start_http_server", AsyncMock())
+    monkeypatch.setattr(gw, "_start_heartbeat", AsyncMock())
+    monkeypatch.setattr(gw, "_start_cron", AsyncMock())
+    monkeypatch.setattr(gw, "_init_autonomous_modules", AsyncMock())
+    monkeypatch.setattr(gw, "_init_comms", AsyncMock())
+
+    watcher = SimpleNamespace(start=AsyncMock(), stop=AsyncMock())
+    monkeypatch.setattr(sv, "ConfigWatcher", lambda _gw: watcher)
+
+    class DummyTask:
+        def __init__(self):
+            self.cancelled = False
+
+        def cancel(self):
+            self.cancelled = True
+
+        def __await__(self):
+            async def _done():
+                return None
+
+            return _done().__await__()
+
+    def _create_task(coro):
+        coro.close()
+        return DummyTask()
+
+    async def _sleep(_seconds: float):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(sv.asyncio, "create_task", _create_task)
+    monkeypatch.setattr(sv.asyncio, "sleep", _sleep)
+
+    await gw.start()
+
+    assert len(calls) == 1, "boot must run the retention sweep exactly once"
+    kwargs = calls[0]
+    assert kwargs["gateway_sessions_dir"] == gw.sessions.storage_dir
+    assert kwargs["config"] is gw.config_manager
+    assert isinstance(kwargs["keep_session_keys"], tuple)
+
+
 async def test_start_http_server_registers_routes_and_deck(
     gateway, monkeypatch: pytest.MonkeyPatch
 ):

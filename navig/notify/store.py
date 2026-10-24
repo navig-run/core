@@ -110,7 +110,7 @@ _DEFAULT_SETTINGS = {
     "target_matrix": "",
 }
 
-_initialised = False
+_initialised: str | None = None
 
 
 def _db_path() -> Path:
@@ -122,9 +122,16 @@ def conn() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    """Create tables + seed the matrix/settings once. Idempotent."""
+    """Create tables + seed the matrix/settings once PER DATABASE.
+
+    The "once" is keyed by the resolved path, not a bare boolean: a process that
+    opened one data dir (a test sandbox, a second profile) must still create the
+    tables in the next one — the boolean version left the new database empty and
+    every write failed with ``no such table: notify_settings``.
+    """
     global _initialised
-    if _initialised:
+    target = str(_db_path())
+    if _initialised == target:
         return
     c = conn()
     with c:
@@ -154,7 +161,7 @@ def init_db() -> None:
                 )
         for k, v in _DEFAULT_SETTINGS.items():
             c.execute("INSERT OR IGNORE INTO notify_settings (key, value) VALUES (?, ?)", (k, v))
-    _initialised = True
+    _initialised = target
 
 
 def now_iso() -> str:

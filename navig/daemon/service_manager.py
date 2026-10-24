@@ -52,7 +52,13 @@ def _navig_home() -> Path:
 
 
 def _log_dir() -> Path:
-    return _navig_home() / "logs"
+    """The one log directory — ``paths.log_dir()``, not ``<config>/logs``.
+
+    The service manager opened the daemon's stdout/stderr here while the supervisor wrote
+    ``log_dir()/daemon.log``; two daemon logs existed side by side (measured: 969,294 B
+    canonical vs 241 B legacy on a live install).
+    """
+    return paths.log_dir()
 
 
 def daemon_dir() -> Path:

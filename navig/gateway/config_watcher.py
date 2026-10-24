@@ -94,8 +94,8 @@ class ConfigWatcher:
         """Initialize file watchers."""
         config_manager = self.gateway.config_manager
 
-        # Global config
-        global_config_path = config_manager.global_config_dir / "config.yaml"
+        # Global config — watch the file the runtime actually writes (one resolver).
+        global_config_path = config_manager.global_config_path
         if global_config_path.exists():
             self._watchers["global_config"] = FileWatcher(global_config_path)
             logger.debug("Watching global config: %s", global_config_path)

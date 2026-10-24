@@ -29,6 +29,53 @@ ENV_DEBUG_VAR = "NAVIG_DEBUG"
 _MAX_CRASH_LOGS = 10
 
 
+def _write_plain_crash_notice(err_type: str, msg: str, log_path: Path | None) -> None:
+    """Last-resort crash notice: the rich path may itself be what failed.
+
+    ``_print_friendly_error`` was guarded by ``except ImportError`` only, so a dead
+    stderr — the very failure that produced the crash — raised a SECONDARY crash from
+    inside the handler and replaced the original exception. Write to whichever stream
+    still accepts bytes, and never raise.
+    """
+    lines = [
+        f"\n💥 Navig encountered an unexpected error ({err_type})\n",
+        f"   {msg}\n\n",
+    ]
+    if log_path:
+        lines.append(f"Crash details saved to: {log_path}\n")
+    lines.extend(
+        [
+            "Tip: Run with --debug for full details.\n",
+            "     Or run 'navig crash export' to create a report for GitHub.\n\n",
+        ]
+    )
+    text = "".join(lines)
+    for stream in (sys.stderr, sys.__stderr__):
+        if stream is None:
+            continue
+        try:
+            stream.write(text)
+            stream.flush()
+            return
+        except (OSError, ValueError):
+            continue
+
+
+def _canonical_log_dir() -> Path:
+    """The one log directory: ``paths.log_dir()`` (``%LOCALAPPDATA%\\navig\\logs`` on Windows).
+
+    Crash dumps used to be written to ``<config>/logs``, a second log root that nothing
+    else pruned — so ``navig crash`` and the doctor looked in the canonical directory
+    while the dumps landed somewhere else.
+    """
+    try:
+        from navig.platform.paths import log_dir as _log_dir
+
+        return _log_dir()
+    except Exception:  # noqa: BLE001 — a crash handler must never crash
+        return config_dir() / "logs"
+
+
 class CrashHandler:
     def __init__(self) -> None:
         self._debug_mode = os.environ.get(ENV_DEBUG_VAR, "0") == "1"
@@ -48,12 +95,7 @@ class CrashHandler:
         if self._log_dir is not None:
             return self._log_dir
 
-        try:
-            from navig.config import get_config_manager
-
-            log_dir = get_config_manager().base_dir / "logs"
-        except Exception:
-            log_dir = config_dir() / "logs"
+        log_dir = _canonical_log_dir()
 
         try:
             log_dir.mkdir(parents=True, exist_ok=True)
@@ -153,17 +195,8 @@ class CrashHandler:
                 "     Or run [bold]navig crash export[/bold] to create a report for GitHub."
             )
             console.print()
-        except ImportError:
-            sys.stderr.write(
-                f"\n💥 Navig encountered an unexpected error ({err_type})\n"
-                f"   {msg}\n\n"
-            )
-            if log_path:
-                sys.stderr.write(f"Crash details saved to: {log_path}\n")
-            sys.stderr.write(
-                "Tip: Run with --debug for full details.\n"
-                "     Or run 'navig crash export' to create a report for GitHub.\n\n"
-            )
+        except Exception:  # noqa: BLE001 — the handler must survive its own reporting
+            _write_plain_crash_notice(err_type, msg, log_path)
 
     def get_latest_crash_report(self) -> dict[str, Any] | None:
         """Return the content of the most recent crash log, or None."""

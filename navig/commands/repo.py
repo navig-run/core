@@ -433,7 +433,35 @@ def pair_conflicts(root: Path, ref_a: str, ref_b: str) -> dict:
 
 
 def collect_conflicts(root: Path, include_dirty: bool = True) -> dict:
-    """Pairwise merge simulation across all worktrees (optionally + dirty state)."""
+    """Pairwise merge simulation across all worktrees (optionally + dirty state).
+
+    Two **sound** reductions change no verdict, only the work done:
+
+    * a pair whose sides are BOTH ancestors of the default branch cannot conflict —
+      nothing to merge — so its ``git merge-tree`` never runs. Measured 2026-10-20 on
+      this box (104 worktrees): ~5,300 per-pair subprocesses, over 9 minutes, and four
+      sessions running it at once, so nobody could get a verdict;
+    * two sides at the same commit are trivially clean.
+
+    Squashed merges are deliberately NOT counted as "in default": ``--is-ancestor``
+    returns false for them, so those pairs still merge — a false skip there would hide
+    a real conflict, which is worse than a slow radar. The same conservatism covers
+    dirty sides, whose ref is a ``stash create`` sha (never an ancestor).
+
+    Surviving pairs run through a bounded pool; each is its own subprocess, so the
+    concurrency mirrors ``navig.plugins.interpreters``. Result order is unchanged, and
+    every pair still appears in ``pairs`` (a pruned one with a ``note``).
+
+    How much that saves depends on the tree, and the honest limit is measured: on this
+    box nearly every side is UNMERGED, so almost no pair is prunable, and a full run
+    still exceeded 15 minutes while 12 other sessions' gates shared the machine. The
+    pool bounds the cost of a pair, not the number of pairs — the remaining lever is
+    scope (comparing only recently-touched worktrees, say), which is a product decision
+    rather than a trick the radar can apply silently: a radar that quietly stops
+    comparing half the tree is worse than a slow one.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed  # noqa: PLC0415
+
     worktrees = list_worktrees(root)
     sides: list[dict] = []
     for wt in worktrees:
@@ -447,9 +475,41 @@ def collect_conflicts(root: Path, include_dirty: bool = True) -> dict:
             if sha:
                 entry["ref"] = sha  # branch tip + uncommitted tracked changes
         sides.append(entry)
-    pairs = []
+
+    default = default_branch(root)
+    in_default: dict[str, bool] = {}
+
+    def _is_in_default(ref: str) -> bool:
+        if ref not in in_default:
+            res = _git(["merge-base", "--is-ancestor", ref, default], root)
+            in_default[ref] = res.returncode == 0
+        return in_default[ref]
+
+    # Plan first, then simulate only what needs simulating — the plan is what makes the
+    # cost visible (``simulated`` / ``pruned`` land in the JSON).
+    slots: list[tuple[dict, dict, str | None]] = []
     for a, b in combinations(sides, 2):
-        result = pair_conflicts(root, a["ref"], b["ref"])
+        if a["ref"] == b["ref"]:
+            slots.append((a, b, "same commit"))
+        elif _is_in_default(a["ref"]) and _is_in_default(b["ref"]):
+            slots.append((a, b, f"both already in {default}"))
+        else:
+            slots.append((a, b, None))
+
+    results: dict[int, dict] = {}
+    todo = [(i, a, b) for i, (a, b, note) in enumerate(slots) if note is None]
+    if todo:
+        max_workers = min(8, len(todo))
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {
+                pool.submit(pair_conflicts, root, a["ref"], b["ref"]): i for i, a, b in todo
+            }
+            for future in as_completed(futures):
+                results[futures[future]] = future.result()
+
+    pairs = []
+    for i, (a, b, note) in enumerate(slots):
+        result = {"status": "clean", "files": [], "note": note} if note else results[i]
         pairs.append(
             {
                 "a": a["label"],
@@ -459,7 +519,18 @@ def collect_conflicts(root: Path, include_dirty: bool = True) -> dict:
                 **result,
             }
         )
-    return {"worktrees": _wt_json(worktrees), "pairs": pairs}
+    return {
+        "worktrees": _wt_json(worktrees),
+        "pairs": pairs,
+        "simulated": len(todo),
+        "pruned": {
+            "same_commit": sum(1 for _, _, note in slots if note == "same commit"),
+            "in_default": sum(
+                1 for _, _, note in slots if note is not None and note != "same commit"
+            ),
+        },
+    }
+
 
 
 def default_branch(root: Path) -> str:
@@ -3457,10 +3528,17 @@ def _guard_expand(raw: str, root: Path) -> str:
 def _guard_script_state(root: Path, settings: dict, name: str) -> tuple[str, str | None]:
     """Resolve a hook script's state: ``(current|outdated|missing, path)``.
 
-    Looks in the standard ``.claude/hooks/`` location first, then wherever the
-    settings' hook commands actually point (custom wiring — e.g. the navig
-    repo itself wires from ``scripts/agent-hooks/``), so a working non-standard
-    install doesn't read as "missing".
+    **The wiring decides.** Whatever ``settings``' hook commands point at is what Claude
+    Code actually executes, so that path's content is the state — an unwired leftover in
+    the standard ``.claude/hooks/`` location must not mask it in either direction. Measured
+    on this repo (2026-10-20): settings wire ``scripts/agent-hooks/``, whose file matched
+    the template byte for byte, while an older copy sat in ``.claude/hooks/`` — the old
+    order reported the healthy guard "outdated" and told the operator to re-install, and
+    the reverse wiring order would have reported a stale running hook "current". A guard
+    report that can only be wrong about its own health is worthless.
+
+    ``.claude/hooks/`` is still consulted when nothing wired exists, so a standard install
+    that lost its settings reads as its own state rather than "missing".
 
     Resolves ``${CLAUDE_PROJECT_DIR}`` against *root* exactly as Claude Code does —
     without this, a portable (committed) wiring would resolve to a literal
@@ -3470,8 +3548,8 @@ def _guard_script_state(root: Path, settings: dict, name: str) -> tuple[str, str
     from navig.guard import template_text
 
     template = template_text(name)
-    candidates: list[Path] = [root / _GUARD_HOOKS_SUBDIR / name]
     pattern = re.compile(r'"([^"]*' + re.escape(name) + r')"|(\S*' + re.escape(name) + r")")
+    wired: list[Path] = []
     for entries in (settings.get("hooks", {}) or {}).values():
         for entry in entries or []:
             for h in entry.get("hooks", []) or []:
@@ -3482,8 +3560,11 @@ def _guard_script_state(root: Path, settings: dict, name: str) -> tuple[str, str
                 p = Path(raw)
                 if not p.is_absolute():
                     p = root / p
-                candidates.append(p)
-    for cand in candidates:
+                if p not in wired:
+                    wired.append(p)
+    # Wired first — it is what runs. Only an entirely absent wiring falls back to the
+    # standard location, which is then the best available answer rather than "missing".
+    for cand in [*wired, root / _GUARD_HOOKS_SUBDIR / name]:
         try:
             if cand.exists():
                 state = "current" if cand.read_text(encoding="utf-8") == template else "outdated"

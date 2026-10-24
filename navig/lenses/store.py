@@ -32,7 +32,10 @@ import datetime as _dt
 import hashlib
 import logging
 import shutil
-from collections.abc import Callable
+import sys
+import threading
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -52,6 +55,50 @@ logger = logging.getLogger(__name__)
 
 ORIGINS = ("user", "agent", "url", "bay")
 _INDEX_DEFAULT: dict[str, Any] = {"version": 1, "lenses": {}}
+
+# index.json is read-modify-written by the daemon's routes, the CLI and the agent, in
+# different threads and processes. One writer at a time, or two saves each write back the
+# index they read and one Lens silently disappears from it. Re-entrant per thread, because
+# save() stages an agent's edit through stage().
+_THREAD_LOCK = threading.RLock()
+_HELD = threading.local()
+
+
+@contextmanager
+def _index_lock(index_path: Path) -> Iterator[None]:
+    depth = getattr(_HELD, "depth", 0)
+    if depth:
+        _HELD.depth = depth + 1
+        try:
+            yield
+        finally:
+            _HELD.depth -= 1
+        return
+    with _THREAD_LOCK:
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(index_path.with_name(index_path.name + ".lock"), "a+", encoding="utf-8") as fh:
+            if sys.platform == "win32":
+                import msvcrt
+
+                fh.seek(0)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)  # retries ~10 s, then OSError
+            else:
+                import fcntl
+
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+            _HELD.depth = 1
+            try:
+                yield
+            finally:
+                _HELD.depth = 0
+                try:
+                    if sys.platform == "win32":
+                        fh.seek(0)
+                        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+                except OSError as exc:  # closing the handle releases it anyway
+                    logger.debug("lens index unlock: %s", exc)
 
 
 def lenses_dir() -> Path:
@@ -245,14 +292,16 @@ class LensStore:
         if origin not in ORIGINS:
             raise ValueError(f"unknown origin {origin!r}")
         manifest = parse_manifest(source)
-        index = self._load_for_update()  # raises before anything is written
-        entries: dict[str, Any] = index["lenses"]
-        prev = entries.get(manifest.id) or {}
+        self._load_for_update()  # raises before anything is fetched or written
         agent_unapproved = origin == "agent" and not _approved
-        if agent_unapproved and prev and not _is_proposed(prev):
+        snapshot = self._index_entries().get(manifest.id) or {}
+        if agent_unapproved and snapshot and not _is_proposed(snapshot):
             return self.stage(manifest.id, source, kind="agent")
 
-        cached = {r.get("url"): r.get("sha256") for r in prev.get("requires") or []}
+        # The network (@require) and the syntax check happen OUTSIDE the index lock; the
+        # index is re-read under it below. Bodies are keyed by URL, so a snapshot that is
+        # stale by then can only cost a re-fetch, never a wrong body.
+        cached = {r.get("url"): r.get("sha256") for r in snapshot.get("requires") or []}
         requires: list[dict[str, str]] = []
         bodies: list[str] = []
         for url in manifest.requires:
@@ -273,37 +322,45 @@ class LensStore:
         if ok is False:
             raise LensFormatError(f"JavaScript syntax error at {message}")
 
-        if agent_unapproved:
-            on = False
-        elif enabled is not None:
-            on = bool(enabled)
-        else:
-            on = bool(prev.get("enabled", True)) if prev else True
+        with _index_lock(self.index_path):
+            index = self._load_for_update()  # raises before anything is written
+            entries: dict[str, Any] = index["lenses"]
+            prev = entries.get(manifest.id) or {}
+            if agent_unapproved and prev and not _is_proposed(prev):
+                # approved by a person while the fetch ran: stage instead of replacing
+                return self.stage(manifest.id, source, kind="agent")
 
-        atomic_write_text(self._source_path(manifest.id), source)
-        for req, body in zip(requires, bodies):
-            path = self._require_path(manifest.id, req["sha256"])
-            if not path.is_file():
-                atomic_write_text(path, body)
-        now = _now()
-        entries[manifest.id] = {
-            "enabled": on,
-            "origin": origin,
-            "install_url": install_url or prev.get("install_url"),
-            "requires": requires,
-            "syntax": "ok" if ok else "unchecked",
-            "created_at": prev.get("created_at") or now,
-            "updated_at": now,
-        }
-        # A save keeps a staged update, the rejected hashes, and the review state (an
-        # approved agent Lens that is switched off must not read as a fresh proposal).
-        for key in ("pending", "rejected", "review"):
-            if key in prev:
-                entries[manifest.id][key] = prev[key]
-        if agent_unapproved:
-            entries[manifest.id]["review"] = "proposed"
-        atomic_write_json(index, self.index_path)
-        self._prune_requires(manifest.id, {r["sha256"] for r in requires})
+            if agent_unapproved:
+                on = False
+            elif enabled is not None:
+                on = bool(enabled)
+            else:
+                on = bool(prev.get("enabled", True)) if prev else True
+
+            atomic_write_text(self._source_path(manifest.id), source)
+            for req, body in zip(requires, bodies):
+                path = self._require_path(manifest.id, req["sha256"])
+                if not path.is_file():
+                    atomic_write_text(path, body)
+            now = _now()
+            entries[manifest.id] = {
+                "enabled": on,
+                "origin": origin,
+                "install_url": install_url or prev.get("install_url"),
+                "requires": requires,
+                "syntax": "ok" if ok else "unchecked",
+                "created_at": prev.get("created_at") or now,
+                "updated_at": now,
+            }
+            # A save keeps a staged update, the rejected hashes, and the review state (an
+            # approved agent Lens that is switched off must not read as a fresh proposal).
+            for key in ("pending", "rejected", "review"):
+                if key in prev:
+                    entries[manifest.id][key] = prev[key]
+            if agent_unapproved:
+                entries[manifest.id]["review"] = "proposed"
+            atomic_write_json(index, self.index_path)
+            self._prune_requires(manifest.id, {r["sha256"] for r in requires})
         rec = self.get(manifest.id)
         if rec is None:  # just written — only a concurrent remove can get here
             raise KeyError(manifest.id)
@@ -321,28 +378,30 @@ class LensStore:
                     logger.debug("could not prune %s: %s", path, exc)
 
     def set_enabled(self, lens_id: str, on: bool) -> LensRecord:
-        index = self._load_for_update()
-        entry = index["lenses"].get(lens_id)
-        if entry is None:
-            raise KeyError(lens_id)
-        entry["enabled"] = bool(on)
-        if on:
-            entry["review"] = "approved"  # turning a proposed Lens on IS the approval
-        entry["updated_at"] = _now()
-        atomic_write_json(index, self.index_path)
+        with _index_lock(self.index_path):
+            index = self._load_for_update()
+            entry = index["lenses"].get(lens_id)
+            if entry is None:
+                raise KeyError(lens_id)
+            entry["enabled"] = bool(on)
+            if on:
+                entry["review"] = "approved"  # turning a proposed Lens on IS the approval
+            entry["updated_at"] = _now()
+            atomic_write_json(index, self.index_path)
         rec = self.get(lens_id)
         if rec is None:
             raise KeyError(lens_id)
         return rec
 
     def remove(self, lens_id: str) -> bool:
-        index = self._load_for_update()
-        if lens_id not in index["lenses"]:
-            return False
-        folder = self._lens_dir(lens_id)
-        del index["lenses"][lens_id]
-        atomic_write_json(index, self.index_path)
-        shutil.rmtree(folder, ignore_errors=True)
+        with _index_lock(self.index_path):
+            index = self._load_for_update()
+            if lens_id not in index["lenses"]:
+                return False
+            folder = self._lens_dir(lens_id)
+            del index["lenses"][lens_id]
+            atomic_write_json(index, self.index_path)
+            shutil.rmtree(folder, ignore_errors=True)
         return True
 
     # ── review: staged changes ──────────────────────────────────────────────────────
@@ -365,19 +424,20 @@ class LensStore:
         ok, message = check_source_syntax(source)
         if ok is False:
             raise LensFormatError(f"JavaScript syntax error at {message}")
-        index = self._load_for_update()
-        entry = index["lenses"].get(lens_id)
-        if entry is None:
-            raise KeyError(lens_id)
-        atomic_write_text(self._pending_path(lens_id), source)
-        entry["pending"] = {
-            "kind": kind,
-            "version": manifest.version,
-            "sha256": _sha(source),
-            "at": _now(),
-            "url": url,
-        }
-        atomic_write_json(index, self.index_path)
+        with _index_lock(self.index_path):
+            index = self._load_for_update()
+            entry = index["lenses"].get(lens_id)
+            if entry is None:
+                raise KeyError(lens_id)
+            atomic_write_text(self._pending_path(lens_id), source)
+            entry["pending"] = {
+                "kind": kind,
+                "version": manifest.version,
+                "sha256": _sha(source),
+                "at": _now(),
+                "url": url,
+            }
+            atomic_write_json(index, self.index_path)
         rec = self.get(lens_id)
         if rec is None:
             raise KeyError(lens_id)
@@ -455,14 +515,15 @@ class LensStore:
         return False
 
     def _clear_pending(self, lens_id: str, *, rejected: bool) -> None:
-        index = self._load_for_update()
-        entry = index["lenses"].get(lens_id)
-        if entry is None:
-            return
-        pending = entry.pop("pending", None) or {}
-        if rejected and pending.get("sha256"):
-            entry["rejected"] = [*(entry.get("rejected") or []), pending["sha256"]][-10:]
-        atomic_write_json(index, self.index_path)
+        with _index_lock(self.index_path):
+            index = self._load_for_update()
+            entry = index["lenses"].get(lens_id)
+            if entry is None:
+                return
+            pending = entry.pop("pending", None) or {}
+            if rejected and pending.get("sha256"):
+                entry["rejected"] = [*(entry.get("rejected") or []), pending["sha256"]][-10:]
+            atomic_write_json(index, self.index_path)
         try:
             self._pending_path(lens_id).unlink(missing_ok=True)
         except OSError as exc:
@@ -514,9 +575,10 @@ class LensStore:
                 row["status"], row["error"] = "error", str(exc)
             results.append(row)
         if only is None:
-            index = self._load_for_update()
-            index["last_update_check"] = _now()
-            atomic_write_json(index, self.index_path)
+            with _index_lock(self.index_path):
+                index = self._load_for_update()
+                index["last_update_check"] = _now()
+                atomic_write_json(index, self.index_path)
         return results
 
     # ── hosts ───────────────────────────────────────────────────────────────────────

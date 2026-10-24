@@ -55,11 +55,25 @@ class CheckResult(tuple):
 
     label: str
     detail: str
+    #: Optional structured payload (plain data) for --json. Rows without one are shaped
+    #: exactly as before, so every existing consumer of the payload is untouched; the key
+    #: is added only where a check has data that would not survive one detail string.
+    data: dict | None
 
-    def __new__(cls, icon: str, ok: bool, line: str, *, label: str = "", detail: str = ""):
+    def __new__(
+        cls,
+        icon: str,
+        ok: bool,
+        line: str,
+        *,
+        label: str = "",
+        detail: str = "",
+        data: dict | None = None,
+    ):
         self = super().__new__(cls, (icon, ok, line))
         self.label = label
         self.detail = detail
+        self.data = data
         return self
 
 
@@ -68,6 +82,7 @@ def _check(
     ok: bool,
     detail: str = "",
     warn: bool = False,
+    data: dict | None = None,
 ) -> CheckResult:
     """Return a formatted result row (a ``(icon, ok, line)`` tuple + structured fields)."""
     if ok:
@@ -77,7 +92,7 @@ def _check(
     else:
         icon = _ERR
     line = f"  {icon} {label}" + (f": {detail}" if detail else "")
-    return CheckResult(icon, ok, line, label=label, detail=detail)
+    return CheckResult(icon, ok, line, label=label, detail=detail, data=data)
 
 
 # JSON output must carry plain data: strip ANSI escapes and the report glyphs
@@ -160,7 +175,8 @@ def _daemon_autostart() -> tuple[bool, str]:
             # text in the console code page that decoding could only get wrong.
             r = subprocess.run(
                 ["schtasks", "/query", "/tn", "NAVIG Daemon"],
-                capture_output=True, timeout=5,
+                capture_output=True,
+                timeout=5,
             )
             return r.returncode == 0, "Task Scheduler"
         if sys.platform == "darwin":
@@ -171,7 +187,9 @@ def _daemon_autostart() -> tuple[bool, str]:
         for scope in (["--user"], []):  # a root install registers the system-scope unit
             r = subprocess.run(
                 ["systemctl", *scope, "is-enabled", "navig-agent"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if r.returncode == 0:
                 return True, "systemd"
@@ -194,7 +212,9 @@ def check_runtime() -> list[tuple[str, bool, str]]:
     results: list[tuple[str, bool, str]] = []
     rt = _runtime_dir()
     is_win = os.name == "nt"
-    venv_py = rt / "venv" / ("Scripts" if is_win else "bin") / ("python.exe" if is_win else "python")
+    venv_py = (
+        rt / "venv" / ("Scripts" if is_win else "bin") / ("python.exe" if is_win else "python")
+    )
 
     try:
         in_runtime = str(Path(sys.executable).resolve()).startswith(str(rt.resolve()))
@@ -203,21 +223,58 @@ def check_runtime() -> list[tuple[str, bool, str]]:
 
     managed = in_runtime or venv_py.exists()
     if not managed:
-        results.append(_check("install type", True, f"dev/editable ({sys.executable}) — runtime checks skipped"))
+        results.append(
+            _check(
+                "install type", True, f"dev/editable ({sys.executable}) — runtime checks skipped"
+            )
+        )
     else:
         uv_exe = rt / ("uv.exe" if is_win else "uv")
-        results.append(_check("uv engine", uv_exe.exists(), str(uv_exe) if uv_exe.exists() else "missing from runtime", warn=True))
-        results.append(_check("isolated venv", venv_py.exists(), str(rt / "venv") if venv_py.exists() else "missing", warn=True))
+        results.append(
+            _check(
+                "uv engine",
+                uv_exe.exists(),
+                str(uv_exe) if uv_exe.exists() else "missing from runtime",
+                warn=True,
+            )
+        )
+        results.append(
+            _check(
+                "isolated venv",
+                venv_py.exists(),
+                str(rt / "venv") if venv_py.exists() else "missing",
+                warn=True,
+            )
+        )
         results.append(_check("running from runtime", in_runtime, sys.executable, warn=True))
         shim = Path.home() / ".local" / "bin" / ("navig.cmd" if is_win else "navig")
-        results.append(_check("launcher shim", shim.exists(), str(shim) if shim.exists() else "missing", warn=True))
+        results.append(
+            _check(
+                "launcher shim", shim.exists(), str(shim) if shim.exists() else "missing", warn=True
+            )
+        )
         on_path = str(shim.parent) in os.environ.get("PATH", "").split(os.pathsep)
-        results.append(_check("shim dir on PATH", on_path, "" if on_path else "open a new shell / re-run install", warn=True))
+        results.append(
+            _check(
+                "shim dir on PATH",
+                on_path,
+                "" if on_path else "open a new shell / re-run install",
+                warn=True,
+            )
+        )
         registered, kind = _daemon_autostart()
-        results.append(_check("daemon auto-start", registered, kind if registered else "not registered — run 'navig service install'", warn=True))
+        results.append(
+            _check(
+                "daemon auto-start",
+                registered,
+                kind if registered else "not registered — run 'navig service install'",
+                warn=True,
+            )
+        )
 
     try:
         from navig.platform.paths import store_dir
+
         skills_dir = store_dir() / "skills"
     except Exception:  # noqa: BLE001
         skills_dir = config_dir() / "data" / "store" / "skills"
@@ -321,9 +378,7 @@ def check_logs() -> list[tuple[str, bool, str]]:
             _check("supervisor logs", True, f"{log_dir} (daemon.log last written {age})")
         )
     else:
-        results.append(
-            _check("supervisor logs", False, f"{daemon_log} not found", warn=True)
-        )
+        results.append(_check("supervisor logs", False, f"{daemon_log} not found", warn=True))
 
     # 2. The live daemon's app log -- the one that moves.
     pid = None
@@ -333,7 +388,9 @@ def check_logs() -> list[tuple[str, bool, str]]:
         if NavigDaemon.is_running():
             pid = NavigDaemon.read_pid()
     except Exception as exc:  # noqa: BLE001 - a probe must not break doctor
-        results.append(_check("daemon log path", False, f"could not read the pid file: {exc}", warn=True))
+        results.append(
+            _check("daemon log path", False, f"could not read the pid file: {exc}", warn=True)
+        )
         return results
 
     if not pid:
@@ -352,7 +409,9 @@ def check_logs() -> list[tuple[str, bool, str]]:
         import psutil  # noqa: PLC0415 - optional, and only needed for this row
     except ImportError:
         results.append(
-            _check("daemon log path", False, "psutil not installed - cannot ask the process", warn=True)
+            _check(
+                "daemon log path", False, "psutil not installed - cannot ask the process", warn=True
+            )
         )
         return results
 
@@ -658,10 +717,16 @@ def check_databases() -> list[tuple[str, bool, str]]:
         if skipped:
             parts.append(f"{skipped} skipped (budget {_DB_SCAN_BUDGET_S:.0f}s)")
         return [
-            _check("Database integrity", False, f"{checked} of {len(databases)} verified — "
-                   + ", ".join(parts), warn=True)
+            _check(
+                "Database integrity",
+                False,
+                f"{checked} of {len(databases)} verified — " + ", ".join(parts),
+                warn=True,
+            )
         ]
-    return [_check("Database integrity", True, f"{checked} databases intact (quick_check + FTS audit)")]
+    return [
+        _check("Database integrity", True, f"{checked} databases intact (quick_check + FTS audit)")
+    ]
 
 
 def _declared_navig_engines() -> tuple[list[str], str]:
@@ -678,22 +743,29 @@ def _declared_navig_engines() -> tuple[list[str], str]:
         import tomllib
 
         import navig
+
         root = Path(navig.__file__).resolve().parent.parent / "pyproject.toml"
         if root.is_file():
             data = tomllib.loads(root.read_text(encoding="utf-8"))
             deps = data.get("project", {}).get("dependencies", []) or []
-            names = [re.split(r"[<>=!;\[ ]", d.strip(), maxsplit=1)[0]
-                     for d in deps if d.strip().lower().startswith("navig-")]
+            names = [
+                re.split(r"[<>=!;\[ ]", d.strip(), maxsplit=1)[0]
+                for d in deps
+                if d.strip().lower().startswith("navig-")
+            ]
             return sorted(set(names)), str(root)
     except Exception:  # noqa: BLE001 — fall through to dist metadata
         logger.debug("pyproject read failed for dependency check", exc_info=True)
 
     try:
         import importlib.metadata as md
+
         reqs = md.requires("navig") or []
-        names = [re.split(r"[<>=!;\[ ]", r.strip(), maxsplit=1)[0]
-                 for r in reqs
-                 if "extra ==" not in r and r.strip().lower().startswith("navig-")]
+        names = [
+            re.split(r"[<>=!;\[ ]", r.strip(), maxsplit=1)[0]
+            for r in reqs
+            if "extra ==" not in r and r.strip().lower().startswith("navig-")
+        ]
         return sorted(set(names)), "installed metadata"
     except Exception:  # noqa: BLE001
         return [], ""
@@ -717,8 +789,9 @@ def check_hard_dependencies() -> list[tuple[str, bool, str]]:
 
     declared, source = _declared_navig_engines()
     if not declared:
-        return [_check("declared engines", False,
-                       "could not read declared dependencies", warn=True)]
+        return [
+            _check("declared engines", False, "could not read declared dependencies", warn=True)
+        ]
 
     missing = []
     for name in declared:
@@ -728,14 +801,19 @@ def check_hard_dependencies() -> list[tuple[str, bool, str]]:
             missing.append(name)
 
     if missing:
-        return [_check(
-            "declared engines", False,
-            f"declared but not importable: {', '.join(missing)} — an editable "
-            f"install does not pick up dependencies added after it was made. "
-            f"Install them from plugins/ (see the Plugin Sources row for the exact "
-            f"command); `pip install -e core` would fetch them from PyPI instead")]
-    return [_check("declared engines", True,
-                   f"{len(declared)} declared in {source}, all importable")]
+        return [
+            _check(
+                "declared engines",
+                False,
+                f"declared but not importable: {', '.join(missing)} — an editable "
+                f"install does not pick up dependencies added after it was made. "
+                f"Install them from plugins/ (see the Plugin Sources row for the exact "
+                f"command); `pip install -e core` would fetch them from PyPI instead",
+            )
+        ]
+    return [
+        _check("declared engines", True, f"{len(declared)} declared in {source}, all importable")
+    ]
 
 
 def _editable_mappings() -> list[tuple[str, str]]:
@@ -778,7 +856,7 @@ def _editable_mappings() -> list[tuple[str, str]]:
             else:
                 continue
             try:
-                mapping = ast.literal_eval(txt[open_at:i + 1])
+                mapping = ast.literal_eval(txt[open_at : i + 1])
             except (ValueError, SyntaxError):
                 continue
             for name, path in mapping.items():
@@ -806,11 +884,13 @@ def _editable_findings() -> list[tuple[str, str]]:
     for name, path in _editable_mappings():
         target = Path(path)
         if not target.exists():
-            findings.append((
-                name,
-                f"target gone (was under {Path(path).parent.name}) — reinstall from "
-                f"its checkout with pip install -e, or pip uninstall {name}",
-            ))
+            findings.append(
+                (
+                    name,
+                    f"target gone (was under {Path(path).parent.name}) — reinstall from "
+                    f"its checkout with pip install -e, or pip uninstall {name}",
+                )
+            )
             continue
         if not name.startswith("navig"):
             continue  # foreign editables: checked for existence only, never imported
@@ -822,11 +902,13 @@ def _editable_findings() -> list[tuple[str, str]]:
         else:
             why = ""
         if spec is None:
-            findings.append((
-                name,
-                f"no module resolves though {Path(path).parent.name} exists "
-                f"(partial or moved package){why} — reinstall with pip install -e",
-            ))
+            findings.append(
+                (
+                    name,
+                    f"no module resolves though {Path(path).parent.name} exists "
+                    f"(partial or moved package){why} — reinstall with pip install -e",
+                )
+            )
     return findings
 
 
@@ -845,9 +927,7 @@ def check_editable_installs() -> list[tuple[str, bool, str]]:
     """
     findings = _editable_findings()
     if findings:
-        return [
-            _check(f"editable {name}", False, detail) for name, detail in findings
-        ]
+        return [_check(f"editable {name}", False, detail) for name, detail in findings]
     total = len(_editable_mappings())
     if not total:
         return [_check("editable installs", True, "none — every package is a regular install")]
@@ -863,16 +943,22 @@ def _vault_custody_row(vault) -> CheckResult:
     try:
         kinds = {s.kind for s in vault.keyring.slots()}
     except Exception as exc:  # noqa: BLE001 — could not verify ⇒ never green
-        return _check("Vault keys", False, f"cannot read keyslots ({type(exc).__name__})", warn=True)
+        return _check(
+            "Vault keys", False, f"cannot read keyslots ({type(exc).__name__})", warn=True
+        )
     if not kinds:
         return _check(
-            "Vault keys", False,
-            "fingerprint-only, no recovery key — navig vault recovery init", warn=True,
+            "Vault keys",
+            False,
+            "fingerprint-only, no recovery key — navig vault recovery init",
+            warn=True,
         )
     if "recovery" not in kinds:
         return _check(
-            "Vault keys", False,
-            f"{', '.join(sorted(kinds))}; no recovery key — navig vault recovery init", warn=True,
+            "Vault keys",
+            False,
+            f"{', '.join(sorted(kinds))}; no recovery key — navig vault recovery init",
+            warn=True,
         )
     return _check("Vault keys", True, f"{', '.join(sorted(kinds))}")
 
@@ -892,11 +978,14 @@ def _plaintext_host_secrets_row() -> CheckResult:
                     seen.add(d)
                     rows.extend(scan_plaintext_host_secrets(d))
     except Exception as exc:  # noqa: BLE001 — could not verify ⇒ never green
-        return _check("Host credentials", False, f"could not scan ({type(exc).__name__})", warn=True)
+        return _check(
+            "Host credentials", False, f"could not scan ({type(exc).__name__})", warn=True
+        )
     if rows:
         hosts = len({r["host"] for r in rows})
         return _check(
-            "Host credentials", False,
+            "Host credentials",
+            False,
             f"{len(rows)} plaintext password(s) in {hosts} host file(s) — navig security migrate-host-secrets",
             warn=True,
         )
@@ -972,9 +1061,242 @@ def check_vault() -> list[tuple[str, bool, str]]:
                     )
                 )
     except Exception as exc:  # noqa: BLE001 — a doctor check must never crash doctor
-        results.append(_check("Vault", False, f"COULD NOT VERIFY ({type(exc).__name__})", warn=True))
+        results.append(
+            _check("Vault", False, f"COULD NOT VERIFY ({type(exc).__name__})", warn=True)
+        )
 
     return results
+
+
+def _managed_pid_files_dir():
+    """Where the supervisor writes gateway.pid / worker.pid (``NAVIG_CONFIG_DIR``)."""
+    from pathlib import Path
+
+    base = os.environ.get("NAVIG_CONFIG_DIR") or str(Path.home() / ".navig")
+    return Path(base)
+
+
+def _managed_daemon_pids() -> set[int]:
+    """PIDs this install believes it started. Missing or corrupt files contribute nothing."""
+    pids: set[int] = set()
+    d = _managed_pid_files_dir()
+    for name in ("gateway.pid", "worker.pid"):
+        try:
+            pids.add(int((d / name).read_text(encoding="utf-8").strip()))
+        except Exception:  # noqa: BLE001 — absent or unparseable: it is simply not ours
+            continue
+    return pids
+
+
+def _port_owner_pids(port: int):
+    """PIDs LISTENING on *port*, or None when the OS will not name them.
+
+    None and set() are different answers: None means "cannot attribute", set() means
+    "nothing is listening". Collapsing them would hide the case this row exists for.
+    """
+    try:
+        import psutil  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        owners: set[int] = set()
+        for conn in psutil.net_connections(kind="tcp"):
+            try:
+                if (
+                    conn.status == psutil.CONN_LISTEN
+                    and conn.laddr
+                    and conn.laddr.port == port
+                    and conn.pid
+                ):
+                    owners.add(conn.pid)
+            except Exception:  # noqa: BLE001 — one odd entry must not poison the scan
+                continue
+        return owners
+    except Exception:  # noqa: BLE001 — AccessDenied on Windows: no attribution available
+        return None
+
+
+def _classify_gateway_owner(port: int, owners, own_pids: set[int]) -> CheckResult:
+    """Who is on the gateway port, and is it us?
+
+    A bound port used to be reported as "✓ Port N is bound (Gateway running)" no matter
+    who owned it. On 2026-10-22 a gateway nobody intended held 8789 while this install's
+    daemon was disabled on purpose — doctor would have shown a green row over a second
+    NAVIG authority. "Something is listening" and "the thing listening is mine" are
+    different questions; only the second one is a health signal.
+    """
+    if owners is None:
+        return _check(
+            "Port Occupation",
+            False,
+            f"Port {port} is bound but the owning process cannot be identified — "
+            "a second NAVIG authority looks exactly like this; identify it with "
+            f"`netstat -ano | findstr :{port}`",
+            warn=True,
+        )
+    if not owners:
+        return _check(
+            "Port Occupation",
+            False,
+            f"Port {port} was reported bound but no listening PID was found — cannot attribute it",
+            warn=True,
+        )
+    foreign = sorted(p for p in owners if p not in own_pids)
+    if foreign:
+        named = ", ".join(str(pid) for pid in foreign)
+        return _check(
+            "Port Occupation",
+            False,
+            f"Port {port} is held by pid(s) {named} which this install does not manage — "
+            "a second NAVIG authority is running (stop it, or remove the stale process)",
+        )
+    named = ", ".join(str(pid) for pid in sorted(owners))
+    return _check("Port Occupation", True, f"Port {port} is bound by this install (pid {named})")
+
+
+def _gateway_owner_row(port: int) -> CheckResult:
+    """Live row: classify the current owner of *port* against our own PID files."""
+    return _classify_gateway_owner(port, _port_owner_pids(port), _managed_daemon_pids())
+
+
+def _brain_link_path():
+    """Where the NAVIG OS app records "my brain lives elsewhere" (see :mod:`navig.brain.link`)."""
+    from navig.brain.link import brain_link_path  # noqa: PLC0415
+
+    return brain_link_path()
+
+
+def _local_brain_running() -> bool:
+    """True when a local daemon or gateway is up on this machine."""
+    try:
+        pids = _managed_daemon_pids()
+        if pids:
+            try:
+                import psutil  # noqa: PLC0415
+
+                if any(psutil.pid_exists(pid) for pid in pids):
+                    return True
+            except Exception:  # noqa: BLE001 — fall through to the port probe
+                pass
+        import socket  # noqa: PLC0415
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(0.3)
+            return probe.connect_ex(("127.0.0.1", _GATEWAY_PORT)) == 0
+    except Exception:  # noqa: BLE001 — unknown is not "running"
+        return False
+
+
+def _classify_brain_role(link, local_running: bool) -> CheckResult:
+    """Is this install a client, the brain, or both at once?
+
+    A brain-link file means "my brain lives elsewhere"; a local daemon means "my brain
+    lives here". Both at once is the 2026-10-22 defect: NEURON held a link to
+    `outpost-server` and ran a gateway, and both hosts answered "canonical": true while
+    every existing doctor row described only one half of the contradiction.
+    """
+    if isinstance(link, dict) and link.get("__corrupt__"):
+        return _check(
+            "Brain role",
+            False,
+            "a brain-link file exists but cannot be read — cannot verify whether this "
+            "install is a client or the brain",
+            warn=True,
+        )
+    if link:
+        name = link.get("brainName") or "a remote brain"
+        if local_running:
+            return _check(
+                "Brain role",
+                False,
+                f"this install is a client of {name} AND a local brain is running — two "
+                "authorities; stop the local one or remove brain-link.json",
+            )
+        return _check("Brain role", True, f"client of {name}; local brain not running")
+    if local_running:
+        return _check(
+            "Brain role", True, "this install is the brain (no brain link, local daemon running)"
+        )
+    return _check(
+        "Brain role", True, "no brain link and no local brain — nothing is claiming the role"
+    )
+
+
+def _brain_role_row() -> CheckResult:
+    """Live row: read this machine's brain link and compare it with what is running."""
+    import json  # noqa: PLC0415
+
+    link = None
+    try:
+        path = _brain_link_path()
+        if path.exists():
+            try:
+                link = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001 — present but unreadable: cannot verify
+                link = {"__corrupt__": True}
+    except Exception:  # noqa: BLE001
+        link = {"__corrupt__": True}
+    return _classify_brain_role(link, _local_brain_running())
+
+
+def _brain_data_routing_row() -> CheckResult:
+    """Where this install sends data another machine owns — the capability contract, live.
+
+    Doctor already reports whether a local Brain is running (:func:`_brain_role_row`). It
+    did not report the other half: with a link in place, ``memory_key_facts_*`` and
+    ``recall_*`` are the Brain's rows, and a client must not answer them from its own
+    store. Printing the resolved route is how an operator sees that before a model writes
+    a fact to the wrong database.
+    """
+    from navig.brain.link import read_brain_link_state  # noqa: PLC0415
+    from navig.mcp import capability  # noqa: PLC0415
+
+    state = read_brain_link_state()
+    role = capability.install_role(use_cache=False)
+    brain_owned = sorted(
+        {
+            contract.family
+            for contract in capability.contracts().values()
+            if contract.data_authority == capability.AUTHORITY_BRAIN
+        }
+    )
+    families = ", ".join(brain_owned) or "none"
+
+    if state.is_unreadable:
+        return _check(
+            "Brain data routing",
+            False,
+            f"brain-owned data ({families}) cannot be routed: the brain link is unreadable "
+            f"({state.state}: {state.detail}) — reads and writes that belong to the Brain "
+            "are refused until it is fixed",
+            warn=True,
+        )
+
+    route = capability.resolve(brain_owned[0] if brain_owned else "", state=state, role=role)
+    if route.is_local:
+        where = (
+            "this install (it is the Brain)" if role in ("brain", "all-in-one") else "this install"
+        )
+        return _check(
+            "Brain data routing",
+            True,
+            f"{families} are served by {where}; files, shell and browser actions stay local",
+        )
+    if route.is_refused:
+        return _check(
+            "Brain data routing",
+            False,
+            f"this install is a {role} with no usable brain link, so {families} have no "
+            "authority to answer — memory and recall calls are refused rather than served "
+            "from a local copy; run `navig os link` against the Brain",
+        )
+    return _check(
+        "Brain data routing",
+        True,
+        f"{families} are served by the Brain at {state.link.base_url if state.link else '?'} "
+        f"(token {state.link.token_fingerprint or 'absent' if state.link else 'absent'}); files, "
+        "shell and browser actions run here",
+    )
 
 
 def _bindability_row(label: str, port: int) -> CheckResult:
@@ -1180,15 +1502,10 @@ def check_sockets(target_port: int | None = None) -> list[tuple[str, bool, str]]
             s.settimeout(0.5)
             ans = s.connect_ex(("127.0.0.1", target_port))
             if ans == 0:
-                results.append(
-                    _check(
-                        "Port Occupation",
-                        True,
-                        # A bound port means the gateway is running — genuinely healthy, so
-                        # this stays ✓. (warn= was dead here anyway: it is ignored when ok=True.)
-                        f"Port {target_port} is bound (Gateway running)",
-                    )
-                )
+                # NOT automatically ✓: ask WHO holds it. A bound port answers "is something
+                # listening"; a second NAVIG authority answers "is my thing listening" with a
+                # no, and used to be reported as a healthy gateway.
+                results.append(_gateway_owner_row(target_port))
             else:
                 # Nothing is LISTENING — which is not the same as "a daemon could start
                 # here". This row used to stop at connect_ex and disclaim the difference
@@ -1209,7 +1526,9 @@ def check_sockets(target_port: int | None = None) -> list[tuple[str, bool, str]]
                 s.settimeout(0.5)
                 if s.connect_ex(("127.0.0.1", _DAEMON_PORT)) == 0:
                     results.append(
-                        _check("Daemon Port", True, f"Port {_DAEMON_PORT} is bound (daemon running)")
+                        _check(
+                            "Daemon Port", True, f"Port {_DAEMON_PORT} is bound (daemon running)"
+                        )
                     )
                 else:
                     results.append(_bindability_row("Daemon Port", _DAEMON_PORT))
@@ -1217,6 +1536,25 @@ def check_sockets(target_port: int | None = None) -> list[tuple[str, bool, str]]
             results.append(
                 _check("Daemon Port", False, f"Socket error on port {_DAEMON_PORT}: {e}")
             )
+
+    try:
+        results.append(_brain_role_row())
+    except Exception as exc:  # noqa: BLE001 — a role probe must never break the report
+        results.append(
+            _check("Brain role", False, f"could not determine ({type(exc).__name__})", warn=True)
+        )
+
+    try:
+        results.append(_brain_data_routing_row())
+    except Exception as exc:  # noqa: BLE001 — routing probe must never break the report
+        results.append(
+            _check(
+                "Brain data routing",
+                False,
+                f"could not determine ({type(exc).__name__})",
+                warn=True,
+            )
+        )
 
     return results
 
@@ -1290,7 +1628,11 @@ def check_skills() -> list[tuple[str, bool, str]]:
         return [_check("Skills", False, f"COULD NOT VERIFY ({exc})", warn=True)]
 
     if not skills:
-        return [_check("Skills", False, "none found — builtin skills missing from this install", warn=True)]
+        return [
+            _check(
+                "Skills", False, "none found — builtin skills missing from this install", warn=True
+            )
+        ]
     return [_check("Skills", True, f"{len(skills)} found across {len(dirs)} dir(s)")]
 
 
@@ -1363,9 +1705,7 @@ def check_gateway(port: int | None = None) -> list[tuple[str, bool, str]]:
             # Reachability IS verified — claim only that, never the gateway's identity.
             results.append(_check("Gateway", True, f"Responding at 127.0.0.1:{port}"))
         elif _is_gateway_cmdline(owner):
-            results.append(
-                _check("Gateway", True, f"Responding at 127.0.0.1:{port} (gateway up)")
-            )
+            results.append(_check("Gateway", True, f"Responding at 127.0.0.1:{port} (gateway up)"))
         else:
             # Something else answers on the gateway's port: with no gateway there is
             # no uplink either, so a green "Responding" here is the phantom green
@@ -1584,7 +1924,9 @@ def check_event_processor(port: int | None = None) -> list[tuple[str, bool, str]
         pending = int(events.get("pending") or 0)
         history = int(events.get("history") or 0)
     except (TypeError, ValueError):
-        return [_check("Event processor", False, "COULD NOT VERIFY (malformed event stats)", warn=True)]
+        return [
+            _check("Event processor", False, "COULD NOT VERIFY (malformed event stats)", warn=True)
+        ]
 
     if not running:
         return [
@@ -1676,27 +2018,24 @@ def check_ai_providers() -> list[tuple[str, bool, str]]:
                 )
         elif conns:
             results.append(
-                _check("Default", False, "no default connection set (navig connect default <id>)",
-                       warn=True)
+                _check(
+                    "Default",
+                    False,
+                    "no default connection set (navig connect default <id>)",
+                    warn=True,
+                )
             )
 
-        broken = [
-            c for c in conns
-            if not c.get("is_routable") and not c.get("is_default")
-        ]
+        broken = [c for c in conns if not c.get("is_routable") and not c.get("is_default")]
         if broken:
             names = ", ".join(str(c.get("name") or c.get("connection_id")) for c in broken[:3])
-            results.append(
-                _check("Needs re-auth", False, f"{len(broken)}: {names}", warn=True)
-            )
+            results.append(_check("Needs re-auth", False, f"{len(broken)}: {names}", warn=True))
 
         # In-flight logins. Only worth a line when there ARE any — an abandoned one
         # is the visible trace of a login that never completed.
         pending = report.get("pending_logins")
         if pending:
-            results.append(
-                _check("Logins in progress", True, f"{pending} (expire after 10 min)")
-            )
+            results.append(_check("Logins in progress", True, f"{pending} (expire after 10 min)"))
 
         if not conns and not configured:
             results.append(
@@ -1728,6 +2067,38 @@ def _invocation_repo_root() -> Path | None:
     from navig.commands.repo import resolve_repo_root  # noqa: PLC0415
 
     return resolve_repo_root()
+
+
+def check_runtime_inventory() -> list[tuple[str, bool, str]]:
+    """Which first-party source plugins THIS interpreter actually has, and loaded.
+
+    The neighbours answer different questions: ``Plugin Sources`` judges the few
+    plugins ``[tool.uv.sources]`` declares, the ``other Python`` rows look past this
+    interpreter, and the entry-point seam check LOADS entry points (it imports them).
+    None of them can say "41 source plugins, 7 installed, 7 loaded by the running
+    gateway" — which is how ``navig-msstore`` sat missing from the live brain for days
+    while every row stayed green (measured 2026-10-20).
+
+    Collection is metadata-only: no plugin is imported to measure it. The rows carry the
+    full per-plugin inventory (state, interpreter, entry points, location, activation,
+    repair) as ``data`` for ``--json``; the console shows the summary plus one line per
+    genuinely broken install.
+    """
+    from navig.plugins.runtime_inventory import (  # noqa: PLC0415 — lazy, like every check
+        inventory_rows,
+        runtime_inventory,
+    )
+
+    try:
+        inventory = runtime_inventory()
+    except Exception as exc:  # noqa: BLE001 — a health check must never crash the doctor
+        return [_check("Runtime plugins", False, f"COULD NOT VERIFY ({exc})", warn=True)]
+    rows = inventory_rows(inventory)
+    return [
+        _check(r["label"], r["ok"], r["detail"], warn=bool(r.get("warn")), data=r.get("data"))
+        for r in rows
+    ]
+
 
 def check_plugin_sources() -> list[tuple[str, bool, str]]:
     """Plugins declared editable-local that actually resolve to an INSTALLED copy.
@@ -1853,19 +2224,29 @@ def check_command_ownership() -> list[tuple[str, bool, str]]:
         return [_check("Command ownership", False, f"discovery failed: {rep['error']}", warn=True)]
     rows: list[tuple[str, bool, str]] = []
     for name, owners in sorted(rep["collisions"].items()):
-        rows.append(_check(
-            f"navig {name}", False,
-            f"declared by {', '.join(owners)} — {owners[0]} owns it; uninstall or rename the other",
-            warn=True,
-        ))
+        rows.append(
+            _check(
+                f"navig {name}",
+                False,
+                f"declared by {', '.join(owners)} — {owners[0]} owns it; uninstall or rename the other",
+                warn=True,
+            )
+        )
     for name, owner in sorted(rep["shadowed"].items()):
-        rows.append(_check(
-            f"navig {name}", False,
-            f"{owner} declares a core command; core keeps it — the plugin's verb never runs",
-            warn=True,
-        ))
+        rows.append(
+            _check(
+                f"navig {name}",
+                False,
+                f"{owner} declares a core command; core keeps it — the plugin's verb never runs",
+                warn=True,
+            )
+        )
     if not rows:
-        rows.append(_check("Command ownership", True, f"{rep['commands']} plugin command(s), one owner each"))
+        rows.append(
+            _check(
+                "Command ownership", True, f"{rep['commands']} plugin command(s), one owner each"
+            )
+        )
     return rows
 
 
@@ -1963,38 +2344,93 @@ def _judge_release(
     rows: list[CheckResult] = []
 
     if manifest is None:
-        rows.append(_check("Release · tree", False, f"pyproject {tree} · latest.json missing or unreadable — python tools/_version_sync.py", warn=True))
+        rows.append(
+            _check(
+                "Release · tree",
+                False,
+                f"pyproject {tree} · latest.json missing or unreadable — python tools/_version_sync.py",
+                warn=True,
+            )
+        )
     elif manifest != tree:
-        rows.append(_check("Release · tree", False, f"pyproject {tree} but latest.json says {manifest} — python tools/_version_sync.py"))
+        rows.append(
+            _check(
+                "Release · tree",
+                False,
+                f"pyproject {tree} but latest.json says {manifest} — python tools/_version_sync.py",
+            )
+        )
     else:
         rows.append(_check("Release · tree", True, f"pyproject {tree} · latest.json {tree}"))
 
     if tag is None:
-        rows.append(_check("Release · tag", False, f"no v* tag in this checkout — {tree} has never been tagged here (git fetch --tags?)", warn=True))
+        rows.append(
+            _check(
+                "Release · tag",
+                False,
+                f"no v* tag in this checkout — {tree} has never been tagged here (git fetch --tags?)",
+                warn=True,
+            )
+        )
     elif tag == tree:
         rows.append(_check("Release · tag", True, f"v{tree} tagged"))
     elif _semver_key(tag) < _semver_key(tree):
-        rows.append(_check("Release · tag", False, f"newest tag is v{tag}, tree is {tree} — not tagged yet: bash tools/release.sh {tree}", warn=True))
+        rows.append(
+            _check(
+                "Release · tag",
+                False,
+                f"newest tag is v{tag}, tree is {tree} — not tagged yet: bash tools/release.sh {tree}",
+                warn=True,
+            )
+        )
     else:
-        rows.append(_check("Release · tag", False, f"tag v{tag} exists but the tree says {tree} — that tag points at a tree of another version"))
+        rows.append(
+            _check(
+                "Release · tag",
+                False,
+                f"tag v{tag} exists but the tree says {tree} — that tag points at a tree of another version",
+            )
+        )
 
     pending = ""
     if pending_entries or pending_fragments:
         parts = []
         if pending_entries:
-            parts.append(f"{pending_entries} [Unreleased] entr{'y' if pending_entries == 1 else 'ies'}")
+            parts.append(
+                f"{pending_entries} [Unreleased] entr{'y' if pending_entries == 1 else 'ies'}"
+            )
         if pending_fragments:
             parts.append(f"{pending_fragments} fragment{'s' if pending_fragments != 1 else ''}")
         pending = " · " + " + ".join(parts) + " await a release"
 
     if pypi is None:
-        rows.append(_check("Release · PyPI", False, f"not checked ({pypi_error or 'unreachable'}){pending}", warn=True))
+        rows.append(
+            _check(
+                "Release · PyPI",
+                False,
+                f"not checked ({pypi_error or 'unreachable'}){pending}",
+                warn=True,
+            )
+        )
     elif pypi == tree:
         rows.append(_check("Release · PyPI", True, f"{tree} published{pending}"))
     elif _semver_key(pypi) < _semver_key(tree):
-        rows.append(_check("Release · PyPI", False, f"PyPI has {pypi}, tree is {tree} — unreleased: bash tools/release.sh {tree} --publish{pending}", warn=True))
+        rows.append(
+            _check(
+                "Release · PyPI",
+                False,
+                f"PyPI has {pypi}, tree is {tree} — unreleased: bash tools/release.sh {tree} --publish{pending}",
+                warn=True,
+            )
+        )
     else:
-        rows.append(_check("Release · PyPI", False, f"PyPI has {pypi} but this tree is {tree} — published from elsewhere, or the tree is behind"))
+        rows.append(
+            _check(
+                "Release · PyPI",
+                False,
+                f"PyPI has {pypi} but this tree is {tree} — published from elsewhere, or the tree is behind",
+            )
+        )
     return rows
 
 
@@ -2020,7 +2456,11 @@ def _pypi_latest(package: str = "navig", timeout: float = 3.0) -> tuple[str | No
         with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - fixed https host
             data = json.loads(resp.read().decode("utf-8"))
         version = str(data["info"]["version"])
-        return (version, None) if _TAG_VERSION_RE.match(f"v{version}") else (None, f"unexpected version {version!r}")
+        return (
+            (version, None)
+            if _TAG_VERSION_RE.match(f"v{version}")
+            else (None, f"unexpected version {version!r}")
+        )
     except urllib.error.HTTPError as exc:
         return None, _NOT_ON_PYPI if exc.code == 404 else f"HTTP {exc.code}"
     except Exception as exc:  # noqa: BLE001 - offline, timeout: "not checked"
@@ -2094,7 +2534,11 @@ def _newest_local_tag(root: Path) -> str | None:
     try:
         res = subprocess.run(
             ["git", "-C", str(root), "tag", "-l", "v[0-9]*", "--sort=-v:refname"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -2114,7 +2558,7 @@ def _pending_changelog(core_dir: Path) -> tuple[int, int]:
         text = (core_dir / "CHANGELOG.md").read_text(encoding="utf-8")
         start = text.index("## [Unreleased]")
         nxt = text.find("\n## ", start + 1)
-        block = text[start: nxt if nxt != -1 else len(text)]
+        block = text[start : nxt if nxt != -1 else len(text)]
         entries = sum(1 for ln in block.splitlines() if ln.startswith("- **"))
     except (OSError, ValueError):
         pass
@@ -2122,7 +2566,9 @@ def _pending_changelog(core_dir: Path) -> tuple[int, int]:
     frag_dir = core_dir / "changelog.d"
     try:
         if frag_dir.is_dir():
-            fragments = sum(1 for p in frag_dir.iterdir() if p.suffix == ".md" and p.name != "README.md")
+            fragments = sum(
+                1 for p in frag_dir.iterdir() if p.suffix == ".md" and p.name != "README.md"
+            )
     except OSError:
         pass
     return entries, fragments
@@ -2144,7 +2590,11 @@ def _invocation_checkout_root() -> Path | None:
     try:
         res = subprocess.run(
             ["git", "-C", str(invocation_cwd()), "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
         )
     except (OSError, subprocess.SubprocessError):
         return _invocation_repo_root()
@@ -2171,24 +2621,39 @@ def check_release() -> list[tuple[str, bool, str]]:
         return []  # some other project's checkout
     m = _PYPROJECT_VERSION_RE.search(text)
     if not m:
-        return [_check("Release · tree", False, "pyproject.toml has no `version = \"X.Y.Z\"`", warn=True)]
+        return [
+            _check("Release · tree", False, 'pyproject.toml has no `version = "X.Y.Z"`', warn=True)
+        ]
     tree = m.group("v")
 
     manifest: str | None = None
     try:
         import json  # noqa: PLC0415
 
-        manifest = str(json.loads((core_dir / "latest.json").read_text(encoding="utf-8")).get("version") or "") or None
+        manifest = (
+            str(
+                json.loads((core_dir / "latest.json").read_text(encoding="utf-8")).get("version")
+                or ""
+            )
+            or None
+        )
     except (OSError, ValueError):
         manifest = None
 
     tag = _newest_local_tag(root)
     pypi, pypi_error = _pypi_latest()
     entries, fragments = _pending_changelog(core_dir)
-    rows: list[tuple[str, bool, str]] = list(_judge_release(
-        tree, manifest, tag, pypi,
-        pending_entries=entries, pending_fragments=fragments, pypi_error=pypi_error,
-    ))
+    rows: list[tuple[str, bool, str]] = list(
+        _judge_release(
+            tree,
+            manifest,
+            tag,
+            pypi,
+            pending_entries=entries,
+            pending_fragments=fragments,
+            pypi_error=pypi_error,
+        )
+    )
     deps = [(n, f, *_pypi_latest(n)) for n, f in _hard_first_party_deps(text)]
     deps_row = _judge_hard_deps(deps)
     if deps_row is not None:
@@ -2243,8 +2708,7 @@ def check_browsers() -> list[tuple[str, bool, str]]:
             _check(
                 "Foreign debug browsers",
                 True,
-                f"{len(foreign)} running that NAVIG did not launch (pid {pids}) — "
-                f"left untouched",
+                f"{len(foreign)} running that NAVIG did not launch (pid {pids}) — left untouched",
             )
         )
     return results
@@ -2341,12 +2805,14 @@ def check_media_tools() -> list[tuple[str, bool, str]]:
     results = []
 
     ffmpeg = shutil.which("ffmpeg")
-    results.append(_check(
-        "ffmpeg",
-        bool(ffmpeg),
-        ffmpeg or "not on PATH — video/audio transcription and frame OCR are skipped",
-        warn=True,
-    ))
+    results.append(
+        _check(
+            "ffmpeg",
+            bool(ffmpeg),
+            ffmpeg or "not on PATH — video/audio transcription and frame OCR are skipped",
+            warn=True,
+        )
+    )
 
     from navig.core.ocr import (
         OCR_INSTALL_HINT,
@@ -2371,24 +2837,32 @@ def check_media_tools() -> list[tuple[str, bool, str]]:
         # language they pinned.
         gap = ocr_language_gap()
         if gap:
-            results.append(_check(
-                "OCR (on-screen text)", False,
-                f"{detail} — but {gap}. Text in that script reads as noise.",
-                warn=True,
-            ))
+            results.append(
+                _check(
+                    "OCR (on-screen text)",
+                    False,
+                    f"{detail} — but {gap}. Text in that script reads as noise.",
+                    warn=True,
+                )
+            )
         else:
             lang = ocr_language()
-            results.append(_check(
-                "OCR (on-screen text)", True,
-                f"{detail} · reads {lang}" if lang else detail,
-            ))
+            results.append(
+                _check(
+                    "OCR (on-screen text)",
+                    True,
+                    f"{detail} · reads {lang}" if lang else detail,
+                )
+            )
     else:
-        results.append(_check(
-            "OCR (on-screen text)",
-            False,
-            f"{reason} — image/video text is silently skipped. Fix: {OCR_INSTALL_HINT}",
-            warn=True,
-        ))
+        results.append(
+            _check(
+                "OCR (on-screen text)",
+                False,
+                f"{reason} — image/video text is silently skipped. Fix: {OCR_INSTALL_HINT}",
+                warn=True,
+            )
+        )
 
     return results
 
@@ -2440,7 +2914,9 @@ def _webhook_tenant_rows() -> list[tuple[str, bool, str]]:
             results.append(
                 # We can't derive or vouch for this tenant — that's a ⚠ (could-not-verify),
                 # never a green ✓ (matches the "COULD NOT VERIFY" sibling below).
-                _check("Telegram webhook", False, "custom host (not the lighthouse edge)", warn=True)
+                _check(
+                    "Telegram webhook", False, "custom host (not the lighthouse edge)", warn=True
+                )
             )
         else:
             results.append(_check("Telegram webhook", True, "tenant matches the live brain"))
@@ -2553,11 +3029,21 @@ def _stripe_webhook_row() -> list[tuple[str, bool, str]]:
     try:
         import requests  # noqa: PLC0415
 
-        eps = requests.get("https://api.stripe.com/v1/webhook_endpoints", params={"limit": 100},
-                           headers=headers, timeout=4.0)
+        eps = requests.get(
+            "https://api.stripe.com/v1/webhook_endpoints",
+            params={"limit": 100},
+            headers=headers,
+            timeout=4.0,
+        )
         if eps.status_code != 200:
-            return [_check("Stripe webhook", False,
-                           f"COULD NOT VERIFY (Stripe answered HTTP {eps.status_code})", warn=True)]
+            return [
+                _check(
+                    "Stripe webhook",
+                    False,
+                    f"COULD NOT VERIFY (Stripe answered HTTP {eps.status_code})",
+                    warn=True,
+                )
+            ]
         failed = requests.get(
             "https://api.stripe.com/v1/events",
             params={"delivery_success": "false", "created[gte]": since, "limit": 100},
@@ -2565,8 +3051,14 @@ def _stripe_webhook_row() -> list[tuple[str, bool, str]]:
             timeout=4.0,
         )
         if failed.status_code != 200:
-            return [_check("Stripe webhook", False,
-                           f"COULD NOT VERIFY (Stripe answered HTTP {failed.status_code})", warn=True)]
+            return [
+                _check(
+                    "Stripe webhook",
+                    False,
+                    f"COULD NOT VERIFY (Stripe answered HTTP {failed.status_code})",
+                    warn=True,
+                )
+            ]
         endpoints = eps.json().get("data") or []
         undelivered = failed.json().get("data") or []
     except Exception as exc:  # noqa: BLE001 - doctor must never crash on a check
@@ -2574,24 +3066,44 @@ def _stripe_webhook_row() -> list[tuple[str, bool, str]]:
 
     ours = [e for e in endpoints if str(e.get("url") or "").rstrip("/") == endpoint_url]
     if not ours:
-        return [_check("Stripe webhook", False,
-                       f"no Stripe endpoint points at {endpoint_url} — no sale can mint a licence",
-                       warn=True)]
+        return [
+            _check(
+                "Stripe webhook",
+                False,
+                f"no Stripe endpoint points at {endpoint_url} — no sale can mint a licence",
+                warn=True,
+            )
+        ]
     disabled = [e for e in ours if e.get("status") != "enabled"]
     if disabled:
         # Verified, not inferred: Stripe has stopped trying. An ✗, not a ⚠.
-        return [_check("Stripe webhook", False,
-                       f"Stripe has DISABLED {disabled[0].get('id')} — no sale reaches us; "
-                       "re-enable it in Stripe → Developers → Webhooks, then fix what it failed on")]
+        return [
+            _check(
+                "Stripe webhook",
+                False,
+                f"Stripe has DISABLED {disabled[0].get('id')} — no sale reaches us; "
+                "re-enable it in Stripe → Developers → Webhooks, then fix what it failed on",
+            )
+        ]
     if undelivered:
         n = f"{len(undelivered)}+" if len(undelivered) >= 100 else str(len(undelivered))
         kinds = ", ".join(sorted({str(e.get("type")) for e in undelivered})[:3])
-        return [_check("Stripe webhook", False,
-                       f"{n} event(s) not delivered in {_DELIVERY_WINDOW_DAYS}d ({kinds}) — "
-                       "Stripe is retrying; check the endpoint's failures in the Dashboard",
-                       warn=True)]
-    return [_check("Stripe webhook", True,
-                   f"endpoint enabled · every delivery succeeded ({_DELIVERY_WINDOW_DAYS}d)")]
+        return [
+            _check(
+                "Stripe webhook",
+                False,
+                f"{n} event(s) not delivered in {_DELIVERY_WINDOW_DAYS}d ({kinds}) — "
+                "Stripe is retrying; check the endpoint's failures in the Dashboard",
+                warn=True,
+            )
+        ]
+    return [
+        _check(
+            "Stripe webhook",
+            True,
+            f"endpoint enabled · every delivery succeeded ({_DELIVERY_WINDOW_DAYS}d)",
+        )
+    ]
 
 
 def _os_remote_row() -> list[tuple[str, bool, str]]:
@@ -2620,24 +3132,37 @@ def _os_remote_row() -> list[tuple[str, bool, str]]:
     if not coerce_bool(cm.get("os.remote.enabled"), default=True):
         return [_check("Remote NAVIG OS", True, f"turned off ({paired})")]
     if mode != "lighthouse" or not edge:
-        return [_check(
-            "Remote NAVIG OS", False,
-            f"{paired}, but no Lighthouse relay is configured — set one up: navig lighthouse login",
-            warn=True,
-        )]
+        return [
+            _check(
+                "Remote NAVIG OS",
+                False,
+                f"{paired}, but no Lighthouse relay is configured — set one up: navig lighthouse login",
+                warn=True,
+            )
+        ]
 
     from navig.cloud.os_relay import edge_supports_os
     from navig.commands.lighthouse import _deployed_worker_version
 
     version = _deployed_worker_version(edge)
     if not version:
-        return [_check("Remote NAVIG OS", False, f"COULD NOT VERIFY (relay at {edge} did not answer)", warn=True)]
+        return [
+            _check(
+                "Remote NAVIG OS",
+                False,
+                f"COULD NOT VERIFY (relay at {edge} did not answer)",
+                warn=True,
+            )
+        ]
     if not edge_supports_os(version):
-        return [_check(
-            "Remote NAVIG OS", False,
-            f"relay v{version} predates remote NAVIG OS — update it: navig lighthouse redeploy",
-            warn=True,
-        )]
+        return [
+            _check(
+                "Remote NAVIG OS",
+                False,
+                f"relay v{version} predates remote NAVIG OS — update it: navig lighthouse redeploy",
+                warn=True,
+            )
+        ]
     return [_check("Remote NAVIG OS", True, f"relay v{version} · {paired}")]
 
 
@@ -2690,9 +3215,7 @@ def check_pending_approvals() -> list[tuple[str, bool, str]]:
         # `_webhook_tenant_rows` already reports this case as `COULD NOT VERIFY (...)`;
         # match it. Note the import guard above still returns [] on purpose: no approvals
         # module means there is genuinely nothing to report, which is an answer.
-        return [
-            _check("Pending approvals", False, f"COULD NOT VERIFY ({exc})", warn=True)
-        ]
+        return [_check("Pending approvals", False, f"COULD NOT VERIFY ({exc})", warn=True)]
 
     if not pending and not resumable:
         return []
@@ -2765,7 +3288,9 @@ def check_gateway_auth() -> list[tuple[str, bool, str]]:
         gateway_cfg = ConfigManager().get("gateway", {}) or {}
         auth = gateway_cfg.get("auth") if isinstance(gateway_cfg, dict) else None
         token = (auth or {}).get("token") if isinstance(auth, dict) else None
-        host = gateway_cfg.get("host", "127.0.0.1") if isinstance(gateway_cfg, dict) else "127.0.0.1"
+        host = (
+            gateway_cfg.get("host", "127.0.0.1") if isinstance(gateway_cfg, dict) else "127.0.0.1"
+        )
 
         if token:
             return [_check("Gateway auth", True, f"bearer token set · bound to {host}")]
@@ -2777,8 +3302,7 @@ def check_gateway_auth() -> list[tuple[str, bool, str]]:
                 _check(
                     "Gateway auth",
                     True,
-                    "no token yet — one is generated and saved the first time the "
-                    "gateway starts",
+                    "no token yet — one is generated and saved the first time the gateway starts",
                 )
             ]
 
@@ -2900,11 +3424,9 @@ def check_mcp_trust() -> list[tuple[str, bool, str]]:
             entry = raw_servers.get(name)
             configured = entry.get("tier") if isinstance(entry, dict) else entry
             # Only a STRING can be a tier; anything else was never going to apply.
-            mistyped = (
-                configured is not None
-                and str(configured).strip().lower()
-                not in {t.value for t in ServerTrust}
-            )
+            mistyped = configured is not None and str(configured).strip().lower() not in {
+                t.value for t in ServerTrust
+            }
 
             if scope is None:
                 scope_text = "all tools"
@@ -3016,9 +3538,7 @@ def check_config_health() -> list[tuple[str, bool, str]]:
                 # green while broken" trap this whole section exists to prevent. And the
                 # empty label rendered "✓ :  detail" in the console and "" in --json.
                 # Render each as a labelled ⚠ sub-row instead.
-                results.append(
-                    _check("Incidents", False, incidents.describe(entry), warn=True)
-                )
+                results.append(_check("Incidents", False, incidents.describe(entry), warn=True))
         else:
             results.append(_check("Incidents", True, "none — no config rescue was needed"))
     except Exception as exc:  # noqa: BLE001
@@ -3041,7 +3561,11 @@ def check_config_health() -> list[tuple[str, bool, str]]:
         if str(deck_cfg.get("api_key", "") or "").strip():
             if deck_key.is_mirrored():
                 results.append(
-                    _check("Key recovery", True, "deck.api_key is mirrored — a config wipe is survivable")
+                    _check(
+                        "Key recovery",
+                        True,
+                        "deck.api_key is mirrored — a config wipe is survivable",
+                    )
                 )
             else:
                 results.append(
@@ -3108,9 +3632,7 @@ def check_ledger() -> list[tuple[str, bool, str]]:
             )
         )
     if running:
-        results.append(
-            _check("In-flight ops", True, f"{running} operation(s) currently running")
-        )
+        results.append(_check("In-flight ops", True, f"{running} operation(s) currently running"))
     return results
 
 
@@ -3145,7 +3667,11 @@ def check_desktop_apps() -> list[tuple[str, bool, str]]:
         installed = next((p for p in candidates if p.is_file()), None)
         if installed is None:
             results.append(
-                _check("Anchor", True, "not installed (optional) — npm run build:anchor, then run the installer")
+                _check(
+                    "Anchor",
+                    True,
+                    "not installed (optional) — npm run build:anchor, then run the installer",
+                )
             )
             return results
 
@@ -3166,24 +3692,33 @@ def check_desktop_apps() -> list[tuple[str, bool, str]]:
                 exes.append(proc.info.get("exe") or None)
             results.append(_judge_anchor_running(exes, installed))
         except ImportError:
-            results.append(_check("Anchor running", False, "not checked (psutil missing)", warn=True))
+            results.append(
+                _check("Anchor running", False, "not checked (psutil missing)", warn=True)
+            )
 
         # Startup registration: the exact regression check for the original outage.
         import winreg
 
         try:
             with winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                0,
+                winreg.KEY_READ,
             ) as key:
                 raw, _kind = winreg.QueryValueEx(key, "NAVIG Anchor")
             command = str(raw).strip()
         except FileNotFoundError:
-            results.append(_check("Anchor at login", True, "off — enable in Settings → Launch at login"))
+            results.append(
+                _check("Anchor at login", True, "off — enable in Settings → Launch at login")
+            )
             return results
 
         results.append(_judge_anchor_login(command, installed))
     except Exception as exc:  # noqa: BLE001 — never crash the doctor; say what was not checked
-        results.append(_check("Anchor", False, f"not checked ({type(exc).__name__}: {exc})", warn=True))
+        results.append(
+            _check("Anchor", False, f"not checked ({type(exc).__name__}: {exc})", warn=True)
+        )
     return results
 
 
@@ -3232,7 +3767,7 @@ def _judge_anchor_login(command: str, installed: Path) -> CheckResult:
     """
     head = command.lstrip('"').lower()
     target = str(installed).lower()
-    points_here = head.startswith(target) and head[len(target):len(target) + 1] in ("", '"', " ")
+    points_here = head.startswith(target) and head[len(target) : len(target) + 1] in ("", '"', " ")
     if not points_here:
         dev = "target\\debug" in head or "target/debug" in head
         hint = " (a development build — it shows 'can't reach this page' at login)" if dev else ""
@@ -3320,12 +3855,12 @@ def _merge_drivers_row(root: Path) -> tuple[str, bool, str] | None:
     )
 
 
-
 _TWIN_TEST = "scripts/test/heavy-slot.test.mjs"
 _TWIN_FILES_RE = re.compile(r"const\s+TWIN_FILES\s*=\s*\[([^\]]*)\]", re.S)
 _TWIN_PIN_RE = re.compile(r"const\s+PROTOCOL_SHA256\s*=\s*'([0-9a-f]{64})'")
 _TWIN_REPO_RE = re.compile(r"const\s+TWIN_REPO\s*=\s*'([^']+)'")
 _TWIN_NAME_RE = re.compile(r"'([^']+)'")
+
 
 def _twin_spec(test: Path) -> tuple[str, str, tuple[str, ...]] | None:
     """``(twin repo name, pinned sha, files)`` from the repo's own twin test.
@@ -3361,9 +3896,11 @@ def _twin_checkout(root: Path, repo_name: str) -> Path | None:
         return Path(env) if (Path(env) / ".git").exists() else None
     try:
         common = subprocess.run(
-            ["git", "-C", str(root), "rev-parse", "--path-format=absolute",
-             "--git-common-dir"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            ["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         ).stdout.strip()
     except OSError:
@@ -3385,9 +3922,7 @@ def _protocol_sha(parts: Any) -> str:
     """
     import hashlib  # noqa: PLC0415
 
-    return hashlib.sha256(
-        b"\0".join(part.replace(b"\r\n", b"\n") for part in parts)
-    ).hexdigest()
+    return hashlib.sha256(b"\0".join(part.replace(b"\r\n", b"\n") for part in parts)).hexdigest()
 
 
 def _twin_protocol_sha(twin: Path, files: tuple[str, ...]) -> str | None:
@@ -3404,7 +3939,8 @@ def _twin_protocol_sha(twin: Path, files: tuple[str, ...]) -> str | None:
         try:
             res = subprocess.run(
                 ["git", "-C", str(twin), "show", f"origin/main:{rel}"],
-                capture_output=True, check=False,
+                capture_output=True,
+                check=False,
             )
         except OSError:
             return None
@@ -3427,7 +3963,14 @@ def check_ci_runners() -> list[CheckResult]:
     try:
         rows = ci_runner_rows(checkout=root)
     except Exception as exc:  # noqa: BLE001 — a probe failure is an unknown verdict, never a green row
-        return [_check("CI runners", False, f"COULD NOT VERIFY — {exc.__class__.__name__}: {exc}", warn=True)]
+        return [
+            _check(
+                "CI runners",
+                False,
+                f"COULD NOT VERIFY — {exc.__class__.__name__}: {exc}",
+                warn=True,
+            )
+        ]
     return [_check(label, ok, detail, warn=warn) for label, ok, detail, warn in rows]
 
 
@@ -3463,41 +4006,56 @@ def check_shared_protocol() -> list[tuple[str, bool, str]]:
     except OSError as exc:
         # Never an empty row: "could not read my own copy" is an unknown verdict, not
         # "nothing to report", and doctor's honesty check fails on exactly that shape.
-        return [_check(
-            "Shared protocol", False,
-            f"COULD NOT VERIFY — could not read the push-queue files ({exc})",
-            warn=True,
-        )]
+        return [
+            _check(
+                "Shared protocol",
+                False,
+                f"COULD NOT VERIFY — could not read the push-queue files ({exc})",
+                warn=True,
+            )
+        ]
 
     if ours != pin:
-        return [_check(
-            "Shared protocol",
-            False,
-            f"the {len(files)} push-queue files changed in this checkout but "
-            f"PROTOCOL_SHA256 in {_TWIN_TEST} was not updated, so the twin test will "
-            f"fail here — update the pin (and the same constant in {repo_name}'s test)",
-        )]
+        return [
+            _check(
+                "Shared protocol",
+                False,
+                f"the {len(files)} push-queue files changed in this checkout but "
+                f"PROTOCOL_SHA256 in {_TWIN_TEST} was not updated, so the twin test will "
+                f"fail here — update the pin (and the same constant in {repo_name}'s test)",
+            )
+        ]
 
     twin = _twin_checkout(root, repo_name)
     if twin is None:
         return []  # the test skips when the twin is not on this machine
     theirs = _twin_protocol_sha(twin, files)
     if theirs is None:
-        return [_check(
-            "Shared protocol", False,
-            f"could not read {repo_name}'s origin/main — unverified, not in step",
-            warn=True,
-        )]
+        return [
+            _check(
+                "Shared protocol",
+                False,
+                f"could not read {repo_name}'s origin/main — unverified, not in step",
+                warn=True,
+            )
+        ]
     if theirs == pin:
-        return [_check("Shared protocol", True,
-                       f"identical to {repo_name} origin/main — the twin test agrees")]
-    return [_check(
-        "Shared protocol",
-        False,
-        f"{repo_name} origin/main has moved off our pin ({theirs[:12]}…): every push "
-        f"fails with 'the twins drifted'. Copy each of {', '.join(files)} from "
-        f"{repo_name}'s origin/main, then update PROTOCOL_SHA256 in BOTH tests",
-    )]
+        return [
+            _check(
+                "Shared protocol",
+                True,
+                f"identical to {repo_name} origin/main — the twin test agrees",
+            )
+        ]
+    return [
+        _check(
+            "Shared protocol",
+            False,
+            f"{repo_name} origin/main has moved off our pin ({theirs[:12]}…): every push "
+            f"fails with 'the twins drifted'. Copy each of {', '.join(files)} from "
+            f"{repo_name}'s origin/main, then update PROTOCOL_SHA256 in BOTH tests",
+        )
+    ]
 
 
 def check_running_code() -> list[tuple[str, bool, str]]:
@@ -3647,15 +4205,27 @@ def _git_head(src_dir: Path) -> tuple[str, str] | None:
     try:
         full = subprocess.run(
             ["git", "-C", str(src_dir), "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=5, encoding="utf-8", errors="replace",
+            capture_output=True,
+            text=True,
+            timeout=5,
+            encoding="utf-8",
+            errors="replace",
         )
         if full.returncode != 0 or not full.stdout.strip():
             return None
         short = subprocess.run(
             ["git", "-C", str(src_dir), "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, timeout=5, encoding="utf-8", errors="replace",
+            capture_output=True,
+            text=True,
+            timeout=5,
+            encoding="utf-8",
+            errors="replace",
         )
-        s = short.stdout.strip() if short.returncode == 0 and short.stdout.strip() else full.stdout.strip()[:8]
+        s = (
+            short.stdout.strip()
+            if short.returncode == 0 and short.stdout.strip()
+            else full.stdout.strip()[:8]
+        )
         return full.stdout.strip(), s
     except Exception:  # noqa: BLE001
         return None
@@ -3668,7 +4238,11 @@ def _git_count(src_dir: Path, rng: str) -> int | None:
     try:
         r = subprocess.run(
             ["git", "-C", str(src_dir), "rev-list", "--count", rng],
-            capture_output=True, text=True, timeout=5, encoding="utf-8", errors="replace",
+            capture_output=True,
+            text=True,
+            timeout=5,
+            encoding="utf-8",
+            errors="replace",
         )
         if r.returncode == 0 and r.stdout.strip().isdigit():
             return int(r.stdout.strip())
@@ -3762,7 +4336,9 @@ def check_daemon_parent() -> list[tuple[str, bool, str]]:
     name = info.get("name") or "?"
     ppid = info.get("ppid")
     if shape == "service":
-        return [_check("Daemon parent", True, f"{name} (pid={ppid}) — launched by the service/task")]
+        return [
+            _check("Daemon parent", True, f"{name} (pid={ppid}) — launched by the service/task")
+        ]
     if shape == "orphan":
         return [
             _check(
@@ -3782,7 +4358,9 @@ def check_daemon_parent() -> list[tuple[str, bool, str]]:
                 f"{name} (pid={ppid}) — alive; a foreground/dev launch, the daemon lives while it does",
             )
         ]
-    return [_check("Daemon parent", False, "unknown — could not read the parent process", warn=True)]
+    return [
+        _check("Daemon parent", False, "unknown — could not read the parent process", warn=True)
+    ]
 
 
 def check_daemon_heartbeat() -> list[tuple[str, bool, str]]:
@@ -3815,8 +4393,7 @@ def check_daemon_heartbeat() -> list[tuple[str, bool, str]]:
             _check(
                 "Daemon heartbeat",
                 False,
-                "none — the running daemon predates heartbeat tracking; restart once "
-                "to enable it",
+                "none — the running daemon predates heartbeat tracking; restart once to enable it",
                 warn=True,
             )
         ]
@@ -3944,7 +4521,13 @@ def _collect_sections(
     """
     secs: list[tuple[str, list[tuple[str, bool, str]]]] = [
         ("Config", check_config() + check_install_profile()),
-        ("Runtime", check_runtime() + check_path_health() + check_hard_dependencies() + check_editable_installs()),
+        (
+            "Runtime",
+            check_runtime()
+            + check_path_health()
+            + check_hard_dependencies()
+            + check_editable_installs(),
+        ),
         ("Storage", check_storage() + check_databases() + check_vault()),
         ("Filesystem", check_cache_dir() + check_logs()),
         ("Network Sockets", check_sockets(port)),
@@ -4019,6 +4602,10 @@ def _collect_sections(
     if plugin_source_results:  # only inside a navig development checkout
         secs.append(("Plugin Sources", plugin_source_results))
 
+    runtime_plugin_results = check_runtime_inventory()
+    if runtime_plugin_results:  # only inside a navig development checkout
+        secs.append(("Runtime Plugins", runtime_plugin_results))
+
     secs.append(("Command Ownership", check_command_ownership()))
 
     release_results = check_release()
@@ -4053,14 +4640,16 @@ def _shape_report(sections: list[tuple[str, list[tuple[str, bool, str]]]]) -> di
                 warnings += 1
             else:
                 failed += 1
-            checks.append(
-                {
-                    "label": _plain_text(getattr(row, "label", "")),
-                    "ok": ok,
-                    "warn": warn,
-                    "detail": _plain_text(getattr(row, "detail", row[2])),
-                }
-            )
+            entry = {
+                "label": _plain_text(getattr(row, "label", "")),
+                "ok": ok,
+                "warn": warn,
+                "detail": _plain_text(getattr(row, "detail", row[2])),
+            }
+            payload = getattr(row, "data", None)
+            if payload is not None:
+                entry["data"] = payload
+            checks.append(entry)
         out_sections.append({"name": name, "ok": all(c["ok"] for c in checks), "checks": checks})
 
     return {
@@ -4125,11 +4714,22 @@ def check_model_fallback() -> list[tuple[str, bool, str]]:
             if not isinstance(raw, dict) or not isinstance(raw.get("degraded"), dict):
                 raise ValueError("malformed fallback state file")
     except Exception as exc:  # noqa: BLE001
-        return [_check("Model fallback", False,
-                       f"state unreadable ({type(exc).__name__}) — run `navig ai fallback`",
-                       warn=True)]
+        return [
+            _check(
+                "Model fallback",
+                False,
+                f"state unreadable ({type(exc).__name__}) — run `navig ai fallback`",
+                warn=True,
+            )
+        ]
     if not deg:
-        return [_check("Model fallback", True, "no primary model is being stood in for (fallback state clean)")]
+        return [
+            _check(
+                "Model fallback",
+                True,
+                "no primary model is being stood in for (fallback state clean)",
+            )
+        ]
     parts = []
     for primary, entry in sorted(deg.items()):
         modes = ",".join(entry.get("modes") or []) or "?"
@@ -4137,10 +4737,16 @@ def check_model_fallback() -> list[tuple[str, bool, str]]:
             f"{primary} → {entry.get('fallback') or '?'} [{modes}] "
             f"({model_fallback.reason_text(entry.get('reason'))})"
         )
-    return [_check("Model fallback", False,
-                   f"{len(deg)} primary model(s) degraded: " + "; ".join(parts)
-                   + " — details: navig ai fallback",
-                   warn=True)]
+    return [
+        _check(
+            "Model fallback",
+            False,
+            f"{len(deg)} primary model(s) degraded: "
+            + "; ".join(parts)
+            + " — details: navig ai fallback",
+            warn=True,
+        )
+    ]
 
 
 def check_decider() -> list[tuple[str, bool, str]]:
@@ -4157,7 +4763,13 @@ def check_decider() -> list[tuple[str, bool, str]]:
     except Exception as exc:  # noqa: BLE001
         return [_check(label, False, f"could not read its status: {exc}", warn=True)]
     if not st["enabled"]:
-        return [_check(label, True, "off (optional) — try it: navig decider test \"…\", then navig decider on")]
+        return [
+            _check(
+                label,
+                True,
+                'off (optional) — try it: navig decider test "…", then navig decider on',
+            )
+        ]
     on_uses = [u["id"] for u in st["uses"] if u["on"]]
     shadow = " · shadow mode (logged, not applied)" if st["shadow"] else ""
     if not st["credential"]:
@@ -4171,19 +4783,25 @@ def check_decider() -> list[tuple[str, bool, str]]:
             )
         ]
     if not on_uses:
-        return [_check(label, True, "on, but every use is switched off — navig decider on --use <id>")]
+        return [
+            _check(label, True, "on, but every use is switched off — navig decider on --use <id>")
+        ]
     last = st["last_call"]
     if last is None:
         return [
             _check(
                 label,
                 False,
-                f"on ({', '.join(on_uses)}){shadow}, but no call has succeeded yet — verify: navig decider test \"…\"",
+                f'on ({", ".join(on_uses)}){shadow}, but no call has succeeded yet — verify: navig decider test "…"',
                 warn=True,
             )
         ]
     if not last["ok"]:
-        hint = decide.grant_hint() if last["kind"] == "auth" else "decisions fell back to the previous method"
+        hint = (
+            decide.grant_hint()
+            if last["kind"] == "auth"
+            else "decisions fell back to the previous method"
+        )
         return [
             _check(
                 label,
@@ -4225,12 +4843,14 @@ def check_identity() -> list[tuple[str, bool, str]]:
 
         resolution = resolve_soul()
         if not resolution.raw:
-            results.append(_check(
-                "Identity source",
-                False,
-                "nothing resolved — the agent will fall back to a built-in identity",
-                warn=True,
-            ))
+            results.append(
+                _check(
+                    "Identity source",
+                    False,
+                    "nothing resolved — the agent will fall back to a built-in identity",
+                    warn=True,
+                )
+            )
         else:
             label = SOURCE_LABELS.get(resolution.source, resolution.source)
             detail = f"{label} · {len(resolution.raw):,} chars"
@@ -4309,12 +4929,14 @@ def check_wiring() -> list[tuple[str, bool, str]]:
         tracker = get_plugin_host().tracker()
         report = tracker.report()
         failed = report.get("failed", 0)
-        results.append(_check(
-            "Plugin packages",
-            failed == 0,
-            tracker.summary_line(),
-            warn=report.get("degraded", 0) > 0,
-        ))
+        results.append(
+            _check(
+                "Plugin packages",
+                failed == 0,
+                tracker.summary_line(),
+                warn=report.get("degraded", 0) > 0,
+            )
+        )
     except Exception as exc:  # noqa: BLE001
         results.append(_check("Plugin packages", False, str(exc)[:120], warn=True))
 
@@ -4345,13 +4967,15 @@ def check_wiring() -> list[tuple[str, bool, str]]:
         overrides = Config().get("modules.overrides", default={}) or {}
         stale = [k for k in overrides if k not in known_ids] if isinstance(overrides, dict) else []
         locked = sum(1 for m in modules if m.get("locked"))
-        results.append(_check(
-            "Module registry",
-            not stale,
-            f"{len(modules)} modules · {locked} locked"
-            + (f" · stale overrides: {', '.join(stale)}" if stale else ""),
-            warn=bool(stale),
-        ))
+        results.append(
+            _check(
+                "Module registry",
+                not stale,
+                f"{len(modules)} modules · {locked} locked"
+                + (f" · stale overrides: {', '.join(stale)}" if stale else ""),
+                warn=bool(stale),
+            )
+        )
     except Exception as exc:  # noqa: BLE001
         results.append(_check("Module registry", False, str(exc)[:120], warn=True))
 
@@ -4372,8 +4996,10 @@ def check_wiring() -> list[tuple[str, bool, str]]:
             # Informational: expected for third-party plugins (the shipped map is
             # first-party only). First-party staleness is enforced by
             # tests/cli/test_command_providers_fresh.py, not by failing here.
-            detail += (f" · not in shipped map ({', '.join(drift)}) — 3rd-party is fine; "
-                       "if first-party, run scripts/gen_command_providers.py")
+            detail += (
+                f" · not in shipped map ({', '.join(drift)}) — 3rd-party is fine; "
+                "if first-party, run scripts/gen_command_providers.py"
+            )
         if shadowed:
             detail += f" · shadowed by built-ins: {', '.join(shadowed)}"
         results.append(_check("Command map", not shadowed, detail, warn=True))
@@ -4391,13 +5017,19 @@ def check_wiring() -> list[tuple[str, bool, str]]:
 
             installed = {p.id for p in get_plugin_host().list_installed()}
             stale_cmds = sorted(c for c, pid in mapping.items() if pid not in installed)
-            results.append(_check(
-                "Disabled commands",
-                not stale_cmds,
-                f"{len(mapping)} entries"
-                + (f" · stale (plugin uninstalled): {', '.join(stale_cmds)}" if stale_cmds else ""),
-                warn=bool(stale_cmds),
-            ))
+            results.append(
+                _check(
+                    "Disabled commands",
+                    not stale_cmds,
+                    f"{len(mapping)} entries"
+                    + (
+                        f" · stale (plugin uninstalled): {', '.join(stale_cmds)}"
+                        if stale_cmds
+                        else ""
+                    ),
+                    warn=bool(stale_cmds),
+                )
+            )
     except Exception as exc:  # noqa: BLE001
         results.append(_check("Disabled commands", False, str(exc)[:120], warn=True))
 
@@ -4407,13 +5039,15 @@ def check_wiring() -> list[tuple[str, bool, str]]:
 
         summary = store_status()
         by_state = summary["by_state"]
-        results.append(_check(
-            "Store",
-            not summary["broken"],
-            f"{by_state.get('wired', 0)} wired · {by_state.get('unwired', 0)} unwired · "
-            f"{len(summary['broken'])} broken",
-            warn=bool(summary["degraded"]),
-        ))
+        results.append(
+            _check(
+                "Store",
+                not summary["broken"],
+                f"{by_state.get('wired', 0)} wired · {by_state.get('unwired', 0)} unwired · "
+                f"{len(summary['broken'])} broken",
+                warn=bool(summary["degraded"]),
+            )
+        )
     except Exception as exc:  # noqa: BLE001
         results.append(_check("Store", False, str(exc)[:120], warn=True))
 
@@ -4557,9 +5191,21 @@ def migrate_packs(
                 plan.append({"src": str(child), "action": "skip", "reason": "already migrated"})
                 continue
             if (child / "SKILL.md").exists():
-                plan.append({"src": str(child), "action": "skill-bundle", "dest": str(plugins_dir / child.name)})
+                plan.append(
+                    {
+                        "src": str(child),
+                        "action": "skill-bundle",
+                        "dest": str(plugins_dir / child.name),
+                    }
+                )
             elif (child / "navig.package.json").exists():
-                plan.append({"src": str(child), "action": "handler-pack", "dest": str(plugins_dir / child.name)})
+                plan.append(
+                    {
+                        "src": str(child),
+                        "action": "handler-pack",
+                        "dest": str(plugins_dir / child.name),
+                    }
+                )
             else:
                 plan.append({"src": str(child), "action": "skip", "reason": "unrecognized layout"})
 
@@ -4570,7 +5216,14 @@ def migrate_packs(
             print("  ✓ Nothing to migrate — ~/.navig/packs is clean.")
             return
         for step in plan:
-            print(f"  {step['action']:>13}  {step['src']}" + (f" → {step.get('dest', '')}" if step.get("dest") else f"  ({step.get('reason', '')})"))
+            print(
+                f"  {step['action']:>13}  {step['src']}"
+                + (
+                    f" → {step.get('dest', '')}"
+                    if step.get("dest")
+                    else f"  ({step.get('reason', '')})"
+                )
+            )
         if not apply:
             print("\n  Dry run — re-run with --apply to migrate.")
 
@@ -4728,7 +5381,9 @@ def clean_path_cmd(
     backup.write_text(str(raw), encoding="utf-8")
 
     try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_SET_VALUE) as key:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_SET_VALUE
+        ) as key:
             # Preserve the ORIGINAL value kind: rewriting a REG_EXPAND_SZ PATH as REG_SZ
             # turns every %VAR% in it into a literal that resolves to nothing.
             winreg.SetValueEx(key, "Path", 0, kind, new_value)

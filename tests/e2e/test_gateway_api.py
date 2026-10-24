@@ -12,6 +12,28 @@ from navig.gateway.server import GatewayConfig, NavigGateway
 #: module on ONE worker, which is the isolation these tests always assumed.
 pytestmark = [pytest.mark.slow, pytest.mark.xdist_group("gateway_e2e")]
 
+
+def _this_install_is_a_brain_client() -> bool:
+    """Is this machine a *client* of somebody else's Brain?
+
+    A client must not run the Brain's gateway — the ownership guard refuses it, which
+    is right for the product and wrong for these tests, which boot a real gateway
+    in-process. On a single-machine install there is no authority, so they run.
+    """
+    try:
+        from navig.brain import authority, guard
+
+        return bool(authority.configured()) and not guard.is_owner()
+    except Exception:  # noqa: BLE001 - no brain module / unreadable config: run them
+        return False
+
+
+if _this_install_is_a_brain_client():
+    pytest.skip(
+        "this install is a Brain client; its gateway lives on the Brain host",
+        allow_module_level=True,
+    )
+
 #: This fixture boots a REAL gateway, and a gateway that starts without a token mints
 #: one and persists it. This module does not isolate the config dir, so that write would
 #: land in the operator's own ~/.navig/config.yaml. Owning the credential keeps the test

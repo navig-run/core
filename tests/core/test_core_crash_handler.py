@@ -101,27 +101,35 @@ class TestGetLogDir:
         assert first == second
         assert ch._log_dir is not None
 
-    def test_uses_config_manager_when_available(self, tmp_path):
+    def test_uses_canonical_log_dir_not_config_manager_base(self, tmp_path, monkeypatch):
+        """Dumps go to paths.log_dir(), never to the config manager's base_dir.
+
+        They used to be written to ``<config>/logs`` while ``navig crash``, the doctor
+        and every other reader looked in ``log_dir()`` — on a live machine ten dumps sat
+        in the wrong root the same morning the doctor reported the canonical one empty.
+        """
+        canonical = tmp_path / "canonical-logs"
+        monkeypatch.setenv("NAVIG_LOG_DIR", str(canonical))
         ch = CrashHandler()
         ch._log_dir = None
         mock_mgr = MagicMock()
-        mock_mgr.base_dir = tmp_path
+        mock_mgr.base_dir = tmp_path / "config-home"
         with patch(
             "navig.config.get_config_manager",
             return_value=mock_mgr,
         ):
             result = ch._get_log_dir()
-        assert result == tmp_path / "logs"
+        assert result == canonical
 
-    def test_falls_back_to_config_dir_on_exception(self, tmp_path):
+    def test_falls_back_to_config_dir_when_log_dir_raises(self, tmp_path):
         ch = CrashHandler()
         ch._log_dir = None
         with patch(
-            "navig.config.get_config_manager",
+            "navig.platform.paths.log_dir",
             side_effect=RuntimeError("boom"),
-        ), patch("navig.core.crash_handler.config_dir", return_value=tmp_path):
+        ), patch("navig.core.crash_handler.config_dir", return_value=tmp_path / "cfg"):
             result = ch._get_log_dir()
-        assert result == tmp_path / "logs"
+        assert result == tmp_path / "cfg" / "logs"
 
 
 # ---------------------------------------------------------------------------

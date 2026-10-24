@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://navig.run/schemas/answer-v1.json",
+  "title": "NAVIG Unified Answer",
+  "description": "The one response contract every NAVIG surface renders. Produced once by a tool/router, rendered per surface (CLI, JSON, Alexa, Alice, OpenAI, deck, Telegram). schema_version pins the version; a breaking field change bumps it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ok", "speech", "display_text", "data"],
+  "properties": {
+    "schema_version": {
+      "description": "Wire-contract version. Always \"1\" for this document.",
+      "const": "1"
+    },
+    "ok": {
+      "description": "Did the action answer successfully? A failed answer still carries speech and data.error/hint.",
+      "type": "boolean"
+    },
+    "speech": {
+      "description": "What TTS says (Alexa SSML / Alice tts are derived from this).",
+      "type": "string"
+    },
+    "display_text": {
+      "description": "What a screen or transcript shows; falls back to speech when empty.",
+      "type": "string"
+    },
+    "table": {
+      "description": "Optional tabular view for the CLI and the deck. One free-text column is expected at the end.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["columns", "rows"],
+      "properties": {
+        "columns": {
+          "description": "Column headers, in display order.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "rows": {
+          "description": "Rows of string cells; every row has exactly one cell per column.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "json": {
+      "description": "Machine payload. Omitted/null means 'use data' (Answer.as_dict fills it from data).",
+      "type": ["object", "array", "string", "number", "boolean", "null"]
+    },
+    "directives": {
+      "description": "Typed client actions a surface may perform. Unknown types are dropped, never guessed.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type"],
+        "properties": {
+          "type": {
+            "description": "The action kind.",
+            "enum": ["open", "highlight", "play"]
+          },
+          "params": {
+            "description": "Action-specific parameters (target id, span, url, ...).",
+            "type": "object"
+          }
+        }
+      }
+    },
+    "suggestions": {
+      "description": "Follow-up actions: Alexa reprompt, Alice buttons (max 5), Telegram buttons, OpenAI metadata.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "data": {
+      "description": "Structured facts. A failed answer carries error and hint here so every surface can explain the next step.",
+      "type": "object"
+    },
+    "plan": {
+      "description": "Plan metadata from the NAVIG Reflex: tool, target(s), blast radius, commit_token.",
+      "type": ["object", "null"]
+    },
+    "intent": {
+      "description": "The intent that produced this answer (e.g. home.off, endpoints.list).",
+      "type": "string"
+    }
+  }
+}

@@ -118,3 +118,121 @@ def test_every_navig_listener_installs_the_guard():
     root = Path(__file__).resolve().parents[2] / "navig"
     for rel in ("gateway/server.py", "daemon/telegram_worker.py", "daemon/supervisor.py"):
         assert "accept_guard.install()" in (root / rel).read_text(encoding="utf-8"), rel
+
+
+# --- The orphan accept-helper task's "Task exception was never retrieved" noise ---------
+#
+# Keeping the listener alive (above) still leaves the proactor's fire-and-forget
+# accept_coro helper holding the same WinError 64 unretrieved — asyncio then prints a full
+# traceback that reads exactly like a crash, which on the operator's machine (2026-10-09)
+# was misread as "the daemon stopped". These pin that the helper's exception is retrieved.
+
+
+def _run_task_to_completion_without_retrieving(exc: BaseException, attach_consumer: bool):
+    """Build a task that fails with ``exc`` and run it to completion WITHOUT consuming its
+    exception (``asyncio.wait`` does not retrieve child exceptions, unlike ``gather``), so
+    the only thing that can mark it retrieved is our done-callback. Returns the task."""
+    from navig.platform.accept_guard import _consume_accept_helper_error
+
+    async def _raise():
+        raise exc
+
+    loop = asyncio.new_event_loop()
+    try:
+        task = loop.create_task(_raise())
+        if attach_consumer:
+            task.add_done_callback(_consume_accept_helper_error)
+        loop.run_until_complete(asyncio.wait({task}))
+        return task
+    finally:
+        loop.close()
+
+
+@windows_only  # a transient winerror only exists on Windows
+def test_the_transient_accept_helper_exception_is_retrieved():
+    task = _run_task_to_completion_without_retrieving(_aborted_accept_error(), attach_consumer=True)
+    # _log_traceback False == asyncio will NOT warn "Task exception was never retrieved".
+    assert task._log_traceback is False
+
+
+def test_without_the_consumer_the_helper_exception_stays_unretrieved():
+    """The contrast: proves the assertion above cannot pass vacuously — the same task run
+    the same way, but with no done-callback, is still flagged for the GC-time warning."""
+    task = _run_task_to_completion_without_retrieving(OSError("boom"), attach_consumer=False)
+    assert task._log_traceback is True
+
+
+def test_a_nontransient_helper_exception_is_also_retrieved():
+    """Non-transient errors are still retrieved here (the real report always comes through
+    the accept loop); the helper's duplicate must not surface as a bare crashing traceback."""
+    task = _run_task_to_completion_without_retrieving(OSError("disk full"), attach_consumer=True)
+    assert task._log_traceback is False
+
+
+def _reinstall_from_stdlib_baseline(monkeypatch):
+    """Reset the module to the stdlib baseline and install() fresh, so these tests do not
+    depend on whether another test already installed the guard in this process."""
+    from asyncio import proactor_events
+    from asyncio.windows_events import IocpProactor
+
+    from navig.platform import accept_guard
+
+    stdlib_ss = accept_guard.stdlib_start_serving or proactor_events.BaseProactorEventLoop._start_serving
+    stdlib_acc = accept_guard.stdlib_accept or IocpProactor.accept
+    monkeypatch.setattr(proactor_events.BaseProactorEventLoop, "_start_serving", stdlib_ss)
+    monkeypatch.setattr(IocpProactor, "accept", stdlib_acc)
+    monkeypatch.setattr(accept_guard, "_installed", False)
+    monkeypatch.setattr(accept_guard, "stdlib_start_serving", accept_guard.stdlib_start_serving)
+    monkeypatch.setattr(accept_guard, "stdlib_accept", accept_guard.stdlib_accept)
+    assert accept_guard.install() is True
+    return stdlib_acc
+
+
+@windows_only
+def test_install_wraps_iocp_accept(monkeypatch):
+    from asyncio.windows_events import IocpProactor
+
+    from navig.platform import accept_guard
+
+    stdlib_acc = _reinstall_from_stdlib_baseline(monkeypatch)
+    assert IocpProactor.accept is not stdlib_acc
+    assert accept_guard.stdlib_accept is stdlib_acc
+
+
+@windows_only
+def test_the_wrapper_tags_the_helper_task_the_proactor_spawns(monkeypatch):
+    """The wrapper must attach the consumer to whatever helper task the stdlib accept spins
+    off — captured by briefly intercepting tasks.ensure_future for that one sync call."""
+    from asyncio import tasks
+    from asyncio.windows_events import IocpProactor
+
+    from navig.platform import accept_guard
+
+    _reinstall_from_stdlib_baseline(monkeypatch)
+
+    tagged = []
+    monkeypatch.setattr(accept_guard, "_consume_accept_helper_error", tagged.append)
+
+    loop = asyncio.new_event_loop()
+
+    async def _noop():
+        return None
+
+    def fake_stdlib_accept(self, listener):
+        fut = loop.create_future()
+        fut.set_result(None)
+        tasks.ensure_future(_noop(), loop=loop)  # the helper the wrapper should tag
+        return fut
+
+    monkeypatch.setattr(accept_guard, "stdlib_accept", fake_stdlib_accept)
+    try:
+        returned = IocpProactor.accept(object(), object())
+        assert returned is not None
+        # The consumer is a done-callback, so it only records once the helper task runs to
+        # completion — drain the loop, then assert exactly that one task reached it.
+        pending = asyncio.all_tasks(loop)
+        if pending:
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        assert len(tagged) == 1
+    finally:
+        loop.close()

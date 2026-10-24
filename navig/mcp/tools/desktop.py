@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from navig.platform.paths import config_dir
+from navig.platform.paths import log_dir
 
 # ─── Profile helper (single definition) ──────────────────────────────────────
 _PROFILE_ENV_KEY = "NAVIG_PROFILE_SNAPSHOT"
@@ -457,7 +457,7 @@ def _desktop_audit_initialized() -> dict[str, Any] | None:
     """Return a structured error dict if the audit log path is not configured, else None."""
     audit_path = os.environ.get("NAVIG_DESKTOP_AUDIT_LOG", "")
     if not audit_path:
-        audit_path = str(config_dir() / "logs" / "desktop_audit.jsonl")
+        audit_path = str(log_dir() / "desktop_audit.jsonl")
     # Probe: ensure the file can be opened for append.
     try:
         Path(audit_path).parent.mkdir(parents=True, exist_ok=True)

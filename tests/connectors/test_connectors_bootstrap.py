@@ -121,3 +121,84 @@ def test_individual_connector_failures_do_not_block_the_rest():
     classes = get_connector_registry().all_classes()
     assert len(classes) > 1
     assert bootstrap_mod._CONNECTORS_LOADED is True
+
+
+# ── manifests-only discovery path (no OAuth, no vault) ────────────────────────
+
+
+def test_manifests_path_registers_classes():
+    """Discovery gets manifests without paying the OAuth/vault phase."""
+    from navig.connectors.bootstrap import ensure_manifests_loaded
+
+    ensure_manifests_loaded()
+    assert get_connector_registry().has("perplexity")
+    assert bootstrap_mod._MANIFESTS_LOADED is True
+    # The full-load flag stays False: OAuth provider configs were NOT resolved,
+    # so a later ensure_connectors_loaded() must still do that half of the work.
+    assert bootstrap_mod._CONNECTORS_LOADED is False
+
+
+def test_manifests_path_skips_oauth_registration(monkeypatch):
+    """The whole point: register_oauth_providers resolves credentials via the vault."""
+    calls = []
+    monkeypatch.setattr(bootstrap_mod, "register_oauth_providers", lambda *a, **k: calls.append(1))
+
+    from navig.connectors.bootstrap import ensure_manifests_loaded
+
+    ensure_manifests_loaded()
+    assert calls == [], "a manifests-only load must not touch the vault"
+
+
+def test_full_load_after_manifests_still_registers_oauth(monkeypatch):
+    """A discovery call must not strand a later Connect flow without providers."""
+    calls = []
+    monkeypatch.setattr(bootstrap_mod, "register_oauth_providers", lambda *a, **k: calls.append(1))
+
+    from navig.connectors.bootstrap import ensure_connectors_loaded, ensure_manifests_loaded
+
+    ensure_manifests_loaded()
+    ensure_connectors_loaded()
+    assert calls == [1]
+    assert bootstrap_mod._CONNECTORS_LOADED is True
+
+
+def test_manifests_path_is_idempotent():
+    import navig.connectors.registry as registry_mod
+    from navig.connectors.bootstrap import ensure_manifests_loaded
+
+    ensure_manifests_loaded()
+    calls = []
+    real = registry_mod.get_connector_registry
+    monkeypatch_target = lambda: (calls.append(1), real())[1]  # noqa: E731
+    registry_mod.get_connector_registry = monkeypatch_target
+    try:
+        ensure_manifests_loaded()
+    finally:
+        registry_mod.get_connector_registry = real
+    assert calls == [], "a second manifests call must not redo registration"
+
+
+def test_manifests_failure_is_retryable(monkeypatch):
+    """A failed manifests load must not mark itself complete (same discipline as full)."""
+    import navig.connectors.registry as registry_mod
+
+    attempts = {"n": 0}
+    real = registry_mod.get_connector_registry
+
+    def _flaky():
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise ImportError("transient")
+        return real()
+
+    monkeypatch.setattr(registry_mod, "get_connector_registry", _flaky)
+
+    from navig.connectors.bootstrap import ensure_manifests_loaded
+
+    with pytest.raises(ImportError):
+        ensure_manifests_loaded()
+    assert bootstrap_mod._MANIFESTS_LOADED is False
+    assert bootstrap_mod._LOADING is False
+    ensure_manifests_loaded()
+    assert attempts["n"] == 2
+    assert bootstrap_mod._MANIFESTS_LOADED is True

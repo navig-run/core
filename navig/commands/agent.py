@@ -1326,13 +1326,13 @@ def agent_learn(
         from datetime import datetime
 
         from navig.platform.paths import debug_log_path
+        from navig.platform.paths import log_dir as _log_dir
 
-        # debug.log lives in log_dir(); remediation.log lives in config_dir()/logs. Reading
-        # both from config_dir()/logs meant `navig agent learn` always aborted with
-        # "No logs found to analyze" while the real debug log grew elsewhere.
-        log_dir = config_dir() / "logs"
+        # Both files live in log_dir(). Reading remediation.log from config_dir()/logs
+        # meant `navig agent learn` aborted with "No logs found to analyze" while the
+        # real file sat in the OS log dir.
         debug_log = debug_log_path()
-        remediation_log = log_dir / "remediation.log"
+        remediation_log = _log_dir() / "remediation.log"
 
         if not debug_log.exists():
             ch.error("No logs found to analyze")

@@ -358,6 +358,66 @@ class RecallStore(BaseStore):
     def known_msg_ids(self, source_id: str) -> set[str]:
         return {r[0] for r in self._read_all("SELECT msg_id FROM turns WHERE source_id = ?", (source_id,))}
 
+    def turns_for(self, source_id: str, *, limit: int | None = None) -> list[Turn]:
+        """Every turn of one source, in order — the export half of the bank contract.
+
+        A linked machine captures its own transcripts and ships the rows to the Brain
+        (``navig.mcp.tools.recall._ingest_with_upload``), so this reads them back in
+        sequence: the receiving side needs exact text and order, not FTS matches.
+        """
+        sql = (
+            "SELECT msg_id, speaker, kind, ts, text, meta_json FROM turns "
+            "WHERE source_id = ? ORDER BY seq"
+        )
+        args: tuple[Any, ...] = (source_id,)
+        if limit is not None and int(limit) > 0:
+            sql += " LIMIT ?"
+            args = (source_id, int(limit))
+        return [
+            Turn(
+                msg_id=r[0],
+                speaker=r[1],
+                kind=r[2] or "text",
+                ts=r[3] or "",
+                text=r[4],
+                meta=json.loads(r[5] or "{}"),
+            )
+            for r in self._read_all(sql, args)
+        ]
+
+    def turns_page(
+        self, source_id: str, *, after_seq: int | None = None, limit: int = 500
+    ) -> tuple[list[Turn], int]:
+        """One page of a source's turns plus the cursor to continue from.
+
+        ``turns_for`` reads the whole transcript; an upload must not put a whole bank into
+        one request, so this reads the same rows in bounded slices. ``seq`` is assigned per
+        source in insertion order (``UNIQUE (source_id, msg_id)``), which makes a cursor
+        stable: a turn added while a page is in flight gets a higher seq and the next page
+        picks it up. The first page passes ``after_seq=None`` — seq starts at 0, so a cursor
+        of 0 would skip the first row. The returned cursor is the last seq read; an empty
+        page means done.
+        """
+        sql = (
+            "SELECT seq, msg_id, speaker, kind, ts, text, meta_json FROM turns "
+            "WHERE source_id = ? AND (? IS NULL OR seq > ?) ORDER BY seq LIMIT ?"
+        )
+        cursor_in = None if after_seq is None else int(after_seq)
+        rows = self._read_all(sql, (source_id, cursor_in, cursor_in, max(1, int(limit))))
+        turns = [
+            Turn(
+                msg_id=r[1],
+                speaker=r[2],
+                kind=r[3] or "text",
+                ts=r[4] or "",
+                text=r[5],
+                meta=json.loads(r[6] or "{}"),
+            )
+            for r in rows
+        ]
+        cursor = int(rows[-1][0]) if rows else int(cursor_in or 0)
+        return turns, cursor
+
     # ── Turns ─────────────────────────────────────────────────
 
     def add_turns(self, source_id: str, turns: Iterable[Turn]) -> list[Turn]:

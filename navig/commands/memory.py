@@ -362,16 +362,14 @@ def memory_knowledge(
     plain: bool = typer.Option(False, "--plain", help="Plain output"),
 ):
     """Manage knowledge base entries."""
-    from pathlib import Path
-
     try:
         from navig.memory import KnowledgeBase, KnowledgeEntry
+        from navig.memory.knowledge_migration import resolve_readable_knowledge_db_path
 
-        config = _get_config()
-        db_path = Path(config.global_config_dir) / "memory" / "knowledge.db"
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-
-        kb = KnowledgeBase(db_path, embedding_provider=None)
+        # ONE canonical store: <data_dir>/knowledge.db. A populated LEGACY copy is still
+        # READ (with an incident + warning) until `navig db local migrate` moves it, so the
+        # switch to the single resolver can never present an empty knowledge base.
+        kb = KnowledgeBase(resolve_readable_knowledge_db_path(), embedding_provider=None)
 
         if action == "list":
             # List all entries
@@ -510,8 +508,11 @@ def memory_stats():
 
         ch.console.print()
 
-        # Knowledge stats
-        kb_db = Path(config.global_config_dir) / "memory" / "knowledge.db"
+        # Knowledge stats — the same resolver every reader uses (canonical, or a legacy copy
+        # still holding the rows until `navig db local migrate`).
+        from navig.memory.knowledge_migration import resolve_readable_knowledge_db_path
+
+        kb_db = resolve_readable_knowledge_db_path()
         if kb_db.exists():
             kb = KnowledgeBase(kb_db, embedding_provider=None)
             count = kb.count()

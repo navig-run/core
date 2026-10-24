@@ -21,7 +21,11 @@ import os
 import sys
 from pathlib import Path
 
-from navig.platform import paths
+from navig._shadow_root import repair_root
+
+repair_root()  # before anything reads the root: a cwd `navig/` folder shadows it
+
+from navig.platform import paths  # noqa: E402 — deliberately after the root repair
 
 _log = logging.getLogger(__name__)
 
@@ -682,6 +686,136 @@ def _should_skip_plugin_loading(argv: list[str]) -> bool:
 
 
 
+# Files whose *innermost* frame means "this exception came from writing to a console".
+# Only the raise site counts: every command's traceback contains click/typer main/invoke
+# frames, so matching ANY frame silently swallowed real command I/O errors (a dead child
+# pipe's EPIPE, a closed fd, a device EINVAL) that used to file a crash report.
+_DEAD_OUTPUT_SITES = (
+    "rich/_win32_console.py",
+    "rich/_windows_renderer.py",
+    "rich/console.py",
+    "click/utils.py",
+    "click/_winconsole.py",
+    "click/_compat.py",
+    "typer/rich_utils.py",
+)
+
+
+def _is_dead_output_error(exc: BaseException) -> bool:
+    """True when an ``OSError`` came from a console/pipe that is gone, not from NAVIG.
+
+    Two real shapes were measured on 2026-10-22, both ``OSError: [Errno 22]``:
+
+    * rich's legacy Win32 renderer flushes through ``WriteConsoleW``
+      (``rich/_win32_console.py``, ``_windows_renderer.py``, ``rich/console.py``);
+    * ``click.utils.echo`` writes straight to ``sys.stdout`` — that is how
+      ``navig run --help`` / ``navig secret --help`` still died after the rich guard,
+      because click never touches rich.
+
+    The decision uses only the INNERMOST frame (the raise site): every command's
+    traceback contains click/typer frames, so matching anywhere would swallow genuine
+    command I/O errors. A NAMED file failing with the same errno is real file I/O and
+    keeps its crash report — console writes carry no filename.
+    """
+    import errno as _errno
+
+    if not isinstance(exc, OSError) or exc.errno not in {_errno.EINVAL, _errno.EPIPE, _errno.EBADF}:
+        return False
+    if exc.filename:  # a named path failed → real file I/O, not a dead console
+        return False
+
+    tb = exc.__traceback__
+    if tb is None:
+        return False
+    while tb.tb_next is not None:  # walk to the raise site
+        tb = tb.tb_next
+    filename = tb.tb_frame.f_code.co_filename.replace("\\", "/")
+    return filename.endswith(_DEAD_OUTPUT_SITES)
+
+
+def _debug_requested() -> bool:
+    """``--debug`` / ``NAVIG_DEBUG=1`` must always see the real traceback and dump."""
+    import os as _os
+
+    return _os.environ.get("NAVIG_DEBUG", "0") == "1" or "--debug" in sys.argv
+
+
+class _DeadOutputTolerantStream:
+    """Wrap a text stream so a vanished console/pipe cannot raise on write/flush/exit.
+
+    Even with rich's writes contained, CPython flushes ``sys.stdout`` during interpreter
+    shutdown; on a pipe whose reader closed that raises ``OSError: [Errno 22]``, prints
+    "Exception ignored in: <_io.TextIOWrapper ...>" and turns a successful command into
+    ``exit 120``. Forwarding everything through this proxy keeps the exit code honest.
+    """
+
+    def __init__(self, stream):  # noqa: ANN001
+        self._stream = stream
+
+    def write(self, data):  # noqa: ANN001, ANN201
+        try:
+            return self._stream.write(data)
+        except (OSError, ValueError):
+            return len(data) if isinstance(data, str) else 0
+
+    def flush(self) -> None:
+        try:
+            self._stream.flush()
+        except (OSError, ValueError):
+            pass
+
+    def close(self) -> None:
+        try:
+            self._stream.close()
+        except (OSError, ValueError):
+            pass
+
+    def isatty(self) -> bool:
+        try:
+            return bool(self._stream.isatty())
+        except (OSError, ValueError):
+            return False
+
+    def fileno(self) -> int:  # may legitimately raise for StringIO-like streams
+        return self._stream.fileno()
+
+    def writable(self) -> bool:
+        return True
+
+    def __getattr__(self, name):  # noqa: ANN001, ANN201
+        return getattr(self._stream, name)
+
+
+def _install_dead_output_guard() -> None:
+    """Route the process streams through ``_DeadOutputTolerantStream`` once."""
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name, None)
+        if stream is None or isinstance(stream, _DeadOutputTolerantStream):
+            continue
+        try:
+            setattr(sys, name, _DeadOutputTolerantStream(stream))
+        except Exception:  # noqa: BLE001 — never block the CLI over output plumbing
+            continue
+
+
+def _silence_dead_output() -> None:
+    """Point fd 1/2 at the null device so interpreter shutdown cannot raise again.
+
+    Python flushes ``sys.stdout`` while tearing down; on a pipe whose reader is gone that
+    raises a second ``OSError`` and turns a clean exit into ``exit 120``
+    ("Exception ignored in: <_io.TextIOWrapper ...>"). Best effort — never raises.
+    """
+    import os as _os
+
+    for fd in (1, 2):
+        try:
+            null_fd = _os.open(_os.devnull, _os.O_WRONLY)
+            _os.dup2(null_fd, fd)
+            _os.close(null_fd)
+        except (OSError, ValueError):
+            continue
+
+
 def main() -> None:
     """
     NAVIG CLI entry point.
@@ -701,6 +835,19 @@ def main() -> None:
                     _stream.reconfigure(encoding="utf-8", errors="replace")
                 except Exception:
                     pass
+
+    # CONTAIN the dead-output failure class before anything prints. rich's legacy Win32
+    # renderer raises OSError [Errno 22] when the console handle is a pipe whose reader
+    # is gone, and typer builds its OWN Console for --help/echo — the console_helper
+    # singleton alone missed those. One class-level guard covers every console.
+    try:
+        from navig import console_helper as _ch
+
+        _ch.harden_console_writes()
+    except Exception:  # noqa: BLE001 — output hardening must never block the CLI
+        pass
+
+    _install_dead_output_guard()
 
     try:
         # Compatibility normalization for legacy help syntaxes.
@@ -853,6 +1000,15 @@ def main() -> None:
                     _log.debug("transposed-command suggestion failed: %s", _te)
         raise
     except Exception as e:
+        # A dead output handle is not a NAVIG bug: the command may have done its work and
+        # only failed to print. Filing a crash report and printing a banner into the same
+        # dead stream is noise — exit quietly. (Ten crash dumps on 2026-10-22 came from
+        # exactly this, and three classes still reached here before this guard.)
+        if _is_dead_output_error(e) and not _debug_requested():
+            _note_terminal_exit_code(1)
+            _silence_dead_output()
+            sys.exit(1)
+
         # A missing optional plugin is a CONFIGURATION state, not a bug — routing it
         # to the crash handler filed a crash report (and dumped a traceback) for what
         # only needs one install line. Resolved HERE rather than as an `except

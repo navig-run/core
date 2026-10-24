@@ -21,9 +21,10 @@ def _handler() -> MCPProtocolHandler:
     return MCPProtocolHandler(profile="default")
 
 
-def test_exactly_fifteen_domains() -> None:
-    assert len(COMPACT_TOOL_NAMES) == 15
-    assert len(set(COMPACT_TOOL_NAMES)) == 15
+def test_exactly_seventeen_domains() -> None:
+    # 15 core domains + navig_capabilities (discovery) + navig_run (installed CLI commands).
+    assert len(COMPACT_TOOL_NAMES) == 17
+    assert len(set(COMPACT_TOOL_NAMES)) == 17
     assert set(COMPACT_TOOL_NAMES) == {spec.name for spec in ROUTER_SPECS.values()}
 
 
@@ -36,7 +37,7 @@ def test_no_generic_dispatcher_tool_exists() -> None:
 def test_every_router_definition_meets_the_definition_target() -> None:
     handler = _handler()
     report = score_catalogue(handler.advertised_tools())
-    assert report["tools"] == 15
+    assert report["tools"] == 17
     assert report["below_target"] == 0, [
         (row["name"], row["score"], row["problems"])
         for row in report["results"]

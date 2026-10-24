@@ -46,9 +46,27 @@ from pathlib import Path
 # ledger/audit/undo/skill distill/space books were all missing: a 1285->1276 shrink that
 # passed the cross-artifact guards). Prepend the core root so `import navig` binds to the
 # co-located source. MUST run before importing navig.
+#
+# The first-party PLUGINS are pinned the same way. Their commands arrive through the
+# `navig.commands` entry-point group, whose module targets (`navig_email.commands:…`)
+# resolve through sys.path — so an installed plugin that has drifted ahead of or behind
+# this checkout leaks foreign commands into the manifest even when `navig` itself is
+# correctly bound. Prepending each `plugins/navig-*/` dir makes the entry-point targets
+# load THIS tree's plugin source, closing the last import seam.
 _CORE_ROOT = Path(__file__).resolve().parent.parent
-if sys.path[:1] != [str(_CORE_ROOT)]:
-    sys.path.insert(0, str(_CORE_ROOT))
+_REPO_ROOT = _CORE_ROOT.parent
+_PINNED_PATHS: list[str] = [str(_CORE_ROOT)]
+_PLUGINS_DIR = _REPO_ROOT / "plugins"
+if _PLUGINS_DIR.is_dir():
+    _PINNED_PATHS.extend(
+        str(p) for p in sorted(_PLUGINS_DIR.glob("navig-*")) if p.is_dir()
+    )
+if sys.path[: len(_PINNED_PATHS)] != _PINNED_PATHS:
+    # Drop any existing occurrences so the pinned order is exact, then move them first.
+    for _d in _PINNED_PATHS:
+        while _d in sys.path:
+            sys.path.remove(_d)
+    sys.path[:0] = _PINNED_PATHS
 
 from navig.registry.manifest import (  # noqa: E402 — must follow the sys.path pin above
     build_full_manifest,

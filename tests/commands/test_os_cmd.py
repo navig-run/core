@@ -605,9 +605,58 @@ class TestOpenCommand:
             raise launch.LaunchError("NAVIG OS is not running here (no launch socket at /run/x)")
 
         monkeypatch.setattr(launch, "mint_code", refuse)
+        # The command now consults /health before giving up: this is the "nothing is
+        # serving" half, so probe must say so — never mock it as up in this test.
+        monkeypatch.setattr(os_cmd, "probe", lambda _port: {"reachable": False})
         result = runner.invoke(os_cmd.app, ["open"], env={"COLUMNS": "400"})
         assert result.exit_code == 1
         assert "not running" in result.output
+
+    def test_no_launch_codes_but_a_serving_server_opens_the_login_page(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Windows has no unix socket; a bare `navig os serve` has no launch socket either.
+
+        Both used to dead-end at "could not open NAVIG OS" while the server answered on
+        the port the operator had open. The login page is the same app behind the stored
+        password, so it is where the browser should go.
+        """
+        from navig.os_host import launch
+
+        def no_codes(*_a, **_k):
+            raise launch.LaunchError(
+                "Launch codes need a unix socket, which this platform does not have."
+            )
+
+        monkeypatch.setattr(launch, "mint_code", no_codes)
+        monkeypatch.setattr(os_cmd, "probe", lambda _port: {"reachable": True, "status": "ok"})
+
+        printed = runner.invoke(os_cmd.app, ["open", "--print-url", "--port", "9100"])
+        assert printed.exit_code == 0, printed.output
+        assert printed.output.strip() == "http://127.0.0.1:9100/login"
+
+        monkeypatch.setattr(launch, "find_browser", lambda _e="": "/usr/bin/chromium")
+        spawned: list[tuple] = []
+        monkeypatch.setattr(os_cmd.subprocess, "Popen", lambda argv, **kw: spawned.append((argv, kw)))
+        opened = runner.invoke(os_cmd.app, ["open"])
+        assert opened.exit_code == 0, opened.output
+        assert any("127.0.0.1:9100/login" in a for a in spawned[0][0])  # --app=<url>
+        assert "login" in opened.output.lower()
+
+    def test_no_codes_and_no_server_still_reports_the_launch_error(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The fallback must not mask the reason when there is nothing to fall back to."""
+        from navig.os_host import launch
+
+        monkeypatch.setattr(
+            launch, "mint_code",
+            lambda *_a, **_k: (_ for _ in ()).throw(launch.LaunchError("Windows has no unix socket.")),
+        )
+        monkeypatch.setattr(os_cmd, "probe", lambda _port: {"reachable": False, "error": "refused"})
+        result = runner.invoke(os_cmd.app, ["open"], env={"COLUMNS": "400"})
+        assert result.exit_code == 1
+        assert "unix socket" in result.output
 
     def test_opens_a_detached_kiosk_browser(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from navig.os_host import launch

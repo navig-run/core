@@ -127,6 +127,30 @@ def test_unknown_view_is_refused() -> None:
         query.view("everything")
 
 
+def test_turns_page_reads_a_source_in_bounded_cursor_slices(bank) -> None:
+    """The export half of the bank contract: the same rows as ``turns_for``, in pages.
+
+    A client ships its own capture to the Brain, and a request is bounded while a bank is
+    not, so the upload pages by ``seq``. The cursor must be stable: no row is skipped and
+    none repeats when a page size does not divide the source.
+    """
+    st = bank.store
+    sid = "chats:chatgpt:paged"
+    st.upsert_source({"source_id": sid, "adapter": "chats", "project": "alpha", "title": "paged"})
+    st.add_turns(sid, [Turn(msg_id=f"m{i}", speaker="user_typed", text=f"turn {i}") for i in range(5)])
+
+    pages: list[list[str]] = []
+    cursor: int | None = None
+    while True:
+        turns, cursor = st.turns_page(sid, after_seq=cursor, limit=2)
+        if not turns:
+            break
+        pages.append([turn.msg_id for turn in turns])
+
+    assert pages == [["m0", "m1"], ["m2", "m3"], ["m4"]]
+    assert [turn.msg_id for turn in st.turns_for(sid)] == [msg_id for page in pages for msg_id in page]
+
+
 def test_a_private_chat_never_reaches_a_model(bank) -> None:
     """A chat shared below `agent` level is local-only: turns, excerpts and every record it
     supports are withheld from for_model reads, and shown to local surfaces."""

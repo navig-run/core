@@ -834,5 +834,14 @@
   "prompts.btn.fav": "☆ Favorite",
   "prompts.btn.unfav": "★ Favorite",
   "prompts.btn.file": "📄 .md file",
-  "prompts.btn.next": "▶ Next step"
+  "prompts.btn.next": "▶ Next step",
+  "status.button.refresh": "🔄 Refresh",
+  "status.button.briefing": "📋 Briefing",
+  "status.button.reminders": "⏰ Reminders",
+  "status.button.spaces": "🗂 Spaces",
+  "status.button.brain": "🧠 Brain",
+  "status.button.self": "🧘 Self",
+  "status.button.genesis": "🌱 Genesis",
+  "status.button.plans": "📋 Plans",
+  "status.button.home": "🏠 Home"
 }

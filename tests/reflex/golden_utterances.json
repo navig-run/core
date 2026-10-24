@@ -1,0 +1,66 @@
+{
+  "_note": "Golden utterances: the deterministic router must return this exact tool + these slot values with ZERO LLM calls. Slot values are compared as a subset (extra typed slots are allowed). Targets are stable provider:id values from FIXTURE_ENDPOINTS in conftest.py.",
+  "utterances": [
+    {"text": "turn on the desk lamp", "tool": "home.on", "slots": {"device": "desk lamp"}, "targets": ["govee:desk-lamp"], "blast": "single"},
+    {"text": "turn the kitchen light on", "tool": "home.on", "slots": {"device": "kitchen light"}, "targets": ["ha:kitchen-light"], "blast": "single"},
+    {"text": "switch on the living room ac", "tool": "home.on", "slots": {"device": "living room ac"}, "targets": ["ha:living-room-ac"], "blast": "single"},
+    {"text": "включи лампу", "tool": "home.on", "slots": {"device": "лампу"}, "targets": ["govee:desk-lamp"], "blast": "single"},
+    {"text": "зажги свет в кабинете", "tool": "home.on", "targets": ["govee:desk-lamp"], "blast": "single"},
+
+    {"text": "turn off the desk lamp", "tool": "home.off", "slots": {"device": "desk lamp"}, "targets": ["govee:desk-lamp"], "blast": "single"},
+    {"text": "turn the desk lamp off", "tool": "home.off", "slots": {"device": "desk lamp"}, "targets": ["govee:desk-lamp"], "blast": "single"},
+    {"text": "switch off the kitchen light", "tool": "home.off", "slots": {"device": "kitchen light"}, "targets": ["ha:kitchen-light"], "blast": "single"},
+    {"text": "выключи лампу", "tool": "home.off", "slots": {"device": "лампу"}, "targets": ["govee:desk-lamp"], "blast": "single"},
+    {"text": "выключи свет на кухне", "tool": "home.off", "slots": {"room": "кухне"}, "targets": ["ha:kitchen-light"], "blast": "single"},
+    {"text": "погаси кондиционер", "tool": "home.off", "slots": {"device": "кондиционер"}, "targets": ["ha:living-room-ac"], "blast": "single"},
+
+    {"text": "toggle the desk lamp", "tool": "home.toggle", "slots": {"device": "desk lamp"}, "targets": ["govee:desk-lamp"], "blast": "single"},
+    {"text": "flip the kitchen light", "tool": "home.toggle", "slots": {"device": "kitchen light"}, "targets": ["ha:kitchen-light"], "blast": "single"},
+    {"text": "переключи лампу", "tool": "home.toggle", "slots": {"device": "лампу"}, "targets": ["govee:desk-lamp"], "blast": "single"},
+
+    {"text": "set the desk lamp brightness to 40", "tool": "home.set", "slots": {"capability": "brightness", "value": 40}, "targets": ["govee:desk-lamp"], "blast": "single"},
+    {"text": "set the desk lamp brightness to 40%", "tool": "home.set", "slots": {"capability": "brightness", "value": 40}, "targets": ["govee:desk-lamp"], "blast": "single"},
+    {"text": "dim the desk lamp to twenty five", "tool": "home.set", "slots": {"capability": "brightness", "value": 25}, "targets": ["govee:desk-lamp"], "blast": "single"},
+    {"text": "set the desk lamp color to red", "tool": "home.set", "slots": {"capability": "color", "value": "#ff0000"}, "targets": ["govee:desk-lamp"], "blast": "single"},
+    {"text": "set the desk lamp colour to blue", "tool": "home.set", "slots": {"capability": "color", "value": "#0000ff"}, "targets": ["govee:desk-lamp"], "blast": "single"},
+    {"text": "set the desk lamp color temperature to 2700", "tool": "home.set", "slots": {"capability": "color_temp", "value": 2700}, "targets": ["govee:desk-lamp"], "blast": "single"},
+    {"text": "поставь яркость 40", "tool": "home.set", "slots": {"capability": "brightness", "value": 40}, "targets": ["govee:desk-lamp", "ha:kitchen-light"], "blast": "batch"},
+    {"text": "поставь цветовую температуру 2700", "tool": "home.set", "slots": {"capability": "color_temp", "value": 2700}, "targets": ["govee:desk-lamp"], "blast": "single"},
+    {"text": "установи яркость 30", "tool": "home.set", "slots": {"capability": "brightness", "value": 30}, "targets": ["govee:desk-lamp", "ha:kitchen-light"], "blast": "batch"},
+
+    {"text": "what is the status of the desk lamp", "tool": "home.status", "slots": {"device": "desk lamp"}, "targets": ["govee:desk-lamp"], "blast": "read"},
+    {"text": "is the kitchen light on", "tool": "home.status", "slots": {"device": "kitchen light"}, "targets": ["ha:kitchen-light"], "blast": "read"},
+    {"text": "home status", "tool": "home.status", "slots": {}, "targets": ["govee:desk-lamp", "ha:living-room-ac", "ha:kitchen-light", "ha:bedroom-sensor", "ha:loft-humidifier"], "blast": "read"},
+    {"text": "статус настольной лампы", "tool": "home.status", "targets": ["govee:desk-lamp"], "blast": "read"},
+    {"text": "какой статус у кондиционера", "tool": "home.status", "targets": ["ha:living-room-ac"], "blast": "read"},
+
+    {"text": "turn on the tv", "tool": "tv.power", "slots": {"on": true}, "targets": [], "blast": "single"},
+    {"text": "turn off the tv", "tool": "tv.power", "slots": {"on": false}, "targets": [], "blast": "single"},
+    {"text": "включи телевизор", "tool": "tv.power", "slots": {"on": true}, "targets": [], "blast": "single"},
+    {"text": "выключи телевизор", "tool": "tv.power", "slots": {"on": false}, "targets": [], "blast": "single"},
+
+    {"text": "volume up", "tool": "tv.volume", "slots": {"direction": "up"}, "targets": [], "blast": "single"},
+    {"text": "volume down", "tool": "tv.volume", "slots": {"direction": "down"}, "targets": [], "blast": "single"},
+    {"text": "mute", "tool": "tv.volume", "slots": {"direction": "mute"}, "targets": [], "blast": "single"},
+    {"text": "сделай громче", "tool": "tv.volume", "slots": {"direction": "up"}, "targets": [], "blast": "single"},
+    {"text": "убавь звук", "tool": "tv.volume", "slots": {"direction": "down"}, "targets": [], "blast": "single"},
+
+    {"text": "play", "tool": "tv.play", "slots": {}, "targets": [], "blast": "single"},
+    {"text": "плей", "tool": "tv.play", "slots": {}, "targets": [], "blast": "single"},
+
+    {"text": "assistant status", "tool": "assistant.status", "slots": {}, "targets": [], "blast": "read"},
+    {"text": "проверь ассистента", "tool": "assistant.status", "slots": {}, "targets": [], "blast": "read"},
+
+    {"text": "show campaigns", "tool": "campaigns.status", "slots": {}, "targets": [], "blast": "read"},
+    {"text": "покажи кампании", "tool": "campaigns.status", "slots": {}, "targets": [], "blast": "read"},
+
+    {"text": "what is waiting for me", "tool": "coordination.inbox", "slots": {}, "targets": [], "blast": "read"},
+    {"text": "check my inbox", "tool": "coordination.inbox", "slots": {}, "targets": [], "blast": "read"},
+    {"text": "any messages", "tool": "coordination.inbox", "slots": {}, "targets": [], "blast": "read"},
+    {"text": "pending handoffs", "tool": "coordination.inbox", "slots": {}, "targets": [], "blast": "read"},
+
+    {"text": "turn off everything", "tool": "home.off", "slots": {"device": "everything"}, "targets": ["govee:desk-lamp", "ha:living-room-ac", "ha:kitchen-light", "ha:loft-humidifier"], "blast": "batch"},
+    {"text": "turn off all lights", "tool": "home.off", "targets": ["govee:desk-lamp", "ha:kitchen-light"], "blast": "batch"},
+    {"text": "выключи все", "tool": "home.off", "targets": ["govee:desk-lamp", "ha:living-room-ac", "ha:kitchen-light", "ha:loft-humidifier"], "blast": "batch"}
+  ]
+}

@@ -59,7 +59,7 @@ def test_migration_resets_incidental_assistant_only(tmp_path):
     assert s.get_ai_state(1)["persona"] == "default"  # incidental → NAVIG
     assert s.get_ai_state(2)["persona"] == "tyler"  # a real persona is untouched
     assert s.get_ai_state(3)["persona"] is None
-    assert s.get_schema_version() == RuntimeStore.SCHEMA_VERSION == 4
+    assert s.get_schema_version() == RuntimeStore.SCHEMA_VERSION
 
 
 def test_explicit_assistant_survives_and_rerun_is_noop(tmp_path):
@@ -144,5 +144,5 @@ def test_a_v3_database_from_main_gets_the_persona_reset(tmp_path):
 
     s = RuntimeStore(db)
     assert s.get_ai_state(159901607)["persona"] == "default"
-    assert s.get_schema_version() == 4
+    assert s.get_schema_version() == RuntimeStore.SCHEMA_VERSION
     s.close()

@@ -12,8 +12,36 @@ from __future__ import annotations
 import logging
 
 _CONNECTORS_LOADED = False
+_MANIFESTS_LOADED = False
 _LOADING = False
 _log = logging.getLogger("navig.connectors")
+
+
+def ensure_manifests_loaded() -> None:
+    """Register connector *classes* only — manifests, no OAuth and no vault.
+
+    Discovery surfaces (the Store, the capability index) need the manifest — id,
+    display name, domain, ``auth_mode``, capability flags — which lives on the
+    class, so they must not pay for :func:`register_oauth_providers`: that call
+    resolves app credentials through the vault, whose first open in a fresh
+    process costs 5-6 s here (auto-migrate + permission subprocesses), against
+    ~0.4 s for the class registration itself. Connect flows keep using
+    :func:`ensure_connectors_loaded`, which does the full job.
+
+    Idempotent and failure-retryable with the same guard discipline as the full
+    load: the flag is set only after the work succeeds, re-entrancy has its own
+    flag so a connector importing something that calls back in cannot recurse,
+    and a genuine failure stays retryable.
+    """
+    global _MANIFESTS_LOADED, _LOADING
+    if _MANIFESTS_LOADED or _LOADING:
+        return
+    _LOADING = True
+    try:
+        _register_classes()
+    finally:
+        _LOADING = False
+    _MANIFESTS_LOADED = True
 
 
 def ensure_connectors_loaded() -> None:
@@ -32,12 +60,18 @@ def ensure_connectors_loaded() -> None:
     connector module that imports something which calls back in here still cannot
     recurse, while a genuine failure remains retryable.
     """
-    global _CONNECTORS_LOADED, _LOADING
+    global _CONNECTORS_LOADED, _MANIFESTS_LOADED, _LOADING
     if _CONNECTORS_LOADED or _LOADING:
         return
     _LOADING = True
     try:
-        _register_all()
+        if not _MANIFESTS_LOADED:
+            _register_classes()
+            # Set here as well as in ensure_manifests_loaded: this branch bypasses
+            # that function, so without the write a later manifests-only caller
+            # would redo the class registration it just paid for.
+            _MANIFESTS_LOADED = True
+        register_oauth_providers()
     finally:
         _LOADING = False
     _CONNECTORS_LOADED = True
@@ -57,13 +91,19 @@ def invalidate() -> None:
     MCP tool then vanished, which silently made two coverage guards vacuous
     (`test_connector_write_tools_are_dangerous` / `test_connector_reads_are_not_safe`).
     """
-    global _CONNECTORS_LOADED, _LOADING
+    global _CONNECTORS_LOADED, _MANIFESTS_LOADED, _LOADING
     _CONNECTORS_LOADED = False
+    _MANIFESTS_LOADED = False
     _LOADING = False
 
 
-def _register_all() -> None:
-    """Do the actual registration. Raising leaves the load retryable."""
+def _register_classes() -> None:
+    """Register connector classes (manifests) only — no OAuth, no vault.
+
+    Shared by :func:`ensure_manifests_loaded` (discovery) and
+    :func:`ensure_connectors_loaded` (which then adds the OAuth phase).
+    Raising leaves the load retryable.
+    """
     from navig.connectors.registry import get_connector_registry
 
     registry = get_connector_registry()
@@ -121,8 +161,6 @@ def _register_all() -> None:
                 _log.debug("entry-point connector %s load failed: %s", _ep.name, exc)
     except Exception as exc:
         _log.debug("entry-point connector discovery skipped: %s", exc)
-
-    register_oauth_providers()
 
 
 # (connector_id, module, loader) — every OAuth connector the deck can Connect. Each loader

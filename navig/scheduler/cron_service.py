@@ -100,6 +100,9 @@ class CronJob:
     last_status: JobStatus | None = None
     last_output: str | None = None
     created_at: datetime = field(default_factory=datetime.now)
+    #: Optional Space/project id this job belongs to. Purely an association for
+    #: project rollups — the scheduler does not care; old job files simply lack it.
+    space: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -116,6 +119,7 @@ class CronJob:
             "last_status": self.last_status.value if self.last_status else None,
             "last_output": self.last_output,
             "created_at": self.created_at.isoformat(),
+            "space": self.space,
         }
 
     @classmethod
@@ -138,6 +142,7 @@ class CronJob:
                 if data.get("created_at")
                 else datetime.now()
             ),
+            space=data.get("space"),
         )
 
 
@@ -666,6 +671,13 @@ class CronService:
         self._running = False
         self._task: asyncio.Task | None = None
 
+        # The Brain lease epoch this scheduler acquired in start(). Every write of the
+        # schedule store presents it (a stale scheduler that lost ownership to a
+        # takeover must not persist its in-memory view over the new Brain's jobs), and
+        # the tick re-checks ownership so a fenced scheduler stops FIRING as well.
+        self._lease_epoch: int | None = None
+        self._lease_refusal: str = ""
+
         # Semaphore for concurrent job limit
         self._semaphore = asyncio.Semaphore(self.config.max_concurrent_jobs)
 
@@ -807,6 +819,9 @@ class CronService:
             )
             return
 
+        if not self._write_allowed():
+            return
+
         data = {
             "counter": self._job_counter,
             "jobs": [j.to_dict() for j in self.jobs.values()],
@@ -892,6 +907,51 @@ class CronService:
         self._job_counter += 1
         return f"job_{self._job_counter}"
 
+    def _record_refusal(self, message: str) -> None:
+        """Make an ownership refusal VISIBLE, not just absent.
+
+        A scheduler that quietly does not start looks exactly like a scheduler with no
+        jobs. Recording the refusal puts it in `navig doctor` → Config Health and, in a
+        daemon, out through the notify path.
+        """
+        self._lease_refusal = message
+        try:
+            from navig.core import incidents  # noqa: PLC0415
+
+            incidents.record(
+                incidents.BRAIN_OWNERSHIP_REFUSED, service="scheduler", reason=message
+            )
+        except Exception:  # noqa: BLE001 — an observation must never break the observed
+            pass
+
+    def _ownership_still_valid(self) -> bool:
+        """Is this scheduler still the Brain's, right now? (fencing at the tick)"""
+        if self._lease_epoch is None:
+            return True  # unfenced caller (CLI, tests)
+        from navig.brain import guard as _brain_guard  # noqa: PLC0415
+
+        if _brain_guard.write_allowed(who="scheduler"):
+            return True
+        self._record_refusal(
+            "the Brain lease moved past this scheduler's epoch (a takeover happened) — "
+            "the tick is stopping so two schedulers can never fire the same job"
+        )
+        return False
+
+    def _write_allowed(self) -> bool:
+        """Would a jobs-store write survive the fence? (no raise — cron must degrade)"""
+        if self._lease_epoch is None:
+            return True
+        from navig.brain import guard as _brain_guard  # noqa: PLC0415
+
+        if _brain_guard.write_allowed(who="scheduler"):
+            return True
+        logger.warning(
+            "cron: not saving — this scheduler lost Brain ownership (its epoch is stale), "
+            "so its in-memory view may be behind the live Brain's"
+        )
+        return False
+
     async def start(self) -> None:
         """Start the cron service."""
         if self._running:
@@ -900,6 +960,26 @@ class CronService:
         if not self.config.enabled:
             logger.info("Cron service disabled in config")
             return
+
+        # ONE SCHEDULER PER DEPLOYMENT. A second Brain's gateway used to start a second
+        # cron loop over the same schedules: jobs fired twice, or fired on a machine that
+        # was supposed to be stopped. Claim/renew the lease before the loop exists and
+        # carry its epoch, so every later write presents the fence.
+        from navig.brain import guard as _brain_guard
+
+        try:
+            _lease = _brain_guard.require_ownership(service="scheduler")
+        except _brain_guard.OwnershipRefused as exc:
+            # Do not take the whole gateway down: cron is one subsystem of a process
+            # that already claimed the lease, so a refusal here means a takeover landed
+            # mid-boot. Simply never start the tick — and make that visible, because a
+            # silent second scheduler is the failure this guards against.
+            logger.error("cron: scheduler NOT started — %s", exc)
+            self._record_refusal(str(exc))
+            return
+        # None = ownership could not be recorded at all (no resolvable config dir). Run
+        # unfenced, exactly as before, and say so rather than inventing a lease.
+        self._lease_epoch = _lease.epoch if _lease is not None else None
 
         self._running = True
 
@@ -962,6 +1042,7 @@ class CronService:
         command: str,
         enabled: bool = True,
         timeout_seconds: int | None = None,
+        space: str | None = None,
     ) -> CronJob:
         """
         Add a new cron job.
@@ -984,6 +1065,7 @@ class CronService:
             enabled=enabled,
             timeout_seconds=timeout_seconds or self.config.default_timeout_seconds,
             next_run=CronParser.calculate_next(schedule) if enabled else None,
+            space=space,
         )
 
         self.jobs[job.id] = job
@@ -1067,6 +1149,14 @@ class CronService:
         """
         while self._running:
             try:
+                # The fence, re-checked at every tick: after a takeover this process is
+                # no longer the Brain, so it must stop FIRING as well as writing —
+                # otherwise the old machine keeps running campaigns and reminders that
+                # belong to the new one.
+                if not self._ownership_still_valid():
+                    self._running = False
+                    logger.error("cron: scheduler stopped — %s", self._lease_refusal)
+                    break
                 # Pick up external edits (the schedule CLI) before evaluating jobs.
                 self._reload_if_changed()
                 self._dispatch_due_jobs(datetime.now())

@@ -22,6 +22,9 @@
     POST   /api/deck/planner/reminders             {text}  — a one-off ping, typed language
     POST   /api/deck/planner/reminders/{source}/{id}/snooze  {seconds}
     DELETE /api/deck/planner/reminders/{source}/{id}
+    GET    /api/deck/planner/followups              tasks that need a follow-up now
+    POST   /api/deck/planner/followups/{id}/snooze  {hours?}
+    POST   /api/deck/planner/followups/{id}/suggest deliver the one suggestion
 
 Envelope ``{"ok": true, "data": …}`` / ``{"ok": false, "error": …}`` — the board's.
 Every route is OPERATOR-ONLY: this is the operator's personal data, and a Mini App
@@ -232,6 +235,7 @@ async def handle_planner_task_create(request: "web.Request") -> "web.Response":
         recur=body.get("recur") or None,
         notes=str(body.get("notes") or ""),
         priority=str(body.get("priority") or "normal"),
+        space=body.get("space") or None,
     )
     return _ok(service.present(item), 201)
 
@@ -365,3 +369,38 @@ async def handle_planner_reminder_cancel(request: "web.Request") -> "web.Respons
         return _err("unknown reminder source", 404)
     await _run(_svc().cancel_reminder, source, rid)
     return _ok({"cancelled": rid})
+
+
+# ── follow-ups (forgotten tasks) ─────────────────────────────────────────────
+
+
+@_guard
+async def handle_planner_followups(request: "web.Request") -> "web.Response":
+    """Tasks with a person on them whose follow-up moment has arrived."""
+    from navig.pim import followups  # noqa: PLC0415
+
+    rows = await _run(followups.candidates)
+    return _ok({"count": len(rows), "followups": rows})
+
+
+@_guard
+async def handle_planner_followup_snooze(request: "web.Request") -> "web.Response":
+    body = await _json(request) or {}
+    try:
+        hours = float(body.get("hours") or 8)
+    except (TypeError, ValueError):
+        return _err("hours must be a number")
+    from navig.pim import followups  # noqa: PLC0415
+
+    ok = await _run(followups.snooze, request.match_info["id"], hours)
+    return _ok({"snoozed": ok, "hours": hours})
+
+
+@_guard
+async def handle_planner_followup_suggest(request: "web.Request") -> "web.Response":
+    """Deliver the one suggestion for this task (cooldown-suppressed)."""
+    from navig.pim import followups  # noqa: PLC0415
+
+    only = request.match_info.get("id") or None
+    return _ok({"results": await followups.suggest(only=only)})
+
