@@ -1,7 +1,7 @@
 {
-  "version": "3.29.0",
+  "version": "3.30.0",
   "channel": "stable",
-  "pypi": "https://pypi.org/project/navig/3.29.0/",
+  "pypi": "https://pypi.org/project/navig/3.30.0/",
   "download_url": null,
   "changelog_url": "https://github.com/navig-run/core/releases",
   "released_at": "2026-10-24"

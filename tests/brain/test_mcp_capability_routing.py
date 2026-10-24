@@ -602,14 +602,162 @@ def test_a_corrupt_link_never_blocks_a_start(_isolated):
 def test_declared_local_families_carry_a_reason():
     """A family kept local is a decision, so it states one — silence reads as "nobody looked".
 
-    ``runtime`` and ``agent`` are the interesting ones: the architecture puts goals and
-    scheduling on the Brain, so keeping them host-local is a recorded gap, not an oversight.
+    ``runtime`` and ``agent`` were the recorded gap ("moves to the Brain in phase C"). The
+    phase is closed for the data that belongs to the Brain: the whole runtime family and the
+    four goal tools. The rest of the agent bundle is genuinely this host's work, and its
+    family reason now says so instead of pointing at a future phase.
     """
     from navig.mcp import capability
 
     for contract in capability.contracts().values():
         assert contract.reason, f"{contract.family} has no recorded reason"
-    for family in ("runtime", "agent"):
-        contract = capability.capability_for(f"{family}_example")
-        assert contract.data_authority == capability.AUTHORITY_LOCAL
-        assert "phase C" in contract.reason, family
+    assert capability.capability_for("runtime_example").data_authority == (
+        capability.AUTHORITY_BRAIN
+    )
+    agent = capability.capability_for("agent_example")
+    assert agent.data_authority == capability.AUTHORITY_LOCAL
+    assert "host work" in agent.reason
+    assert "phase C" not in agent.reason.lower()
+
+
+# ── the fleet and the plan ────────────────────────────────────
+#
+# Missions, nodes and receipts describe the fleet the Brain runs; the four goal tools are the
+# operator's plan. Both are declared Brain-owned, so a linked client must ask rather than
+# answer from its own (smaller, emptier) store - and an unreachable Brain is an error.
+
+_BRAIN_OWNED_FLEET = (
+    "navig_runtime_list_nodes",
+    "navig_runtime_create_mission",
+    "navig_runtime_mission_action",
+    "navig_runtime_list_missions",
+    "navig_runtime_list_receipts",
+    "navig_runtime_trust_score",
+    "navig_agent_goal_list",
+    "navig_agent_goal_add",
+    "navig_agent_goal_start",
+    "navig_agent_goal_cancel",
+)
+
+
+def test_missions_and_goals_are_brain_owned():
+    from navig.mcp import capability
+
+    for tool in _BRAIN_OWNED_FLEET:
+        contract = capability.capability_for(tool)
+        assert contract.data_authority == capability.AUTHORITY_BRAIN, tool
+        assert contract.offline_policy == capability.OFFLINE_FAIL, tool
+        assert contract.risk == "high", tool
+
+
+def test_the_agents_own_host_work_never_leaves_it(_isolated):
+    """Sessions, remediation and service control act on THIS machine; they stay local."""
+    from navig.mcp import capability
+
+    _write_link(_isolated["link"])
+    _set_role(_isolated["cfg"], "client")
+    capability.reload()
+
+    for tool in (
+        "navig_agent_status_get",
+        "navig_agent_remediation_list",
+        "navig_agent_component_restart",
+    ):
+        route = capability.resolve(tool)
+        assert route.is_local, f"{tool} must run where the processes are"
+
+
+def _bundle_server(name: str) -> _Server:
+    from navig.mcp.tools import agent, runtime
+
+    server = _Server()
+    (runtime if name == "runtime" else agent).register(server)
+    return server
+
+
+class _StubBrain:
+    """One HTTPServer answering every POST with a fixed envelope and recording the request."""
+
+    def __init__(self, data: Any) -> None:
+        self.seen: list[tuple[str, dict]] = []
+        self._data = data
+
+    def __enter__(self) -> _StubBrain:
+        seen = self.seen
+        data = self._data
+
+        class _Handler(BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802 — http.server's spelling
+                length = int(self.headers.get("Content-Length") or 0)
+                seen.append((self.path, json.loads(self.rfile.read(length) or b"{}")))
+                payload = json.dumps({"ok": True, "data": data}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, *args):  # noqa: A003 — silence the test server
+                return
+
+        self._server = HTTPServer(("127.0.0.1", 0), _Handler)
+        self.url = f"http://127.0.0.1:{self._server.server_port}"
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+
+
+def test_a_linked_client_asks_the_brain_for_the_fleet(_isolated):
+    with _StubBrain({"nodes": [{"id": "node-1"}], "count": 1}) as brain:
+        _write_link(_isolated["link"], url=brain.url)
+        _set_role(_isolated["cfg"], "client")
+        server = _bundle_server("runtime")
+        result = server._tool_handlers["navig_runtime_list_nodes"](None, {"status": "online"})
+
+    assert result == {"nodes": [{"id": "node-1"}], "count": 1}
+    assert brain.seen[0][0] == "/api/deck/brain/data/runtime/list_nodes"
+    assert brain.seen[0][1] == {"status": "online"}
+
+
+def test_a_goal_write_goes_to_the_brain_that_owns_the_plan(_isolated):
+    with _StubBrain({"ok": True, "goal_id": "goal-1"}) as brain:
+        _write_link(_isolated["link"], url=brain.url)
+        _set_role(_isolated["cfg"], "client")
+        server = _bundle_server("agent")
+        result = server._tool_handlers["navig_agent_goal_add"](
+            None, {"description": "ship the Brain"}
+        )
+
+    assert result == {"ok": True, "goal_id": "goal-1"}
+    assert brain.seen[0][0] == "/api/deck/brain/data/goals/add"
+    assert brain.seen[0][1] == {"description": "ship the Brain"}
+
+
+def test_a_mission_write_fails_closed_when_the_brain_is_down(_isolated):
+    _write_link(_isolated["link"], url="http://127.0.0.1:9")  # discard port
+    _set_role(_isolated["cfg"], "client")
+
+    server = _bundle_server("runtime")
+    result = server._tool_handlers["navig_runtime_create_mission"](
+        None, {"title": "a mission only the Brain may own"}
+    )
+
+    assert result["isError"] is True
+    assert result["route"] == "brain"
+    assert result["wrote"] is False
+    assert result["reason"] in ("unreachable", "timeout", "http_error")
+
+
+def test_the_brain_runs_the_same_fleet_handlers(_isolated):
+    """On the Brain the local implementation IS the authority - no second routing layer."""
+    from navig.mcp import capability
+
+    _set_role(_isolated["cfg"], "brain")
+    capability.reload()
+
+    for tool in _BRAIN_OWNED_FLEET:
+        assert capability.resolve(tool).is_local, tool

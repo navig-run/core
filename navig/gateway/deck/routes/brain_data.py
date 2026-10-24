@@ -12,6 +12,8 @@ capability (``navig.mcp.capability``).
     POST /api/deck/brain/data/memory/retrieve     {query, limit}
     POST /api/deck/brain/data/memory/stats
     POST /api/deck/brain/data/recall/<op>         {args, scope_widened}
+    POST /api/deck/brain/data/runtime/<op>        <that tool's own arguments>
+    POST /api/deck/brain/data/goals/<op>          <that tool's own arguments>
 
 Responses are the same envelope the rest of the deck uses — ``{"ok": true, "data": …}`` or
 ``{"ok": false, "error": …, "code": …}`` — because the client refuses anything else. That
@@ -76,6 +78,27 @@ _RECALL_OPS: dict[str, str] = {
     "forgotten_ideas": "recall_forgotten_ideas",
     "tables": "recall_tables",
     "source_excerpt": "recall_source_excerpt",
+}
+
+
+#: Runtime tools a client may invoke. Missions and receipts describe the fleet this Brain
+#: runs, so a linked machine asks here instead of keeping a second, emptier fleet.
+_RUNTIME_OPS: dict[str, str] = {
+    "list_nodes": "navig_runtime_list_nodes",
+    "create_mission": "navig_runtime_create_mission",
+    "mission_action": "navig_runtime_mission_action",
+    "list_missions": "navig_runtime_list_missions",
+    "list_receipts": "navig_runtime_list_receipts",
+    "trust_score": "navig_runtime_trust_score",
+}
+
+#: The four goal tools out of the agent bundle. Sessions, remediation and service control in
+#: that bundle stay on the host; only the operator's plan travels.
+_GOALS_OPS: dict[str, str] = {
+    "list": "navig_agent_goal_list",
+    "add": "navig_agent_goal_add",
+    "start": "navig_agent_goal_start",
+    "cancel": "navig_agent_goal_cancel",
 }
 
 
@@ -161,23 +184,48 @@ def _handler_for(tool: str) -> Any:
         from navig.mcp.tools import recall as recall_tools
 
         return recall_tools.RAW_TOOLS.get(tool)
+    if tool.startswith("navig_runtime_"):
+        from navig.mcp.tools import runtime as runtime_tools
+
+        return runtime_tools.RAW_TOOLS.get(tool)
+    if tool.startswith("navig_agent_goal_"):
+        from navig.mcp.tools import agent as agent_tools
+
+        return agent_tools.RAW_TOOLS.get(tool)
     return None
 
 
-async def handle_memory_op(request: web.Request) -> web.Response:
+async def _serve_tool_op(request: web.Request, ops: dict[str, str], label: str) -> web.Response:
+    """Shared shape for the families whose body IS the tool's own argument object.
+
+    Memory, runtime and goals all pass arguments through untouched, so the Brain runs the
+    very same handler the local path would. Only the recall family needs a wrapper
+    (``{args, scope_widened}``) and it keeps its own handler.
+    """
     if (denied := _guard(request)) is not None:
         return denied
     op = request.match_info.get("op", "")
-    tool = _MEMORY_OPS.get(op)
+    tool = ops.get(op)
     if tool is None:
-        return _err(f"unknown memory operation '{op}'", 404, code="unknown_op")
+        return _err(f"unknown {label} operation '{op}'", 404, code="unknown_op")
     fn = _handler_for(tool)
     if fn is None:
         return _err(f"this Brain does not serve {tool}", 501, code="unavailable")
     body = await _body(request)
-    # The MCP handlers are the one implementation of these semantics; the Brain is just the
-    # machine that runs them. `server` is unused by every handler in both bundles.
+    # `server` is unused by every handler in these bundles.
     return await _run(fn, None, body)
+
+
+async def handle_memory_op(request: web.Request) -> web.Response:
+    return await _serve_tool_op(request, _MEMORY_OPS, "memory")
+
+
+async def handle_runtime_op(request: web.Request) -> web.Response:
+    return await _serve_tool_op(request, _RUNTIME_OPS, "runtime")
+
+
+async def handle_goals_op(request: web.Request) -> web.Response:
+    return await _serve_tool_op(request, _GOALS_OPS, "goals")
 
 
 async def handle_recall_op(request: web.Request) -> web.Response:
@@ -277,3 +325,5 @@ def register(app: web.Application) -> None:
     # import is a different shape (a bank batch) than a forwarded tool call.
     app.router.add_post(f"{PREFIX}/recall/ingest", handle_bank_ingest)
     app.router.add_post(f"{PREFIX}/recall/{{op}}", handle_recall_op)
+    app.router.add_post(f"{PREFIX}/runtime/{{op}}", handle_runtime_op)
+    app.router.add_post(f"{PREFIX}/goals/{{op}}", handle_goals_op)

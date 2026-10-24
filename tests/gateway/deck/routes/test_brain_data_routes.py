@@ -311,3 +311,47 @@ async def test_every_answer_uses_the_envelope_the_client_refuses_nothing_else(cl
             assert "data" in body
         else:
             assert isinstance(body.get("error"), str) and body["error"]
+
+
+# ── the fleet and the plan ───────────────────────────────────
+
+
+def test_every_forwarded_operation_names_a_real_handler():
+    """A route may only name a tool the catalogue has; anything else is a 501 at runtime."""
+    from navig.gateway.deck.routes import brain_data
+
+    for label, ops in (
+        ("memory", brain_data._MEMORY_OPS),
+        ("runtime", brain_data._RUNTIME_OPS),
+        ("goals", brain_data._GOALS_OPS),
+    ):
+        assert ops, label
+        for op, tool in ops.items():
+            assert brain_data._handler_for(tool) is not None, (label, op, tool)
+
+
+async def test_a_mission_read_runs_the_brains_own_handler(client_factory):
+    client = await client_factory()
+    status, body = await _post(client, "/api/deck/brain/data/runtime/list_nodes", {})
+    assert (status, body["ok"]) == (200, True)
+    assert body["data"] == {"nodes": [], "count": 0}
+
+
+async def test_a_goal_written_over_the_route_is_read_back_from_the_same_store(client_factory):
+    client = await client_factory()
+    status, body = await _post(
+        client, "/api/deck/brain/data/goals/add", {"description": "one plan, one Brain"}
+    )
+    assert (status, body["ok"]) == (200, True)
+    assert body["data"]["ok"] is True
+
+    status, body = await _post(client, "/api/deck/brain/data/goals/list", {})
+    assert (status, body["ok"]) == (200, True)
+    descriptions = [goal["description"] for goal in body["data"]["goals"]]
+    assert descriptions == ["one plan, one Brain"]
+
+
+async def test_an_unknown_runtime_operation_is_a_404_not_a_local_fallback(client_factory):
+    client = await client_factory()
+    status, body = await _post(client, "/api/deck/brain/data/runtime/launch_rocket", {})
+    assert (status, body["code"]) == (404, "unknown_op")

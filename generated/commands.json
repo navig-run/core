@@ -38164,6 +38164,376 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig github reviews check"
+      ],
+      "handler": "reviews_check",
+      "module": "navig_github.commands.reviews",
+      "options": [
+        {
+          "flags": [
+            "--pr"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--severity"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--repo",
+            "-r"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig github reviews check",
+      "since": "",
+      "status": "stable",
+      "summary": "Exit 1 when confirmed-open findings at or above --severity remain (unverified ones never block).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "file",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig github reviews import"
+      ],
+      "handler": "reviews_import",
+      "module": "navig_github.commands.reviews",
+      "options": [
+        {
+          "flags": [
+            "--by"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--repo",
+            "-r"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig github reviews import",
+      "since": "",
+      "status": "stable",
+      "summary": "Apply a batch of verdicts (e.g. from a verification run). Unknown refs are reported, not guessed.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig github reviews list"
+      ],
+      "handler": "reviews_list",
+      "module": "navig_github.commands.reviews",
+      "options": [
+        {
+          "flags": [
+            "--repo",
+            "-r"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--status",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--severity",
+            "-p"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--provider"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--pr"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--open"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--limit",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig github reviews list",
+      "since": "",
+      "status": "stable",
+      "summary": "List findings, most severe first.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "ref",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig github reviews open"
+      ],
+      "handler": "reviews_open",
+      "module": "navig_github.commands.reviews",
+      "options": [
+        {
+          "flags": [
+            "--repo",
+            "-r"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig github reviews open",
+      "since": "",
+      "status": "stable",
+      "summary": "Open the original review thread (or the fix, when one is recorded).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig github reviews report"
+      ],
+      "handler": "reviews_report",
+      "module": "navig_github.commands.reviews",
+      "options": [
+        {
+          "flags": [
+            "--repo",
+            "-r"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--format",
+            "-f"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig github reviews report",
+      "since": "",
+      "status": "stable",
+      "summary": "Human (markdown) or machine (JSON) review-debt report.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig github reviews scan"
+      ],
+      "handler": "reviews_scan",
+      "module": "navig_github.commands.reviews",
+      "options": [
+        {
+          "flags": [
+            "--repo",
+            "-r"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--full"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--max-pages"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig github reviews scan",
+      "since": "",
+      "status": "stable",
+      "summary": "Import review findings from every PR \u2014 open, closed and merged.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "ref",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig github reviews set"
+      ],
+      "handler": "reviews_set",
+      "module": "navig_github.commands.reviews",
+      "options": [
+        {
+          "flags": [
+            "--status",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--evidence",
+            "-e"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--remediation"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--repo",
+            "-r"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig github reviews set",
+      "since": "",
+      "status": "stable",
+      "summary": "Record a verdict. Closing statuses require evidence.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "ref",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig github reviews show"
+      ],
+      "handler": "reviews_show",
+      "module": "navig_github.commands.reviews",
+      "options": [
+        {
+          "flags": [
+            "--repo",
+            "-r"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig github reviews show",
+      "since": "",
+      "status": "stable",
+      "summary": "One finding in full: the claim, where it lives, the verdict and its history.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig github reviews status"
+      ],
+      "handler": "reviews_status",
+      "module": "navig_github.commands.reviews",
+      "options": [
+        {
+          "flags": [
+            "--repo",
+            "-r"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig github reviews status",
+      "since": "",
+      "status": "stable",
+      "summary": "Review-debt counts by status, severity and provider.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "name",
@@ -83050,5 +83420,5 @@
     "wut": "Show what NAVIG thinks is happening (context snapshot)"
   },
   "schema_version": "1.0.0",
-  "total": 2375
+  "total": 2384
 }

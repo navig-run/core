@@ -1038,6 +1038,15 @@ navig github restore-issues
 navig github restore-labels
 navig github restore-milestones
 navig github restore-releases
+navig github reviews check
+navig github reviews import
+navig github reviews list
+navig github reviews open
+navig github reviews report
+navig github reviews scan
+navig github reviews set
+navig github reviews show
+navig github reviews status
 navig github schedule-add
 navig github schedule-list
 navig github schedule-remove

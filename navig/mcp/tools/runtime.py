@@ -1,5 +1,7 @@
 from typing import Any
 
+from navig.mcp.tools._brain_routing import routed
+
 
 def register(server: Any) -> None:
     """Register runtime monitoring and control tools."""
@@ -85,14 +87,7 @@ def register(server: Any) -> None:
     )
 
     server._tool_handlers.update(
-        {
-            "navig_runtime_list_nodes": _tool_runtime_list_nodes,
-            "navig_runtime_create_mission": _tool_runtime_create_mission,
-            "navig_runtime_mission_action": _tool_runtime_mission_action,
-            "navig_runtime_list_missions": _tool_runtime_list_missions,
-            "navig_runtime_list_receipts": _tool_runtime_list_receipts,
-            "navig_runtime_trust_score": _tool_runtime_trust_score,
-        }
+        {name: routed(name, local, _brain_forward(name)) for name, local in RAW_TOOLS.items()}
     )
 
     # See navig.mcp_server._gate_tool — unlisted defaults to "safe".
@@ -101,16 +96,18 @@ def register(server: Any) -> None:
     # and assuming it exists raised AttributeError. cdp.py already guarded; these did not.
     if not hasattr(server, "_tool_safety"):
         server._tool_safety = {}
-    server._tool_safety.update({
-        "navig_runtime_mission_action": "dangerous",  # advances/executes a mission
-        "navig_runtime_create_mission": "moderate",
-        # read-only — recorded explicitly so a missing entry is a build failure,
-        # not a silent default to "safe".
-        "navig_runtime_list_missions": "safe",
-        "navig_runtime_list_nodes": "safe",
-        "navig_runtime_list_receipts": "safe",
-        "navig_runtime_trust_score": "safe",
-    })
+    server._tool_safety.update(
+        {
+            "navig_runtime_mission_action": "dangerous",  # advances/executes a mission
+            "navig_runtime_create_mission": "moderate",
+            # read-only — recorded explicitly so a missing entry is a build failure,
+            # not a silent default to "safe".
+            "navig_runtime_list_missions": "safe",
+            "navig_runtime_list_nodes": "safe",
+            "navig_runtime_list_receipts": "safe",
+            "navig_runtime_trust_score": "safe",
+        }
+    )
 
 
 def _tool_runtime_list_nodes(server: Any, args: dict[str, Any]) -> dict[str, Any]:
@@ -201,3 +198,28 @@ def _tool_runtime_trust_score(server: Any, args: dict[str, Any]) -> dict[str, An
     store = get_runtime_store()
     ts = store.compute_trust_score(node_id)
     return ts.to_dict()
+
+
+# ── Brain routing ─────────────────────────────────────────────────────────────
+#
+# Missions, receipts and nodes describe the fleet the Brain runs (``navig.mcp.capability``).
+# The implementations above ARE the authority when this machine is the Brain; ``routed``
+# asks the capability router first, so a linked client asks the Brain and a Brain that
+# cannot answer produces a structured error instead of a second local fleet.
+RAW_TOOLS: dict[str, Any] = {
+    "navig_runtime_list_nodes": _tool_runtime_list_nodes,
+    "navig_runtime_create_mission": _tool_runtime_create_mission,
+    "navig_runtime_mission_action": _tool_runtime_mission_action,
+    "navig_runtime_list_missions": _tool_runtime_list_missions,
+    "navig_runtime_list_receipts": _tool_runtime_list_receipts,
+    "navig_runtime_trust_score": _tool_runtime_trust_score,
+}
+
+
+def _brain_forward(name: str):
+    """One forwarder per tool: the client posts exactly the arguments the local handler gets."""
+
+    def forward(client: Any, args: dict[str, Any]) -> Any:
+        return client.runtime_op(name, args)
+
+    return forward

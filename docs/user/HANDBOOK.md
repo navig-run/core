@@ -6701,6 +6701,33 @@ an editor. In chat, `@navig-prompts /prompts debug root cause` lists the best ma
 **Use** button each. It reads the running daemon (`/api/deck/prompts`), so the daemon must be up;
 the extension's own editor packs (Open Prompt Library) are unchanged.
 
+## 23.4.4 Review debt (`navig github reviews`)
+
+Review comments outlive their PRs: a merged PR keeps its unresolved Codex/Copilot threads
+forever. `navig github reviews` pulls every PR's review surfaces (inline threads, review bodies,
+conversation comments) into a ledger, one finding per actionable comment, each linked to its
+source thread, and records a verified verdict per finding. Plugin `navig-github`. Stored in
+`<config_dir>/github/reviews/<owner>__<repo>.json`; only read calls reach GitHub.
+
+```bash
+navig github reviews scan --repo navig-run/labs     # first run: every PR, paged; resumes if interrupted
+navig github reviews scan                           # later: incremental (catches late reviews on old PRs)
+navig github reviews status                         # status × severity, provider, unresolved threads
+navig github reviews list --severity P1 --open      # --status · --provider codex|copilot|human · --pr N
+navig github reviews show <id-or-url>               # the claim, the verdict, its history
+navig github reviews set <id> --status already_fixed --evidence "fixed in 1a2b3c, test_x"
+navig github reviews import verdicts.json           # [{id|url, status, evidence, ...}] from a verification run
+navig github reviews report --format md --out review-debt.md     # or --format json
+navig github reviews check --pr 2035                # exit 1 on a confirmed-open P0/P1 (a landing gate)
+```
+
+Statuses: `new` · `triaging` · `reproduced` · `confirmed_open` · `already_fixed` · `superseded` ·
+`false_positive` · `not_applicable` · `needs_human_review` · `fix_in_progress` · `fix_pr_open` ·
+`verified_fixed` · `blocked` · `reopened`. A closing status needs `--evidence`. GitHub's
+*resolved* flag is recorded but is never a verdict, and `check` blocks only on findings proven
+present (`confirmed_open`, `reproduced`, `reopened`), not on unverified or refuted ones. A
+finding marked fixed that is confirmed again becomes `reopened`.
+
 ## 23.5 Credentials Vault
 
 NAVIG provides a secure, encrypted credentials vault for managing API keys, tokens, and passwords across all integrations.

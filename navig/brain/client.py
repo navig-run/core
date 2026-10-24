@@ -329,6 +329,22 @@ class BrainClient:
             tool=tool,
         )
 
+    # ------------------------------------------------------- runtime and goals
+
+    def runtime_op(self, tool: str, args: dict[str, Any]):
+        """Forward one runtime tool call to the Brain, which runs the same handler.
+
+        Missions, receipts and nodes describe the fleet the Brain runs; a client that
+        answered from its own store would show a second, emptier fleet beside the real one.
+        """
+        op = tool.removeprefix("navig_runtime_")
+        return self._post(f"/runtime/{op}", dict(args or {}), tool=tool)
+
+    def goals_op(self, tool: str, args: dict[str, Any]):
+        """Forward one goal tool call to the Brain: the plan belongs to the Brain."""
+        op = tool.removeprefix("navig_agent_goal_")
+        return self._post(f"/goals/{op}", dict(args or {}), tool=tool)
+
     # ------------------------------------------------------------------ health
 
     def health(self) -> dict[str, Any]:

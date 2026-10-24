@@ -8328,6 +8328,78 @@ Restore releases from a backup to a GitHub repository.
 navig github restore-releases
 ```
 
+## `navig github reviews check`
+**Status:** `stable` · **Since:** 
+Exit 1 when confirmed-open findings at or above --severity remain (unverified ones never block).
+**Examples:**
+```sh
+navig github reviews check
+```
+
+## `navig github reviews import`
+**Status:** `stable` · **Since:** 
+Apply a batch of verdicts (e.g. from a verification run). Unknown refs are reported, not guessed.
+**Examples:**
+```sh
+navig github reviews import
+```
+
+## `navig github reviews list`
+**Status:** `stable` · **Since:** 
+List findings, most severe first.
+**Examples:**
+```sh
+navig github reviews list
+```
+
+## `navig github reviews open`
+**Status:** `stable` · **Since:** 
+Open the original review thread (or the fix, when one is recorded).
+**Examples:**
+```sh
+navig github reviews open
+```
+
+## `navig github reviews report`
+**Status:** `stable` · **Since:** 
+Human (markdown) or machine (JSON) review-debt report.
+**Examples:**
+```sh
+navig github reviews report
+```
+
+## `navig github reviews scan`
+**Status:** `stable` · **Since:** 
+Import review findings from every PR — open, closed and merged.
+**Examples:**
+```sh
+navig github reviews scan
+```
+
+## `navig github reviews set`
+**Status:** `stable` · **Since:** 
+Record a verdict. Closing statuses require evidence.
+**Examples:**
+```sh
+navig github reviews set
+```
+
+## `navig github reviews show`
+**Status:** `stable` · **Since:** 
+One finding in full: the claim, where it lives, the verdict and its history.
+**Examples:**
+```sh
+navig github reviews show
+```
+
+## `navig github reviews status`
+**Status:** `stable` · **Since:** 
+Review-debt counts by status, severity and provider.
+**Examples:**
+```sh
+navig github reviews status
+```
+
 ## `navig github schedule-add`
 **Status:** `stable` · **Since:** 
 Add a scheduled backup.

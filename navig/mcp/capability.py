@@ -152,29 +152,40 @@ _FAMILIES: dict[str, Capability] = {
         risk="high",
         reason="the recall bank is canonical on the Brain; clients keep provenance, not a copy",
     ),
+    # Goals are the operator's plan, not the host's: the Brain holds them, a client asks.
+    "goals": Capability(
+        family="goals",
+        data_authority=AUTHORITY_BRAIN,
+        execution_target="brain",
+        offline_policy=OFFLINE_FAIL,
+        risk="high",
+        reason="the operator's goals are the Brain's; a client list would fork the plan",
+    ),
+    # Missions and receipts describe the fleet the Brain runs. They were local while the
+    # Brain had no route for them; now it does, and a client copy would be a second fleet.
+    "runtime": Capability(
+        family="runtime",
+        data_authority=AUTHORITY_BRAIN,
+        execution_target="brain",
+        offline_policy=OFFLINE_FAIL,
+        risk="high",
+        reason="missions and receipts are the Brain's fleet, the one place work executes",
+    ),
     # Everything below is a genuinely local capability. Listed explicitly (not left to the
     # default) because "we thought about it and it is local" is a different claim from
     # "nobody has looked at it yet".
     "inventory": _local("inventory", "reads this machine's registered inventory"),
     "wiki": _local("wiki", "reads this machine's wiki and documentation tree"),
     "system": _local("system", "shells out on this machine by design"),
+    # The agent bundle mixes host work (sessions, remediation, service restarts) with the
+    # operator's goals. Only the goals are named out of it, by tool, in ``_TOOL_FAMILIES``.
     "agent": _local(
         "agent",
-        "this machine's agent sessions and goals — host work; goals move to the Brain in phase C",
+        "this machine's agent sessions, remediation and service control - host work",
         risk="moderate",
     ),
     "bay": _local("bay", "installs items into this machine's workspace"),
     "blocks": _local("blocks", "runs this machine's automation blocks"),
-    # Missions and receipts are host work today. They are NOT declared Brain-owned because
-    # the Brain data surface does not cover them yet, and a contract that claims a remote
-    # authority the route cannot reach would be a lie the router then has to break. The
-    # reason is recorded here so the gap is visible in `navig doctor` and in code review
-    # rather than implied by an empty entry.
-    "runtime": _local(
-        "runtime",
-        "this machine's missions and receipts — host work; moves to the Brain in phase C",
-        risk="moderate",
-    ),
     "filesystem": _local("filesystem", "this machine's disk"),
     "spaces": _local("spaces", "this machine's Spaces checkout"),
     "cdp": _local("cdp", "this machine's browser"),
@@ -199,11 +210,38 @@ def contracts() -> dict[str, Capability]:
     return dict(_FAMILIES)
 
 
+#: Tools whose family is not their name prefix. The agent bundle is the only bundle that
+#: mixes authorities today: its four goal tools are the operator's plan (Brain) while
+#: status, remediation and service control are this host's work (local). Naming them here
+#: keeps the split explicit and greppable instead of turning the prefix rule into a lie.
+_TOOL_FAMILIES: dict[str, str] = {
+    "navig_agent_goal_list": "goals",
+    "navig_agent_goal_add": "goals",
+    "navig_agent_goal_start": "goals",
+    "navig_agent_goal_cancel": "goals",
+}
+
+#: Tool-name prefixes that belong to a declared family even though the family name is not the
+#: prefix. The runtime bundle names its tools ``navig_runtime_*``; without this the prefix
+#: rule would answer ``navig`` and quietly declare the whole bundle local.
+_TOOL_PREFIX_FAMILIES: dict[str, str] = {
+    "navig_runtime_": "runtime",
+}
+
+
 def _family_of(tool: str) -> str:
     """``memory_key_facts_retrieve`` → ``memory_key_facts``; ``recall_search`` → ``recall``.
 
-    Longest declared prefix wins, so ``memory`` and ``memory_key_facts`` could coexist.
+    Longest declared prefix wins, so ``memory`` and ``memory_key_facts`` could coexist. A
+    tool named in ``_TOOL_FAMILIES`` answers with its declared family before any prefix is
+    considered.
     """
+    override = _TOOL_FAMILIES.get(tool)
+    if override:
+        return override
+    for prefix, family in _TOOL_PREFIX_FAMILIES.items():
+        if tool.startswith(prefix):
+            return family
     best = ""
     for family in _FAMILIES:
         if tool == family or tool.startswith(family + "_"):

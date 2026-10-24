@@ -266,6 +266,24 @@ def resolve_repo_root(repo: str | None = None) -> Path | None:
     return None
 
 
+def _linked_worktree_root(cwd: Path) -> Path | None:
+    """The worktree's own root when ``cwd`` is inside a LINKED worktree; None in the main tree.
+
+    A linked worktree's ``--git-dir`` is ``<main>/.git/worktrees/<name>``, distinct from the
+    shared ``--git-common-dir``; in the main checkout the two are the same directory.
+    """
+    res = _git(["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir"], cwd)
+    if res.returncode != 0:
+        return None
+    lines = res.stdout.splitlines()
+    if len(lines) != 3:
+        return None
+    top, git_dir, common = (Path(p) for p in lines)
+    if os.path.normcase(str(git_dir.resolve())) == os.path.normcase(str(common.resolve())):
+        return None
+    return top
+
+
 def _is_within(child: Path, parent: Path) -> bool:
     """Case-insensitive containment check (Windows-safe)."""
     c = os.path.normcase(str(child.resolve()))
@@ -3388,6 +3406,12 @@ def lock_check_cmd(
     root = _require_root(repo or _ctx_repo(ctx))
     from navig import console_helper as ch
 
+    # The lock guards the MAIN checkout. A commit made inside a linked worktree is the very
+    # thing the refusal below tells a losing session to do — refusing it too left no way to
+    # commit at all while any other session held main (measured 2026-10-24).
+    if not (repo or _ctx_repo(ctx)) and (wt := _linked_worktree_root(invocation_cwd())) is not None:
+        ch.dim(f"agent lock: not applicable — {wt} is a linked worktree, not the main checkout")
+        return
     lock = read_lock(root)
     st = lock_state(lock)
     if st["state"] != "held" or lock_is_ours(lock):

@@ -9,7 +9,25 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Do NOT add entries here by hand: drop a fragment in changelog.d/<slug>.<kind>.md (see changelog.d/README.md) -->
 <!-- and fold them in with `npm run changelog:assemble`. Direct edits of this block collide on every rebase. -->
 <!-- This file merges by UNION (.gitattributes): two branches inserting at the same line keep both entries on rebase. -->
-<!-- Run: git log v3.29.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+<!-- Run: git log v3.30.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+
+## [3.30.0] — 2026-10-24
+
+### Added
+- **The fleet and the plan are Brain-owned, like memory and recall.** Missions, receipts,
+  nodes, trust scores and the four `navig_agent_goal_*` tools now declare
+  `data_authority=brain` in `navig.mcp.capability`: a client linked to a Brain asks the Brain
+  over the authenticated deck API instead of listing its own empty runtime store or writing
+  the operator's plan into a local file. The rest of the agent bundle (sessions, remediation,
+  service control) stays local on purpose — it acts on the machine that runs the processes —
+  and a Brain that cannot answer produces `{"isError": true, "wrote": false}` rather than a
+  silent second copy. Upgrade the Brain before a client runs this build.
+
+### Fixed
+- **`navig repo lock check` lets a linked worktree commit.** The pre-commit agent-lock gate
+  resolved the main checkout's lock from inside a linked worktree, so every worktree commit
+  was refused while another session held main. That included the worktree the refusal itself
+  says to use. The lock now applies only to commits in the main checkout.
 
 ## [3.29.0] — 2026-10-24
 

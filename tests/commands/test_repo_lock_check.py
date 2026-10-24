@@ -14,6 +14,7 @@ disable.
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -27,6 +28,8 @@ from navig.commands.repo import LOCK_RELPATH, LOCK_TTL_MINUTES, lock_app
 def checkout(tmp_path, monkeypatch):
     """A directory the command treats as the repo root (the resolver is tested elsewhere)."""
     monkeypatch.setattr(repo_mod, "_require_root", lambda repo=None: tmp_path)
+    # Commit from the main checkout (this suite may itself run inside a linked worktree).
+    monkeypatch.setattr(repo_mod, "_linked_worktree_root", lambda cwd: None)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "ours-1234")
     return tmp_path
 
@@ -83,3 +86,46 @@ def test_a_corrupt_lock_reads_as_free(checkout):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{ not json", encoding="utf-8")
     assert _run().exit_code == 0
+
+
+def _git(cwd, *args):
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+
+@pytest.fixture
+def repo_with_worktree(tmp_path):
+    main = tmp_path / "main"
+    main.mkdir()
+    _git(main, "init", "-q")
+    _git(main, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init")
+    wt = main / ".dev" / "worktrees" / "task"
+    _git(main, "worktree", "add", "-q", "-b", "task", str(wt))
+    return main, wt
+
+
+def test_linked_worktree_is_detected_and_main_is_not(repo_with_worktree):
+    main, wt = repo_with_worktree
+    assert repo_mod._linked_worktree_root(main) is None
+    found = repo_mod._linked_worktree_root(wt)
+    assert found is not None and found.resolve() == wt.resolve()
+
+
+def test_a_commit_in_a_linked_worktree_is_not_refused_by_the_main_lock(repo_with_worktree, monkeypatch):
+    """The refusal says "commit in a worktree" — so a worktree commit must pass (2026-10-24)."""
+    main, wt = repo_with_worktree
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "ours-1234")
+    monkeypatch.setattr(repo_mod, "_require_root", lambda repo=None: main)
+    monkeypatch.setattr(repo_mod, "invocation_cwd", lambda: wt)
+    _write_lock(main, session="other-9999", minutes_ago=1)
+    result = _run()
+    assert result.exit_code == 0, result.output
+    assert "not applicable" in result.output
+
+
+def test_the_main_checkout_is_still_refused_under_a_foreign_lock(repo_with_worktree, monkeypatch):
+    main, _wt = repo_with_worktree
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "ours-1234")
+    monkeypatch.setattr(repo_mod, "_require_root", lambda repo=None: main)
+    monkeypatch.setattr(repo_mod, "invocation_cwd", lambda: main)
+    _write_lock(main, session="other-9999", minutes_ago=1)
+    assert _run().exit_code == 1

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from navig.core.yaml_io import atomic_write_text
+from navig.mcp.tools._brain_routing import routed
 from navig.platform.paths import config_dir, log_dir
 
 
@@ -196,6 +197,13 @@ def register(server: Any) -> None:
         }
     )
 
+    # Only the goals route (`navig.mcp.capability`): sessions, remediation and service
+    # control stay on this host - it is the machine that can actually run them. Updated
+    # after the dict above so the routed handler replaces the plain one.
+    server._tool_handlers.update(
+        {name: routed(name, local, _brain_forward(name)) for name, local in RAW_TOOLS.items()}
+    )
+
     # Safety classification consulted by the approval gate
     # (navig.mcp_server._gate_tool). Unlisted defaults to "safe", so anything
     # that acts on the machine MUST appear here or it runs ungated and unaudited.
@@ -204,22 +212,24 @@ def register(server: Any) -> None:
     # and assuming it exists raised AttributeError. cdp.py already guarded; these did not.
     if not hasattr(server, "_tool_safety"):
         server._tool_safety = {}
-    server._tool_safety.update({
-        "navig_agent_service_install": "dangerous",    # installs a system service
-        "navig_agent_service_uninstall": "dangerous",  # removes a system service
-        "navig_agent_component_restart": "dangerous",  # restarts a live component
-        "navig_agent_goal_start": "dangerous",         # sets the agent acting on the system
-        "navig_agent_remediation_retry": "dangerous",  # re-runs a system change
-        "navig_agent_goal_add": "moderate",
-        "navig_agent_goal_cancel": "moderate",
-        "navig_agent_learning_run": "moderate",
-        # read-only — recorded explicitly so a missing entry is a build failure,
-        # not a silent default to "safe".
-        "navig_agent_status_get": "safe",
-        "navig_agent_goal_list": "safe",
-        "navig_agent_remediation_list": "safe",
-        "navig_agent_service_status": "safe",
-    })
+    server._tool_safety.update(
+        {
+            "navig_agent_service_install": "dangerous",  # installs a system service
+            "navig_agent_service_uninstall": "dangerous",  # removes a system service
+            "navig_agent_component_restart": "dangerous",  # restarts a live component
+            "navig_agent_goal_start": "dangerous",  # sets the agent acting on the system
+            "navig_agent_remediation_retry": "dangerous",  # re-runs a system change
+            "navig_agent_goal_add": "moderate",
+            "navig_agent_goal_cancel": "moderate",
+            "navig_agent_learning_run": "moderate",
+            # read-only — recorded explicitly so a missing entry is a build failure,
+            # not a silent default to "safe".
+            "navig_agent_status_get": "safe",
+            "navig_agent_goal_list": "safe",
+            "navig_agent_remediation_list": "safe",
+            "navig_agent_service_status": "safe",
+        }
+    )
 
 
 def _tool_agent_status_get(server: Any, args: dict[str, Any]) -> dict[str, Any]:
@@ -668,3 +678,26 @@ def _tool_agent_service_uninstall(server: Any, args: dict[str, Any]) -> dict[str
         }
     except Exception as e:
         return {"error": f"service uninstall failed: {e}"}
+
+
+# ── Brain routing ─────────────────────────────────────────────────────────────
+#
+# The four goal tools are the operator's plan, and the plan belongs to the Brain. Everything
+# else in this bundle (sessions, remediation, service control) is this host's work and its
+# own implementation is final - which is why the split is named here rather than implied by
+# a prefix in ``navig.mcp.capability``.
+RAW_TOOLS: dict[str, Any] = {
+    "navig_agent_goal_list": _tool_agent_goal_list,
+    "navig_agent_goal_add": _tool_agent_goal_add,
+    "navig_agent_goal_start": _tool_agent_goal_start,
+    "navig_agent_goal_cancel": _tool_agent_goal_cancel,
+}
+
+
+def _brain_forward(name: str):
+    """One forwarder per goal tool: the Brain runs the same handler with the same arguments."""
+
+    def forward(client: Any, args: dict[str, Any]) -> Any:
+        return client.goals_op(name, args)
+
+    return forward
