@@ -369,3 +369,45 @@ def test_concurrent_saves_never_drop_a_lens_from_the_index(store: LensStore) -> 
     assert not t.is_alive() and not errors, errors
     ids = {r.id for r in store.records()}
     assert ids == {fast.id, "slow"}, f"index lost a Lens: {sorted(ids)}"
+
+
+# ── Stored values: isolated on Chrome so the page cannot read them (R2) ──────────────
+
+
+def _granted(*lines: str) -> str:
+    return _src(extra="".join(f"// {line}\n" for line in lines))
+
+
+@pytest.mark.parametrize("grant", ["GM_getValue", "GM_setValue", "GM.listValues", "GM_addValueChangeListener"])
+def test_a_storage_grant_isolates_the_lens_on_chrome_with_a_storage_bridge(grant: str) -> None:
+    src = _granted(f"@grant {grant}")
+    compiled = compile_lens(parse_manifest(src), src, host="chrome")
+    assert compiled.world == "USER_SCRIPT"
+    assert compiled.to_dict()["bridge"] == ["storage"]
+
+
+def test_capture_and_storage_share_one_world_and_one_bridge() -> None:
+    src = _granted("@grant navig.capture", "@grant GM_setValue")
+    compiled = compile_lens(parse_manifest(src), src, host="chrome")
+    assert (compiled.world, compiled.bridge) == ("USER_SCRIPT", ("capture", "storage"))
+
+
+def test_hosts_without_per_lens_worlds_and_ungranted_lenses_get_no_bridge() -> None:
+    src = _granted("@grant GM_setValue")
+    m = parse_manifest(src)
+    for host in ("os", "playwright", "preview"):
+        compiled = compile_lens(m, src, host=host)
+        assert (compiled.world, compiled.bridge) == ("MAIN", ()), host
+    plain = _granted("@grant GM_addStyle")
+    assert compile_lens(parse_manifest(plain), plain, host="chrome").to_dict()["bridge"] == []
+
+
+def test_sandbox_raw_is_the_authors_explicit_choice_of_the_page_world() -> None:
+    # Tampermonkey's own directive: a Lens that must touch page JavaScript (unsafeWindow)
+    # opts out of isolation — and with it out of the bridge, so capture is absent too.
+    src = _granted("@grant GM_setValue", "@grant navig.capture", "@sandbox raw")
+    compiled = compile_lens(parse_manifest(src), src, host="chrome")
+    assert (compiled.world, compiled.bridge) == ("MAIN", ())
+    for mode in ("JavaScript", "DOM"):
+        isolated = _granted("@grant GM_setValue", f"@sandbox {mode}")
+        assert compile_lens(parse_manifest(isolated), isolated, host="chrome").world == "USER_SCRIPT"

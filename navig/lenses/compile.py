@@ -63,6 +63,50 @@ def runtime_source() -> str:
 #: page's MAIN world) and hands it a per-Lens token there (apps/dock background/lenses.js).
 CAPTURE_GRANT = "navig.capture"
 
+#: Grants that read or write a Lens's stored values. Lenses keep secrets there (the social
+#: toolkits keep AI-provider API keys), and a Lens in the page's world can only store in
+#: the page's localStorage — readable by every script the page runs. So on Chrome a Lens
+#: holding any of these runs in its own USER_SCRIPT world and stores through the bridge
+#: (the extension's storage), as Tampermonkey sandboxes any script that has grants.
+STORAGE_GRANTS = frozenset(
+    {
+        "GM_getValue",
+        "GM_setValue",
+        "GM_deleteValue",
+        "GM_listValues",
+        "GM_addValueChangeListener",
+        "GM_removeValueChangeListener",
+        "GM.getValue",
+        "GM.setValue",
+        "GM.deleteValue",
+        "GM.listValues",
+        "GM.addValueChangeListener",
+        "GM.removeValueChangeListener",
+    }
+)
+
+
+def bridge_caps(manifest: LensManifest, host: str) -> tuple[str, ...]:
+    """What the host's closure-only bridge carries for this Lens ("capture", "storage").
+
+    Empty means the Lens runs in the page's world with no bridge. Only Chrome has per-Lens
+    worlds. ``@sandbox raw`` (Tampermonkey's directive) is the author's explicit choice of
+    the page's world — for a Lens that must touch page JavaScript (``unsafeWindow``) — and
+    gives up both: its values stay in page storage and ``navig.capture`` is absent.
+    """
+    if host != "chrome":
+        return ()
+    sandbox = [v.strip().lower() for v in manifest.extra.get("sandbox", [])]
+    if "raw" in sandbox:
+        return ()
+    grants = set(manifest.grants)
+    caps: list[str] = []
+    if CAPTURE_GRANT in grants:
+        caps.append("capture")
+    if grants & STORAGE_GRANTS:
+        caps.append("storage")
+    return tuple(caps)
+
 
 @dataclass(frozen=True)
 class CompiledLens:
@@ -76,9 +120,11 @@ class CompiledLens:
     host_matches: tuple[str, ...]
     host_exclude_matches: tuple[str, ...]
     code: str
-    #: Where Chrome runs it: "MAIN" (the page's world — the default, unsafeWindow is the
-    #: page) or "USER_SCRIPT" (isolated, for a Lens granted navig.capture).
+    #: Where Chrome runs it: "MAIN" (the page's world, unsafeWindow is the page) or
+    #: "USER_SCRIPT" (isolated — a Lens granted navig.capture or any storage grant).
     world: str = "MAIN"
+    #: What the host bridge carries for it (see :func:`bridge_caps`); empty in MAIN.
+    bridge: tuple[str, ...] = ()
 
     @property
     def sha256(self) -> str:
@@ -97,6 +143,7 @@ class CompiledLens:
             "sha256": self.sha256,
             "code": self.code,
             "world": self.world,
+            "bridge": list(self.bridge),
         }
 
 
@@ -130,6 +177,7 @@ def compile_lens(
         "})();\n"
     )
     chrome_ok = not manifest.includes and bool(manifest.matches)
+    caps = bridge_caps(manifest, host)
     return CompiledLens(
         id=manifest.id,
         name=manifest.name,
@@ -139,7 +187,8 @@ def compile_lens(
         host_matches=tuple(manifest.matches) if chrome_ok else ("<all_urls>",),
         host_exclude_matches=tuple(manifest.exclude_matches),
         code=code,
-        world="USER_SCRIPT" if host == "chrome" and CAPTURE_GRANT in manifest.grants else "MAIN",
+        world="USER_SCRIPT" if caps else "MAIN",
+        bridge=caps,
     )
 
 

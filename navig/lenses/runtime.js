@@ -54,11 +54,50 @@ function navigLensRuntime(m, host, body) {
       granted["GM_" + name.replace(/^GM\./, "")]);
   }
 
-  // ── Storage: per Lens, per origin, JSON in localStorage (memory if unavailable) ──────
+  // ── Host bridge (closure-only; see navig.capture below and docs/lenses.md) ──────────
+  var bridge = typeof __navigBridge !== "undefined" ? __navigBridge : null; // eslint-disable-line no-undef
+
+  // ── Storage ──────────────────────────────────────────────────────────────────────────
+  //
+  // Two backends, chosen by the host:
+  //
+  //  * Bridged (`__navigBridge.storage`, Chrome: the Lens's own USER_SCRIPT world). Values
+  //    live in the extension, per Lens, and are PRELOADED before the Lens runs so
+  //    GM_getValue stays synchronous. Page storage is never read or written: Web Storage is
+  //    per origin, not per world, so anything put there — an AI-provider key — is readable
+  //    by every script the page runs. Values a Lens left there before it was isolated are
+  //    moved into the bridge on its next run and deleted from the page.
+  //  * Unbridged (a host whose Lenses share the page's JavaScript world): per origin, JSON
+  //    in localStorage (memory if unavailable). Readable by the page — such a host cannot
+  //    keep a secret from the page anyway, since it also shares fetch, JSON and the DOM.
   var prefix = "navig-lens:" + m.id + ":";
-  var mem = {};
+  var mem = Object.create(null);
+  var bstore = bridge && bridge.storage && typeof bridge.storage.load === "function" &&
+    typeof bridge.storage.write === "function" ? bridge.storage : null;
+  // Tells this document's own writes apart from another tab's when the host echoes changes.
+  var client = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  var pending = Object.create(null); // key → writes not yet acknowledged by the host
+  // Set when the bridged load fails: writing then would replace the user's real values
+  // with whatever this page computed from defaults, so the page runs on memory only.
+  var storageBroken = false;
   var ls = null;
   try { ls = w.localStorage; ls.getItem("navig-lens:probe"); } catch (e) { ls = null; }
+  var pageLs = ls; // the bridged path reads it once, to migrate and scrub
+  if (bstore) ls = null;
+  function persist(key, raw) {
+    if (!bstore || storageBroken) return;
+    pending[key] = (pending[key] || 0) + 1;
+    var settle = function () { if (!--pending[key]) delete pending[key]; };
+    Promise.resolve()
+      .then(function () { return bstore.write(key, raw, client); })
+      .then(function (r) {
+        settle();
+        if (!r || r.ok !== true) console.warn(tag + ": value '" + key + "' not saved — " + ((r && r.error) || "no answer"));
+      }, function (e) {
+        settle();
+        console.warn(tag + ": value '" + key + "' not saved —", e);
+      });
+  }
   function getValue(key, def) {
     var raw;
     try { raw = ls ? ls.getItem(prefix + key) : mem[key]; } catch (e) { raw = mem[key]; }
@@ -70,12 +109,14 @@ function navigLensRuntime(m, host, body) {
     var raw = JSON.stringify(value === undefined ? null : value);
     mem[key] = raw;
     try { if (ls) ls.setItem(prefix + key, raw); } catch (e) { /* quota / sandbox: memory only */ }
+    persist(String(key), raw);
     fireListeners(key, previous, value, false);
   }
   function deleteValue(key) {
     var previous = getValue(key, undefined);
     delete mem[key];
     try { if (ls) ls.removeItem(prefix + key); } catch (e) { /* ignore */ }
+    persist(String(key), null);
     fireListeners(key, previous, undefined, false);
   }
   function listValues() {
@@ -127,7 +168,11 @@ function navigLensRuntime(m, host, body) {
     var key = String(name);
     var id = ++listenerSeq;
     listeners.push({ id: id, key: key, fn: fn });
-    if (!storageHook && w.addEventListener) {
+    // Bridged: changes come from the host, never from page `storage` events — the page can
+    // dispatch a forged StorageEvent that a listener in any world would receive.
+    if (bstore) {
+      startWatch();
+    } else if (!storageHook && w.addEventListener) {
       storageHook = function (ev) {
         if (!ev || ev.key === null) return;               // storage.clear() — not attributable
         if (ev.key.indexOf(prefix) !== 0) return;         // another Lens's keys
@@ -146,10 +191,104 @@ function navigLensRuntime(m, host, body) {
           w.removeEventListener("storage", storageHook);
           storageHook = null;
         }
+        if (!listeners.length && watching) {
+          var gone = watching;
+          watching = null; // first, so the close below does not schedule a reconnect
+          try { gone.close(); } catch (e) { /* ignore */ }
+        }
         return true;
       }
     }
     return false;
+  }
+
+  // ── Bridged storage: preload, migrate out of the page, and other tabs' changes ───────
+  //
+  // The bridged equivalent of the `storage` event: the host pushes every change another
+  // document of this Lens made (`{key, raw}`), and a full `{values}` snapshot on each
+  // (re)connect so a gap — the extension's worker restarting — is reported as changes
+  // rather than lost. A key with a write of ours still in flight is skipped: the host has
+  // not seen it yet, so its snapshot is older than what this page holds.
+  var watching = null;
+  function startWatch() {
+    if (!bstore || typeof bstore.watch !== "function" || watching || storageBroken) return;
+    try {
+      watching = bstore.watch(client, onRemote, function () {
+        watching = null;
+        if (listeners.length) setTimeout(startWatch, 1000);
+      }) || null;
+    } catch (e) {
+      watching = null;
+      console.warn(tag + ": other tabs' changes unavailable —", e);
+    }
+  }
+  function applyRemote(key, raw) {
+    if (pending[key]) return;
+    var before = mem[key];
+    if (before === (raw === null ? undefined : raw)) return;
+    if (raw === null) delete mem[key]; else mem[key] = raw;
+    fireListeners(key, rawToValue(before), rawToValue(raw), true);
+  }
+  function onRemote(msg) {
+    if (!msg || typeof msg !== "object") return;
+    if (msg.values && typeof msg.values === "object") {
+      var inSnapshot = Object.create(null);
+      Object.keys(msg.values).forEach(function (k) {
+        inSnapshot[k] = true;
+        applyRemote(k, typeof msg.values[k] === "string" ? msg.values[k] : null);
+      });
+      Object.keys(mem).forEach(function (k) { if (!inSnapshot[k]) applyRemote(k, null); });
+      return;
+    }
+    if (typeof msg.key === "string") applyRemote(msg.key, typeof msg.raw === "string" ? msg.raw : null);
+  }
+  function migrateFromPage() {
+    if (!pageLs) return;
+    var found = [];
+    try {
+      for (var i = 0; i < pageLs.length; i++) {
+        var k = pageLs.key(i);
+        if (k && k.indexOf(prefix) === 0) found.push(k);
+      }
+    } catch (e) { return; }
+    found.forEach(function (full) {
+      var key = full.slice(prefix.length);
+      var raw = null;
+      try { raw = pageLs.getItem(full); } catch (e) { return; }
+      if (raw === null) return;
+      var scrub = function () { try { pageLs.removeItem(full); } catch (e) { /* ignore */ } };
+      if (key in mem) { scrub(); return; } // the protected copy is the newer truth
+      mem[key] = raw;
+      pending[key] = (pending[key] || 0) + 1;
+      Promise.resolve()
+        .then(function () { return bstore.write(key, raw, client); })
+        .then(function (r) {
+          if (!--pending[key]) delete pending[key];
+          // Scrub only once the protected copy exists — never lose the user's value.
+          if (r && r.ok === true) scrub();
+          else console.warn(tag + ": could not move '" + key + "' out of page storage — " + ((r && r.error) || "no answer"));
+        }, function (e) {
+          if (!--pending[key]) delete pending[key];
+          console.warn(tag + ": could not move '" + key + "' out of page storage —", e);
+        });
+    });
+  }
+  var storageReady = null; // null = nothing to wait for (unbridged)
+  if (bstore) {
+    storageReady = Promise.resolve()
+      .then(function () { return bstore.load(); })
+      .then(function (r) {
+        var values = r && r.ok !== false && r.values && typeof r.values === "object" ? r.values : null;
+        if (!values) throw new Error((r && r.error) || "no answer");
+        Object.keys(values).forEach(function (k) {
+          if (typeof values[k] === "string") mem[k] = values[k];
+        });
+        migrateFromPage();
+      })
+      .catch(function (e) {
+        storageBroken = true;
+        console.warn(tag + ": stored values unavailable, this page keeps changes in memory only —", e);
+      });
   }
 
   // ── DOM helpers ─────────────────────────────────────────────────────────────────────
@@ -334,6 +473,13 @@ function navigLensRuntime(m, host, body) {
         };
       });
       w.addEventListener("popstate", fire);
+      // In an isolated world the patch above sees only this world's own pushState calls,
+      // not the page's. The Navigation API event is dispatched to every world.
+      try {
+        if (w.navigation && typeof w.navigation.addEventListener === "function") {
+          w.navigation.addEventListener("currententrychange", fire);
+        }
+      } catch (e) { /* no Navigation API: the history patch is all there is */ }
       w.addEventListener("hashchange", fire);
     }
     bus.subs.push(cb);
@@ -508,8 +654,8 @@ function navigLensRuntime(m, host, body) {
   // A host that can prove which Lens is calling wraps the compiled script in a closure
   // holding `__navigBridge` (Chrome: an isolated USER_SCRIPT world + a per-Lens token). It
   // is never a global. Without the grant, or on a host with no bridge, `navig.capture` is
-  // simply absent — `typeof navig.capture === "function"` is the feature test.
-  var bridge = typeof __navigBridge !== "undefined" ? __navigBridge : null; // eslint-disable-line no-undef
+  // simply absent — `typeof navig.capture === "function"` is the feature test. (`bridge`
+  // is read at the top, with storage; a storage-only bridge has no `send`.)
   if (granted["navig.capture"] && bridge && typeof bridge.send === "function") {
     /**
      * Send text to the NAVIG inbox. `what` is a string, or {content, title?, url?, kind?, note?}
@@ -563,24 +709,32 @@ function navigLensRuntime(m, host, body) {
   }
 
   // ── @run-at ─────────────────────────────────────────────────────────────────────────
-  var when = m.runAt || "document-idle";
-  if (when === "document-start") {
-    run();
-  } else if (when === "document-body") {
-    if (document.body) run();
-    else {
-      var mo = new MutationObserver(function () {
-        if (document.body) { mo.disconnect(); run(); }
-      });
-      mo.observe(document.documentElement || document, { childList: true, subtree: true });
-    }
-  } else if (document.readyState !== "loading") {
-    if (when === "document-end") run();
-    else setTimeout(run, 0);
-  } else {
-    document.addEventListener("DOMContentLoaded", function () {
+  //
+  // A bridged Lens starts once its values have arrived (GM_getValue is synchronous), so
+  // its document-start is one message round trip after the document starts. Unbridged
+  // Lenses are scheduled synchronously, exactly as before.
+  function schedule() {
+    var when = m.runAt || "document-idle";
+    if (when === "document-start") {
+      run();
+    } else if (when === "document-body") {
+      if (document.body) run();
+      else {
+        var mo = new MutationObserver(function () {
+          if (document.body) { mo.disconnect(); run(); }
+        });
+        mo.observe(document.documentElement || document, { childList: true, subtree: true });
+      }
+    } else if (document.readyState !== "loading") {
       if (when === "document-end") run();
       else setTimeout(run, 0);
-    }, { once: true });
+    } else {
+      document.addEventListener("DOMContentLoaded", function () {
+        if (when === "document-end") run();
+        else setTimeout(run, 0);
+      }, { once: true });
+    }
   }
+  if (storageReady) storageReady.then(schedule);
+  else schedule();
 }

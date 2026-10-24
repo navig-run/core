@@ -24959,6 +24959,188 @@
       "aliases": [],
       "arguments": [
         {
+          "name": "campaign-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig distribution campaign delete"
+      ],
+      "handler": "campaign_delete",
+      "module": "navig_distribution.commands.distribution",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig distribution campaign delete",
+      "since": "",
+      "status": "stable",
+      "summary": "Delete an unused campaign; one that documents or publications use is archived instead.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig distribution campaign list"
+      ],
+      "handler": "campaign_list",
+      "module": "navig_distribution.commands.distribution",
+      "options": [
+        {
+          "flags": [
+            "--project"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig distribution campaign list",
+      "since": "",
+      "status": "stable",
+      "summary": "Campaigns with their status and objective.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig distribution campaign new"
+      ],
+      "handler": "campaign_new",
+      "module": "navig_distribution.commands.distribution",
+      "options": [
+        {
+          "flags": [
+            "--project"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--name"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--objective"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--channel"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig distribution campaign new",
+      "since": "",
+      "status": "stable",
+      "summary": "Create a campaign.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "campaign-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig distribution campaign show"
+      ],
+      "handler": "campaign_show",
+      "module": "navig_distribution.commands.distribution",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig distribution campaign show",
+      "since": "",
+      "status": "stable",
+      "summary": "One campaign with its channels and documents.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "campaign-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig distribution campaign update"
+      ],
+      "handler": "campaign_update",
+      "module": "navig_distribution.commands.distribution",
+      "options": [
+        {
+          "flags": [
+            "--name"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--objective"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--status"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--channel"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig distribution campaign update",
+      "since": "",
+      "status": "stable",
+      "summary": "Edit a campaign's name, objective, status or channels.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
           "name": "channel-id",
           "required": true,
           "variadic": false
@@ -25407,6 +25589,34 @@
       "aliases": [],
       "arguments": [],
       "examples": [
+        "navig distribution publish due"
+      ],
+      "handler": "publish_due_cmd",
+      "module": "navig_distribution.commands.distribution",
+      "options": [
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig distribution publish due",
+      "since": "",
+      "status": "stable",
+      "summary": "Submit every scheduled publication whose approved time has passed.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
         "navig distribution publish journal"
       ],
       "handler": "publish_journal",
@@ -25580,6 +25790,12 @@
         },
         {
           "flags": [
+            "--profile"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
             "--json"
           ],
           "takes_value": false
@@ -25588,7 +25804,7 @@
       "path": "navig distribution publish run",
       "since": "",
       "status": "stable",
-      "summary": "Execute the publication: manual package, delegated Social post, or a refusal.",
+      "summary": "Execute the publication: manual package, delegated Social post, reviewed form, or a refusal.",
       "tags": []
     },
     {
@@ -25739,6 +25955,12 @@
         {
           "flags": [
             "--enable/--disable"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--publish-due"
           ],
           "takes_value": false
         }
@@ -83420,5 +83642,5 @@
     "wut": "Show what NAVIG thinks is happening (context snapshot)"
   },
   "schema_version": "1.0.0",
-  "total": 2384
+  "total": 2390
 }

@@ -687,6 +687,11 @@ navig display restore
 navig display set
 navig distribution adapters
 navig distribution analytics
+navig distribution campaign delete
+navig distribution campaign list
+navig distribution campaign new
+navig distribution campaign show
+navig distribution campaign update
 navig distribution channel
 navig distribution channels
 navig distribution content block
@@ -699,6 +704,7 @@ navig distribution maintain
 navig distribution plan
 navig distribution projects
 navig distribution publish approve
+navig distribution publish due
 navig distribution publish journal
 navig distribution publish prepare
 navig distribution publish record

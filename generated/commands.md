@@ -5520,6 +5520,46 @@ Measured outcomes — and explicit gaps where nothing was measured.
 navig distribution analytics
 ```
 
+## `navig distribution campaign delete`
+**Status:** `stable` · **Since:** 
+Delete an unused campaign; one that documents or publications use is archived instead.
+**Examples:**
+```sh
+navig distribution campaign delete
+```
+
+## `navig distribution campaign list`
+**Status:** `stable` · **Since:** 
+Campaigns with their status and objective.
+**Examples:**
+```sh
+navig distribution campaign list
+```
+
+## `navig distribution campaign new`
+**Status:** `stable` · **Since:** 
+Create a campaign.
+**Examples:**
+```sh
+navig distribution campaign new
+```
+
+## `navig distribution campaign show`
+**Status:** `stable` · **Since:** 
+One campaign with its channels and documents.
+**Examples:**
+```sh
+navig distribution campaign show
+```
+
+## `navig distribution campaign update`
+**Status:** `stable` · **Since:** 
+Edit a campaign's name, objective, status or channels.
+**Examples:**
+```sh
+navig distribution campaign update
+```
+
 ## `navig distribution channel`
 **Status:** `stable` · **Since:** 
 Everything recorded about one channel, with its evidence.
@@ -5614,6 +5654,14 @@ Bind an approval to the exact content hash, identity and destination.
 **Examples:**
 ```sh
 navig distribution publish approve
+```
+
+## `navig distribution publish due`
+**Status:** `stable` · **Since:** 
+Submit every scheduled publication whose approved time has passed.
+**Examples:**
+```sh
+navig distribution publish due
 ```
 
 ## `navig distribution publish journal`

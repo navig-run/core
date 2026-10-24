@@ -401,3 +401,137 @@ def test_capture_is_absent_without_the_grant_or_without_a_bridge(browser, grante
         assert page.evaluate("document.documentElement.getAttribute('data-sent')") is None
     finally:
         ctx.close()
+
+
+# ── Bridged storage: values live with the host, never in the page's localStorage (R2) ──
+
+
+def _storage_lens(body: str, *, grants: str, run_at: str = "document-end") -> tuple[str, str]:
+    """A Lens compiled for Chrome (where a storage grant means a bridge); returns (id, code)."""
+    src = (
+        "// ==UserScript==\n// @name Keyholder\n// @match *://example.com/*\n// @noframes\n"
+        f"// @run-at {run_at}\n{grants}// ==/UserScript==\n{body}\n"
+    )
+    manifest = parse_manifest(src)
+    return manifest.id, compile_lens(manifest, src, host="chrome").code
+
+
+def _with_storage_bridge(code: str, *, seed: dict | None = None, fail_load: bool = False, delay_ms: int = 0) -> str:
+    """The Chrome host's storage bridge, faked: values in `window.__host` (standing in for
+    the extension's storage, which the page cannot reach) — never in localStorage."""
+    import json
+
+    return (
+        "(function () {\n"
+        f"var host = window.__host = {{ values: {json.dumps(seed or {})}, writes: [], watchers: [] }};\n"
+        "var __navigBridge = Object.freeze({ storage: Object.freeze({\n"
+        "  load: function () { return new Promise(function (res) { setTimeout(function () {"
+        f"    res({json.dumps(bool(fail_load))} ? {{ ok: false, error: 'host down' }}"
+        "      : { ok: true, values: Object.assign({}, host.values) }); }, " + str(delay_ms) + "); }); },\n"
+        "  write: function (k, raw, client) { host.writes.push([k, raw]);"
+        "    if (raw === null) delete host.values[k]; else host.values[k] = raw;"
+        "    return Promise.resolve({ ok: true }); },\n"
+        "  watch: function (client, onChange) { host.watchers.push(onChange);"
+        "    onChange({ values: Object.assign({}, host.values) }); return { close: function () {} }; }\n"
+        "}) });\n"
+        f"{code}\n"
+        "})();\n"
+    )
+
+
+_PAGE_LENS_KEYS = (
+    "Object.keys(localStorage).filter(function (k) { return k.indexOf('navig-lens:') === 0; })"
+)
+
+
+def test_a_bridged_lens_reads_and_writes_the_host_and_never_page_storage(browser) -> None:
+    body = (
+        "window.__key = GM_getValue('apiKey', 'none'); GM_setValue('model', 'deepseek');"
+        "window.__list = GM_listValues().sort();"
+    )
+    grants = "// @grant GM_getValue\n// @grant GM_setValue\n// @grant GM_listValues\n"
+    # document-start + a slow host: the Lens must still see its value, so it waits for it.
+    _, code = _storage_lens(body, grants=grants, run_at="document-start")
+    ctx, page = _page(browser, _with_storage_bridge(code, seed={"apiKey": '"sk-secret"'}, delay_ms=60))
+    try:
+        page.goto("https://example.com/")
+        page.wait_for_function("window.__list !== undefined")
+        assert page.evaluate("window.__key") == "sk-secret"
+        assert page.evaluate("window.__list") == ["apiKey", "model"]
+        assert page.evaluate("window.__host.values.model") == '"deepseek"'
+        # The whole point: nothing the Lens holds is in the page's storage.
+        assert page.evaluate(_PAGE_LENS_KEYS) == []
+    finally:
+        ctx.close()
+
+
+def test_values_left_in_page_storage_move_to_the_host_and_are_scrubbed(browser) -> None:
+    body = "window.__legacy = GM_getValue('legacy'); window.__api = GM_getValue('apiKey');"
+    lens_id, code = _storage_lens(body, grants="// @grant GM_getValue\n")
+    prefix = f"navig-lens:{lens_id}:"
+    # What an older, unisolated runtime left behind on this origin. Top frame only: init
+    # scripts also run in the page's same-origin iframe, which would plant them again
+    # after the scrub (measured: the plant ran top, then frame).
+    leftovers = (
+        "if (window.top === window) {"
+        f"localStorage.setItem('{prefix}legacy', JSON.stringify('kept'));"
+        f"localStorage.setItem('{prefix}apiKey', JSON.stringify('stale'));"
+        "localStorage.setItem('unrelated', 'page data'); }"
+    )
+    ctx, page = _page(browser, leftovers, _with_storage_bridge(code, seed={"apiKey": '"fresh"'}))
+    try:
+        page.goto("https://example.com/")
+        page.wait_for_function("window.__api !== undefined")
+        assert page.evaluate("window.__legacy") == "kept", "a value only the page had is not lost"
+        assert page.evaluate("window.__api") == "fresh", "the protected copy wins"
+        page.wait_for_function(f"{_PAGE_LENS_KEYS}.length === 0")
+        assert page.evaluate("window.__host.values.legacy") == '"kept"'
+        assert page.evaluate("localStorage.getItem('unrelated')") == "page data", "only our keys are touched"
+    finally:
+        ctx.close()
+
+
+def test_a_failed_load_never_writes_defaults_over_the_users_values(browser) -> None:
+    # The Lens computes from defaults when it cannot see the stored key; persisting that
+    # would destroy the real key. It runs, in memory only, and the host gets no writes.
+    body = "window.__key = GM_getValue('apiKey', 'unset'); GM_setValue('apiKey', 'unset'); window.__ran = true;"
+    _, code = _storage_lens(body, grants="// @grant GM_getValue\n// @grant GM_setValue\n")
+    ctx, page = _page(browser, _with_storage_bridge(code, seed={"apiKey": '"sk-real"'}, fail_load=True))
+    try:
+        page.goto("https://example.com/")
+        page.wait_for_function("window.__ran === true")
+        assert page.evaluate("window.__key") == "unset"
+        page.wait_for_timeout(50)
+        assert page.evaluate("window.__host.writes") == []
+        assert page.evaluate("window.__host.values.apiKey") == '"sk-real"'
+        assert page.evaluate(_PAGE_LENS_KEYS) == []
+    finally:
+        ctx.close()
+
+
+def test_a_bridged_listener_hears_the_host_and_ignores_a_forged_storage_event(browser) -> None:
+    body = (
+        "window.__ev = []; GM_addValueChangeListener('apiKey', function (k, o, n, r) {"
+        " window.__ev.push({ k: k, o: o, n: n, remote: r }); });"
+        "window.__get = function () { return GM_getValue('apiKey'); };"
+    )
+    grants = "// @grant GM_getValue\n// @grant GM_addValueChangeListener\n"
+    lens_id, code = _storage_lens(body, grants=grants)
+    ctx, page = _page(browser, _with_storage_bridge(code, seed={"apiKey": '"old"'}))
+    try:
+        page.goto("https://example.com/")
+        page.wait_for_function("window.__host.watchers.length === 1")
+        # Page JavaScript can dispatch a StorageEvent that a listener in any world receives.
+        page.evaluate(
+            "window.dispatchEvent(new StorageEvent('storage', "
+            f"{{ key: 'navig-lens:{lens_id}:apiKey', oldValue: '\"old\"', newValue: '\"evil\"' }}))"
+        )
+        page.wait_for_timeout(40)
+        assert page.evaluate("window.__ev") == []
+        assert page.evaluate("window.__get()") == "old"
+        # Another tab's change, as the host pushes it.
+        page.evaluate("window.__host.watchers[0]({ key: 'apiKey', raw: '\"new\"' })")
+        assert page.evaluate("window.__ev") == [{"k": "apiKey", "o": "old", "n": "new", "remote": True}]
+        assert page.evaluate("window.__get()") == "new"
+    finally:
+        ctx.close()

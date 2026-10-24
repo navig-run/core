@@ -12373,13 +12373,21 @@ drives operator-led submissions.
   the publication flow: `prepare` runs the gate and creates the row; `approve` binds a
   human to the exact content hash + identity + destination (30-day expiry, revocable);
   `run` executes through the only transport the destination allows — a NAVIG Social
-  post, a manual package, or an honest refusal; `record` + `verify` handle what you
-  submitted by hand; `journal` is the ledger.
+  post, a manual package, a reviewed form in a named automation browser profile
+  (`run <id> --profile <name>`), or an honest refusal; `record` + `verify` handle what
+  you submitted by hand; `journal` is the ledger.
+- **`navig distribution publish due [--dry-run]`** — submit the `SCHEDULED` rows whose
+  approved time has passed (`prepare` with `scheduled_for`; the approval binds the
+  time). `navig distribution schedule --publish-due` runs it every 15 minutes.
+- **`navig distribution campaign list|show|new|update|delete`** — campaigns; `delete`
+  archives a campaign that documents or publications still reference.
 - **`navig distribution research import|validate|stale`** — bring in researched channel
   records (contract-checked) and list verifications past the window.
 - **`navig distribution maintain`** — recompute eligibility, list stale verifications,
   park expired scheduled posts, report the policy. `navig distribution schedule
-  --cron '<expr>'` wires it into NAVIG's scheduler (it never publishes).
+  --cron '<expr>'` wires it into NAVIG's scheduler (it never publishes). The
+  verification window is the module's `stale_days` setting (NAVIG OS → Distribution →
+  Settings).
 - **`navig distribution analytics`** — measured outcomes with explicit "not measured"
   gaps; publication links carry `ref=<channel>` so visits map back to their channel.
 
