@@ -191,6 +191,23 @@ if ! git diff --cached --quiet; then
   echo "latest.json now records the verified $TAG asset."
 fi
 
+# The asset URL points at the PUBLIC mirror (navig-run/core), not at this repo: until the
+# mirror carries $TAG with its artifacts, _version_sync writes `download_url: null` and the
+# release is not advertised to installers. Say so here — the gap is invisible otherwise
+# (observed on v3.30.0: the labs release existed, the mirror did not, latest.json said null).
+if python - <<'PY'
+import json, sys
+sys.exit(0 if (json.load(open("latest.json")) or {}).get("download_url") else 1)
+PY
+then :; else
+  echo ""
+  echo "WARN: latest.json still has download_url: null — the public mirror has no $TAG release."
+  echo "      1) node scripts/mirror-core.mjs --push          # from the repo root, at origin/main"
+  echo "      2) create $TAG in navig-run/core and attach core/dist/navig-$VERSION*"
+  echo "      3) cd core && python tools/_version_sync.py --version $VERSION --released-at \$(date -u +%F)"
+  echo "         then commit + push 'chore(release): record $TAG asset in latest.json'"
+fi
+
 PUBLISHED_NOTE=""
 if [[ "$PUBLISH" == "true" ]]; then PUBLISHED_NOTE=", published to PyPI"; fi
 echo ""

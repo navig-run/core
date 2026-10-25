@@ -24,7 +24,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Exact pin, bumped with every release: a floating floor can change the served MCP
 # surface between rebuilds with no diff for the operator to approve (D2).
-ARG NAVIG_VERSION=3.30.0
+ARG NAVIG_VERSION=3.31.0
 
 WORKDIR /app
 

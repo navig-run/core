@@ -189,6 +189,11 @@ def register_coordinator_tools() -> None:
 
         _AGENT_REGISTRY.register(CoordinatorRunTool(), toolset="coordinator")
         _AGENT_REGISTRY.register(CoordinatorStatusTool(), toolset="coordinator")
+        # Mission B 4b — lifecycle controls live in the SAME toolset so a
+        # worker never receives them (no recursive coordination).
+        from navig.agent.tools.coordinator_tools import register_subagent_tools as _sub
+
+        _sub()
         # formation_run lives in the same toolset so it's never handed to the
         # formation's own sub-agents (no recursive coordination).
         try:
@@ -348,6 +353,51 @@ def register_creative_tools() -> None:
     register_creative_tool()
 
 
+def register_ask_user_tools() -> None:
+    """Register ask_user — structured operator questions over the request registry."""
+    from navig.agent.tools.ask_user_tools import register_ask_user_tool as _register
+
+    _register()
+
+
+def register_introspection_tools() -> None:
+    """Register plugin_inspect / module_list — read-only runtime inspection."""
+    from navig.agent.tools.introspection_tools import register_introspection_tools as _register
+
+    _register()
+
+
+def register_plan_tools() -> None:
+    """Register plan_add_step / plan_show / plan_approve (toolset ``plan``).
+
+    Registered unconditionally; per-session availability is decided at
+    exposure (``apply_plan_toolsets``) and dispatch (``plan_block_reason``)
+    time — see ``navig.agent.tools.plan_tools``.
+    """
+    from navig.agent.tools.plan_tools import register_plan_tools as _register
+
+    _register()
+
+
+def register_repo_search_tools() -> None:
+    """Register file_search / grep_search — native repository search (read-only)."""
+    from navig.agent.tools.repo_search_tools import register_repo_search_tools as _register
+
+    _register()
+
+
+def register_edit_tool() -> None:
+    """Register edit_file — exact-match, hash-verified in-place editing.
+
+    Tagged ``code`` (not ``core``): general sessions keep the lean
+    bash/read/write/list surface; coding sessions get the precise editor.
+    """
+    from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+    from navig.agent.tools.file_tools import EditFileTool
+
+    _AGENT_REGISTRY.register(EditFileTool(), toolset="code")
+
+
 def register_all_tools() -> None:
     """Register all available built-in agent tools.
 
@@ -362,6 +412,8 @@ def register_all_tools() -> None:
         ("wiki", register_wiki_tools),
         ("devops", register_devops_tools),
         ("plan_context", register_plan_context_tools),
+        ("plan", register_plan_tools),
+        ("ask_user", register_ask_user_tools),
         ("background_task", register_background_task_tools),
         ("worktree", register_worktree_tools),
         ("coordinator", register_coordinator_tools),
@@ -378,6 +430,9 @@ def register_all_tools() -> None:
         ("read_aloud", register_read_aloud_tools),
         ("search_all", register_search_all_tools),
         ("creative", register_creative_tools),
+        ("repo_search", register_repo_search_tools),
+        ("edit_file", register_edit_tool),
+        ("introspection", register_introspection_tools),
     ]:
         try:
             fn()

@@ -230,6 +230,21 @@ def _site_packages_for(exe: str, cmdline: Iterable[str] = ()) -> list[str] | Non
     return out or None
 
 
+def _is_gateway_cmdline(cmd: list[str]) -> bool:
+    """Whether a process is a NAVIG gateway: python + ``-m navig … gateway``.
+
+    Structural, never a substring of somebody's shell command — ``bash -c "…gateway start…"``
+    is not a gateway, and a browser that inherited a recycled pid is not one either.
+    """
+    if not cmd:
+        return False
+    head = Path(cmd[0]).name.lower()
+    if not (head.startswith("python") or head.startswith("navig")):
+        return False
+    args = cmd[1:]
+    return "-m" in args and "navig" in args and "gateway" in args
+
+
 def gateway_environment() -> dict[str, Any] | None:
     """``{pid, exe, site_packages, gateways, ambiguous}`` for the RUNNING gateway.
 
@@ -256,8 +271,14 @@ def gateway_environment() -> dict[str, Any] | None:
 
         proc = psutil.Process(pid)
         exe = proc.exe()
-        cmdline = proc.cmdline()
+        cmdline = [str(a) for a in proc.cmdline()]
     except Exception:  # noqa: BLE001 — process gone or access denied: unknown, not guessed
+        return None
+    if not _is_gateway_cmdline(cmdline):
+        # `gateway.pid` outlives the gateway and Windows hands the number to somebody else
+        # (measured 2026-10-25: a file written Oct 22 named a Chrome renderer). Trusting it
+        # reported that process's interpreter as the daemon's and pointed a repair command
+        # at a browser — unknown, never a substitution.
         return None
 
     site_packages = _site_packages_for(exe, cmdline)
@@ -268,11 +289,7 @@ def gateway_environment() -> dict[str, Any] | None:
             cmd = [str(a) for a in (other.info.get("cmdline") or [])]
             if other.info.get("pid") == pid or not cmd:
                 continue
-            # A gateway, identified structurally (python + `-m navig gateway`), never by a
-            # substring of somebody's shell command — bash -c "…gateway start…" is not one.
-            if not Path(cmd[0]).name.lower().startswith("python"):
-                continue
-            if len(cmd) < 3 or cmd[1] != "-m" or cmd[2] != "navig" or "gateway" not in cmd:
+            if not _is_gateway_cmdline(cmd):
                 continue
             others = _site_packages_for(other.exe(), cmd)
             gateways += 1
@@ -438,8 +455,12 @@ def runtime_inventory(
         expected = source_version(source)
         daemon_dist = daemon_map.get(dist.lower())
         here_dist = here_map.get(dist.lower())
-        install_into = daemon_exe or sys.executable
-        fix = f"python -m pip install -e {source}   # into {install_into}"
+        # The repair command may only name the daemon's interpreter — otherwise it names no
+        # interpreter at all. Falling back to sys.executable claimed the CALLER's Python was
+        # the daemon's, the substitution this module's docstring forbids.
+        fix = f"python -m pip install -e {source}"
+        if daemon_exe:
+            fix += f"   # into {daemon_exe}"
         ep_present = {g: bool((daemon_dist or {}).get("entry_points", {}).get(g)) for g in GROUPS}
         declares_gateway = bool(gateway_ep)
         has_declared = bool(
@@ -582,7 +603,30 @@ def inventory_rows(inventory: dict[str, Any] | None) -> list[dict[str, Any]]:
     if known and daemon:
         where = f" · daemon: {Path(daemon).name}"
     elif not known:
-        where = " · daemon Python unknown (gateway.pid missing?)"
+        where = " · daemon Python unknown (no gateway.pid, or its pid is not a gateway)"
+        # Nothing about the daemon's site-packages was measured, so a per-plugin verdict
+        # would be a claim about an environment we could not read: on a client that runs no
+        # daemon at all, 36 sources were reported "package files are not in the daemon's
+        # environment". One honest warning, and every record stays in --json.
+        return [
+            {
+                "label": "Runtime plugins",
+                "ok": False,
+                "warn": True,
+                "detail": (
+                    f"{inventory.get('expected', 0)} plugin source(s) — activation unverified"
+                    f"{where}; its site-packages was not measured"
+                ),
+                "data": {
+                    "interpreter": inventory.get("interpreter"),
+                    "daemon_interpreter": daemon,
+                    "daemon_known": known,
+                    "counts": counts,
+                    "activation_evidence": evidence,
+                    "records": records,
+                },
+            }
+        ]
     verified = len([r for r in records if r["activation"] == "verified"])
     libraries = len([r for r in records if r["activation"] == "not_applicable"])
     installed = int(counts.get("healthy", 0)) + len(inactive) + len(broken)

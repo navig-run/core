@@ -26,22 +26,112 @@ logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────
-# Shared reference — set by register_plan_tools()
+# Session-scoped interceptor binding  (replaces the old module-global
+# `_interceptor_ref`, whose single slot let session A's plan tools answer
+# for session B — see the two-session tests in tests/planning/).
 # ─────────────────────────────────────────────────────────────
 
-_interceptor_ref: Any = None  # Will be PlanInterceptor
+#: Bound sessions are capped so a long-lived process cannot accumulate
+#: dead sessions; evicting the least-recently-bound one is safe because
+#: plan state is in-memory only (a restart discards it anyway).
+_MAX_BOUND_SESSIONS = 128
+
+#: Slot for single-session callers and the historical no-key API.
+_DEFAULT_SESSION_KEY = "<default>"
+
+#: session key → live PlanInterceptor (insertion order = binding recency).
+_interceptors: dict[str, Any] = {}
 
 
-def set_interceptor(interceptor: Any) -> None:
-    """Bind the module-level interceptor so tools can access the session."""
-    global _interceptor_ref
-    _interceptor_ref = interceptor
+def set_interceptor(interceptor: Any, session_key: str | None = None) -> None:
+    """Bind *interceptor* for *session_key* (or the default session slot).
+
+    A tool that received a real ``_session_id`` NEVER falls back to the
+    default slot — that fallback is exactly the cross-session leak this
+    module-local store replaced.
+    """
+    key = session_key or _DEFAULT_SESSION_KEY
+    _interceptors.pop(key, None)  # re-insert = most-recently-used order
+    _interceptors[key] = interceptor
+    while len(_interceptors) > _MAX_BOUND_SESSIONS:
+        _interceptors.pop(next(iter(_interceptors)))
 
 
-def _get_interceptor() -> Any:
-    if _interceptor_ref is None:
+def release_interceptor(session_key: str | None = None) -> None:
+    """Drop the binding for *session_key* (or the default slot)."""
+    _interceptors.pop(session_key or _DEFAULT_SESSION_KEY, None)
+
+
+def get_interceptor(session_key: str | None = None) -> Any | None:
+    """The interceptor bound for *session_key*, or ``None``.
+
+    ``None``/empty key addresses the default slot; any real key is looked up
+    strictly (no cross-session fallback).
+    """
+    if not session_key:
+        return _interceptors.get(_DEFAULT_SESSION_KEY)
+    return _interceptors.get(session_key)
+
+
+def _get_interceptor(session_key: str | None = None) -> Any:
+    """Historical accessor — raises when nothing is bound (tests pin this)."""
+    interceptor = get_interceptor(session_key)
+    if interceptor is None:
         raise RuntimeError("Plan tools not initialised — call set_interceptor() first.")
-    return _interceptor_ref
+    return interceptor
+
+
+def _interceptor_for_args(args: dict[str, Any]) -> Any | None:
+    """Resolve the caller's interceptor from the injected ``_session_id``."""
+    return get_interceptor(args.get("_session_id"))
+
+
+def interceptor_active(session_key: str | None) -> bool:
+    """True when *session_key* has a live (non-INACTIVE) plan."""
+    interceptor = get_interceptor(session_key)
+    return bool(interceptor is not None and interceptor.is_active)
+
+
+def ensure_interceptor(session_key: str) -> Any:
+    """Return *session_key*'s active interceptor, constructing+starting one if needed.
+
+    Idempotent: an already-active binding is returned untouched (plan state
+    spans multiple ``run_agentic`` turns of the same session).
+    """
+    existing = get_interceptor(session_key)
+    if existing is not None and existing.is_active:
+        return existing
+    from navig.agent.plan_mode import PlanInterceptor  # noqa: PLC0415
+
+    interceptor = PlanInterceptor()
+    interceptor.start()
+    set_interceptor(interceptor, session_key)
+    return interceptor
+
+
+def plan_block_reason(tool_name: str, session_key: str | None) -> str | None:
+    """The plan-mode write-gate verdict for one tool dispatch.
+
+    Returns the block message during PLANNING for a non-read-only tool, else
+    ``None``.  Fail-open by construction: no bound interceptor means no plan,
+    so nothing is blocked.
+    """
+    interceptor = get_interceptor(session_key)
+    if interceptor is None:
+        return None
+    return interceptor.get_block_reason(tool_name)
+
+
+def apply_plan_toolsets(toolsets: list[str], session_key: str | None) -> list[str]:
+    """Append the ``plan`` toolset when *session_key* has a live plan.
+
+    This is how plan tools reach the model's schema: they register under the
+    ``plan`` toolset unconditionally, but a turn only offers that toolset to
+    the session that actually has a plan.
+    """
+    if interceptor_active(session_key) and "plan" not in toolsets:
+        return [*toolsets, "plan"]
+    return toolsets
 
 
 # ─────────────────────────────────────────────────────────────
@@ -59,6 +149,7 @@ class PlanAddStepTool(BaseTool):
         "Risk level can be 'low', 'medium', or 'high'."
     )
     owner_only = False
+    needs_session = True
     parameters = [
         {
             "name": "description",
@@ -93,7 +184,17 @@ class PlanAddStepTool(BaseTool):
     ) -> ToolResult:
         from navig.agent.plan_mode import PlanStep
 
-        interceptor = _get_interceptor()
+        interceptor = _interceptor_for_args(args)
+        if interceptor is None:
+            return ToolResult(
+                name=self.name,
+                success=False,
+                output=(
+                    "Plan mode is not active in this session — there is no plan to "
+                    "add steps to."
+                ),
+                error="no active plan for this session",
+            )
 
         desc = args.get("description", "").strip()
         if not desc:
@@ -137,6 +238,7 @@ class PlanShowTool(BaseTool):
         "and risk levels.  Returns Markdown."
     )
     owner_only = False
+    needs_session = True
     parameters: list[dict[str, Any]] = []
 
     async def run(
@@ -144,7 +246,14 @@ class PlanShowTool(BaseTool):
         args: dict[str, Any],
         on_status: StatusCallback | None = None,
     ) -> ToolResult:
-        interceptor = _get_interceptor()
+        interceptor = _interceptor_for_args(args)
+        if interceptor is None:
+            return ToolResult(
+                name=self.name,
+                success=False,
+                output="Plan mode is not active in this session — no plan to show.",
+                error="no active plan for this session",
+            )
         text = interceptor.format_plan()
         return ToolResult(name=self.name, success=True, output=text)
 
@@ -155,14 +264,22 @@ class PlanShowTool(BaseTool):
 
 
 class PlanApproveTool(BaseTool):
-    """Approve the plan and move to execute mode."""
+    """Approve the plan and move to execute mode.
+
+    The APPROVAL itself is enforced by the approval gate: ``plan_approve`` is
+    listed in ``DESTRUCTIVE_TOOLS`` (and owner-only), so the model can never
+    flip a plan to EXECUTING on its own — the operator approves the call
+    through the normal human approval channel.  The state transition below
+    only runs after that gate says yes.
+    """
 
     name = "plan_approve"
     description = (
         "Approve the current plan.  Moves the plan from REVIEWING to EXECUTING "
-        "so all tools become available again."
+        "so all tools become available again.  Requires operator approval."
     )
-    owner_only = False
+    owner_only = True
+    needs_session = True
     parameters: list[dict[str, Any]] = []
 
     async def run(
@@ -170,7 +287,14 @@ class PlanApproveTool(BaseTool):
         args: dict[str, Any],
         on_status: StatusCallback | None = None,
     ) -> ToolResult:
-        interceptor = _get_interceptor()
+        interceptor = _interceptor_for_args(args)
+        if interceptor is None:
+            return ToolResult(
+                name=self.name,
+                success=False,
+                output="Plan mode is not active in this session — no plan to approve.",
+                error="no active plan for this session",
+            )
         try:
             # Auto-transition planning → reviewing if still planning
             if interceptor.is_planning:
@@ -316,29 +440,26 @@ def register_plan_context_tool() -> None:
     logger.debug("Agent tools registered: get_plan_context, project_context")
 
 
-def register_plan_tools(interceptor: Any) -> None:
-    """Register plan tools in the agent registry bound to *interceptor*.
+def register_plan_tools(interceptor: Any | None = None, *, session_key: str | None = None) -> None:
+    """Register plan tools in the agent registry (toolset ``"plan"``).
 
-    The tools are placed in the ``"plan"`` toolset and gated by a check_fn
-    that returns ``True`` only when the interceptor is active.
+    Registration is now unconditional and session-agnostic: availability is
+    decided per session at exposure time (``apply_plan_toolsets``) and at
+    dispatch time (``plan_block_reason`` / the tools' own ``_session_id``
+    lookup), so there is no ``check_fn`` closure binding one session's
+    interceptor into every other session's schemas.
+
+    Args:
+        interceptor: Optional interceptor to bind immediately (historical
+            signature — single-session callers and tests pass one here).
+        session_key: Session to bind *interceptor* for (default slot if omitted).
     """
     from navig.agent.agent_tool_registry import _AGENT_REGISTRY
 
-    set_interceptor(interceptor)
+    if interceptor is not None:
+        set_interceptor(interceptor, session_key)
 
-    _AGENT_REGISTRY.register(
-        PlanAddStepTool(),
-        toolset="plan",
-        check_fn=lambda: interceptor.is_active,
-    )
-    _AGENT_REGISTRY.register(
-        PlanShowTool(),
-        toolset="plan",
-        check_fn=lambda: interceptor.is_active,
-    )
-    _AGENT_REGISTRY.register(
-        PlanApproveTool(),
-        toolset="plan",
-        check_fn=lambda: interceptor.is_active,
-    )
+    _AGENT_REGISTRY.register(PlanAddStepTool(), toolset="plan")
+    _AGENT_REGISTRY.register(PlanShowTool(), toolset="plan")
+    _AGENT_REGISTRY.register(PlanApproveTool(), toolset="plan")
     logger.debug("Plan tools registered (plan_add_step, plan_show, plan_approve)")

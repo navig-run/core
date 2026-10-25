@@ -31,19 +31,11 @@ import pytest
 TOOLS_DIR = Path(__file__).resolve().parents[2] / "navig" / "agent" / "tools"
 
 #: Registrars deliberately not wired, each with a written reason and what wiring costs.
-#: An entry is a promise that the orphan is KNOWN, not an oversight. Both of these were
-#: found BY this guard.
-KNOWN_UNWIRED = {
-    "register_plan_tools": (
-        "plan_tools.py — registers plan_add_step/plan_show/plan_approve against the "
-        "correct registry API, but requires a live plan `interceptor` and nothing in the "
-        "tree constructs one; its tools are also gated on `interceptor.is_active`, so "
-        "with no interceptor they would register and never be available. Its sibling "
-        "`register_plan_context_tool` IS wired, so the module is half-live. Unlike the "
-        "todo tools — whose state is simply per-conversation — this one needs a plan "
-        "*execution* to attach to, which is a feature, not a wiring line."
-    ),
-}
+#: An entry is a promise that the orphan is KNOWN, not an oversight.
+#: (`register_plan_tools` used to live here — it was wired into register_all_tools
+#: once its state went session-scoped and availability moved to exposure/dispatch
+#: time; the exemption left with it, per test_a_documented_orphan_that_gets_wired_must_leave_the_list.)
+KNOWN_UNWIRED: dict[str, str] = {}
 
 
 @lru_cache(maxsize=1)

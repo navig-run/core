@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import sys
+from pathlib import Path
 from typing import Any
 
 try:
@@ -283,6 +284,66 @@ async def handle_deck_vault_export_svg(request: "web.Request") -> "web.Response"
             for f in sealed.files
         ],
         "unreadable": sealed.unreadable,
+    })
+
+
+async def handle_deck_vault_references(request: "web.Request") -> "web.Response":
+    """GET /api/deck/vault/references?project=<id> — Secret Resolution for one project.
+
+    The OS Vault app's "References" section: which config files in a REGISTERED project
+    reference which vault items, whether each resolves, which files still hold plaintext,
+    what is shadowed. Engine: navig_vault.doctor (the same report as `navig vault doctor
+    <root> -r --json`), so the body holds files, keys, references, labels, versions and
+    codes — never a value.
+
+    Gated by the normal deck auth, like ``GET /api/deck/vault`` (the masked list), NOT
+    local-only like the export: the body is metadata of the same class, and the OS app
+    usually reaches the brain from another machine (NEURON → outpost), where a local-only
+    route could never answer. The root comes only from the project registry (never a
+    client-sent path), so a caller can point it at nothing but a registered project.
+    Values are resolved in memory on the brain and compared, never returned. The daemon's
+    own environment is not the operator's shell, so shadowing by an exported variable is
+    left to the CLI (``checks.env_shadow``).
+    """
+    from datetime import datetime, timezone
+
+    project_id = (request.query.get("project") or "").strip()
+    if not project_id:
+        return web.json_response({"error": "project is required"}, status=400)
+    try:
+        from navig_vault.doctor import inspect_references
+        from navig_vault.resolution import ReferenceResolver
+        from navig_vault.scan import ScopeError
+    except ImportError:
+        return web.json_response(
+            {"error": "this navig-vault is too old for references — pip install -U navig-vault"},
+            status=501,
+        )
+    from navig.projects.model import ProjectNotFound, resolve_project
+
+    try:
+        pid, root = await asyncio.to_thread(resolve_project, project_id)
+    except ProjectNotFound:
+        return web.json_response({"error": f"unknown project: {project_id}"}, status=404)
+    vault = _get_vault()
+    if not vault:
+        return web.json_response({"error": "vault unavailable"}, status=500)
+    resolver = ReferenceResolver(vault, actor="deck.vault.references")
+    try:
+        report = await asyncio.to_thread(
+            inspect_references, Path(root), recursive=True, resolver=resolver, environ={}
+        )
+    except ScopeError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    except Exception as e:
+        logger.error("Vault references error: %s", type(e).__name__)
+        return web.json_response({"error": "the project could not be checked"}, status=500)
+    data = report.as_dict()
+    data["checks"]["env_shadow"] = "run `navig vault doctor` in your terminal to compare your shell's variables"
+    return web.json_response({
+        "project": pid,
+        "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        **data,
     })
 
 

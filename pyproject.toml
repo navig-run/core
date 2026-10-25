@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "navig"
-version = "3.30.0"
+version = "3.31.0"
 description = "Terminal-first infrastructure CLI with multi-host SSH management, encrypted vault, AI operator layer, and memory"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -80,7 +80,10 @@ dependencies = [
   # scripts/check_plugin_version_drift.py now refuses that state at publish time.
   # Floor 0.11.0 (0.10.0 on PyPI predates the authority's rate limits and backup.skipped_unreadable): `navig vault status|run|backup|restore|rotate|recovery|devices|grant|join` and
   # vault:// / federation resolution import navig_vault.keyslots / refs / backup / federation.
-  "navig-vault>=0.12.0",
+  # Floor 0.14.0: navig.vault.federation_client.resolve (`vault get vault://…`, host secret
+  # resolution) and the deck's /vault/references route import navig_vault.resolution /
+  # doctor (Secret Resolution) — below it `vault get vault://…` dies on the ImportError.
+  "navig-vault>=0.14.0",
   # navig-sdk is the shared seam standalone plugins run on, and it now OWNS code navig uses:
   # navig/net/ssrf.py aliases itself to navig_sdk.ssrf (one copy of the SSRF rules). Tiny,
   # standard-library only. HARD dependency: it must be on PyPI before a core release that

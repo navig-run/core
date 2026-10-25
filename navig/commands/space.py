@@ -807,6 +807,33 @@ def _diagnose_space(space_path: Path, name: str) -> dict:
                      "" if wh else "not on PATH — may still work via API/python", warn=not wh))
     groups.append({"name": "Media tools", "checks": tools})
 
+    # Navigation (Unified Environments Phase 3): declared aliases vs links on disk.
+    # Read-only; a broken declaration degrades to one warn row, never an exception.
+    try:
+        from navig.spaces import navigation_links as _nav  # noqa: PLC0415
+
+        _spec = _nav.load_navigation(space_path)
+        if not _spec.empty:
+            nav_checks: list[dict] = []
+            for s in _nav.plan(space_path, _spec):
+                if s.state == "linked":
+                    nav_checks.append(chk(True, s.alias, f"linked → {s.target}"))
+                elif s.state == "missing":
+                    nav_checks.append(chk(False, s.alias, "alias not created yet (doctor --fix creates it)"))
+                elif s.state in ("broken", "wrong-target"):
+                    nav_checks.append(chk(False, s.alias, f"{s.state}: {s.detail}"))
+                elif s.state in ("collision", "unresolved"):
+                    # Never offered as a fix: collisions are user content, unresolved
+                    # needs the manifest or registry corrected first.
+                    nav_checks.append(chk(False, s.alias, s.detail, warn=True, action="none"))
+                else:  # unmanaged — user content in a managed dir, left alone
+                    nav_checks.append(chk(True, s.alias, f"unmanaged — {s.detail}"))
+            groups.append({"name": "Navigation", "checks": nav_checks})
+    except Exception:  # noqa: BLE001
+        groups.append({"name": "Navigation", "checks": [
+            chk(False, "navigation", "manifest block unreadable — edit .navig/space.json", warn=True, action="none"),
+        ]})
+
     flat = [c for g in groups for c in g["checks"]]
     return {
         "space": name, "path": str(space_path), "groups": groups,
@@ -2381,7 +2408,21 @@ def _apply_fix(space_path: Path, name: str) -> int:
             )
     except Exception:  # noqa: BLE001
         pass
-    return len(summary["created"]) + sum(1 for a in gi_actions if not a.startswith("⚠"))
+    added = len(summary["created"]) + sum(1 for a in gi_actions if not a.startswith("⚠"))
+
+    # Unified Environments Phase 3: reconcile declared navigation aliases (areas/ +
+    # projects/). Constrained by construction: creates missing managed links, repairs
+    # managed reparse points, refuses collisions/unresolved (reported, never written),
+    # and records creations for `navigation_links.rollback()`.
+    try:
+        from navig.spaces import navigation_links as _nav  # noqa: PLC0415
+
+        if not _nav.load_navigation(space_path).empty:
+            rep = _nav.reconcile(space_path, fix=True)
+            added += len(rep.created) + len(rep.repaired)
+    except Exception:  # noqa: BLE001
+        pass  # a broken navigation block is reported by the diagnosis, never crashes a fix
+    return added
 
 
 def _doctor_menu_options(diag: dict) -> list[tuple[str, str]]:

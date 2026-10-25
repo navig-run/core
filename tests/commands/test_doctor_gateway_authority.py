@@ -58,11 +58,26 @@ def test_no_listener_is_not_claimed_as_running():
 
 
 def test_managed_pids_are_read_from_the_pid_files(monkeypatch, tmp_path):
-    """own_pids must come from the files the supervisor writes, not from a guess."""
+    """own_pids must come from the files the supervisor writes, not from a guess.
+
+    The files are the source; a pid read from one is admitted only when it is still a
+    NAVIG process, so the identity check is stubbed to "both are ours" here — the point
+    under test is where the numbers come from.
+    """
     (tmp_path / "gateway.pid").write_text("4242\n", encoding="utf-8")
     (tmp_path / "worker.pid").write_text("5353\n", encoding="utf-8")
     monkeypatch.setattr(doc, "_managed_pid_files_dir", lambda: tmp_path, raising=False)
+    monkeypatch.setattr(doc, "_pid_still_ours", lambda pid: pid in {4242, 5353})
     assert doc._managed_daemon_pids() == {4242, 5353}
+
+
+def test_a_pid_file_naming_another_process_contributes_nothing(monkeypatch, tmp_path):
+    """A recycled pid is not this install's daemon, so it must not be counted as one."""
+    (tmp_path / "gateway.pid").write_text("4242\n", encoding="utf-8")
+    (tmp_path / "worker.pid").write_text("5353\n", encoding="utf-8")
+    monkeypatch.setattr(doc, "_managed_pid_files_dir", lambda: tmp_path, raising=False)
+    monkeypatch.setattr(doc, "_pid_still_ours", lambda pid: False)
+    assert doc._managed_daemon_pids() == set()
 
 
 def test_managed_pids_tolerate_missing_and_corrupt_files(monkeypatch, tmp_path):

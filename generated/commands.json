@@ -3473,6 +3473,46 @@
       "aliases": [],
       "arguments": [],
       "examples": [
+        "navig ai fallback"
+      ],
+      "handler": "fallback_callback",
+      "module": "navig.commands.ai_fallback",
+      "options": [
+        {
+          "flags": [
+            "--never-from"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--allow"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--auto"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig ai fallback",
+      "since": "",
+      "status": "stable",
+      "summary": "Model fallback status \u2014 or change the policy with the options.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
         "navig ai fallback history"
       ],
       "handler": "fallback_history",
@@ -3607,6 +3647,21 @@
       "since": "",
       "status": "stable",
       "summary": "Remove OAuth credentials for a provider.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig ai memory"
+      ],
+      "handler": "memory_callback",
+      "module": "navig.commands.ai",
+      "options": [],
+      "path": "navig ai memory",
+      "since": "",
+      "status": "stable",
+      "summary": "AI Memory - what NAVIG knows about you.",
       "tags": []
     },
     {
@@ -13682,6 +13737,79 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cdp download"
+      ],
+      "handler": "cdp_download",
+      "module": "navig_browser.commands.cdp",
+      "options": [
+        {
+          "flags": [
+            "--port",
+            "-p"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--ref"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--selector",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out-dir",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--max-mb"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--tab"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--url"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig cdp download",
+      "since": "",
+      "status": "stable",
+      "summary": "Capture a file download from the page and save it (with its SHA-256).",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "expression",
@@ -16705,6 +16833,21 @@
       "since": "",
       "status": "stable",
       "summary": "Migrate the global configuration to the current schema.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig config schema"
+      ],
+      "handler": "schema_callback",
+      "module": "navig.commands.config",
+      "options": [],
+      "path": "navig config schema",
+      "since": "",
+      "status": "stable",
+      "summary": "Run navig config schema",
       "tags": []
     },
     {
@@ -19908,6 +20051,21 @@
       "since": "",
       "status": "stable",
       "summary": "Code review a file using Copilot.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig copilot sessions"
+      ],
+      "handler": "sessions_callback",
+      "module": "navig.commands.sessions",
+      "options": [],
+      "path": "navig copilot sessions",
+      "since": "",
+      "status": "stable",
+      "summary": "Browse and manage VS Code Copilot chat sessions.",
       "tags": []
     },
     {
@@ -25463,6 +25621,52 @@
     },
     {
       "aliases": [],
+      "arguments": [
+        {
+          "name": "channel-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig distribution draft-map"
+      ],
+      "handler": "distribution_draft_map",
+      "module": "navig_distribution.commands.distribution",
+      "options": [
+        {
+          "flags": [
+            "--profile"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--url"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig distribution draft-map",
+      "since": "",
+      "status": "stable",
+      "summary": "Read a live form (read-only) and write a review draft \u2014 never a usable map.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [],
       "examples": [
         "navig distribution maintain"
@@ -26605,6 +26809,12 @@
         {
           "flags": [
             "--dry-run"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--plan"
           ],
           "takes_value": false
         },
@@ -33176,6 +33386,21 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig flow template"
+      ],
+      "handler": "flow_template_callback",
+      "module": "navig.commands.flow",
+      "options": [],
+      "path": "navig flow template",
+      "since": "",
+      "status": "stable",
+      "summary": "Template management - run without subcommand for interactive menu.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "name",
@@ -33922,6 +34147,47 @@
       "since": "",
       "status": "stable",
       "summary": "\ud83d\udd79  Claim the currently-free games into your account.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig games deals"
+      ],
+      "handler": "deals_root",
+      "module": "navig_games.commands.games",
+      "options": [
+        {
+          "flags": [
+            "--threshold",
+            "-t"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--cc"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--no-wishlist"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig games deals",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83c\udff7  Show current deals on your Steam wishlist + watchlist.",
       "tags": []
     },
     {
@@ -36383,6 +36649,21 @@
       "since": "",
       "status": "stable",
       "summary": "Download a creator's whole profile \u2014 videos, slideshows images, audio, or just metadata.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig generate wallpaper"
+      ],
+      "handler": "_root",
+      "module": "navig_generate.wallpaper.commands",
+      "options": [],
+      "path": "navig generate wallpaper",
+      "since": "",
+      "status": "stable",
+      "summary": "Run navig generate wallpaper",
       "tags": []
     },
     {
@@ -43210,6 +43491,40 @@
       "aliases": [],
       "arguments": [],
       "examples": [
+        "navig home wifi heatmap"
+      ],
+      "handler": "heatmap_root_cmd",
+      "module": "navig_home.commands.wifi",
+      "options": [
+        {
+          "flags": [
+            "--ssid"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--csv"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig home wifi heatmap",
+      "since": "",
+      "status": "stable",
+      "summary": "Aggregate labeled samples (min/avg/max RSSI + ASCII bar).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
         "navig home wifi heatmap sample"
       ],
       "handler": "heatmap_sample_cmd",
@@ -44107,6 +44422,21 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig host lock"
+      ],
+      "handler": "host_lock_callback",
+      "module": "navig.commands.host",
+      "options": [],
+      "path": "navig host lock",
+      "since": "",
+      "status": "stable",
+      "summary": "Show lock status when called without a subcommand.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "host",
@@ -44193,6 +44523,21 @@
       "since": "",
       "status": "stable",
       "summary": "Show who currently holds the lock for a host.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig host maintenance"
+      ],
+      "handler": "host_maintenance_callback",
+      "module": "navig.commands.host",
+      "options": [],
+      "path": "navig host maintenance",
+      "since": "",
+      "status": "stable",
+      "summary": "Host maintenance - run without subcommand for system info.",
       "tags": []
     },
     {
@@ -44344,6 +44689,21 @@
       "aliases": [],
       "arguments": [],
       "examples": [
+        "navig host monitor"
+      ],
+      "handler": "host_monitor_callback",
+      "module": "navig.commands.host",
+      "options": [],
+      "path": "navig host monitor",
+      "since": "",
+      "status": "stable",
+      "summary": "Host monitoring - run without subcommand for health overview.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
         "navig host monitor report"
       ],
       "handler": "host_monitor_report",
@@ -44433,6 +44793,21 @@
       "since": "",
       "status": "stable",
       "summary": "Remove a host configuration.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig host security"
+      ],
+      "handler": "host_security_callback",
+      "module": "navig.commands.host",
+      "options": [],
+      "path": "navig host security",
+      "since": "",
+      "status": "stable",
+      "summary": "Host security - run without subcommand for security scan.",
       "tags": []
     },
     {
@@ -53563,6 +53938,21 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig mode route"
+      ],
+      "handler": "mode_route_callback",
+      "module": "navig.commands.mode",
+      "options": [],
+      "path": "navig mode route",
+      "since": "",
+      "status": "stable",
+      "summary": "Hybrid route slot controls (defaults to show).",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "tier",
@@ -56965,6 +57355,28 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig os account"
+      ],
+      "handler": "account",
+      "module": "navig.commands.os_cmd",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig os account",
+      "since": "",
+      "status": "stable",
+      "summary": "Show which navig.run account this computer is linked to.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "email",
@@ -57011,6 +57423,28 @@
       "since": "",
       "status": "stable",
       "summary": "Unlink this computer. Paired devices keep working; new ones need a QR code again.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig os devices"
+      ],
+      "handler": "devices",
+      "module": "navig.commands.os_cmd",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig os devices",
+      "since": "",
+      "status": "stable",
+      "summary": "List paired devices.",
       "tags": []
     },
     {
@@ -57130,6 +57564,28 @@
       "since": "",
       "status": "stable",
       "summary": "Pair a phone or browser to use NAVIG OS here, through your own relay.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig os requests"
+      ],
+      "handler": "requests_list",
+      "module": "navig.commands.os_cmd",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig os requests",
+      "since": "",
+      "status": "stable",
+      "summary": "List devices waiting for your approval.",
       "tags": []
     },
     {
@@ -66271,6 +66727,28 @@
       "since": "",
       "status": "stable",
       "summary": "Finish a MERGED branch completely: delete it locally, on origin, and its worktree.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig repo lock"
+      ],
+      "handler": "lock_default",
+      "module": "navig.commands.repo",
+      "options": [
+        {
+          "flags": [
+            "--repo"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig repo lock",
+      "since": "",
+      "status": "stable",
+      "summary": "Inspect / release the main-checkout agent lock (.dev/agent.lock).",
       "tags": []
     },
     {
@@ -79157,6 +79635,91 @@
       "aliases": [],
       "arguments": [
         {
+          "name": "path",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig vault adopt"
+      ],
+      "handler": "vault_adopt",
+      "module": "navig_vault.commands.vault_refs",
+      "options": [
+        {
+          "flags": [
+            "--recursive",
+            "-r"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--yes",
+            "-y"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--interactive",
+            "-i"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--project"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--include-possible"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--only"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--label"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--exclude"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig vault adopt",
+      "since": "",
+      "status": "stable",
+      "summary": "Move plaintext secrets from .env files into the vault; leave vault:// references behind.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
           "name": "credential-id",
           "required": false,
           "variadic": false
@@ -79522,6 +80085,53 @@
       "aliases": [],
       "arguments": [
         {
+          "name": "path",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig vault doctor"
+      ],
+      "handler": "vault_doctor",
+      "module": "navig_vault.commands.vault_refs",
+      "options": [
+        {
+          "flags": [
+            "--recursive",
+            "-r"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--exclude"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--strict"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig vault doctor",
+      "since": "",
+      "status": "stable",
+      "summary": "Check a project's config references: resolvable, shadowed, plaintext \u2014 read-only.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
           "name": "credential-id",
           "required": true,
           "variadic": false
@@ -79862,6 +80472,60 @@
       "since": "",
       "status": "stable",
       "summary": "Show a full information panel for a credential.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig vault inject"
+      ],
+      "handler": "vault_inject",
+      "module": "navig_vault.commands.vault_refs",
+      "options": [
+        {
+          "flags": [
+            "--template",
+            "-t"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--output",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--overwrite"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--as"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--format"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--check"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig vault inject",
+      "since": "",
+      "status": "stable",
+      "summary": "Resolve a config template's references for a program that needs a FILE.",
       "tags": []
     },
     {
@@ -80425,6 +81089,40 @@
       "aliases": [],
       "arguments": [
         {
+          "name": "refs",
+          "required": false,
+          "variadic": true
+        }
+      ],
+      "examples": [
+        "navig vault resolve"
+      ],
+      "handler": "vault_resolve",
+      "module": "navig_vault.commands.vault_refs",
+      "options": [
+        {
+          "flags": [
+            "--labels"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig vault resolve",
+      "since": "",
+      "status": "stable",
+      "summary": "Check that references resolve \u2014 metadata only, the value is never shown.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
           "name": "backup",
           "required": true,
           "variadic": false
@@ -80520,6 +81218,18 @@
             "-f"
           ],
           "takes_value": true
+        },
+        {
+          "flags": [
+            "--env-file"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--no-override"
+          ],
+          "takes_value": false
         },
         {
           "flags": [
@@ -82401,6 +83111,21 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig web hestia"
+      ],
+      "handler": "web_hestia_callback",
+      "module": "navig.commands.webserver",
+      "options": [],
+      "path": "navig web hestia",
+      "since": "",
+      "status": "stable",
+      "summary": "HestiaCP management - run without subcommand for interactive menu.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "resource",
@@ -82736,6 +83461,21 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig wiki inbox"
+      ],
+      "handler": "inbox_list",
+      "module": "navig.commands.wiki",
+      "options": [],
+      "path": "navig wiki inbox",
+      "since": "",
+      "status": "stable",
+      "summary": "List inbox items.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "filename",
@@ -82791,6 +83531,21 @@
       "since": "",
       "status": "stable",
       "summary": "Initialize wiki structure for current project.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig wiki links"
+      ],
+      "handler": "links_list",
+      "module": "navig.commands.wiki",
+      "options": [],
+      "path": "navig wiki links",
+      "since": "",
+      "status": "stable",
+      "summary": "Show wiki link statistics.",
       "tags": []
     },
     {
@@ -82878,6 +83633,21 @@
       "since": "",
       "status": "stable",
       "summary": "Publish public wiki content.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig wiki rag"
+      ],
+      "handler": "rag_status",
+      "module": "navig.commands.wiki",
+      "options": [],
+      "path": "navig wiki rag",
+      "since": "",
+      "status": "stable",
+      "summary": "Show RAG index status.",
       "tags": []
     },
     {
@@ -83642,5 +84412,5 @@
     "wut": "Show what NAVIG thinks is happening (context snapshot)"
   },
   "schema_version": "1.0.0",
-  "total": 2390
+  "total": 2417
 }

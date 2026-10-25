@@ -38,17 +38,36 @@ __all__ = [
 
 
 def overview(*, probes: bool = True, with_counts: bool = True) -> dict:
-    """Installed plugins plus every probe's accounts — the agent's first look."""
+    """Installed plugins plus every probe's accounts — the agent's first look.
+
+    Each row carries ``accounts_status`` so an empty ``accounts`` list can be read
+    correctly. A plugin whose installed version registers no probe returns
+    ``unreported``: that means "this build cannot say", NOT "the operator has no
+    account" — the two used to be indistinguishable, and an agent that assumes the
+    latter tells the operator their connected Instagram does not exist.
+    """
     plugins = installed_plugins(with_counts=with_counts)
     results = run_probes() if probes else {}
+    unreported: list[str] = []
     for plugin in plugins:
-        status = results.get(plugin["probe"]) if plugin.get("probe") else None
+        name = plugin.get("probe")
+        status = results.get(name) if name else None
         plugin["accounts"] = (status or {}).get("accounts", [])
         if status and status.get("notes"):
             plugin["notes"] = status["notes"]
+        if not probes:
+            plugin["accounts_status"] = "skipped"
+        elif not name:
+            plugin["accounts_status"] = "unreported"
+            unreported.append(plugin["plugin"])
+        elif status and status.get("error"):
+            plugin["accounts_status"] = "error"
+        else:
+            plugin["accounts_status"] = "reported"
     return {
         "plugins": plugins,
-        "probes_failed": sorted(name for name, r in results.items() if r.get("error")),
+        "probes_failed": sorted(n for n, r in results.items() if r.get("error")),
+        "probes_unreported": sorted(unreported),
         "next": (
             "Call navig_capabilities action=find with a goal to get exact commands, "
             "action=suggest with a file you produced for next steps, then navig_run to "

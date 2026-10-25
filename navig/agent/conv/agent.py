@@ -90,7 +90,78 @@ _AGENTIC_CHAT_MAXTOK: int = 256
 #: turn 3, leaving the agent with a todo list it believes it recorded and cannot update.
 #: An intermittent stateful tool is worse than an absent one. `get_plan_context` is the
 #: existing precedent: a meta tool registered straight into `core`.
-_ALWAYS_ON_TOOLSETS: tuple[str, ...] = ("skills", "todo")
+_ALWAYS_ON_TOOLSETS: tuple[str, ...] = ("skills", "todo", "questions")
+
+#: Workspace instruction files inlined into the cached system prompt, in
+#: precedence order (Mission B Phase 5 — agent-instructions parity).
+_WORKSPACE_INSTRUCTION_FILES: tuple[str, ...] = (
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".claude/CLAUDE.md",
+    "NAVIG.md",
+)
+_WORKSPACE_INSTRUCTION_MAX_FILES = 3
+#: OS parity: apps/os shared prompts MAX_CONTEXT_FILE_SIZE.
+_WORKSPACE_INSTRUCTION_MAX_BYTES = 10_000
+
+
+def workspace_instructions_block(workspace: Path | None = None) -> str:
+    """``<workspace_instructions>`` for the cached system prompt, or ``""``.
+
+    Root workspace instruction files only (AGENTS.md, CLAUDE.md,
+    .claude/CLAUDE.md, NAVIG.md), at most 3 files x 10 KB each with an honest
+    truncation marker.  The block depends only on those files, so it is
+    session-stable and rides the system-prompt cache without churning it.
+
+    Trust order: callers append this AFTER the soul/guardrails block — a
+    workspace file can add instructions but never precede (let alone override)
+    NAVIG's own rules.
+
+    Deliberately a small dedicated reader: ``projects/context_pack``'s
+    equivalent is coupled to the project-pack build, and
+    ``core/instruction_audit``'s file set (Claude Code's, no AGENTS.md) does
+    not match this contract.  Never raises — a broken workspace just gets no
+    block.
+    """
+    try:
+        from navig.spaces.active import get_active_working_dir  # noqa: PLC0415
+
+        root = (workspace if workspace is not None else get_active_working_dir()).resolve()
+    except Exception:  # noqa: BLE001
+        return ""
+
+    parts: list[str] = []
+    for rel in _WORKSPACE_INSTRUCTION_FILES:
+        if len(parts) >= _WORKSPACE_INSTRUCTION_MAX_FILES:
+            break
+        path = root / rel
+        try:
+            if not path.is_file():
+                continue
+            raw = path.read_bytes()
+        except OSError:
+            continue
+        truncated = len(raw) > _WORKSPACE_INSTRUCTION_MAX_BYTES
+        text = raw[:_WORKSPACE_INSTRUCTION_MAX_BYTES].decode("utf-8", errors="replace")
+        if truncated:
+            text += f"\n…[truncated at {_WORKSPACE_INSTRUCTION_MAX_BYTES:,} bytes]"
+        if not text.strip():
+            continue
+        parts.append(
+            f'<workspace_file path="{rel}">\n{text.rstrip()}\n</workspace_file>'
+        )
+
+    if not parts:
+        return ""
+    block = (
+        f'\n\n<workspace_instructions directory="{root}">\n'
+        + "\n".join(parts)
+        + "\n</workspace_instructions>"
+    )
+    logger.debug(
+        "workspace instructions: %d file(s), %d chars", len(parts), len(block)
+    )
+    return block
 
 
 def default_turn_toolsets(
@@ -921,7 +992,12 @@ class ConversationalAgent:
             self._mind_block = mind_prompt_context()
         if self._mind_block:
             prompt = f"{prompt}\n\n{self._mind_block}"
-        return prompt
+        # Workspace instructions (AGENTS.md/CLAUDE.md/…) ride the session-stable
+        # system block LAST — after soul, guardrails and the operator's MIND
+        # preferences: they may add rules, never precede NAVIG's own (Phase 5 of
+        # Mission B; skipped on the minimal path above).
+        block = workspace_instructions_block()
+        return prompt + block if block else prompt
 
     def _soul_context(self) -> "SoulContext":
         """This session's resolved identity, falling back to the loader default.
@@ -1053,12 +1129,18 @@ class ConversationalAgent:
         tier_override: str = "",
         effort: str = "",
         session_key: str = "",
+        plan_mode: bool = False,
     ) -> str:
         """Native ReAct multi-step tool-calling loop (see :meth:`_run_agentic_turn`).
 
         Runs the turn inside :func:`navig.memory.controls.incognito_scope`, so the
         memory tools the model calls mid-turn honour this conversation's incognito
         flag without being handed the agent.
+
+        ``plan_mode=True`` binds (or reuses) a session-scoped
+        :class:`~navig.agent.plan_mode.PlanInterceptor` for *session_key*: the
+        turn then offers the ``plan`` toolset and blocks mutating tools until
+        the plan is human-approved.
         """
         from navig.memory.controls import incognito_scope
 
@@ -1073,6 +1155,7 @@ class ConversationalAgent:
                 tier_override=tier_override,
                 effort=effort,
                 session_key=session_key,
+                plan_mode=plan_mode,
             )
 
     async def _run_agentic_turn(
@@ -1086,6 +1169,7 @@ class ConversationalAgent:
         tier_override: str = "",
         effort: str = "",
         session_key: str = "",
+        plan_mode: bool = False,
     ) -> str:
         """Native ReAct multi-step tool-calling loop.
 
@@ -1134,6 +1218,18 @@ class ConversationalAgent:
         # sees it and cannot spoof another conversation's state.
         _session_key = session_key or self._session_id
 
+        # Plan-mode entry: bind (or reuse) this session's interceptor BEFORE the
+        # schema build so the plan tools reach this turn's tools=[].  Best-effort:
+        # a failure to start plan mode must not kill the turn — the session just
+        # runs without plan tools (fail-open at entry, fail-closed at the gate).
+        if plan_mode:
+            try:
+                from navig.agent.tools.plan_tools import ensure_interceptor  # noqa: PLC0415
+
+                ensure_interceptor(_session_key)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("plan mode could not start for session %r: %s", _session_key, exc)
+
         budget = IterationBudget(max_iterations=max_iterations)
         self.last_run_incomplete = None
         if (
@@ -1180,6 +1276,14 @@ class ConversationalAgent:
 
         _web_mode = web_search_mode()
         toolsets = apply_web_search_mode(toolsets, _web_mode)
+        # Offer the `plan` toolset only to a session with a live plan (the plan
+        # tools register unconditionally — see plan_tools.apply_plan_toolsets).
+        try:
+            from navig.agent.tools.plan_tools import apply_plan_toolsets  # noqa: PLC0415
+
+            toolsets = apply_plan_toolsets(toolsets, _session_key)
+        except Exception:  # noqa: BLE001 — plan exposure must never strip core tools
+            pass
         raw_schemas = drop_web_tools(
             _AGENT_REGISTRY.get_openai_schemas(toolsets=toolsets), _web_mode
         )
@@ -1523,6 +1627,19 @@ class ConversationalAgent:
                 )
             except json.JSONDecodeError:
                 args = {}
+
+            # Plan-mode write gate — session-scoped, BEFORE the approval gate.
+            # During PLANNING a mutating tool is refused with the plan hint as
+            # its tool result (the model adapts instead of crashing).  Fail-open
+            # by construction: no bound interceptor for this session = no plan.
+            try:
+                from navig.agent.tools.plan_tools import plan_block_reason  # noqa: PLC0415
+
+                _plan_msg = plan_block_reason(tool_call_item.name, _session_key)
+            except Exception:  # noqa: BLE001 — never break dispatch over the plan gate
+                _plan_msg = None
+            if _plan_msg is not None:
+                return (tool_call_item.id, _plan_msg)
 
             # Approval interlock — FAIL CLOSED. A gated tool must never execute
             # because the gate itself broke; this used to swallow every gate

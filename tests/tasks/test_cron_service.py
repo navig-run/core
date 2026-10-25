@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from navig.scheduler.cron_service import (
+    DEFAULT_MISFIRE_GRACE_SECONDS,
     CronConfig,
     CronJob,
     CronParser,
@@ -1343,3 +1344,41 @@ def test_job_space_roundtrips_through_the_store(tmp_path):
     reloaded.update_job(job.id, space=None)
     assert reloaded.get_job(job.id).space is None
 
+
+# Missed-run (misfire) policy: an occurrence later than its grace window is skipped and
+# the job moves to its next occurrence instead of firing hours late on restart.
+
+
+def test_dispatch_skips_an_occurrence_older_than_its_grace(tmp_path):
+    svc = _svc(tmp_path)
+    job = _due(_make_job(id="A", schedule="daily", command="x"), seconds_ago=5 * 3600)
+    svc.jobs = {job.id: job}
+    now = datetime.now()
+    assert svc._drop_misfired([job], now) == []
+    assert job.next_run > now
+    disk = json.loads(svc._get_jobs_path().read_text(encoding="utf-8"))
+    assert datetime.fromisoformat(disk["jobs"][0]["next_run"]) > now  # skip persisted
+
+
+def test_dispatch_still_runs_an_occurrence_inside_its_grace(tmp_path):
+    svc = _svc(tmp_path)
+    job = _due(_make_job(id="A", schedule="daily", command="x"), seconds_ago=10 * 60)
+    svc.jobs = {job.id: job}
+    assert svc._drop_misfired([job], datetime.now()) == [job]
+
+
+def test_misfire_grace_none_always_catches_up(tmp_path):
+    svc = _svc(tmp_path)
+    job = _due(_make_job(id="A", schedule="daily", command="x"), seconds_ago=3 * 86400)
+    job.misfire_grace_seconds = None
+    svc.jobs = {job.id: job}
+    assert svc._drop_misfired([job], datetime.now()) == [job]
+
+
+def test_misfire_grace_round_trips_and_defaults_for_old_files():
+    job = _make_job(id="A", schedule="daily", command="x")
+    job.misfire_grace_seconds = 120
+    assert CronJob.from_dict(job.to_dict()).misfire_grace_seconds == 120
+    legacy = job.to_dict()
+    legacy.pop("misfire_grace_seconds")
+    assert CronJob.from_dict(legacy).misfire_grace_seconds == DEFAULT_MISFIRE_GRACE_SECONDS

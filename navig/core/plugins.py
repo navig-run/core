@@ -762,6 +762,44 @@ def list_plugins() -> list[PluginInfo]:
     return get_plugin_registry().list_plugins()
 
 
+def _load_hint(ep: Any) -> str:
+    """Say what to do about a plugin whose module cannot be imported.
+
+    An editable install points at a checkout. Delete that checkout — a worktree
+    under ``.dev/worktrees`` is the usual way — and the distribution metadata and
+    entry point survive while the import resolves nothing, so every NAVIG
+    command warns about a plugin the operator cannot find anywhere. The bare
+    ``No module named 'navig_router'`` names neither the distribution nor that
+    path, so it reads as a NAVIG bug; this hint names both and the way out.
+    """
+    name = getattr(getattr(ep, "dist", None), "name", None) or getattr(ep, "name", "?")
+    try:
+        raw = ep.dist.read_text("direct_url.json")
+    except Exception:  # noqa: BLE001 — a hint must never mask the real error
+        raw = None
+    if raw:
+        import json
+        from urllib.parse import unquote
+
+        try:
+            meta = json.loads(raw)
+        except ValueError:
+            meta = {}
+        url = str(meta.get("url") or "")
+        if url.startswith("file://") and (meta.get("dir_info") or {}).get("editable"):
+            path = unquote(url[len("file://") :])
+            # file:///E:/... keeps the URL's third slash in front of the drive
+            # letter; quoting a Windows path with a leading slash reads as a typo.
+            if len(path) > 2 and path[0] == "/" and path[2] == ":":
+                path = path[1:]
+            return (
+                f"{name} is installed editable from {path}, which is gone or "
+                f"incomplete — reinstall it from that checkout or remove it "
+                f"(`pip uninstall {name}`)"
+            )
+    return f"reinstall or remove the {name} plugin (`pip uninstall {name}`)"
+
+
 def load_entry_point_plugins() -> list[str]:
     """Import + register plugins installed as packages that expose the
     ``navig.plugins`` entry-point group (e.g. the private ``navig-harbor``).
@@ -830,5 +868,11 @@ def load_entry_point_plugins() -> list[str]:
             registered.append(ep.name)
             _log.info("navig plugin loaded: %s", ep.name)
         except Exception as exc:  # noqa: BLE001 — a plugin must never break boot
-            _log.warning("navig plugin %r failed to load: %s", getattr(ep, "name", "?"), exc)
+            hint = _load_hint(ep) if isinstance(exc, ImportError) else ""
+            _log.warning(
+                "navig plugin %r failed to load: %s%s",
+                getattr(ep, "name", "?"),
+                exc,
+                f" — {hint}" if hint else "",
+            )
     return registered

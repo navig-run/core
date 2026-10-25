@@ -6842,6 +6842,102 @@ and `database.root_password`; any other path is a vault label; `#field` picks a 
 `?v=N` an earlier version. A value given positionally to `vault set` still works but warns:
 it lands in shell history. `vault run` never puts a secret on a command line.
 
+### Secret Resolution — references in config files
+
+Keep secrets in the vault and only *references* in your config files:
+
+```dotenv
+OPENAI_API_KEY=vault://openai/api_key
+DATABASE_URL=postgres://app:${VAULT:schema/db_password}@localhost/app
+NODE_ENV=development
+PORT=3000
+```
+
+```bash
+navig vault run --env-file .env -- npm run dev      # the app gets real env vars; .env is never written
+navig vault run --env-file .env --env-file .env.local -- python app.py   # later files win
+navig vault resolve vault://openai/api_key          # does it resolve? metadata only, never the value
+navig vault resolve --labels --json                 # the labels a reference can name here (no values)
+navig vault doctor . -r                             # read-only check of a project (--json, --strict for CI)
+navig vault adopt .env --dry-run                    # plan: which plaintext secrets would move
+navig vault adopt . -r                              # move them (asks first; --yes without a terminal)
+navig vault inject -t config.yaml -- ./server --config {file}   # for programs that need a FILE
+navig vault inject -t config.yaml -o /run/app/config.yaml       # owner-only output, refused in an un-ignored git tree
+```
+
+**Reference forms.** A whole value `vault://<label>[#field][?v=N]` works with any quoting.
+`${VAULT:<label>…}` (also spelled `${BLACKBOX:…}` / `${CRED:…}`) works inside unquoted or
+double-quoted values; single quotes are literal. `${HOME}`, `${PORT}` and other placeholders are
+ordinary dotenv interpolation (`${NAME:-default}` supported), never vault lookups. Expansion runs
+once: a resolved secret is never scanned again, so a reference cannot loop.
+`vault://<provider>/api_key` (or `token` / `password` / `secret`) also finds the field of a
+credential stored with `navig vault set <provider>`.
+
+**Where a value comes from.** This machine's vault first; a label it does not hold is asked of the
+vault authority it joined (grants, TTL cache and revocation apply). A local copy always wins — if
+it is older than the authority's, `vault doctor` reports `LOCAL_SHADOW`.
+
+**`vault run` precedence** (highest first): `-e` / `-f` flags → file values holding a reference
+(they always replace an inherited variable, with a warning naming the key) → the file's ordinary
+values (they replace inherited ones unless `--no-override`) → the inherited environment. On
+Windows keys match case-insensitively. The child runs in the directory you called `navig` from.
+
+**Fail closed.** Every reference resolves before anything starts. A missing, malformed, denied or
+locked reference lists every failure and starts nothing — never an empty value, never the literal
+`vault://` text. Exit codes: `2` usage / parse / malformed reference, `1` resolution failure,
+otherwise the child's own code (a POSIX death by signal N → 128+N). `resolve`/`doctor` use 0 / 1 / 2
+the same way; `doctor --strict` also fails on warnings.
+
+**How each delivery mode protects the value:**
+
+| Mode | Where the plaintext lives | Who can read it |
+|---|---|---|
+| `vault run --env-file` / `-e` | the child's environment only | the child, its descendants, your user and administrators |
+| `vault run -f` / `inject -- cmd` | a 0600 file in a private temp dir, deleted on exit (left-overs of a crash are swept on the next run) | any process running as you while it exists |
+| `inject -o PATH` | the file you named, owner-only, until you delete it | as above, for as long as it exists |
+| `vault run --host` | the remote command's environment, sent over SSH stdin | the remote user; nothing is written on the server |
+
+A file is never as private as memory. NAVIG cannot stop the program itself from logging or saving
+the values it was given.
+
+**`vault adopt`** finds secrets by known token formats (confirmed), secret-like names with a real
+value (likely) or high entropy (possible — only with `--include-possible`), and proposes
+`vault://projects/<project>[/<dir>][/<env>]/<key>`. Every secret is stored and read back *before*
+any file changes; files are then rewritten in place (comments, order, line endings kept; no backup
+copy), atomically, keeping their permissions. A label that already holds the same value is reused
+(re-running is a no-op); a different value is a conflict and that key is left alone — pick another
+with `--label KEY=vault://…`. Plaintext in JSON/YAML/TOML/INI is reported for manual moving.
+Replacing a value does **not** remove it from git history or revoke it: when the file was ever
+committed, rotate the key at the provider.
+
+**After a rotation** (`navig vault set <ref>`), the next `vault run` gets the new value with no
+file edit. A program that is already running keeps the value it started with — restart it.
+
+**`vault doctor` codes:** `RESOLVED` · `UNRESOLVED` · `MALFORMED` · `ACCESS_DENIED` · `VAULT_LOCKED` ·
+`AUTHORITY_UNAVAILABLE` · `CACHE_EXPIRED` · `PLAINTEXT` · `DUPLICATE_PLAINTEXT` · `ENV_SHADOW` (your
+shell exports a different value — a plain dotenv loader, which never overrides, would use it) ·
+`LOCAL_SHADOW` · `PINNED_OLD` · `NEEDS_LAUNCHER` (references in JSON/YAML/TOML/INI only `vault inject`
+resolves) · `COMPOSE_ENV_FILE` · `FILE_PERMISSIONS` (POSIX only) · `DUPLICATE_KEY` · `PARSE_ERROR`.
+
+**Docker Compose.** Compose passes `env_file:` values to the container literally. Name the keys
+under `environment:` instead and let Compose interpolate them from the environment `vault run`
+builds (the shell environment takes precedence over Compose's own `.env` for interpolation):
+
+```yaml
+services:
+  web:
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+```
+
+```bash
+navig vault run --env-file .env -- docker compose up
+```
+
+**CI.** Use the CI platform's own secrets for the CI job itself; never put a vault credential in a
+workflow file or on a command line. A runner enrolled as a vault device (`navig vault join`) with
+a narrow grant can use `navig vault run --env-file .env -- <step>` like any other machine.
+
 ### Federation — one vault, scoped per machine
 
 On the machine that holds the vault (the **authority**, `vault.authority.enabled: true`):
@@ -10630,6 +10726,7 @@ and never one with a visible window. See `docs/automation/cdp-connector.md`.
 | `navig cdp snapshot` / `screenshot` | a11y tree with refs / capture the page |
 | `navig cdp click` / `type` / `key` / `scroll` / `move` | Interact (by `--ref`, `--xy`, or focused element) |
 | `navig cdp eval` / `nav` | Run JavaScript (gated) / navigate a page |
+| `navig cdp download [--ref N \| --selector CSS] [--out-dir DIR]` | Capture a file download from the page (name sanitised, never overwrites, `--max-mb` cap) and print its path, size and SHA-256 |
 | `navig cdp login <domain>` | Auto-login from a vaulted website credential (gated) |
 | `navig cdp inject <script\|@file>` | Register a persistent userscript; a `.user.js` header (`@match`, `@run-at`) is honoured |
 
@@ -12375,7 +12472,12 @@ drives operator-led submissions.
   `run` executes through the only transport the destination allows — a NAVIG Social
   post, a manual package, a reviewed form in a named automation browser profile
   (`run <id> --profile <name>`), or an honest refusal; `record` + `verify` handle what
-  you submitted by hand; `journal` is the ledger.
+  you submitted by hand; `journal` is the ledger. A Social post goes out as the approved
+  identity's account or not at all (`BLOCKED`, never the default token by accident).
+- **`navig distribution adapters`** — reviewed form maps and whether each is usable.
+  **`navig distribution draft-map <channel> --profile <name> [--out <file>]`** reads
+  the live form read-only and writes a review draft (selectors, labels, suggested
+  slots) that never validates until you sign the review.
 - **`navig distribution publish due [--dry-run]`** — submit the `SCHEDULED` rows whose
   approved time has passed (`prepare` with `scheduled_for`; the approval binds the
   time). `navig distribution schedule --publish-due` runs it every 15 minutes.

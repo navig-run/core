@@ -146,6 +146,18 @@ def _extract_options(callback: Any) -> list[dict[str, Any]]:
     return opts
 
 
+def _runs_bare(typer_app: Any) -> bool:
+    """True when the group executes its callback with no subcommand.
+
+    Typer keeps unset settings as ``DefaultPlaceholder`` objects (truthy), so only a
+    literal ``True`` — on the ``Typer(...)`` info or the ``@app.callback(...)`` — counts.
+    """
+    for holder in (getattr(typer_app, "info", None), getattr(typer_app, "registered_callback", None)):
+        if getattr(holder, "invoke_without_command", None) is True:
+            return True
+    return False
+
+
 def _iter_typer_commands(
     typer_app: Any,
     prefix: list[str],
@@ -229,6 +241,28 @@ def _iter_typer_commands(
                 depth=1,
             )
         else:
+            # A sub-group that RUNS bare (`invoke_without_command=True`: `navig repo lock`,
+            # `navig wiki inbox`, …) is a command too — the same rule as the top level, but
+            # only for groups that say so: a nested callback that merely holds options is
+            # not a verb. Measured 2026-10-25: 33 such commands ran but had no manifest row,
+            # no completion and no commands.md page.
+            cb_info = getattr(group_typer, "registered_callback", None)
+            cb = getattr(cb_info, "callback", None)
+            if cb is not None and _runs_bare(group_typer):
+                cb_help = getattr(cb_info, "help", None)
+                grp_help = getattr(group_info, "help", None)
+                yield {
+                    "path_parts": [*prefix, group_name],
+                    "path": " ".join([*prefix, group_name]),
+                    "callback": cb,
+                    "help": (
+                        (_first_line(cb_help) if isinstance(cb_help, str) else None)
+                        or _first_line(getattr(cb, "__doc__", None))
+                        or (_first_line(grp_help) if isinstance(grp_help, str) else None)
+                    ),
+                    "top_hidden": top_hidden,
+                    "nested_hidden": bool(nested_hidden or this_hidden),
+                }
             # A sub-group. Hidden here means internal, never merely "unlisted".
             yield from _iter_typer_commands(
                 group_typer,

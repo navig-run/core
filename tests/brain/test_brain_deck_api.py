@@ -151,6 +151,100 @@ async def test_takeover_records_the_audit(client_factory) -> None:
     assert body["data"]["lease"]["takeovers"][-1]["reason"] == "moving to the outpost"
 
 
+# ── migration plan (read-only) ─────────────────────────────────────────────
+
+
+async def test_migrate_plan_needs_a_target(client_factory) -> None:
+    async with client_factory() as client:
+        status, body = await _post(client, "/api/deck/brain/migrate/plan", {})
+    assert status == 400
+    assert body["ok"] is False
+    assert "target host" in body["error"]
+
+
+async def test_migrate_plan_returns_the_reconcile_document(client_factory, monkeypatch) -> None:
+    from navig.gateway.deck.routes import brain as routes
+
+    def fake_plan(target: str) -> dict:
+        return {
+            "to": target,
+            "from": "here",
+            "you_are_brain": True,
+            "role": "brain",
+            "ok": False,
+            "reconciled": ["spaces", "plugins"],
+            "unreconciled": ["jobs missing on the target: courrier:scan"],
+            "notes": ["1 other plugin stays on the source (not Brain duties)"],
+        }
+
+    monkeypatch.setattr(routes, "brain_migration_plan", fake_plan)
+    async with client_factory() as client:
+        status, body = await _post(client, "/api/deck/brain/migrate/plan", {"to": "outpost"})
+    assert status == 200
+    data = body["data"]
+    assert data["to"] == "outpost"
+    assert data["ok"] is False
+    assert "courrier:scan" in data["unreconciled"][0]
+    assert data["reconciled"] == ["spaces", "plugins"]
+
+
+async def test_migrate_plan_reports_an_unreachable_target(client_factory, monkeypatch) -> None:
+    from navig.gateway.deck.routes import brain as routes
+
+    def boom(target: str) -> dict:
+        raise RuntimeError("ssh: connect to host outpost port 22: Connection timed out")
+
+    monkeypatch.setattr(routes, "brain_migration_plan", boom)
+    async with client_factory() as client:
+        status, body = await _post(client, "/api/deck/brain/migrate/plan", {"to": "outpost"})
+    assert status == 503
+    assert body["ok"] is False
+    # The reason travels: a plan that cannot be read must never look like "nothing missing".
+    assert "outpost" in body["error"]
+    assert "data" not in body
+
+
+def test_brain_migration_plan_is_the_migrate_parity_check(monkeypatch) -> None:
+    """The card's verdict and ``navig brain migrate``'s refusal read the same document."""
+    from navig.brain import migrate as migrate_mod
+    from navig.brain import parity
+    from navig.gateway.deck.routes import brain as routes
+
+    monkeypatch.setattr(
+        parity,
+        "local_inventory",
+        lambda *_a, **_k: {
+            "jobs": [
+                {
+                    "name": "courrier:scan",
+                    "enabled": True,
+                    "command": "navig courrier scan --space company-paperwork",
+                }
+            ],
+            "plugins": ["navig-msstore", "navig-display"],
+            "spaces": ["company-paperwork-space"],
+        },
+    )
+
+    class FakeRemote:
+        def __init__(self, host: str, **_kw: object) -> None:
+            self.host = host
+
+        def target_inventory(self) -> dict:
+            return {"jobs": [], "plugins": [], "spaces": []}
+
+    monkeypatch.setattr(migrate_mod, "SshRemote", FakeRemote)
+    plan = routes.brain_migration_plan("outpost")
+    assert plan["to"] == "outpost"
+    assert plan["ok"] is False
+    joined = " ".join(plan["unreconciled"])
+    assert "courrier:scan" in joined
+    assert "company-paperwork" in joined
+    assert "navig-msstore" in joined
+    # A desktop-only plugin is a note, never a blocker — the same distinction the CLI makes.
+    assert "navig-display" not in joined
+
+
 # ── envelope discipline ────────────────────────────────────────────────────
 
 

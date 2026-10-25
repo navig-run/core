@@ -1076,16 +1076,78 @@ def _managed_pid_files_dir():
     return Path(base)
 
 
-def _managed_daemon_pids() -> set[int]:
-    """PIDs this install believes it started. Missing or corrupt files contribute nothing."""
-    pids: set[int] = set()
+def _pid_still_ours(pid: int) -> bool:
+    """Whether *pid* still belongs to a NAVIG process.
+
+    A pid file outlives the process that wrote it and Windows recycles the number:
+    measured 2026-10-25, a ``gateway.pid`` written on 22 Oct named a **Chrome
+    renderer**, which made this doctor claim "a local brain is running" beside a brain
+    link — a two-authority alarm against a browser — and made the runtime inventory
+    report that browser as the daemon. A pid is never a process.
+    """
+    try:
+        import psutil  # noqa: PLC0415
+
+        cmd = [str(a) for a in psutil.Process(pid).cmdline()]
+    except Exception:  # noqa: BLE001 — gone, denied, or not a process: not ours
+        return False
+    if not cmd:
+        return False
+    head = Path(cmd[0]).name.lower()
+    if head.startswith("navig"):
+        return True
+    return head.startswith("python") and "navig" in cmd
+
+
+def _pid_file_entries() -> list[tuple[str, int]]:
+    """``(file name, pid)`` for the supervisor's pid files; unparseable files are skipped."""
+    entries: list[tuple[str, int]] = []
     d = _managed_pid_files_dir()
     for name in ("gateway.pid", "worker.pid"):
         try:
-            pids.add(int((d / name).read_text(encoding="utf-8").strip()))
+            entries.append((name, int((d / name).read_text(encoding="utf-8").strip())))
         except Exception:  # noqa: BLE001 — absent or unparseable: it is simply not ours
             continue
-    return pids
+    return entries
+
+
+def _managed_daemon_pids() -> set[int]:
+    """PIDs this install started that are STILL NAVIG processes.
+
+    A recycled pid is not this install's daemon (see :func:`_pid_still_ours`): counting it
+    turned a stale file into a running authority and a green "managed" verdict.
+    """
+    return {pid for _, pid in _pid_file_entries() if _pid_still_ours(pid)}
+
+
+def _pid_owner_name(pid: int) -> str:
+    """The current owner of *pid* — the evidence a stale pid file needs beside it."""
+    try:
+        import psutil  # noqa: PLC0415
+
+        proc = psutil.Process(pid)
+        return Path(proc.name() or proc.exe()).name
+    except Exception:  # noqa: BLE001
+        return "no such process"
+
+
+def _stale_pid_files_row() -> CheckResult | None:
+    """Warn when a pid file names a process that is not NAVIG (or nothing at all)."""
+    stale = [
+        (name, pid, _pid_owner_name(pid))
+        for name, pid in _pid_file_entries()
+        if not _pid_still_ours(pid)
+    ]
+    if not stale:
+        return None
+    named = ", ".join(f"{name} names pid {pid} ({owner})" for name, pid, owner in stale)
+    return _check(
+        "PID files",
+        False,
+        f"{named} — not this install's process; the file is stale and is rewritten on the "
+        "next start",
+        warn=True,
+    )
 
 
 def _port_owner_pids(port: int):
@@ -1536,6 +1598,10 @@ def check_sockets(target_port: int | None = None) -> list[tuple[str, bool, str]]
             results.append(
                 _check("Daemon Port", False, f"Socket error on port {_DAEMON_PORT}: {e}")
             )
+
+    stale_row = _stale_pid_files_row()
+    if stale_row is not None:
+        results.append(stale_row)
 
     try:
         results.append(_brain_role_row())

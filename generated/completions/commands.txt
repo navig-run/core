@@ -110,11 +110,13 @@ navig ai ask
 navig ai diagnose
 navig ai edit
 navig ai explain
+navig ai fallback
 navig ai fallback history
 navig ai fallback set
 navig ai fallback status
 navig ai login
 navig ai logout
+navig ai memory
 navig ai memory add
 navig ai memory clear
 navig ai memory edit
@@ -380,6 +382,7 @@ navig card subtask add
 navig card subtask done
 navig cdp click
 navig cdp detach
+navig cdp download
 navig cdp eval
 navig cdp inject
 navig cdp key
@@ -458,6 +461,7 @@ navig config backup
 navig config edit
 navig config get
 navig config migrate
+navig config schema
 navig config schema install
 navig config set
 navig config set-confirmation-level
@@ -544,6 +548,7 @@ navig coordination transition
 navig copilot ask
 navig copilot explain
 navig copilot review
+navig copilot sessions
 navig copilot sessions delete
 navig copilot sessions export
 navig copilot sessions list
@@ -700,6 +705,7 @@ navig distribution content new
 navig distribution content regenerate
 navig distribution content review
 navig distribution content show
+navig distribution draft-map
 navig distribution maintain
 navig distribution plan
 navig distribution projects
@@ -907,6 +913,7 @@ navig flow list
 navig flow remove
 navig flow run
 navig flow show
+navig flow template
 navig flow template add
 navig flow template list
 navig flow template remove
@@ -933,6 +940,7 @@ navig formation sync
 navig games art
 navig games check
 navig games claim
+navig games deals
 navig games deals list
 navig games deals notify
 navig games deals unwatch
@@ -1003,6 +1011,7 @@ navig generate tiktok logout
 navig generate tiktok music-links
 navig generate tiktok post
 navig generate tiktok profile
+navig generate wallpaper
 navig generate wallpaper generate
 navig generate wallpaper list
 navig generate wallpaper make
@@ -1176,6 +1185,7 @@ navig home wifi capture
 navig home wifi channels
 navig home wifi doctor
 navig home wifi fingerprint
+navig home wifi heatmap
 navig home wifi heatmap sample
 navig home wifi history
 navig home wifi join
@@ -1201,17 +1211,21 @@ navig host deploy
 navig host discover-local
 navig host firewall
 navig host list
+navig host lock
 navig host lock acquire
 navig host lock release
 navig host lock status
+navig host maintenance
 navig host maintenance clean
 navig host maintenance install
 navig host maintenance run
 navig host maintenance show
 navig host maintenance update
+navig host monitor
 navig host monitor report
 navig host monitor show
 navig host remove
+navig host security
 navig host security edit
 navig host security show
 navig host servers
@@ -1517,6 +1531,7 @@ navig mode
 navig mode detect
 navig mode doctor
 navig mode list
+navig mode route
 navig mode route set
 navig mode route show
 navig mode set
@@ -1623,12 +1638,15 @@ navig obs screenshot
 navig obs stats
 navig obs status
 navig origin
+navig os account
 navig os account link
 navig os account unlink
+navig os devices
 navig os devices revoke
 navig os link
 navig os open
 navig os pair
+navig os requests
 navig os requests allow
 navig os requests deny
 navig os serve
@@ -1876,6 +1894,7 @@ navig repo guard install
 navig repo guard status
 navig repo guard uninstall
 navig repo land
+navig repo lock
 navig repo lock check
 navig repo lock release
 navig repo lock status
@@ -2259,6 +2278,7 @@ navig user set
 navig user show
 navig vault activate
 navig vault add
+navig vault adopt
 navig vault audit
 navig vault backup
 navig vault breach check
@@ -2272,6 +2292,7 @@ navig vault devices enroll
 navig vault devices list
 navig vault devices revoke
 navig vault disable
+navig vault doctor
 navig vault edit
 navig vault enable
 navig vault export
@@ -2279,6 +2300,7 @@ navig vault get
 navig vault grant
 navig vault import
 navig vault info
+navig vault inject
 navig vault join
 navig vault leave
 navig vault list
@@ -2296,6 +2318,7 @@ navig vault providers
 navig vault recovery init
 navig vault recovery verify
 navig vault remove
+navig vault resolve
 navig vault restore
 navig vault revoke
 navig vault rotate
@@ -2353,6 +2376,7 @@ navig watch start
 navig web
 navig web disable
 navig web enable
+navig web hestia
 navig web hestia add
 navig web hestia list
 navig web hestia remove
@@ -2366,11 +2390,14 @@ navig whoami
 navig wiki
 navig wiki add
 navig wiki edit
+navig wiki inbox
 navig wiki inbox process
 navig wiki init
+navig wiki links
 navig wiki links broken
 navig wiki list
 navig wiki publish
+navig wiki rag
 navig wiki rag add
 navig wiki rag query
 navig wiki rag rebuild

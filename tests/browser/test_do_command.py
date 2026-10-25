@@ -69,6 +69,30 @@ def test_do_bridges_profile_and_audits(cfg, monkeypatch):
     assert "cybesis" in audit and "open gmail" in audit
 
 
+def test_do_plan_flag_passes_plan_mode_only_when_asked(cfg, monkeypatch):
+    """`navig do --plan` enters plan mode; without it the 3-arg contract holds."""
+    from navig.browser import profiles as p
+
+    p.create_profile("cy")
+    p.set_active("cy")
+    _stub_open(monkeypatch, port=9280)
+    monkeypatch.setattr("navig.agent.tools.browser_session.register_desktop_endpoint",
+                        lambda key, url: None)
+    seen: list[dict] = []
+
+    async def fake_run(task, session_key, max_iterations, **kw):
+        seen.append(kw)
+        return "DONE", None
+
+    monkeypatch.setattr(do_mod, "_agent_run", fake_run)
+
+    r = CliRunner().invoke(do_app, ["a task"])
+    assert r.exit_code == 0, r.output
+    r = CliRunner().invoke(do_app, ["--plan", "a task"])
+    assert r.exit_code == 0, r.output
+    assert seen == [{}, {"plan_mode": True}], seen
+
+
 def test_do_surfaces_account_rotation(cfg, monkeypatch):
     from navig.browser import profiles as p
 

@@ -33,6 +33,8 @@ TOOLSETS: dict[str, list[str] | None] = {
         "read_file",
         "write_file",
         "list_files",
+        "file_search",
+        "grep_search",
         "search",
         "web_fetch",
         "domain_lookup",
@@ -48,6 +50,9 @@ TOOLSETS: dict[str, list[str] | None] = {
         "read_file",
         "write_file",
         "list_files",
+        "edit_file",
+        "file_search",
+        "grep_search",
         "search",
         "web_fetch",
         "domain_lookup",
@@ -85,6 +90,16 @@ TOOLSETS: dict[str, list[str] | None] = {
         # honouring it (2026-10-16), and the stash is one stack shared by every
         # worktree and session — a mutating tool must be asked for via "git".
     ],
+    # In-loop planning (offered only to sessions with a live plan — see
+    # plan_tools.apply_plan_toolsets). The tools register unconditionally.
+    "plan": ["plan_add_step", "plan_show", "plan_approve"],
+    # Structured operator questions (ask_user). Always requested as a tag so a
+    # gateway turn offers it; its check_fn hides it where no question channel
+    # is bound (CLI/one-shot), keeping those schemas unchanged.
+    "questions": ["ask_user"],
+    # Read-only runtime inspection — never on by default; reachable via `full`
+    # (or an explicit request for this tag) so discovery costs no schema by default.
+    "introspection": ["plugin_inspect", "module_list"],
     # Knowledge base + wiki access.
     # NB: `fts_search` used to be listed here and is NOT an agent tool — it is a
     # method on `navig.memory.conversation`'s store. A name the registry cannot
@@ -134,6 +149,10 @@ PARALLEL_SAFE_TOOLS: frozenset[str] = frozenset(
         "domain_lookup",
         "read_file",
         "list_files",
+        "file_search",
+        "grep_search",
+        "plugin_inspect",
+        "module_list",
         "wiki_search",
         "search_all",
         "wiki_read",
@@ -182,6 +201,9 @@ NEVER_PARALLEL_TOOLS: frozenset[str] = frozenset(
     {
         "bash_exec",
         "write_file",
+        "edit_file",
+        # Blocks a whole human turn while waiting for the operator's answer.
+        "ask_user",
         "memory_write",
         "memory_delete",
         "wiki_write",

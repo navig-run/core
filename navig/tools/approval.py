@@ -158,6 +158,10 @@ class ApprovalPolicy(str, enum.Enum):
 DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
     {
         "write_file",
+        "edit_file",
+        # Plan approval is a HUMAN act: the model may draft a plan but never
+        # flips it to EXECUTING itself — the call passes this gate first.
+        "plan_approve",
         "bash_exec",
         "delete_file",
         "remove_file",

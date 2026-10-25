@@ -83,7 +83,7 @@ def _audit(task: str, profile: str | None, dry_run: bool, yes: bool) -> None:
 
 
 async def _agent_run(
-    task: str, session_key: str, max_iterations: int
+    task: str, session_key: str, max_iterations: int, plan_mode: bool = False
 ) -> tuple[str, dict | None]:
     """Run the agentic task; return ``(reply, account_fallback)``.
 
@@ -94,7 +94,11 @@ async def _agent_run(
 
     agent = ConversationalAgent()
     reply = await agent.run_agentic(
-        task, max_iterations=max_iterations, toolset=["browser", "core"], session_key=session_key
+        task,
+        max_iterations=max_iterations,
+        toolset=["browser", "core"],
+        session_key=session_key,
+        plan_mode=plan_mode,
     )
     return reply, getattr(agent, "_last_account_fallback", None)
 
@@ -145,6 +149,15 @@ def do_main(
     headless: bool = typer.Option(False, "--headless", help="No visible window (drives the resolved profile headlessly; a throwaway browser only if no profile is set)."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Allow send/publish/delete without pausing."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Plan only; stop before any outward action."),
+    plan: bool = typer.Option(
+        False,
+        "--plan",
+        help=(
+            "Enter plan mode: the agent researches read-only and drafts a plan with "
+            "plan_add_step; mutating tools stay blocked until you approve the plan "
+            "(plan_approve requires your confirmation)."
+        ),
+    ),
     max_steps: int = typer.Option(24, "--max-steps", help="Max agent iterations."),
 ):
     """Run a one-shot AI browser task on the active (or --profile) browser."""
@@ -163,6 +176,8 @@ def do_main(
         ch.info("dry-run — no send/submit/publish/delete will be performed")
     elif not yes:
         ch.info("safe mode — will prepare but not finally send/publish (pass --yes to complete)")
+    if plan:
+        ch.info("plan mode — read-only research first; mutations unlock after you approve")
 
     import asyncio  # noqa: PLC0415
 
@@ -172,7 +187,12 @@ def do_main(
     # publish/pay/delete) at the tool layer unless the user passed --yes.
     safe_mode.set_level("dry_run" if dry_run else ("off" if yes else "safe"))
     try:
-        result, _acct_fb = asyncio.run(_agent_run(full_task, session_key, max_steps))
+        # The 3-argument call is the established contract (tests and any wrapper
+        # fake it); plan mode rides in as a keyword ONLY when --plan was asked for.
+        run_kwargs = {"plan_mode": True} if plan else {}
+        result, _acct_fb = asyncio.run(
+            _agent_run(full_task, session_key, max_steps, **run_kwargs)
+        )
     except KeyboardInterrupt:
         ch.warning("interrupted")
         raise typer.Exit(130) from None

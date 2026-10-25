@@ -18,6 +18,7 @@ from pathlib import Path
 
 from navig.plugins.runtime_inventory import (
     gateway_activation,
+    gateway_environment,
     inventory_rows,
     runtime_inventory,
 )
@@ -332,3 +333,78 @@ def test_log_evidence_is_bounded_to_the_current_boot(tmp_path):
     assert failed == {"fresh-plugin": "boom"}
     # No bound at all → nothing may be claimed.
     assert gateway_activation(Path(tmp_path / "nope.log"))[2] is False
+
+
+# ── the pid file names a process, and the process must still be the gateway ───────────
+
+
+class _FakeProc:
+    def __init__(self, exe: str, cmdline: list[str]) -> None:
+        self._exe = exe
+        self._cmdline = cmdline
+
+    def exe(self) -> str:
+        return self._exe
+
+    def cmdline(self) -> list[str]:
+        return list(self._cmdline)
+
+
+def _fake_psutil(monkeypatch, proc: _FakeProc) -> None:
+    """Stand in for psutil: one process (the pid) and an empty census."""
+    import sys as _sys
+    import types
+
+    fake = types.SimpleNamespace(
+        Process=lambda _pid: proc,
+        process_iter=lambda _attrs: [],
+        NoSuchProcess=type("NoSuchProcess", (Exception,), {}),
+        AccessDenied=type("AccessDenied", (Exception,), {}),
+    )
+    monkeypatch.setitem(_sys.modules, "psutil", fake)
+
+
+def _config_dir_with_pid(monkeypatch, tmp_path: Path, pid: int) -> None:
+    from navig.platform import paths
+
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / "gateway.pid").write_text(str(pid), encoding="utf-8")
+    monkeypatch.setattr(paths, "config_dir", lambda *_a, **_k: config)
+
+
+def test_a_gateway_pid_names_the_gateway(monkeypatch, tmp_path):
+    _config_dir_with_pid(monkeypatch, tmp_path, 4242)
+    _fake_psutil(
+        monkeypatch,
+        _FakeProc(
+            r"C:\runtime\venv\Scripts\pythonw.exe",
+            [r"C:\runtime\venv\Scripts\pythonw.exe", "-m", "navig", "gateway", "run"],
+        ),
+    )
+    env = gateway_environment()
+    assert env is not None
+    assert env["pid"] == 4242
+    assert env["exe"].endswith("pythonw.exe")
+
+
+def test_a_recycled_gateway_pid_is_unknown_not_a_daemon(monkeypatch, tmp_path):
+    """Measured on this box 2026-10-25: gateway.pid from Oct 22 named a Chrome renderer."""
+    _config_dir_with_pid(monkeypatch, tmp_path, 4242)
+    _fake_psutil(
+        monkeypatch,
+        _FakeProc(
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            [r"C:\Program Files\Google\Chrome\Application\chrome.exe", "--type=renderer"],
+        ),
+    )
+    assert gateway_environment() is None
+
+
+def test_an_unknown_daemon_makes_the_repair_name_no_interpreter(tmp_path):
+    root = tmp_path / "repo"
+    make_source(root)
+    inv = run(tmp_path, root=root, site=None)
+    [rec] = inv["records"]
+    assert "pip install -e" in rec["repair"]
+    assert "# into" not in rec["repair"]  # never the caller's Python dressed as the daemon's

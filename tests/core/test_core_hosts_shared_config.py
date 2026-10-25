@@ -302,6 +302,18 @@ def fresh_config(tmp_path):
             cfg = ConfigSingleton()
             cfg._global_data = {}
             cfg._project_data = {}
+            # Pin the refresh cache to the path this instance resolves NOW, so the first
+            # get() takes _refresh_global_data's early-return branch instead of re-reading
+            # a config.yaml that another test in the same worker left behind. Unpinned,
+            # these tests pass alone and fail inside the gate's 55-file selection
+            # (measured 2026-10-25: get() answered None where the test had set a value,
+            # because a fresh copy of a real file replaced the in-memory dict).
+            cfg._global_cache_path = cfg.global_config_path
+            cfg._global_cache_mtime_ns = (
+                cfg.global_config_path.stat().st_mtime_ns
+                if cfg.global_config_path.exists()
+                else None
+            )
             # global_config_dir / cache_dir / plugins_dir are now LIVE properties that read
             # config_dir() — already patched to tmp_path above, so no manual assignment needed.
             yield cfg

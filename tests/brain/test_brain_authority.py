@@ -975,3 +975,29 @@ def test_the_shipped_worker_bundle_actually_routes_the_authority_path() -> None:
     assert authority.AUTHORITY_PATH in text
     assert "OwnershipRecord" in text
     assert "OWNERSHIP" in text
+
+
+# ── fence_state: an unreachable authority is "unknown", never a takeover ──────
+
+
+def test_fence_state_is_ok_for_the_holder(remote, fake: FakeAuthority) -> None:
+    guard.require_ownership(service="gateway")
+    assert guard.fence_state(who="scheduler") == guard.FENCE_OK
+
+
+def test_fence_state_is_unknown_when_the_authority_does_not_answer(
+    remote, fake: FakeAuthority
+) -> None:
+    """2026-10-23: a 19 s lighthouse blip was read as a takeover and cron died for 28 h."""
+    guard.require_ownership(service="gateway")
+    fake.unreachable = True
+    assert guard.fence_state(who="scheduler") == guard.FENCE_UNKNOWN
+    assert guard.write_allowed(who="scheduler") is False  # a single write still refuses
+    fake.unreachable = False
+    assert guard.fence_state(who="scheduler") == guard.FENCE_OK
+
+
+def test_fence_state_is_stale_only_after_a_real_takeover(remote, fake: FakeAuthority) -> None:
+    guard.require_ownership(service="gateway")
+    fake.own(MACHINE_B, epoch=2)
+    assert guard.fence_state(who="scheduler") == guard.FENCE_STALE

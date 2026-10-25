@@ -22,16 +22,15 @@ def client():
 
 
 def resolve(ref: str) -> str:
-    """The plaintext *ref* names. ``KeyError`` when neither the vault nor the authority has it."""
-    from navig_vault.refs import parse_ref, resolve_ref  # noqa: PLC0415
+    """The plaintext *ref* names. ``KeyError`` when neither the vault nor the authority has it.
+
+    The lookup itself is ``navig_vault.resolution.lookup`` — the same one ``vault run
+    --env-file``, ``vault inject`` and ``vault doctor`` use, so every surface agrees
+    on what a reference means (including ``vault://<provider>/api_key`` reading the
+    ``api_key`` of a credential stored with ``navig vault set <provider>``).
+    """
+    from navig_vault.resolution import lookup  # noqa: PLC0415
 
     from navig.vault.core import get_vault  # noqa: PLC0415
 
-    parsed = parse_ref(ref)
-    vault = get_vault()
-    if vault._store.get(parsed.label) is not None:
-        return resolve_ref(vault, parsed)
-    fed = client()
-    if fed.enrolled():
-        return fed.resolve(parsed.uri())
-    raise KeyError(parsed.label)
+    return lookup(get_vault(), ref, federation=lambda _vault: client())[0]

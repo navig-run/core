@@ -104,6 +104,17 @@ class SpaceManifest:
         return tuple(out)
 
     @property
+    def navigation(self) -> dict[str, Any]:
+        """Declared navigation aliases (``{"areas": {alias: id}, "projects": {…}}``).
+
+        Alias → **registered id** (Area / Project-Manager id — the owning registries
+        resolve canonical paths), never a raw path, so renames of physical folders
+        do not invalidate the declaration. Tolerant like every reader: non-dict → {}.
+        """
+        val = self.data.get("navigation")
+        return dict(val) if isinstance(val, dict) else {}
+
+    @property
     def interface(self) -> dict[str, Any]:
         """Environment presentation bindings (dashboard/dock/menu profile refs …).
 

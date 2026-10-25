@@ -83,6 +83,10 @@ def split_exec_command(line: str) -> list[str]:
         ]
     return shlex.split(line)
 
+#: Default lateness window for one occurrence (see ``CronJob.misfire_grace_seconds``).
+DEFAULT_MISFIRE_GRACE_SECONDS = 3600
+
+
 @dataclass
 class CronJob:
     """A scheduled cron job."""
@@ -103,6 +107,11 @@ class CronJob:
     #: Optional Space/project id this job belongs to. Purely an association for
     #: project rollups — the scheduler does not care; old job files simply lack it.
     space: str | None = None
+    #: How late an occurrence may still run, in seconds. An occurrence missed by more
+    #: than this (the Brain was down, or ticks were skipped while ownership was
+    #: unknown) is skipped and the job moves to its next occurrence, so a restart does
+    #: not fire hours-old reminders in one burst. ``None`` = always catch up once.
+    misfire_grace_seconds: int | None = DEFAULT_MISFIRE_GRACE_SECONDS
 
     def to_dict(self) -> dict:
         return {
@@ -120,6 +129,7 @@ class CronJob:
             "last_output": self.last_output,
             "created_at": self.created_at.isoformat(),
             "space": self.space,
+            "misfire_grace_seconds": self.misfire_grace_seconds,
         }
 
     @classmethod
@@ -143,6 +153,9 @@ class CronJob:
                 else datetime.now()
             ),
             space=data.get("space"),
+            misfire_grace_seconds=data.get(
+                "misfire_grace_seconds", DEFAULT_MISFIRE_GRACE_SECONDS
+            ),
         )
 
 
@@ -677,6 +690,7 @@ class CronService:
         # the tick re-checks ownership so a fenced scheduler stops FIRING as well.
         self._lease_epoch: int | None = None
         self._lease_refusal: str = ""
+        self._fence_unknown_ticks: int = 0
 
         # Semaphore for concurrent job limit
         self._semaphore = asyncio.Semaphore(self.config.max_concurrent_jobs)
@@ -924,19 +938,36 @@ class CronService:
         except Exception:  # noqa: BLE001 — an observation must never break the observed
             pass
 
-    def _ownership_still_valid(self) -> bool:
-        """Is this scheduler still the Brain's, right now? (fencing at the tick)"""
+    def _fence_at_tick(self) -> str:
+        """``ok`` / ``stale`` / ``unknown`` for this tick (fencing at the tick).
+
+        ``unknown`` (the ownership authority did not answer) is NOT a takeover: the tick
+        is skipped and the next one asks again. Only a confirmed stale epoch stops cron.
+        """
         if self._lease_epoch is None:
-            return True  # unfenced caller (CLI, tests)
+            return "ok"  # unfenced caller (CLI, tests)
         from navig.brain import guard as _brain_guard  # noqa: PLC0415
 
-        if _brain_guard.write_allowed(who="scheduler"):
-            return True
-        self._record_refusal(
-            "the Brain lease moved past this scheduler's epoch (a takeover happened) — "
-            "the tick is stopping so two schedulers can never fire the same job"
-        )
-        return False
+        return _brain_guard.fence_state(who="scheduler")
+
+    def _alert_stopped(self) -> None:
+        """Tell the operator cron stopped — a silent stop looks like a quiet day."""
+        try:
+            from navig.core.background import spawn  # noqa: PLC0415
+            from navig.notify import dispatch  # noqa: PLC0415
+
+            spawn(
+                dispatch(
+                    "system_alert",
+                    "Scheduler stopped on this machine",
+                    f"{self._lease_refusal}. Reminders and jobs will not fire here until "
+                    "the gateway restarts. Check: navig brain status",
+                    data={"source": "scheduler", "reason": self._lease_refusal},
+                ),
+                name="cron-stop-alert",
+            )
+        except Exception as exc:  # noqa: BLE001 — the alert must never mask the stop
+            logger.warning("cron: could not send the stop alert: %s", exc)
 
     def _write_allowed(self) -> bool:
         """Would a jobs-store write survive the fence? (no raise — cron must degrade)"""
@@ -1153,9 +1184,34 @@ class CronService:
                 # no longer the Brain, so it must stop FIRING as well as writing —
                 # otherwise the old machine keeps running campaigns and reminders that
                 # belong to the new one.
-                if not self._ownership_still_valid():
+                fence = self._fence_at_tick()
+                if fence == "unknown":
+                    # The authority did not answer: ownership is unconfirmed, so fire
+                    # nothing this tick — but this is not a takeover, so keep ticking.
+                    self._fence_unknown_ticks += 1
+                    if self._fence_unknown_ticks in (1, 30, 360):
+                        logger.warning(
+                            "cron: skipping tick — the ownership authority is unreachable "
+                            "(%d tick(s) in a row); retrying",
+                            self._fence_unknown_ticks,
+                        )
+                    await asyncio.sleep(10)
+                    continue
+                if self._fence_unknown_ticks:
+                    logger.info(
+                        "cron: ownership authority reachable again after %d skipped tick(s)",
+                        self._fence_unknown_ticks,
+                    )
+                    self._fence_unknown_ticks = 0
+                if fence == "stale":
+                    self._record_refusal(
+                        "the Brain lease moved past this scheduler's epoch (a takeover "
+                        "happened) — the tick is stopping so two schedulers can never "
+                        "fire the same job"
+                    )
                     self._running = False
                     logger.error("cron: scheduler stopped — %s", self._lease_refusal)
+                    self._alert_stopped()
                     break
                 # Pick up external edits (the schedule CLI) before evaluating jobs.
                 self._reload_if_changed()
@@ -1187,6 +1243,7 @@ class CronService:
             and job.next_run <= now
             and job.id not in self._running_jobs
         ]
+        due = self._drop_misfired(due, now)
         spawned: list[asyncio.Task] = []
         for job in due:
             task = asyncio.create_task(self._run_job(job))
@@ -1194,6 +1251,35 @@ class CronService:
             task.add_done_callback(self._on_job_task_done)
             spawned.append(task)
         return spawned
+
+    def _drop_misfired(self, due: list[CronJob], now: datetime) -> list[CronJob]:
+        """Skip occurrences that are older than their job's misfire grace window.
+
+        A skipped job is moved to its next occurrence after *now* and keeps its last
+        status; the skip is logged and saved. Returns the jobs that should still run.
+        """
+        keep: list[CronJob] = []
+        skipped = False
+        for job in due:
+            grace = job.misfire_grace_seconds
+            late = (now - job.next_run).total_seconds()
+            if grace is None or late <= grace:
+                keep.append(job)
+                continue
+            missed = job.next_run
+            job.next_run = CronParser.calculate_next(job.schedule, now)
+            skipped = True
+            logger.warning(
+                "cron: skipped job %s — its %s occurrence is %.0f min late (grace %d min); next run %s",
+                job.name,
+                missed.isoformat(timespec="minutes"),
+                late / 60,
+                grace // 60,
+                job.next_run.isoformat(timespec="minutes") if job.next_run else None,
+            )
+        if skipped:
+            self._save_jobs()
+        return keep
 
     def _on_job_task_done(self, task: asyncio.Task) -> None:
         """Release a finished background job and surface any unexpected crash.

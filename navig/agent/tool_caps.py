@@ -55,6 +55,7 @@ _LINE_SNAP_MIN_RATIO: float = 0.8
 #: :data:`DEFAULT_MAX_RESULT_CHARS`.
 TOOL_SPECIFIC_CAPS: dict[str, int] = {
     "read_file": 30_000,
+    "file_search": 20_000,
     "grep_search": 20_000,
     "list_files": 15_000,
     "bash_exec": 50_000,

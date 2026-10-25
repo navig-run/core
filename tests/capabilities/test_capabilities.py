@@ -262,3 +262,112 @@ def test_gate_resolves_the_exact_command_level(run_handler, monkeypatch) -> None
         "cli:navig social upload",
         "dangerous",
     )
+
+
+# ── overview honesty: "cannot report" is not "nothing connected" ─────────────────
+
+
+def test_overview_distinguishes_unreported_from_reported(monkeypatch) -> None:
+    import navig.capabilities as capabilities
+
+    monkeypatch.setattr(
+        capabilities,
+        "installed_plugins",
+        lambda **_kw: [
+            {"plugin": "navig-social", "probe": "social"},
+            {"plugin": "navig-legacy", "probe": None},
+        ],
+    )
+    monkeypatch.setattr(capabilities, "run_probes", lambda **_kw: {"social": {"accounts": []}})
+
+    result = capabilities.overview()
+    by_name = {row["plugin"]: row for row in result["plugins"]}
+
+    assert by_name["navig-social"]["accounts_status"] == "reported"
+    assert by_name["navig-legacy"]["accounts_status"] == "unreported"
+    assert result["probes_unreported"] == ["navig-legacy"]
+
+
+def test_overview_marks_a_failed_probe_as_error(monkeypatch) -> None:
+    import navig.capabilities as capabilities
+
+    monkeypatch.setattr(
+        capabilities,
+        "installed_plugins",
+        lambda **_kw: [{"plugin": "navig-social", "probe": "social"}],
+    )
+    monkeypatch.setattr(
+        capabilities,
+        "run_probes",
+        lambda **_kw: {"social": {"accounts": [], "error": "vault locked"}},
+    )
+
+    result = capabilities.overview()
+
+    assert result["plugins"][0]["accounts_status"] == "error"
+    assert result["probes_failed"] == ["social"]
+
+
+def test_digest_says_so_when_no_probe_is_registered() -> None:
+    overview = {
+        "plugins": [
+            {"plugin": "navig-social", "accounts": [], "accounts_status": "unreported"},
+            {"plugin": "navig-email", "accounts": [], "accounts_status": "unreported"},
+        ]
+    }
+    text = build_digest(overview)
+    assert "Account probes are not registered" in text
+    assert len(text) <= 600
+
+
+def test_digest_drops_the_warning_once_a_probe_reports() -> None:
+    overview = {
+        "plugins": [
+            {
+                "plugin": "navig-social",
+                "accounts": [
+                    {"provider": "instagram", "label": "@brand", "state": "connected"}
+                ],
+                "accounts_status": "reported",
+            }
+        ]
+    }
+    text = build_digest(overview)
+    assert "instagram @brand ✓" in text
+    assert "Account probes are not registered" not in text
+
+
+def test_a_slow_probe_still_reports_under_the_default_budget() -> None:
+    """A probe slower than two seconds must still report, because the social probe is.
+
+    The first budget was 2 s and the real social probe measured 4.0 s (eight providers
+    checked over the network), so every call turned eight connected accounts into
+    "timed out after 2s" — which an agent reads exactly like "nothing connected".
+    """
+    import time as _time
+
+    def slow() -> dict:
+        _time.sleep(2.4)
+        return {"accounts": [{"provider": "instagram", "label": "@slow", "state": "connected"}]}
+
+    result = probes.run_probes(probes={"social": slow})
+
+    assert "error" not in result["social"], result["social"].get("error")
+    assert result["social"]["accounts"][0]["state"] == "connected"
+
+
+def test_the_default_budget_covers_the_slowest_measured_probe() -> None:
+    # Measured on a real install (2026-10-25): social 4.0 s, email 1.4 s, mobile 1.4 s,
+    # everything else under 0.1 s. A budget close to the slowest measurement turns a
+    # slow-but-working probe into a permanent error.
+    assert probes.DEFAULT_TIMEOUT_S >= 5.0
+
+
+def test_digest_says_so_when_an_account_check_failed() -> None:
+    overview = {"plugins": [{"plugin": "navig-social", "accounts": [], "accounts_status": "error"}]}
+
+    text = build_digest(overview)
+
+    assert "1 account check(s) failed" in text
+    assert "Account probes are not registered" not in text
+    assert len(text) <= 600

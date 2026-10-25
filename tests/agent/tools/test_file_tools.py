@@ -3,11 +3,13 @@ Tests for navig.agent.tools.file_tools
 """
 
 import asyncio
+import hashlib
 from pathlib import Path
 
 from navig.agent.tools.file_tools import (
     _MAX_READ_CHARS,
     _MAX_WRITE_CHARS,
+    EditFileTool,
     ListFilesTool,
     ReadFileTool,
     WriteFileTool,
@@ -264,3 +266,158 @@ class TestListFilesTool:
             (tmp_path / f"f{i}.txt").write_text(str(i))
         result = _run(self.tool.run({"path": str(tmp_path)}))
         assert result.output["count"] == 3
+
+
+# ---------------------------------------------------------------------------
+# EditFileTool
+# ---------------------------------------------------------------------------
+
+
+class TestEditFileTool:
+    def setup_method(self):
+        self.tool = EditFileTool()
+
+    def test_name(self):
+        assert self.tool.name == "edit_file"
+
+    def test_owner_only_true(self):
+        assert self.tool.owner_only is True
+
+    def test_unique_replace_succeeds_with_diff(self, tmp_path):
+        f = tmp_path / "code.py"
+        f.write_text("value = 1\n", encoding="utf-8")
+        result = _run(
+            self.tool.run({"path": str(f), "old_string": "value = 1", "new_string": "value = 2"})
+        )
+        assert result.success is True
+        assert "Replaced 1 occurrence(s)" in result.output
+        assert f.read_text(encoding="utf-8") == "value = 2\n"
+        # bounded diff present
+        assert "value = 2" in result.output
+
+    def test_zero_match_refused_with_guidance(self, tmp_path):
+        f = tmp_path / "code.py"
+        f.write_text("nothing here\n", encoding="utf-8")
+        result = _run(
+            self.tool.run({"path": str(f), "old_string": "missing text", "new_string": "x"})
+        )
+        assert result.success is False
+        assert "not found" in result.error
+        assert "missing text" in result.error
+
+    def test_ambiguous_match_refused_unless_replace_all(self, tmp_path):
+        f = tmp_path / "code.py"
+        f.write_text("dup\ndup\n", encoding="utf-8")
+        refused = _run(self.tool.run({"path": str(f), "old_string": "dup", "new_string": "x"}))
+        assert refused.success is False
+        assert "matches 2 times" in refused.error
+        assert "replace_all" in refused.error
+        assert f.read_text(encoding="utf-8") == "dup\ndup\n"  # untouched
+
+        all_replace = _run(
+            self.tool.run({"path": str(f), "old_string": "dup", "new_string": "x", "replace_all": True})
+        )
+        assert all_replace.success is True
+        assert f.read_text(encoding="utf-8") == "x\nx\n"
+
+    def test_expected_hash_fresh_succeeds(self, tmp_path):
+        f = tmp_path / "code.py"
+        data = b"alpha\n"
+        f.write_bytes(data)
+        digest = hashlib.sha256(data).hexdigest()
+        result = _run(
+            self.tool.run(
+                {"path": str(f), "old_string": "alpha", "new_string": "beta", "expected_hash": digest}
+            )
+        )
+        assert result.success is True
+
+    def test_expected_hash_stale_refused(self, tmp_path):
+        """A concurrent writer between read and edit must never be silently
+        overwritten — the stale hash refuses the edit."""
+        f = tmp_path / "code.py"
+        f.write_bytes(b"original\n")
+        stale = hashlib.sha256(b"original\n").hexdigest()
+        f.write_bytes(b"someone else wrote this\n")  # concurrent change
+        result = _run(
+            self.tool.run(
+                {"path": str(f), "old_string": "original", "new_string": "mine", "expected_hash": stale}
+            )
+        )
+        assert result.success is False
+        assert "changed since" in result.error
+        assert f.read_text(encoding="utf-8") == "someone else wrote this\n"
+
+    def test_crlf_preserved_for_lf_string_input(self, tmp_path):
+        f = tmp_path / "win.txt"
+        f.write_bytes(b"line one\r\nline two\r\n")
+        result = _run(
+            self.tool.run({"path": str(f), "old_string": "line one", "new_string": "FIRST"})
+        )
+        assert result.success is True
+        out = f.read_bytes()
+        assert out == b"FIRST\r\nline two\r\n"
+
+    def test_missing_file_refused_with_write_file_hint(self, tmp_path):
+        result = _run(
+            self.tool.run(
+                {"path": str(tmp_path / "ghost.py"), "old_string": "a", "new_string": "b"}
+            )
+        )
+        assert result.success is False
+        assert "not found" in result.error.lower()
+        assert "write_file" in result.error
+
+    def test_empty_old_string_refused(self, tmp_path):
+        f = tmp_path / "x.txt"
+        f.write_text("data")
+        result = _run(self.tool.run({"path": str(f), "old_string": "", "new_string": "y"}))
+        assert result.success is False
+        assert "non-empty" in result.error
+
+    def test_non_utf8_file_refused(self, tmp_path):
+        f = tmp_path / "latin.txt"
+        f.write_bytes(b"caf\xe9")  # latin-1 é, invalid UTF-8
+        result = _run(self.tool.run({"path": str(f), "old_string": "caf", "new_string": "tea"}))
+        assert result.success is False
+        assert "UTF-8" in result.error
+
+    def test_no_temp_leftovers_after_success(self, tmp_path):
+        f = tmp_path / "clean.py"
+        f.write_text("a = 1\n", encoding="utf-8")
+        result = _run(self.tool.run({"path": str(f), "old_string": "1", "new_string": "2"}))
+        assert result.success is True
+        leftovers = [p.name for p in tmp_path.iterdir() if p.name != "clean.py"]
+        assert leftovers == []
+
+    def test_oversize_result_refused(self, tmp_path):
+        f = tmp_path / "big.py"
+        f.write_text("x", encoding="utf-8")
+        result = _run(
+            self.tool.run(
+                {
+                    "path": str(f),
+                    "old_string": "x",
+                    "new_string": "y" * (_MAX_WRITE_CHARS + 10),
+                }
+            )
+        )
+        assert result.success is False
+        assert "large" in result.error.lower() or "max" in result.error.lower()
+
+    def test_classification(self):
+        from navig.agent.plan_mode import PlanInterceptor
+        from navig.agent.toolsets import is_parallel_safe
+        from navig.tools.approval import DESTRUCTIVE_TOOLS, is_destructive_tool
+
+        assert "edit_file" in DESTRUCTIVE_TOOLS
+        assert is_destructive_tool("edit_file") is True
+        assert is_parallel_safe("edit_file") is False
+        assert "edit_file" not in PlanInterceptor.READ_ONLY_TOOLS
+
+    def test_registered_in_registry(self):
+        from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+        from navig.agent.tools import register_all_tools
+
+        register_all_tools()
+        assert "edit_file" in (_AGENT_REGISTRY.available_names() or [])

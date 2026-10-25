@@ -461,17 +461,34 @@ def write_allowed(*, who: str = "singleton", store: LeaseStore | None = None) ->
     telling the operator, not take the process down with it. An authority that
     cannot be asked means the epoch cannot be confirmed, so the write is refused.
     """
+    return fence_state(who=who, store=store) == FENCE_OK
+
+
+FENCE_OK = "ok"
+FENCE_STALE = "stale"
+FENCE_UNKNOWN = "unknown"
+
+
+def fence_state(*, who: str = "singleton", store: LeaseStore | None = None) -> str:
+    """Tri-state fence check: ``ok``, ``stale`` (a takeover is confirmed) or ``unknown``.
+
+    :func:`write_allowed` folds "the authority did not answer" into "refused", which is
+    right for one write. A long-lived loop must not: a one-second authority outage is
+    not a takeover, and treating it as one stops the loop for good (2026-10-23: cron
+    dead for 28 h after a 19 s lighthouse blip). ``unknown`` means skip this round and
+    ask again; only ``stale`` is proof another machine owns the Brain.
+    """
     epoch = current_epoch()
     if epoch is None:
-        return True  # no acquired lease in this process (CLI/tests): unfenced caller
+        return FENCE_OK  # no acquired lease in this process (CLI/tests): unfenced caller
     try:
         _authority.lease_store(store).assert_epoch(epoch, who=who)
     except StaleEpoch:
-        return False
+        return FENCE_STALE
     except AuthorityError as exc:
         logger.warning("refusing a write (%s): the ownership authority is unreachable: %s", who, exc)
-        return False
-    return True
+        return FENCE_UNKNOWN
+    return FENCE_OK
 
 
 def assert_write_allowed(*, who: str = "singleton", store: LeaseStore | None = None) -> None:
@@ -488,6 +505,10 @@ def refusal_exit(decision: OwnershipDecision) -> int:
 
 
 __all__ += [
+    "FENCE_OK",
+    "FENCE_STALE",
+    "FENCE_UNKNOWN",
+    "fence_state",
     "ROLE_ALL_IN_ONE",
     "ROLE_BRAIN",
     "ROLE_CLIENT",

@@ -172,7 +172,11 @@ class PlanInterceptor:
             "search",
             "web_fetch",
             "domain_lookup",
+            "file_search",
             "grep_search",
+            # Runtime inspection (read-only)
+            "plugin_inspect",
+            "module_list",
             "semantic_search",
             "find_definition",
             "find_references",

@@ -727,3 +727,72 @@ def test_runnable_top_level_verbs_are_in_the_manifest() -> None:
     documented = set(re.findall(r"^## `(navig [^`]+)`$", md_path.read_text(encoding="utf-8"), re.M))
     stale = sorted(bare - documented)
     assert not stale, f"commands.md lacks {stale} — regenerate core/generated"
+
+
+# ── sub-groups that run bare are commands (2026-10-25) ─────────────────────────
+
+
+def _walk_paths(app):
+    from navig.registry.manifest import _iter_typer_commands
+
+    return {c["path"] for c in _iter_typer_commands(app, ["navig"])}
+
+
+def test_a_nested_group_that_runs_bare_is_a_command():
+    # Regression: `navig repo lock`, `navig wiki inbox` and 19 more ran bare but had no
+    # manifest row, completion or reference page — only TOP-level callbacks were emitted.
+    import typer
+
+    root, outer, inner = typer.Typer(), typer.Typer(), typer.Typer()
+
+    @inner.callback(invoke_without_command=True)
+    def lock_default(ctx: typer.Context) -> None:
+        """Show who holds the lock."""
+
+    @inner.command("release")
+    def release() -> None:
+        """Release it."""
+
+    outer.add_typer(inner, name="lock")
+    root.add_typer(outer, name="repo")
+    paths = _walk_paths(root)
+    assert "navig repo lock" in paths and "navig repo lock release" in paths
+
+
+def test_a_nested_callback_that_only_holds_options_is_not_a_command():
+    import typer
+
+    root, outer, inner = typer.Typer(), typer.Typer(), typer.Typer()
+
+    @inner.callback()
+    def opts(verbose: bool = False) -> None:
+        """Shared options."""
+
+    @inner.command("go")
+    def go() -> None:
+        """Go."""
+
+    outer.add_typer(inner, name="sub")
+    root.add_typer(outer, name="tool")
+    paths = _walk_paths(root)
+    assert "navig tool sub go" in paths
+    assert "navig tool sub" not in paths, "a callback without invoke_without_command is not a verb"
+
+
+def test_typer_level_invoke_without_command_also_counts():
+    import typer
+
+    root, outer = typer.Typer(), typer.Typer()
+    inner = typer.Typer(invoke_without_command=True)
+
+    @inner.callback()
+    def inbox_list(ctx: typer.Context) -> None:
+        """List the inbox."""
+
+    @inner.command("process")
+    def process() -> None:
+        """Process it."""
+
+    outer.add_typer(inner, name="inbox")
+    root.add_typer(outer, name="wiki")
+    assert "navig wiki inbox" in _walk_paths(root)

@@ -28,7 +28,13 @@ logger = logging.getLogger(__name__)
 
 GROUP = "navig.capabilities"
 STATES = ("connected", "expires", "rejected", "missing", "unknown")
-DEFAULT_TIMEOUT_S = 2.0
+#: Measured on a real install (2026-10-25, win-local): social 4.0 s (eight providers
+#: checked over the network), email 1.4 s, mobile 1.4 s (adb), generate 0.05 s,
+#: telegram 0.04 s, distribution 0.00 s. The original 2 s budget cut the social probe
+#: off on EVERY call, so eight connected accounts arrived as "timed out after 2s" — an
+#: error an agent reads exactly like "no accounts connected". A probe that truly hangs
+#: costs this budget once per CACHE_TTL_S, which is the price of not lying.
+DEFAULT_TIMEOUT_S = 8.0
 CACHE_TTL_S = 60.0
 
 _LOCK = threading.Lock()

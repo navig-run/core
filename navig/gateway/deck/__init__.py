@@ -407,6 +407,7 @@ from navig.gateway.deck.routes.vault import (
     handle_deck_vault_login_capture,
     handle_deck_vault_login_remove,
     handle_deck_vault_logins_list,
+    handle_deck_vault_references,
     handle_deck_vault_test,
     handle_deck_vault_toggle,
     handle_deck_whisper_install,
@@ -415,6 +416,15 @@ from navig.gateway.deck.routes.vault import (
 from navig.gateway.deck.routes.vision import (
     handle_deck_vision_get,
     handle_deck_vision_post,
+)
+from navig.gateway.deck.routes.webflows import (
+    handle_deck_webflow_create,
+    handle_deck_webflow_delete,
+    handle_deck_webflow_export,
+    handle_deck_webflow_get,
+    handle_deck_webflow_secret,
+    handle_deck_webflow_update,
+    handle_deck_webflows,
 )
 from navig.gateway.deck.routes.wiki import (
     handle_memory_query,
@@ -951,6 +961,7 @@ def register_deck_routes(
         app.router.add_post("/api/deck/vault/logins/remove", handle_deck_vault_login_remove)
         # Local-only (checked in the handler): returns sealed secrets + their passphrase.
         app.router.add_post("/api/deck/vault/export-svg", handle_deck_vault_export_svg)
+        app.router.add_get("/api/deck/vault/references", handle_deck_vault_references)
         app.router.add_delete("/api/deck/vault/{cred_id}", handle_deck_vault_delete)
         app.router.add_post("/api/deck/vault/{cred_id}/toggle", handle_deck_vault_toggle)
         app.router.add_post("/api/deck/vault/{cred_id}/test", handle_deck_vault_test)
@@ -1179,6 +1190,15 @@ def register_deck_routes(
         app.router.add_get("/api/deck/lenses/{lens_id}", handle_deck_lens_get)
         app.router.add_patch("/api/deck/lenses/{lens_id}", handle_deck_lens_patch)
         app.router.add_delete("/api/deck/lenses/{lens_id}", handle_deck_lens_delete)
+
+        # Webflows — browser procedures recorded in the Dock, replayed without a model.
+        app.router.add_get("/api/deck/webflows", handle_deck_webflows)
+        app.router.add_post("/api/deck/webflows", handle_deck_webflow_create)
+        app.router.add_get("/api/deck/webflows/{wf_id}/export", handle_deck_webflow_export)
+        app.router.add_post("/api/deck/webflows/{wf_id}/secret", handle_deck_webflow_secret)
+        app.router.add_get("/api/deck/webflows/{wf_id}", handle_deck_webflow_get)
+        app.router.add_put("/api/deck/webflows/{wf_id}", handle_deck_webflow_update)
+        app.router.add_delete("/api/deck/webflows/{wf_id}", handle_deck_webflow_delete)
 
         # Customizations — what the brain actually runs (agents · instructions · hooks ·
         # MCP · tools), for the navig OS Customizations app. Skills keep /skills above.

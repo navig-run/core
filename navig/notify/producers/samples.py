@@ -56,6 +56,12 @@ _SAMPLES: dict[str, tuple[str, str, str, str]] = {
                       "normal"),
     "site_probes": ("system_alert", "[Test] Site uptime & certs",
                     "A sample site-down / certificate-expiry alert (with its paired all-clear).", "normal"),
+    # The creative scan dispatches through navig.creative.signals._default_dispatch,
+    # which sends this exact type and prefixes the title with the same glyph, so Test
+    # proves the suggestion pipe end to end without waiting for a scan window to open.
+    "creative_scan": ("creative_proposal", "[Test] 💡 NAVIG suggestion",
+                      "A sample creative proposal — the observed problem, the verdict and the one action it asks for.",
+                      "normal"),
 }
 
 

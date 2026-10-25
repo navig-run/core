@@ -1028,6 +1028,19 @@ class NavigGateway:
         except Exception:  # noqa: BLE001 — shutdown must not fail on telemetry
             pass
 
+        # ask_user teardown: stop the request registry (its stop() cancels every
+        # pending future) and drop the tool binding together, so no schema-time
+        # check_fn can point at a dead loop.
+        try:
+            if getattr(self, "request_registry", None) is not None:
+                await self.request_registry.stop()
+                self.request_registry = None
+            from navig.agent.tools.ask_user_tools import unbind_request_registry
+
+            unbind_request_registry()
+        except Exception:  # noqa: BLE001 — shutdown must not fail on this
+            logger.debug("request registry teardown raised", exc_info=True)
+
         # Uninstall the event→notify bridge (symmetric with _init_notify_monitors).
         bridge_handle = getattr(self, "_event_bridge_handle", None)
         if bridge_handle is not None:
@@ -2331,6 +2344,17 @@ class NavigGateway:
             if self.approval_manager is not None:
                 self.approval_manager.on_request(_emit_requests_update)
             logger.info("Request registry initialized")
+
+            # ask_user (Mission B 4a): bind registry + this loop for the
+            # model-facing question tool — same boot seam as the approval gate.
+            # A failed bind leaves the tool honestly unavailable (its check_fn
+            # hides it; a dispatched call refuses) — never a dead bridge.
+            try:
+                from navig.agent.tools.ask_user_tools import bind_request_registry
+
+                bind_request_registry(self.request_registry, asyncio.get_running_loop())
+            except Exception as e:  # noqa: BLE001 — never block boot on this
+                logger.warning("ask_user registry bind failed: %s", e)
         except Exception as e:  # noqa: BLE001 — never block boot on this
             logger.warning("Request registry not available: %s", e)
             self.request_registry = None

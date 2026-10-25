@@ -119,6 +119,19 @@ RETIRED_MODELS: frozenset[str] = frozenset({
     "nvidia:mistralai/mistral-nemotron",            # NVIDIA — 410 EOL (listed "alive" 2026-09-15)
     "openrouter:deepseek/deepseek-r1",              # OpenRouter — 404
     "openrouter:qwen/qwen3-235b-a22b",              # OpenRouter — 404
+    # 2026-10-25 sweep (`navig ai models --check` on the live brain), retry-verified
+    # 404. All six are manifest entries only — none a models[0] or routing default,
+    # so the fix is denylist + remove from the manifest. ⚠ The sweep did NOT flag
+    # openai o3 / gpt-5 / gpt-5-mini: their 400 is an output-limit on a 1-token probe
+    # (reasoning models), i.e. alive — do not denylist them. Scoped per provider:
+    # github_models still lists o3-mini/o4-mini and was not probed (no key), so those
+    # stay — is_retired is exact on "provider:model".
+    "openai:gpt-4.1-nano",                          # OpenAI — 404 (control: gpt-4.1 live)
+    "openai:o4-mini",                               # OpenAI — 404 (control: o3 live)
+    "openai:o3-mini",                               # OpenAI — 404
+    "openai:o1",                                    # OpenAI — 404
+    "openai:gpt-3.5-turbo",                         # OpenAI — 404 (deprecated)
+    "openrouter:openai/o3-mini",                    # OpenRouter — 404
 })
 
 # Provider-side failures that say nothing about the model or the credential —

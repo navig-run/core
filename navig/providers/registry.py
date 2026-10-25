@@ -80,15 +80,13 @@ ALL_PROVIDERS: list[ProviderManifest] = [
             # GPT-4.1 series (April 2025)
             "gpt-4.1",
             "gpt-4.1-mini",
-            "gpt-4.1-nano",
+            # "gpt-4.1-nano" removed 2026-10-25 — 404 (control: gpt-4.1 live).
             # GPT-4o series
             "gpt-4o",
             "gpt-4o-mini",
             # Reasoning / o-series
-            "o4-mini",
             "o3",
-            "o3-mini",
-            "o1",
+            # "o4-mini", "o3-mini", "o1" removed 2026-10-25 — 404 (control: o3 live).
             # "o1-mini" removed 2026-09-08 — probe returned 404 (control: gpt-4.1 live).
             # GPT-5. Probe-verified live 2026-09-08 and only USABLE since the same
             # day: these reject `max_tokens` and any explicit `temperature`, so
@@ -166,7 +164,7 @@ ALL_PROVIDERS: list[ProviderManifest] = [
             "openai/gpt-4.1-mini",
             "openai/gpt-4o",
             "openai/gpt-4o-mini",
-            "openai/o3-mini",
+            # "openai/o3-mini" removed 2026-10-25 — 404.
             # Google
             # Was the 05-06 PREVIEW id: it still answers, but OpenRouter no longer
             # lists it, so it has no published price (found 2026-09-27 by the audit).

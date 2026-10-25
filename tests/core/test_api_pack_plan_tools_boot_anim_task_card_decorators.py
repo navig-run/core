@@ -161,26 +161,30 @@ from navig.agent.tools.plan_tools import (
 
 
 def _reset_interceptor():
-    plan_tools_mod._interceptor_ref = None
+    plan_tools_mod.release_interceptor()
 
 
 @pytest.fixture(autouse=True)
 def _restore_interceptor_ref():
-    """Put the module-level interceptor back after every test in this file.
+    """Put the default-session interceptor slot back after every test in this file.
 
-    `_interceptor_ref` is process-global. The manual `_reset_interceptor()` calls below
-    cover the happy path only: a test that fails between `set_interceptor(fake)` and its
-    trailing reset leaves that fake installed, and `_get_interceptor()` then RETURNS it
-    instead of raising "not initialised" — so a later test gets silently wrong behaviour
-    rather than a clear error, and the first failure you read is not the one that happened.
+    The binding lives in the module's session-keyed store (the old single
+    `_interceptor_ref` global could not express per-session isolation). The
+    manual `_reset_interceptor()` calls below cover the happy path only: a test
+    that fails between `set_interceptor(fake)` and its trailing reset leaves that
+    fake installed, and `_get_interceptor()` then RETURNS it instead of raising
+    "not initialised" — so a later test gets silently wrong behaviour rather than
+    a clear error, and the first failure you read is not the one that happened.
 
     Same shape as `_restore_module_refs` in tests/agent/tools/test_todo_tools.py, and the
     same reasoning: with every test passing this changes nothing, which is exactly why it
     is worth having. Teardown runs whether the test passed or failed.
     """
-    original = plan_tools_mod._interceptor_ref
+    original = plan_tools_mod.get_interceptor()
     yield
-    plan_tools_mod._interceptor_ref = original
+    plan_tools_mod.release_interceptor()
+    if original is not None:
+        plan_tools_mod.set_interceptor(original)
 
 
 def test_set_and_get_interceptor():

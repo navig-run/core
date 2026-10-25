@@ -498,7 +498,10 @@ function navigLensRuntime(m, host, body) {
     },
     scriptHandler: "NAVIG",
     version: RUNTIME_VERSION,
-    navig: { host: host, lensId: m.id },
+    // "isolated" when the host runs this Lens in its own world (it has a bridge), else
+    // "page": the feature test for anything that needs page JavaScript — unsafeWindow is
+    // the page's window only in "page".
+    navig: { host: host, lensId: m.id, world: bridge ? "isolated" : "page" },
   };
   function openInTab(u) { return w.open(String(u), "_blank"); }
   function setClipboard(text) {
@@ -640,6 +643,7 @@ function navigLensRuntime(m, host, body) {
   var navig = {
     host: host,
     lensId: m.id,
+    world: bridge ? "isolated" : "page",
     toast: function (text, kind) { ui().toast(text, kind); },
     addButton: addButton,
     onUrlChange: onUrlChange,

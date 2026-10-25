@@ -4,6 +4,11 @@ Small on purpose — the NAVIG OS Brain card and any script need the same four f
 (owner, role, lease, delivery mode) and two actions (claim, release/takeover), and
 nothing else belongs here.
 
+One exception, and it is read-only: ``/api/deck/brain/migrate/plan`` answers "what
+would be left behind if this Brain moved to <host>?" by running the same parity check
+``navig brain migrate`` runs before it copies anything. Moving the Brain stays a CLI
+operation — a browser click must not be what stops a bot.
+
 Envelope matches the rest of the deck API: ``{"ok": true, "data": …}`` /
 ``{"ok": false, "error": …}``. Ownership refusals come back as HTTP 409 with the
 same sentence the CLI prints, so the UI never has to invent its own wording.
@@ -11,6 +16,7 @@ same sentence the CLI prints, so the UI never has to invent its own wording.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -29,8 +35,10 @@ from navig.brain.identity import owner_id as _owner_id
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "brain_migration_plan",
     "brain_payload",
     "handle_deck_brain_claim",
+    "handle_deck_brain_migrate_plan",
     "handle_deck_brain_release",
     "handle_deck_brain_status",
     "handle_deck_brain_takeover",
@@ -143,9 +151,56 @@ async def handle_deck_brain_takeover(request: "web.Request") -> "web.Response":
     return _ok({"lease": lease.to_dict()})
 
 
+def brain_migration_plan(target: str) -> dict[str, Any]:
+    """What a move to *target* would leave behind — the migrate parity check, read-only.
+
+    The same three gaps that stopped the NEURON -> OUTPOST move from carrying the sale
+    pings: an enabled job the target does not have, a space such a job needs, and a
+    Brain-duty plugin with a background loop. Nothing is written: no receipt, no lease,
+    no copy. ``navig brain migrate --to <target>`` refuses to start on exactly this
+    document, so the card and the terminal cannot disagree.
+    """
+    from navig.brain import parity
+    from navig.brain.migrate import SshRemote
+
+    status = _authority.lease_store().status()
+    you = status.get("you") or {}
+    result: dict[str, Any] = {
+        "to": target,
+        "from": hostname(),
+        # A client cannot migrate a Brain that runs elsewhere; the card says so instead
+        # of rendering a plan about the wrong machine's jobs.
+        "you_are_brain": bool(you.get("is_owner")),
+        "role": str(you.get("role") or ""),
+    }
+    remote = SshRemote(target)
+    result.update(parity.reconcile(parity.local_inventory(), remote.target_inventory()))
+    return result
+
+
+async def handle_deck_brain_migrate_plan(request: "web.Request") -> "web.Response":
+    """``POST /api/deck/brain/migrate/plan`` — what would be left behind, before any move.
+
+    Read-only and slow by nature (one SSH round trip per fact), so it runs off the event
+    loop; a target that cannot be reached answers 503 with the reason, never a plan that
+    silently reads as "nothing missing".
+    """
+    body = await _read_json_body(request)
+    target = str(body.get("to") or "").strip()
+    if not target:
+        return _err("a target host is required — the ssh alias this Brain would move to", status=400)
+    try:
+        plan = await asyncio.to_thread(brain_migration_plan, target)
+    except Exception as exc:  # noqa: BLE001 — an unreachable target is an answer, not a 500
+        logger.warning("deck brain migrate plan failed for %s: %s", target, exc)
+        return _err(f"could not read the target '{target}': {exc}", status=503)
+    return _ok(plan)
+
+
 def register_brain_routes(app: "web.Application") -> None:
     """Mount the Brain ownership endpoints (called from ``register_deck_routes``)."""
     app.router.add_get("/api/deck/brain", handle_deck_brain_status)
     app.router.add_post("/api/deck/brain/claim", handle_deck_brain_claim)
     app.router.add_post("/api/deck/brain/release", handle_deck_brain_release)
     app.router.add_post("/api/deck/brain/takeover", handle_deck_brain_takeover)
+    app.router.add_post("/api/deck/brain/migrate/plan", handle_deck_brain_migrate_plan)

@@ -264,13 +264,7 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
                 max_tokens=_LARGE_MAX_OUTPUT_TOKENS,
                 cost=ModelCost(input=0.15, output=0.6, cache_read=0.075, cache_write=0.15),
             ),
-            ModelDefinition(
-                id="gpt-3.5-turbo",
-                name="GPT-3.5 Turbo",
-                context_window=16385,
-                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
-                cost=ModelCost(input=0.5, output=1.5),
-            ),
+            # "gpt-3.5-turbo" removed 2026-10-25 — 404 (deprecated).
         ],
         priority=10,
     ),

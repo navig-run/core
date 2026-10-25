@@ -535,3 +535,18 @@ def test_a_bridged_listener_hears_the_host_and_ignores_a_forged_storage_event(br
         assert page.evaluate("window.__get()") == "new"
     finally:
         ctx.close()
+
+
+@pytest.mark.parametrize(("bridged", "world"), [(True, "isolated"), (False, "page")])
+def test_gm_info_says_which_world_the_lens_runs_in(browser, bridged, world) -> None:
+    # The feature test for anything that needs page JavaScript: in "isolated" unsafeWindow
+    # is the Lens's own world, so a page-world hack must switch itself off honestly.
+    body = "window.__world = [GM_info.navig.world, navig.world];"
+    _, code = _storage_lens(body, grants="// @grant GM_getValue\n")
+    ctx, page = _page(browser, _with_storage_bridge(code) if bridged else code)
+    try:
+        page.goto("https://example.com/")
+        page.wait_for_function("window.__world !== undefined")
+        assert page.evaluate("window.__world") == [world, world]
+    finally:
+        ctx.close()

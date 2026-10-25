@@ -28,7 +28,13 @@ def register(server: Any) -> None:
         {
             "navig_list_hosts": {
                 "name": "navig_list_hosts",
-                "description": "List all configured SSH hosts in NAVIG. Returns host names, addresses, and connection details.",
+                "description": (
+                    "List all configured SSH hosts in NAVIG. Returns host names, addresses, "
+                    "connection details, `hostname` (the machine's own OS name) and `role` "
+                    "(what that machine IS in the operator's topology, e.g. brain, addition, "
+                    "production) when recorded. Check `role` before assuming which host runs "
+                    "production."
+                ),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -122,6 +128,10 @@ def _tool_list_hosts(server: Any, args: dict[str, Any]) -> list[dict[str, Any]]:
             config = server._config.load_host_config(name)
         except Exception:
             config = {}
+        metadata = config.get("metadata") if isinstance(config, dict) else None
+        # `role` answers "what is this machine", which no agent could see before: the
+        # topology (brain / addition / production) lives in host metadata, not in the name.
+        role = metadata.get("role") if isinstance(metadata, dict) else None
         result.append(
             {
                 "name": name,
@@ -129,6 +139,8 @@ def _tool_list_hosts(server: Any, args: dict[str, Any]) -> list[dict[str, Any]]:
                 "user": config.get("user"),
                 "port": config.get("port", 22),
                 "key": config.get("ssh_key") or config.get("key"),
+                "hostname": config.get("hostname"),
+                "role": role,
                 "apps": list(config.get("apps", {}).keys()),
             }
         )

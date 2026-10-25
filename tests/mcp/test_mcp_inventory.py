@@ -125,6 +125,33 @@ class TestListHosts:
         result = _tool_list_hosts(server, {})
         assert result[0]["apps"] == []
 
+    def test_role_and_hostname_come_from_host_metadata(self):
+        """An agent must be able to read what a machine IS, not only where it is.
+
+        Which host is the BRAIN and which is PRODUCTION lived only in hand-written notes,
+        so every agent had to guess the role from the host name.
+        """
+        server = _server(hosts={
+            "outpost": {
+                "host": "192.0.2.10", "user": "operator", "hostname": "example-host",
+                "metadata": {"role": "brain", "os": "Ubuntu 25.10"},
+            },
+        })
+        (row,) = _tool_list_hosts(server, {})
+        assert row["role"] == "brain"
+        assert row["hostname"] == "example-host"
+
+    def test_role_absent_is_none_not_an_error(self):
+        """Hosts written before the role convention existed must still list cleanly."""
+        server = _server(hosts={
+            "legacy": {"host": "1.1.1.1", "user": "u"},
+            "odd": {"host": "1.1.1.2", "user": "u", "metadata": "not-a-dict"},
+        })
+        rows = {row["name"]: row for row in _tool_list_hosts(server, {})}
+        assert rows["legacy"]["role"] is None
+        assert rows["legacy"]["hostname"] is None
+        assert rows["odd"]["role"] is None
+
 
 # ── _tool_list_apps ───────────────────────────────────────────
 

@@ -1090,28 +1090,78 @@ def managed_systemd_unit() -> str | None:
     return None
 
 
-def systemd_unit_action(unit: str, action: str, timeout: float = 90.0) -> tuple[bool, str]:
-    """``systemctl <action> <unit>`` without an interactive password prompt.
+def managed_user_systemd_unit() -> str | None:
+    """The PER-USER unit (``systemctl --user``) that supervises this daemon, if any.
+
+    ``navig service install`` without root writes exactly this unit
+    (``~/.config/systemd/user/navig-agent.service``, see :func:`_systemd_unit_path`), and
+    the outpost brain runs under it. :func:`managed_systemd_unit` only knows the packaged
+    SYSTEM template, so a restart there fell back to a direct spawn: measured 2026-10-25,
+    ``navig service restart`` killed the unit's daemon and respawned one by hand
+    (parent pid 1), leaving ``navig-agent.service`` inactive — an unsupervised brain that
+    survives only until the next logout or reboot.
+    """
+    if not sys.platform.startswith("linux") or not has_systemd():
+        return None
+    # Path computed here, not via _systemd_unit_path(): that helper creates the directory.
+    if not (Path.home() / ".config" / "systemd" / "user" / f"{SYSTEMD_UNIT}.service").is_file():
+        return None
+    unit = f"{SYSTEMD_UNIT}.service"
+    for probe in ("is-enabled", "is-active"):
+        try:
+            r = subprocess.run(
+                ["systemctl", "--user", probe, unit], capture_output=True, text=True, timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if r.returncode == 0:
+            return unit
+    return None
+
+
+def supervising_systemd_unit() -> tuple[str, bool] | None:
+    """``(unit, user_scope)`` for whichever systemd unit owns this daemon, or None.
+
+    The packaged system instance wins (it is what the Debian packages install); a per-user
+    unit is the other way navig supervises itself. start/stop/restart go through this so
+    they never kill a supervised daemon and respawn it behind systemd's back.
+    """
+    unit = managed_systemd_unit()
+    if unit:
+        return unit, False
+    unit = managed_user_systemd_unit()
+    if unit:
+        return unit, True
+    return None
+
+
+def systemd_unit_action(
+    unit: str, action: str, timeout: float = 90.0, *, user: bool = False,
+) -> tuple[bool, str]:
+    """``systemctl [--user] <action> <unit>`` without an interactive password prompt.
 
     The ``navig`` package ships a polkit rule letting a user manage their OWN instance;
     without it this fails fast instead of hanging on a prompt, and says what to run.
+    A per-user unit needs no privilege, so its fallback hint carries no ``sudo``.
     """
+    scope = ["--user"] if user else []
+    shown = f"systemctl {'--user ' if user else ''}{action} {unit}"
     try:
         r = subprocess.run(
-            ["systemctl", "--no-ask-password", action, unit],
+            ["systemctl", *scope, "--no-ask-password", action, unit],
             capture_output=True,
             text=True,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        return False, f"systemctl {action} {unit} did not finish within {timeout:g}s"
+        return False, f"{shown} did not finish within {timeout:g}s"
     except OSError as e:
         return False, str(e)
     if r.returncode == 0:
-        return True, f"systemctl {action} {unit}"
+        return True, shown
     lines = (r.stderr or r.stdout or "").strip().splitlines()
     reason = lines[-1] if lines else f"exit {r.returncode}"
-    return False, f"{reason} — run: sudo systemctl {action} {unit}"
+    return False, f"{reason} — run: {shown if user else 'sudo ' + shown}"
 
 
 def _systemd_unit_path(user: bool = False) -> Path:

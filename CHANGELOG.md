@@ -9,7 +9,127 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Do NOT add entries here by hand: drop a fragment in changelog.d/<slug>.<kind>.md (see changelog.d/README.md) -->
 <!-- and fold them in with `npm run changelog:assemble`. Direct edits of this block collide on every rebase. -->
 <!-- This file merges by UNION (.gitattributes): two branches inserting at the same line keep both entries on rebase. -->
-<!-- Run: git log v3.30.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+<!-- Run: git log v3.31.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+
+## [3.31.0] — 2026-10-25
+
+### Added
+- **Distribution 0.4.0 closes its honest gaps**: reviewed form maps now run in a real
+  browser through a named automation profile (`navig distribution publish run <id>
+  --profile <name>`; personal profiles refused, one submission per destination at a
+  time); scheduled publications wait in `SCHEDULED` until `navig distribution publish
+  due` (or `schedule --publish-due`) finds their approved time; the module settings
+  (`stale_days`, `default_mode`, `auto_mirror_receipts`) are applied; campaigns gain
+  update/delete-or-archive and a `campaign` CLI group; verification provenance is
+  append-only.
+- **Distribution 0.6.0**: a project's own social accounts are channels that only that
+  project may use, each naming the NAVIG Social account (and Telegram chat) it posts
+  as. SCHEMA's @sch8ma accounts (Telegram, Instagram, Facebook, TikTok, VK) and its
+  YouTube channel ship in the seed; installed stores add them with
+  `navig distribution research import`. navig-social 0.3.1 matches an account by its
+  handle (`@sch8ma`) as well as its id.
+- **A Lens can tell which world it runs in: `GM_info.navig.world` (and `navig.world`) is
+  `"isolated"` or `"page"`.** It is the feature test for a page-world hack — an isolated Lens's
+  `unsafeWindow` is its own world, so the hack can switch itself off and say why instead of
+  silently doing nothing.
+- **Development Environment navigation — `areas/` and `projects/` aliases that are
+  real, safe filesystem links.** A declarative `navigation` block in the Environment
+  manifest maps alias names to **registered Area / Project ids** (never raw paths —
+  owning registries resolve canonical locations, so renames can't invalidate it).
+  `navig.spaces.navigation_links` reconciles that declaration into junctions
+  (Windows, no elevation) using the existing `media_links` primitives: idempotent
+  plan/reconcile, broken and wrong-target detection, collision refusal (a real
+  directory at an alias path is never overwritten), cycle/self-target refusal, and a
+  rollback record that removes **exactly** the links it created. `navig space doctor`
+  gains a read-only **Navigation** group; `--fix` creates missing managed links and
+  repairs managed reparse points only — collisions and unresolved ids are reported,
+  never auto-fixed. Nested aliases are invisible to Space and Project discovery
+  (top-level-only scan, tested), Windows recursive watchers were measured **not** to
+  traverse junctions (control-validated), and tombstoned Spaces can never be revived
+  through an alias. Development ships with all seven links live (four Areas, three
+  `E:` Projects — no repository moved).
+- **Secret Resolution: keep `vault://` references in `.env` and config files.**
+  `navig vault run --env-file .env -- npm run dev` resolves every reference (this vault, then
+  the enrolled authority) before anything starts and hands the child real environment
+  variables; the file is never written. New: `navig vault resolve` (metadata only),
+  `navig vault doctor` (read-only check: unresolved, shadowed, pinned, plaintext — `--json`,
+  `--strict`), `navig vault adopt` (moves plaintext secrets into the vault, then rewrites the
+  file byte-exactly) and `navig vault inject` (JSON/YAML/TOML/INI templates for programs that
+  need a file). `navig vault get vault://<provider>/api_key` now also reads a provider
+  credential's field. See HANDBOOK § Secret Resolution.
+- **Vault app → References.** The OS Vault app shows, per registered project, which config files
+  reference which vault items, whether each resolves, which still hold plaintext and what is
+  shadowed — with the fixing command to copy (`GET /api/deck/vault/references`, normal deck
+  auth like the vault list, metadata only — it works when the brain is another machine).
+- **Webflows — browser procedures learned from a demonstration and replayed without a model.**
+  `navig.webflows` defines the `navig.webflow/1` document (typed steps over semantic locators,
+  fallbacks, parameters, postconditions, checks, allowed origins, provenance) and validates
+  every write: unknown verbs and fields are dropped or refused, a step may not leave the
+  declared origins or let a parameter choose the site, a secret parameter can only be the whole
+  value of a `fill` step and never a default, a URL or a locator, and literal secrets are
+  refused. `WebflowStore` keeps `<config_dir>/webflows/<id>/r<N>.json`, one immutable file per
+  revision, with no shared index to read-modify-write. The deck serves it at
+  `/api/deck/webflows` (list · create · get `?revision=` · update · delete · export). The NAVIG
+  Dock records and replays flows; `navig_browser.webflow_runner` replays the same document
+  headless on Playwright (no CLI drives it yet).
+- **Webflow secrets from the vault.** A `secret` param may carry `vault: {domain, username}` —
+  validated to bind (same registrable domain) to one of the flow's origins. `POST
+  /api/deck/webflows/{id}/secret {param, page_url}` releases that login's password to the NAVIG
+  Dock's fill step and to nothing else: local requests from the paired Dock's extension origin
+  only (no Origin, e.g. an agent's HTTP client, is refused), a vault-backed param of the STORED
+  flow only, a page inside the flow's origins over https whose domain matches the login
+  (`credential_matches`), read under `acting_as("dock:webflow:<id>")` so the vault audit log
+  names the flow; `no-store`, never logged. Refusals are `denied` (403), `no_credential` (404)
+  or `vault_locked` (423).
+
+### Changed
+- **Distribution 0.5.0**: a NAVIG Social post goes out as the approved identity's
+  account or not at all — an account that is not connected, or a non-default account on
+  a single-account network, now ends `BLOCKED` instead of posting through the default
+  token. New `navig distribution draft-map <channel> --profile <name>` reads a live
+  form read-only and writes a review draft that never validates until a person signs it.
+
+### Fixed
+- **Six more retired model ids removed from the catalog** — a live liveness sweep on the brain
+  (`navig ai models --check`, 2026-10-25) found six shipped manifest ids answering 404/deprecated:
+  `openai:gpt-4.1-nano`, `openai:o4-mini`, `openai:o3-mini`, `openai:o1`, `openai:gpt-3.5-turbo`
+  and `openrouter:openai/o3-mini`. All six join `RETIRED_MODELS` and are removed from the openai /
+  openrouter manifests. None was a routing default or `models[0]`, so routing is unchanged. The
+  sweep deliberately did NOT flag `openai:o3` / `gpt-5` / `gpt-5-mini` — their 400 is a 1-token
+  output-limit on reasoning models (alive), not a retirement — and `github_models:o3-mini` /
+  `o4-mini` are untouched (a different provider the sweep could not probe; `is_retired` is exact
+  per provider).
+- **The command manifest lists nested groups that run on their own.** A sub-group with
+  `invoke_without_command=True` (`navig repo lock`, `navig wiki inbox`, `navig os devices`,
+  `navig host monitor`, … — 21 in this tree) ran but had no manifest row, no tab-completion
+  and no `commands.md` page; only top-level groups' callbacks were exported. A nested
+  callback that merely holds options is still not a command.
+- **`navig service start | stop | restart` no longer unsupervise a daemon run by a per-user
+  systemd unit.** Only the packaged system template (`navig-agent@<user>.service`) was
+  recognised, so under the unit `navig service install` itself writes without root
+  (`~/.config/systemd/user/navig-agent.service` — what the outpost brain runs under) a
+  restart killed the daemon and respawned one by hand: parent pid 1, the unit left
+  `inactive`, and a brain that survives only until the next logout or reboot.
+  `supervising_systemd_unit()` now finds either unit and the three commands act through
+  `systemctl --user` for the per-user one (no `sudo` in its hints, `journalctl --user`).
+- **Core now requires navig-vault 0.14.0.** `vault get vault://…`, host secret resolution and the
+  deck's vault references import `navig_vault.resolution` (Secret Resolution), which 0.14.0 first
+  ships; the floor still allowed 0.12.0, so upgrading core over an older vault would have broken
+  secret resolution with an ImportError. A packaging test now pins the floor.
+- **`navig vault run` started its command in the active space, not where you stood.**
+  `main.py` chdir's into the space before any command runs, so `vault run -- npm run dev` ran
+  in the wrong directory; it now uses the invocation directory. On Windows `vault run -- npm …`
+  also failed outright (`npm` is `npm.cmd`, which CreateProcess never finds without PATHEXT).
+
+### Security
+- **Lens values (GM storage) no longer live where the page can read them on Chrome.** A Lens
+  with a storage grant (`GM_getValue`/`setValue`/… or the `GM.*` forms) now compiles for the
+  Dock with `world: "USER_SCRIPT"` and a `bridge: ["storage"]` capability, and the runtime
+  keeps its values through that closure-only bridge: preloaded before the Lens runs, never
+  written to the page's `localStorage`, old page-stored values migrated out and scrubbed, and
+  page-fired `storage` events ignored. A failed load runs the page on memory only rather than
+  writing defaults over a stored API key. `// @sandbox raw` is the explicit page-world opt-out.
+  `navig.onUrlChange` also follows the page's navigations from an isolated world (Navigation API).
 
 ## [3.30.0] — 2026-10-24
 

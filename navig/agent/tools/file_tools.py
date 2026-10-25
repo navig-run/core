@@ -14,8 +14,11 @@ For remote-host file operations use the ``navig_file_*`` tools in
 
 from __future__ import annotations
 
+import difflib
+import hashlib
 import logging
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -330,5 +333,219 @@ class ListFilesTool(BaseTool):
             name=self.name,
             success=True,
             output={"path": str(path), "entries": entries, "count": len(entries)},
+            elapsed_ms=(time.monotonic() - t0) * 1000,
+        )
+
+
+class EditFileTool(BaseTool):
+    """Replace exact text in an existing file (str_replace-style edit).
+
+    Deliberately distinct from ``write_file``: this tool never creates a
+    file and never rewrites whole content — it performs an exact-match,
+    ambiguity-checked, optionally hash-verified in-place edit with an
+    atomic replace.  Creation stays ``write_file``'s job.
+    """
+
+    name = "edit_file"
+    description = (
+        "Replace exact text in an existing file. 'old_string' must match exactly "
+        "once (or set replace_all=true); zero or multiple matches are refused with "
+        "guidance. Optionally pass expected_hash (the SHA-256 hex of the file bytes "
+        "you last read) to refuse the edit if the file changed since. Never creates "
+        "files — use write_file for that. Returns a small diff of the change."
+    )
+    owner_only = True
+    parameters = [
+        {
+            "name": "path",
+            "type": "string",
+            "description": "Absolute or relative path of the file to edit (must exist)",
+            "required": True,
+        },
+        {
+            "name": "old_string",
+            "type": "string",
+            "description": "Exact text to replace (must be non-empty and unique unless replace_all)",
+            "required": True,
+        },
+        {
+            "name": "new_string",
+            "type": "string",
+            "description": "Replacement text (may be empty to delete old_string)",
+            "required": True,
+        },
+        {
+            "name": "replace_all",
+            "type": "boolean",
+            "description": "Replace every occurrence instead of requiring exactly one (default: false)",
+            "required": False,
+        },
+        {
+            "name": "expected_hash",
+            "type": "string",
+            "description": "Optional SHA-256 hex of the file as you last read it — edit is refused on mismatch",
+            "required": False,
+        },
+    ]
+
+    async def run(
+        self,
+        args: dict[str, Any],
+        on_status: StatusCallback | None = None,
+    ) -> ToolResult:
+        t0 = time.monotonic()
+
+        def _fail(msg: str) -> ToolResult:
+            return ToolResult(
+                name=self.name,
+                success=False,
+                error=msg,
+                elapsed_ms=(time.monotonic() - t0) * 1000,
+            )
+
+        raw_path = args.get("path", "")
+        old_string = args.get("old_string")
+        new_string = args.get("new_string")
+        replace_all = bool(args.get("replace_all", False))
+        expected_hash = args.get("expected_hash") or ""
+
+        if not raw_path:
+            return _fail("'path' arg is required")
+        if not isinstance(old_string, str) or not old_string:
+            return _fail("'old_string' must be a non-empty string — use write_file to create files")
+        if not isinstance(new_string, str):
+            return _fail("'new_string' must be a string")
+        if len(old_string) > _MAX_WRITE_CHARS or len(new_string) > _MAX_WRITE_CHARS:
+            return _fail(f"Strings too large (max {_MAX_WRITE_CHARS:,} chars)")
+
+        path = _workshop_path(raw_path)
+        try:
+            resolved = path.resolve()
+        except OSError as exc:
+            return _fail(f"Cannot resolve path: {exc}")
+
+        if not resolved.exists():
+            return _fail(f"File not found: {resolved} — use write_file to create it")
+        if not resolved.is_file():
+            return _fail(f"Path is not a file: {resolved}")
+
+        try:
+            data = resolved.read_bytes()
+        except PermissionError:
+            return _fail(f"Permission denied reading: {resolved}")
+        except OSError as exc:
+            return _fail(str(exc))
+
+        if expected_hash:
+            digest = hashlib.sha256(data).hexdigest()
+            if digest.lower() != str(expected_hash).strip().lower():
+                return _fail(
+                    "File changed since it was read (expected_hash mismatch) — "
+                    "re-read the file and retry the edit"
+                )
+
+        bom = b""
+        if data.startswith(b"\xef\xbb\xbf"):
+            bom, data = data[:3], data[3:]
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            return _fail("Not a UTF-8 text file — refusing to edit (could corrupt encoding)")
+
+        # Match against the ORIGINAL text so untouched regions keep their exact
+        # bytes (line endings included).  Models send \n-only strings, so a CRLF
+        # file is also matched against a \r\n variant of old_string; the
+        # replacement then mirrors the matched variant's endings.
+        def _to_crlf(s: str) -> str:
+            return re.sub(r"(?<!\r)\n", "\r\n", s)
+
+        candidates: list[str] = []
+        for cand in (old_string, _to_crlf(old_string)):
+            if cand not in candidates:
+                candidates.append(cand)
+        counts = [text.count(c) for c in candidates]
+        occurrences = sum(counts)
+        if occurrences == 0:
+            preview = old_string if len(old_string) <= 120 else old_string[:120] + "…"
+            return _fail(
+                f"old_string not found in {resolved.name!r} — no exact match for: {preview!r}"
+            )
+        if occurrences > 1 and not replace_all:
+            return _fail(
+                f"old_string matches {occurrences} times (must be unique) — add surrounding "
+                "context to make it unique, or set replace_all=true"
+            )
+
+        idx = next(i for i, c in enumerate(counts) if c)
+        match_old = candidates[idx]
+        repl = _to_crlf(new_string) if "\r\n" in match_old else new_string
+
+        if replace_all:
+            updated = text.replace(match_old, repl)
+            replaced = occurrences
+        else:
+            updated = text.replace(match_old, repl, 1)
+            replaced = 1
+
+        if len(updated) > _MAX_WRITE_CHARS:
+            return _fail(
+                f"Result would be too large ({len(updated):,} chars; max {_MAX_WRITE_CHARS:,})"
+            )
+
+        out_bytes = bom + updated.encode("utf-8")
+
+        # Bounded diff of the changed region.
+        try:
+            diff_lines = list(
+                difflib.unified_diff(
+                    text.splitlines(),
+                    updated.splitlines(),
+                    fromfile=f"a/{resolved.name}",
+                    tofile=f"b/{resolved.name}",
+                    lineterm="",
+                    n=2,
+                )
+            )
+        except (ValueError, TypeError):
+            diff_lines = []
+        diff_text = "\n".join(diff_lines[:40])
+        if len(diff_lines) > 40:
+            diff_text += "\n…[diff truncated]"
+        if len(diff_text) > 2_000:
+            diff_text = diff_text[:2_000] + "\n…[diff truncated]"
+
+        # Atomic replace: same-directory temp file, then os.replace.  Works on
+        # the RESOLVED path so a symlinked file keeps its link (the target's
+        # content changes; the link itself is never replaced).
+        tmp = resolved.with_name(f".{resolved.name}.navig-edit-{os.getpid()}.tmp")
+        try:
+            with open(tmp, "wb") as fh:
+                fh.write(out_bytes)
+                fh.flush()
+                os.fsync(fh.fileno())
+            try:
+                os.chmod(tmp, resolved.stat().st_mode)
+            except OSError:
+                pass
+            os.replace(tmp, resolved)
+        except PermissionError:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return _fail(f"Permission denied writing: {resolved}")
+        except OSError as exc:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return _fail(str(exc))
+
+        summary = f"Replaced {replaced} occurrence(s) in {resolved}"
+        output = summary + (f"\n{diff_text}" if diff_text else "")
+        return ToolResult(
+            name=self.name,
+            success=True,
+            output=output,
             elapsed_ms=(time.monotonic() - t0) * 1000,
         )

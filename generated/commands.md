@@ -898,6 +898,14 @@ navig ai edit
 navig ai explain
 ```
 
+## `navig ai fallback`
+**Status:** `stable` · **Since:** 
+Model fallback status — or change the policy with the options.
+**Examples:**
+```sh
+navig ai fallback
+```
+
 ## `navig ai fallback history`
 **Status:** `stable` · **Since:** 
 Recent model switches and recoveries (newest first).
@@ -936,6 +944,14 @@ Remove OAuth credentials for a provider.
 **Examples:**
 ```sh
 navig ai logout
+```
+
+## `navig ai memory`
+**Status:** `stable` · **Since:** 
+AI Memory - what NAVIG knows about you.
+**Examples:**
+```sh
+navig ai memory
 ```
 
 ## `navig ai memory add`
@@ -3058,6 +3074,14 @@ Disconnect NAVIG's session but LEAVE the browser open (port stays on).
 navig cdp detach
 ```
 
+## `navig cdp download`
+**Status:** `stable` · **Since:** 
+Capture a file download from the page and save it (with its SHA-256).
+**Examples:**
+```sh
+navig cdp download
+```
+
 ## `navig cdp eval`
 **Status:** `stable` · **Since:** 
 Evaluate JavaScript in the page (gated — JS can change page state).
@@ -3680,6 +3704,14 @@ Migrate the global configuration to the current schema.
 **Examples:**
 ```sh
 navig config migrate
+```
+
+## `navig config schema`
+**Status:** `stable` · **Since:** 
+Run navig config schema
+**Examples:**
+```sh
+navig config schema
 ```
 
 ## `navig config schema install`
@@ -4368,6 +4400,14 @@ Code review a file using Copilot.
 **Examples:**
 ```sh
 navig copilot review
+```
+
+## `navig copilot sessions`
+**Status:** `stable` · **Since:** 
+Browse and manage VS Code Copilot chat sessions.
+**Examples:**
+```sh
+navig copilot sessions
 ```
 
 ## `navig copilot sessions delete`
@@ -5622,6 +5662,14 @@ Print a document block by block, with ids so a single block can be edited.
 **Examples:**
 ```sh
 navig distribution content show
+```
+
+## `navig distribution draft-map`
+**Status:** `stable` · **Since:** 
+Read a live form (read-only) and write a review draft — never a usable map.
+**Examples:**
+```sh
+navig distribution draft-map
 ```
 
 ## `navig distribution maintain`
@@ -7280,6 +7328,14 @@ Display flow definition and steps.
 navig flow show
 ```
 
+## `navig flow template`
+**Status:** `stable` · **Since:** 
+Template management - run without subcommand for interactive menu.
+**Examples:**
+```sh
+navig flow template
+```
+
 ## `navig flow template add`
 **Status:** `stable` · **Since:** 
 Enable/add a template.
@@ -7486,6 +7542,14 @@ navig games check
 **Examples:**
 ```sh
 navig games claim
+```
+
+## `navig games deals`
+**Status:** `stable` · **Since:** 
+🏷  Show current deals on your Steam wishlist + watchlist.
+**Examples:**
+```sh
+navig games deals
 ```
 
 ## `navig games deals list`
@@ -8046,6 +8110,14 @@ Download a creator's whole profile — videos, slideshows images, audio, or just
 **Examples:**
 ```sh
 navig generate tiktok profile
+```
+
+## `navig generate wallpaper`
+**Status:** `stable` · **Since:** 
+Run navig generate wallpaper
+**Examples:**
+```sh
+navig generate wallpaper
 ```
 
 ## `navig generate wallpaper generate`
@@ -9432,6 +9504,14 @@ Classify nearby devices from probe/beacon IEs with tshark (evidence + confidence
 navig home wifi fingerprint
 ```
 
+## `navig home wifi heatmap`
+**Status:** `stable` · **Since:** 
+Aggregate labeled samples (min/avg/max RSSI + ASCII bar).
+**Examples:**
+```sh
+navig home wifi heatmap
+```
+
 ## `navig home wifi heatmap sample`
 **Status:** `stable` · **Since:** 
 Take a labeled survey and store its RSSI samples.
@@ -9635,6 +9715,14 @@ navig host list
 navig host list --all
 ```
 
+## `navig host lock`
+**Status:** `stable` · **Since:** 
+Show lock status when called without a subcommand.
+**Examples:**
+```sh
+navig host lock
+```
+
 ## `navig host lock acquire`
 **Status:** `stable` · **Since:** 
 Claim the lock for a host (also refreshes an existing claim).
@@ -9657,6 +9745,14 @@ Show who currently holds the lock for a host.
 **Examples:**
 ```sh
 navig host lock status
+```
+
+## `navig host maintenance`
+**Status:** `stable` · **Since:** 
+Host maintenance - run without subcommand for system info.
+**Examples:**
+```sh
+navig host maintenance
 ```
 
 ## `navig host maintenance clean`
@@ -9699,6 +9795,14 @@ Update system packages.
 navig host maintenance update
 ```
 
+## `navig host monitor`
+**Status:** `stable` · **Since:** 
+Host monitoring - run without subcommand for health overview.
+**Examples:**
+```sh
+navig host monitor
+```
+
 ## `navig host monitor report`
 **Status:** `stable` · **Since:** 
 Generate comprehensive monitoring report.
@@ -9721,6 +9825,14 @@ Remove a host configuration.
 **Examples:**
 ```sh
 navig host remove
+```
+
+## `navig host security`
+**Status:** `stable` · **Since:** 
+Host security - run without subcommand for security scan.
+**Examples:**
+```sh
+navig host security
 ```
 
 ## `navig host security edit`
@@ -12163,6 +12275,14 @@ List available models per provider, with uncensored status.
 navig mode list
 ```
 
+## `navig mode route`
+**Status:** `stable` · **Since:** 
+Hybrid route slot controls (defaults to show).
+**Examples:**
+```sh
+navig mode route
+```
+
 ## `navig mode route set`
 **Status:** `stable` · **Since:** 
 Set provider/model for one hybrid routing tier slot.
@@ -13011,6 +13131,14 @@ Show where this NAVIG installation came from.
 navig origin
 ```
 
+## `navig os account`
+**Status:** `stable` · **Since:** 
+Show which navig.run account this computer is linked to.
+**Examples:**
+```sh
+navig os account
+```
+
 ## `navig os account link`
 **Status:** `stable` · **Since:** 
 Link this computer to a navig.run email; nothing is linked until you click the emailed link.
@@ -13025,6 +13153,14 @@ Unlink this computer. Paired devices keep working; new ones need a QR code again
 **Examples:**
 ```sh
 navig os account unlink
+```
+
+## `navig os devices`
+**Status:** `stable` · **Since:** 
+List paired devices.
+**Examples:**
+```sh
+navig os devices
 ```
 
 ## `navig os devices revoke`
@@ -13057,6 +13193,14 @@ Pair a phone or browser to use NAVIG OS here, through your own relay.
 **Examples:**
 ```sh
 navig os pair
+```
+
+## `navig os requests`
+**Status:** `stable` · **Since:** 
+List devices waiting for your approval.
+**Examples:**
+```sh
+navig os requests
 ```
 
 ## `navig os requests allow`
@@ -15033,6 +15177,14 @@ Finish a MERGED branch completely: delete it locally, on origin, and its worktre
 **Examples:**
 ```sh
 navig repo land
+```
+
+## `navig repo lock`
+**Status:** `stable` · **Since:** 
+Inspect / release the main-checkout agent lock (.dev/agent.lock).
+**Examples:**
+```sh
+navig repo lock
 ```
 
 ## `navig repo lock check`
@@ -18099,6 +18251,14 @@ Add a new credential to the vault.
 navig vault add
 ```
 
+## `navig vault adopt`
+**Status:** `stable` · **Since:** 
+Move plaintext secrets from .env files into the vault; leave vault:// references behind.
+**Examples:**
+```sh
+navig vault adopt
+```
+
 ## `navig vault audit`
 **Status:** `stable` · **Since:** 
 Show audit log for credentials.
@@ -18203,6 +18363,14 @@ Disable a credential.
 navig vault disable
 ```
 
+## `navig vault doctor`
+**Status:** `stable` · **Since:** 
+Check a project's config references: resolvable, shadowed, plaintext — read-only.
+**Examples:**
+```sh
+navig vault doctor
+```
+
 ## `navig vault edit`
 **Status:** `stable` · **Since:** 
 Edit an existing credential — its value, or its name / organisation only.
@@ -18257,6 +18425,14 @@ Show a full information panel for a credential.
 **Examples:**
 ```sh
 navig vault info
+```
+
+## `navig vault inject`
+**Status:** `stable` · **Since:** 
+Resolve a config template's references for a program that needs a FILE.
+**Examples:**
+```sh
+navig vault inject
 ```
 
 ## `navig vault join`
@@ -18393,6 +18569,14 @@ Delete a credential by provider path (`provider` or `provider/data_key`).
 **Examples:**
 ```sh
 navig vault remove
+```
+
+## `navig vault resolve`
+**Status:** `stable` · **Since:** 
+Check that references resolve — metadata only, the value is never shown.
+**Examples:**
+```sh
+navig vault resolve
 ```
 
 ## `navig vault restore`
@@ -18851,6 +19035,14 @@ Enable a web server site.
 navig web enable
 ```
 
+## `navig web hestia`
+**Status:** `stable` · **Since:** 
+HestiaCP management - run without subcommand for interactive menu.
+**Examples:**
+```sh
+navig web hestia
+```
+
 ## `navig web hestia add`
 **Status:** `stable` · **Since:** 
 Add HestiaCP user or domain.
@@ -18955,6 +19147,14 @@ Open a wiki page in editor.
 navig wiki edit
 ```
 
+## `navig wiki inbox`
+**Status:** `stable` · **Since:** 
+List inbox items.
+**Examples:**
+```sh
+navig wiki inbox
+```
+
 ## `navig wiki inbox process`
 **Status:** `stable` · **Since:** 
 Process inbox items with AI categorization.
@@ -18969,6 +19169,14 @@ Initialize wiki structure for current project.
 **Examples:**
 ```sh
 navig wiki init
+```
+
+## `navig wiki links`
+**Status:** `stable` · **Since:** 
+Show wiki link statistics.
+**Examples:**
+```sh
+navig wiki links
 ```
 
 ## `navig wiki links broken`
@@ -18993,6 +19201,14 @@ Publish public wiki content.
 **Examples:**
 ```sh
 navig wiki publish
+```
+
+## `navig wiki rag`
+**Status:** `stable` · **Since:** 
+Show RAG index status.
+**Examples:**
+```sh
+navig wiki rag
 ```
 
 ## `navig wiki rag add`

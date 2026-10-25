@@ -559,13 +559,14 @@ def _launch_daemon(daemon: object) -> tuple[bool, str]:
                 "falling back to a direct spawn"
             )
     if sys.platform.startswith("linux"):
-        from navig.daemon.service_manager import managed_systemd_unit, systemd_unit_action
+        from navig.daemon.service_manager import supervising_systemd_unit, systemd_unit_action
 
-        unit = managed_systemd_unit()
-        if unit:
+        found = supervising_systemd_unit()
+        if found:
+            unit, user_scope = found
             # No direct-spawn fallback here: a daemon started beside the unit is one
             # systemd does not supervise, and it would fight the unit's next start.
-            ok, msg = systemd_unit_action(unit, "start")
+            ok, msg = systemd_unit_action(unit, "start", user=user_scope)
             if not ok:
                 ch.warning(f"systemd did not start {unit}: {msg}")
                 return False, f"systemd ({unit})"
@@ -945,22 +946,24 @@ def service_stop(
         ch.info("Requesting elevation…")
         _report_elevated_and_exit(_relaunch_elevated(["service", "stop"]), "stopped")
 
-    from navig.daemon.service_manager import managed_systemd_unit
+    from navig.daemon.service_manager import supervising_systemd_unit
 
-    unit = managed_systemd_unit()
-    if unit:
+    found = supervising_systemd_unit()
+    if found:
+        unit, user_scope = found
         # systemd owns this daemon. No stop flag: the daemon refuses to boot while it is
         # set, so the unit's next start (at boot) would fail in a loop.
         from navig.daemon.restart_cause import record as _record_cause
         from navig.daemon.service_manager import systemd_unit_action
 
         _record_cause("service stop")
-        ok, msg = systemd_unit_action(unit, "stop")
+        ok, msg = systemd_unit_action(unit, "stop", user=user_scope)
         if not ok:
             ch.error("Couldn't stop the daemon.", msg)
             raise typer.Exit(1)
         ch.success(f"Daemon stopped ({unit})")
-        ch.dim(f"It starts again at boot. To keep it off: sudo systemctl disable {unit}")
+        disable = f"systemctl --user disable {unit}" if user_scope else f"sudo systemctl disable {unit}"
+        ch.dim(f"It starts again at boot. To keep it off: {disable}")
         return
 
     import time
@@ -1064,10 +1067,11 @@ def service_restart(
         ch.info("Requesting elevation…")
         _report_elevated_and_exit(_relaunch_elevated(["service", "restart"]), "restarted")
 
-    from navig.daemon.service_manager import managed_systemd_unit
+    from navig.daemon.service_manager import supervising_systemd_unit
 
-    unit = managed_systemd_unit()
-    if unit:
+    found = supervising_systemd_unit()
+    if found:
+        unit, user_scope = found
         # One atomic `systemctl restart`, performed by systemd itself — outside the
         # daemon's process tree, so it also survives being asked for from INSIDE it (the
         # gateway's restart route runs this command as a child of the daemon).
@@ -1077,17 +1081,15 @@ def service_restart(
 
         _record_cause("service restart")
         ch.info(f"Restarting daemon via systemd ({unit})...")
-        ok, msg = systemd_unit_action(unit, "restart")
+        ok, msg = systemd_unit_action(unit, "restart", user=user_scope)
         if not ok:
             ch.error("Couldn't restart the daemon.", msg)
             raise typer.Exit(1)
         if _wait_for_daemon(NavigDaemon, attempts=_TASK_BOOT_WAIT_S):
             ch.success(f"Daemon restarted (pid={NavigDaemon.read_pid()}, via systemd)")
             return
-        ch.error(
-            "systemd restarted the unit but no daemon came up.",
-            f"Check: journalctl -u {unit} -n 50",
-        )
+        journal = f"journalctl {'--user ' if user_scope else ''}-u {unit} -n 50"
+        ch.error("systemd restarted the unit but no daemon came up.", f"Check: {journal}")
         raise typer.Exit(1)
 
     import time

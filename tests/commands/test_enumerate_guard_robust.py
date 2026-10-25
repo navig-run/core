@@ -84,7 +84,12 @@ def test_inspect_json_mode_includes_unreadable_marker(tmp_path: Path, capsys):
 def test_knowledge_list_survives_a_corrupt_tags_row(tmp_path: Path, monkeypatch, capsys):
     from navig.memory.knowledge_base import KnowledgeBase, KnowledgeEntry
 
-    db = tmp_path / "memory" / "knowledge.db"
+    # The command opens the ONE canonical store (<data_dir>/knowledge.db, via
+    # paths.knowledge_db_path), so the fixture must live there — and both dirs are
+    # isolated, so neither the canonical nor a legacy copy can be the operator's.
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("NAVIG_DATA_DIR", str(tmp_path / "data"))
+    db = tmp_path / "data" / "knowledge.db"
     db.parent.mkdir(parents=True)
     kb = KnowledgeBase(db, embedding_provider=None)
     kb.upsert(KnowledgeEntry(key="good", content="hello", tags=["a", "b"]), compute_embedding=False)
@@ -96,11 +101,9 @@ def test_knowledge_list_survives_a_corrupt_tags_row(tmp_path: Path, monkeypatch,
     conn.commit()
 
     import navig.commands.memory as mem
+    from navig.platform import paths
 
-    class _Cfg:
-        global_config_dir = str(tmp_path)
-
-    monkeypatch.setattr(mem, "_get_config", lambda: _Cfg())
+    assert paths.knowledge_db_path() == db, "the command must read the fixture, not a real store"
 
     # Must not raise — the malformed row used to crash the entire table.
     mem.memory_knowledge(

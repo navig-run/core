@@ -1,7 +1,7 @@
 {
-  "navigVersion": "3.30.0",
-  "sourceCommit": "a00e84f54a",
-  "generatedAt": "2026-10-24",
+  "navigVersion": "3.31.0",
+  "sourceCommit": "24a5968f9e",
+  "generatedAt": "2026-10-25",
   "source": "local",
   "items": [
     {
@@ -2777,7 +2777,7 @@
       "repository": "https://github.com/navig-run/plugins/tree/main/navig-vault",
       "status": "active",
       "install": "pip install navig-vault   # also bundled with navig: navig vault --help",
-      "version": "0.13.0",
+      "version": "0.14.0",
       "readme": "A free, standalone, encrypted developer secrets manager (Doppler / 1Password-CLI / Infisical class). Installs without navig; shares one vault\n\n## Install\n\n```\npip install navig-vault\n```"
     },
     {
@@ -5759,7 +5759,7 @@
           "repository": "https://github.com/navig-run/plugins/tree/main/navig-vault",
           "status": "active",
           "install": "pip install navig-vault   # also bundled with navig: navig vault --help",
-          "version": "0.13.0",
+          "version": "0.14.0",
           "readme": "A free, standalone, encrypted developer secrets manager (Doppler / 1Password-CLI / Infisical class). Installs without navig; shares one vault\n\n## Install\n\n```\npip install navig-vault\n```"
         },
         {

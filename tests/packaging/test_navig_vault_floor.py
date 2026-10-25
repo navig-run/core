@@ -130,3 +130,20 @@ def test_the_declared_floor_covers_vault_federation() -> None:
         f"navig-vault floor {floor} is below {FIRST_WITH_FEDERATION}, the first release with "
         "keyslots/refs/backup/federation"
     )
+
+
+# First navig-vault release shipping navig_vault.resolution / doctor (Secret Resolution).
+FIRST_WITH_RESOLUTION = "0.14.0"
+
+
+def test_the_declared_floor_covers_secret_resolution() -> None:
+    """``navig.vault.federation_client.resolve`` — every ``vault get vault://…`` and host
+    secret lookup — imports ``navig_vault.resolution.lookup``. Upgrading core over an
+    existing 0.12/0.13 vault would otherwise break secret resolution with an ImportError."""
+    project = tomllib.loads((CORE / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    req = next(d for d in project["dependencies"] if d.lower().startswith("navig-vault"))
+    floor = req.split(">=", 1)[1].strip()
+    assert Version(floor) >= Version(FIRST_WITH_RESOLUTION), (
+        f"navig-vault floor {floor} is below {FIRST_WITH_RESOLUTION}, the first release with "
+        "navig_vault.resolution"
+    )

@@ -34,6 +34,14 @@ KNOWN_EMPTY = {
         "caller and register_all_tools() does not include it. The live "
         "multi-agent path is `coordinator`."
     ),
+    "questions": (
+        "ask_user IS registered (register_ask_user_tools in register_all_tools) "
+        "but carries a check_fn that requires a live gateway-bound RequestRegistry; "
+        "available_names() therefore reports nothing in any non-gateway process — "
+        "which is the intended availability, not a wiring gap. Inside a gateway "
+        "get_openai_schemas(toolsets=['questions']) returns the tool (pinned in "
+        "tests/agent/tools/test_ask_user_tools.py::test_offered_when_bound)."
+    ),
 }
 
 

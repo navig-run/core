@@ -175,6 +175,60 @@ def _static_path(node: ast.AST) -> str | None:
     return None
 
 
+def _module_string_constants(tree: ast.Module) -> dict[str, str]:
+    """``{NAME: "literal"}`` for this module's top-level string constants.
+
+    A route registered as ``f"{PREFIX}/health"`` is an EXACT path when PREFIX is a literal
+    in the same module, but an f-string is not an ``ast.Constant``, so the served set used
+    to drop it. A doc that curls such a route (the brain-data routes are all registered
+    that way) then failed the documented-route guard while the gateway answered it.
+    """
+    out: dict[str, str] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets, value = [node.target], node.value
+        else:
+            continue
+        if not (isinstance(value, ast.Constant) and isinstance(value.value, str)):
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name):
+                out[target.id] = value.value
+    return out
+
+
+def _served_path(node: ast.AST, consts: dict[str, str]) -> str | None:
+    """The exact path a registration argument names, or None when any part is runtime.
+
+    STRICTER than :func:`_static_path` on purpose: that one turns an unresolvable part into
+    a wildcard because callers only need a pattern, while a wildcard in the SERVED set makes
+    the guard blind. Every part here must resolve — a literal, or a name bound to a string
+    literal in this module — or the route is skipped exactly as it was before.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if not isinstance(node, ast.JoinedStr):
+        return None
+    parts: list[str] = []
+    for value in node.values:
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            parts.append(value.value)
+            continue
+        if (
+            isinstance(value, ast.FormattedValue)
+            and value.format_spec is None
+            and value.conversion in (-1, ord("s"))
+            and isinstance(value.value, ast.Name)
+            and value.value.id in consts
+        ):
+            parts.append(consts[value.value.id])
+            continue
+        return None
+    return "".join(parts)
+
+
 def _to_regex(pattern: str) -> re.Pattern[str]:
     parts = re.split(r"(\{[^}]*\}|" + _WILDCARD + ")", pattern)
     body = "".join(
@@ -188,6 +242,7 @@ def _served_routes(files: list[tuple[Path, str, ast.Module]]) -> dict[str, set[s
     """``{path pattern: {method, …}}`` this gateway registers, as the source can say."""
     routes: dict[str, set[str]] = {}
     for _f, _text, tree in files:
+        consts = _module_string_constants(tree)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
                 continue
@@ -222,16 +277,18 @@ def _served_routes(files: list[tuple[Path, str, ast.Module]]) -> dict[str, set[s
             # `add_get(f"/{f.name}")`, which as a pattern matches ANY single-segment
             # path: with it in the served set, a caller asking for `/statuz` resolved
             # against it and the guard passed. Measured — that mutation was the second
-            # one to report NO TEETH.
-            if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str)):
+            # one to report NO TEETH. `_served_path` therefore accepts an f-string only
+            # when EVERY part resolves to a literal — directly or through a module-level
+            # string constant like `PREFIX` — and skips it otherwise.
+            path = _served_path(arg, consts)
+            if path is None or not path.startswith("/"):
                 continue
-            if arg.value.startswith("/"):
-                # An unresolvable method (a non-literal `add_route(m, …)`) records the
-                # path with NO verb, which the verb check reads as "any" — same
-                # permissive-when-unsure rule the path side follows.
-                routes.setdefault(arg.value, set())
-                if verb:
-                    routes[arg.value].add(verb)
+            # An unresolvable method (a non-literal `add_route(m, …)`) records the
+            # path with NO verb, which the verb check reads as "any" — same
+            # permissive-when-unsure rule the path side follows.
+            routes.setdefault(path, set())
+            if verb:
+                routes[path].add(verb)
     return routes
 
 
@@ -508,3 +565,35 @@ def test_documented_gateway_urls_name_routes_that_exist() -> None:
         + "\n".join(f"  {f}:{line}  {path}" for f, line, path in missing)
         + "\n\nEither register the route or point the doc at one that exists."
     )
+
+
+def test_served_path_is_exact_or_nothing() -> None:
+    """The f-string resolver must never widen the served set into a wildcard.
+
+    ``f"{PREFIX}/health"`` is a real route (PREFIX is a literal in the same module), so
+    skipping it made a working, documented route look broken. Every OTHER f-string is
+    runtime, and a wildcard pattern in the served set is what makes this guard blind
+    (`f"/{f.name}"` matched `/statuz`). Both rules are asserted here so a future edit
+    cannot relax one while keeping the other green.
+    """
+    tree = ast.parse(
+        'PREFIX = "/api/deck/brain/data"\n'
+        'app.router.add_post(f"{PREFIX}/health", h)\n'
+        'app.router.add_get(f"/{f.name}", h2)\n'
+        "app.router.add_post(f\"{environ['PREFIX']}/x\", h3)\n"
+        'app.router.add_post("literal/path", h4)\n'
+    )
+    consts = _module_string_constants(tree)
+    assert consts == {"PREFIX": "/api/deck/brain/data"}
+
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    ]
+    assert [_served_path(call.args[0], consts) for call in calls] == [
+        "/api/deck/brain/data/health",
+        None,
+        None,
+        "literal/path",
+    ]

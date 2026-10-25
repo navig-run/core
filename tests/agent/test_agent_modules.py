@@ -49,6 +49,11 @@ class TestToolsets:
             "browser",
             "prompts",
             "search_all",
+            # Mission B: in-loop planning, gateway-only questions, read-only
+            # introspection (reachable via `full`).
+            "plan",
+            "questions",
+            "introspection",
         }
         assert expected == set(TOOLSETS.keys())
 

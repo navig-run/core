@@ -25,13 +25,14 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
-from navig.brain import authority, capabilities
+from navig.brain import authority, capabilities, parity
 from navig.brain.authority import AuthorityLeaseStore
 from navig.brain.identity import (
     hostname,
@@ -987,7 +988,11 @@ class SshRemote:
         return proc.returncode, proc.stdout, proc.stderr
 
     def _run(self, *args: str) -> tuple[int, str, str]:
-        return self._spawn([self.ssh, self.host, "navig", *args])
+        # A non-login ssh shell does not read ~/.profile, so a pipx/uv install in
+        # ~/.local/bin is off PATH and a bare `navig` is "command not found" (OUTPOST,
+        # 2026-10). Prefix it, as one quoted remote command line.
+        line = 'PATH="$HOME/.local/bin:$PATH" navig ' + " ".join(shlex.quote(a) for a in args)
+        return self._spawn([self.ssh, self.host, line])
 
     def _remote(self, *command: str) -> tuple[int, str, str]:
         """A raw command on the target (not ``navig``) — used to hash a shipped bundle."""
@@ -1058,14 +1063,42 @@ class SshRemote:
             "path": remote_path,
         }
 
-    def validate(self, receipt: MigrationReceipt) -> dict[str, Any]:
-        status = self.inspect() or {}
+    def target_inventory(self) -> dict[str, Any]:
+        """The target's jobs, enabled plugins and spaces — the other half of parity.
+
+        Paths go as ONE remote command line with ``$HOME``: a ``~`` argument is
+        expanded by the local MSYS ssh on Windows into ``/c/Users/...`` before it
+        ever reaches the target.
+        """
+        code, out, _ = self._remote('cat "$HOME/.navig/scheduler/cron_jobs.json"')
+        try:
+            store = json.loads(out) if code == 0 else {}
+        except ValueError:
+            store = {}
+        code, out, _ = self._remote('ls -1 "$HOME/.navig/spaces"')
+        spaces = [s.strip() for s in out.splitlines() if s.strip()] if code == 0 else []
+        try:
+            plugins_payload: Any = self._json("plugin", "list", "--json")
+        except MigrationBlocked:
+            plugins_payload = {}
         return {
-            "ok": True,
-            "unreconciled": [],
-            # `inspect()` flattened `brain status`'s identity block to the top level.
-            "deck_key_fingerprint": str(status.get("deck_key_fingerprint") or ""),
+            "jobs": parity.jobs_from_store(store),
+            "plugins": parity.plugins_from_list(plugins_payload),
+            "spaces": spaces,
         }
+
+    def validate(self, receipt: MigrationReceipt) -> dict[str, Any]:
+        """Prove the target runs what the source runs, then report its identity.
+
+        A missing enabled job, a space a job needs, or a plugin with a background loop
+        blocks the run (:func:`navig.brain.parity.reconcile`). That is the gap the
+        NEURON -> OUTPOST move shipped with: the lease moved, the sale pings stopped.
+        """
+        status = self.inspect() or {}
+        result = parity.reconcile(parity.local_inventory(), self.target_inventory())
+        # `inspect()` flattened `brain status`'s identity block to the top level.
+        result["deck_key_fingerprint"] = str(status.get("deck_key_fingerprint") or "")
+        return result
 
     def cut_over(self, receipt: MigrationReceipt) -> dict[str, Any]:
         """Verify the operator started the target; never claim a start we did not see.
