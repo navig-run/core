@@ -40,11 +40,35 @@ CORE_ROOT = Path(__file__).resolve().parents[2]
 # The exact pair from the 2026-08-06 failure: the binder, then the victim.
 POLLUTER = "tests/gateway/test_gateway_server_runtime.py::test_autonomous_init_and_comms"
 VICTIM = "tests/mcp/test_mcp_server_agent_control_plane.py::test_agent_component_restart_and_retry"
+# That fake ApprovalManager is now production-shaped and APPROVES, so its leak would no
+# longer break the victim — the original pair alone can no longer detect a broken reset.
+# This in-file polluter binds a backend that DENIES, so the victim passes only while the
+# reset really contains it.
+DENYING_POLLUTER = (
+    "tests/approval/test_approval_gate_isolation.py::test_a_denying_backend_can_be_bound"
+)
+
+
+def test_a_denying_backend_can_be_bound(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Binds a fail-closed backend into the PROCESS-GLOBAL gate and leaves it there.
+
+    On its own it proves ``bind_approval_manager(None)`` fails closed. Run before VICTIM by
+    the subprocess guard below, it is the leak that guard must see contained.
+    """
+    from navig.tools.approval import ApprovalDecision, bind_approval_manager, check_sync
+
+    monkeypatch.delenv("NAVIG_ALLOW_ALL_COMMANDS", raising=False)
+    bind_approval_manager(None)
+    assert check_sync("navig_agent_component_restart", "dangerous") == ApprovalDecision.DENIED
 
 
 @pytest.mark.integration
 def test_gateway_bind_does_not_leak_into_a_later_test(tmp_path: Path) -> None:
-    for nodeid, path in ((POLLUTER, POLLUTER), (VICTIM, VICTIM)):
+    for nodeid, path in (
+        (POLLUTER, POLLUTER),
+        (DENYING_POLLUTER, DENYING_POLLUTER),
+        (VICTIM, VICTIM),
+    ):
         f = CORE_ROOT / path.split("::")[0]
         assert f.exists(), (
             f"{f} is gone — this guard names two real tests by nodeid, and a renamed file "
@@ -70,7 +94,10 @@ def test_gateway_bind_does_not_leak_into_a_later_test(tmp_path: Path) -> None:
     env["NAVIG_DATA_DIR"] = str(tmp_path / "data")
 
     proc = subprocess.run(
-        [sys.executable, "-m", "pytest", POLLUTER, VICTIM, "-q", "-p", "no:cacheprovider"],
+        [
+            sys.executable, "-m", "pytest", POLLUTER, DENYING_POLLUTER, VICTIM,
+            "-q", "-p", "no:cacheprovider",
+        ],
         cwd=CORE_ROOT,
         env=env,
         capture_output=True,
@@ -81,11 +108,11 @@ def test_gateway_bind_does_not_leak_into_a_later_test(tmp_path: Path) -> None:
 
     assert proc.returncode == 0, (
         "A gateway test that binds an ApprovalManager leaked it into a later test.\n"
-        "Expected both to pass; the reset lives in tests/conftest.py"
+        "Expected all three to pass; the reset lives in tests/conftest.py"
         f"::_reset_approval_gate_globals.\n\n{proc.stdout[-4000:]}\n{proc.stderr[-2000:]}"
     )
     # Both must actually RUN — a collection error also exits non-zero, but a typo'd nodeid
     # can select zero tests and still exit 0 on some pytest versions.
-    assert "2 passed" in proc.stdout, (
-        f"expected exactly the two named tests to run and pass\n{proc.stdout[-4000:]}"
+    assert "3 passed" in proc.stdout, (
+        f"expected exactly the three named tests to run and pass\n{proc.stdout[-4000:]}"
     )

@@ -219,7 +219,10 @@ def test_remove_runs_the_deletion_on_the_longer_timeout(tmp_path, monkeypatch):
     calls: list[dict] = []
     registered = {"yes": True}
 
-    def fake_list_worktrees(_root):
+    def fake_list_worktrees(_root, *, strict=False):
+        # The re-list after a removal asks for STRICT parsing: a silent partial list is how
+        # a half-removed worktree used to look deleted (2026-10-30, outpost).
+        strict_calls.append(strict)
         return [{"path": wt_dir, "branch": "feat/x"}] if registered["yes"] else []
 
     def fake_git(args, cwd, timeout=None):
@@ -229,6 +232,7 @@ def test_remove_runs_the_deletion_on_the_longer_timeout(tmp_path, monkeypatch):
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(repo_mod, "_require_root", lambda repo=None: root)
+    strict_calls: list[bool] = []
     monkeypatch.setattr(repo_mod, "list_worktrees", fake_list_worktrees)
     monkeypatch.setattr(repo_mod, "_git", fake_git)
 
@@ -237,6 +241,9 @@ def test_remove_runs_the_deletion_on_the_longer_timeout(tmp_path, monkeypatch):
     removal = next(c for c in calls if c["args"][:2] == ["worktree", "remove"])
     assert removal["timeout"] == repo_mod._GIT_DELETE_TIMEOUT
     assert repo_mod._GIT_DELETE_TIMEOUT > repo_mod._GIT_TIMEOUT
+    assert strict_calls and strict_calls[-1] is True, (
+        f"the removal must re-list strictly, not trust a partial list (got {strict_calls})"
+    )
 
 
 def test_stale_counts_the_changelog_fragments_an_unmerged_branch_carries(repo: Path) -> None:

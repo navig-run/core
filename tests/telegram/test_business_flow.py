@@ -341,6 +341,20 @@ async def test_own_echo_is_detected_by_sender_business_bot_too(biz, monkeypatch)
     assert _store().get_message_by_ref(555, 3) is None   # skipped entirely, as before
 
 
+async def test_a_business_reply_records_what_it_answers(biz, monkeypatch):
+    """Telegram nests one level only, so a later reply TO this message cannot say what
+    this one answered; a role rewrite that resends it reads the thread from here."""
+    _stub_actions(monkeypatch)
+    ch = _ch("8490556839:ABC")
+    msg = {
+        "chat": {"id": 555}, "message_id": 80, "business_connection_id": "bc1", "date": 1,
+        "from": {"id": 777, "first_name": "owner"}, "text": "да",
+        "reply_to_message": {"message_id": 70, "from": {"id": 555}, "text": "?"},
+    }
+    await b.handle_business_message(ch, msg)
+    assert _store().get_message_by_ref(555, 80)["reply_to"] == 70
+
+
 async def test_media_business_message_keeps_the_file_id(biz, monkeypatch):
     _stub_actions(monkeypatch)
     ch = _ch("8490556839:ABC")
@@ -822,3 +836,60 @@ async def test_deletions_in_the_bots_own_chat_are_not_reported(biz, monkeypatch)
     }
     await b.handle_deleted_business_messages(_ch("8490556839:ABC"), payload)
     assert calls == []
+
+
+async def test_a_recorded_business_deletion_refreshes_an_open_view(biz, monkeypatch):
+    """The deleted-messages view reloads only on `telegram_catalog_update`, and the
+    business deletion path never emitted it — the view stayed stale (PR #1556 review)."""
+    _capture_dispatch(monkeypatch)
+    import navig.gateway.system_events as se
+
+    emitted: list[tuple[str, dict]] = []
+
+    class _Queue:
+        async def emit(self, kind, data):
+            emitted.append((kind, data))
+
+    monkeypatch.setattr(se, "get_system_events", lambda: _Queue())
+    store = _store()
+    _seed(store, 100200300, 41, sender_id=555, sender_name="Sam")
+    payload = {"business_connection_id": "bc1", "message_ids": [41],
+               "chat": {"id": 100200300, "type": "private", "first_name": "Sam"}}
+    await b.handle_deleted_business_messages(_ch(), payload)
+    assert ("telegram_catalog_update", {"chat_id": 100200300, "source": "business_delete"}) in emitted
+
+
+async def test_a_bulk_clear_of_long_messages_stays_one_telegram_message(biz, monkeypatch):
+    """40 rows of 500-character snippets made a ~20 000-character summary; the raw
+    sendMessage refused it and no report arrived at all (PR #1550 review)."""
+    from navig.gateway.channels.base import utf16_len
+
+    b.deletions.set_quiet(b.deletions.REASON_WIPED, False)
+    calls = _capture_dispatch(monkeypatch)
+    store = _store()
+    for i in range(1, 41):
+        _seed(store, 555, i, sender_id=777, sender_name="operator", text="ж" * 600)
+    await b.handle_deleted_business_messages(
+        _ch(), {"business_connection_id": "bc1", "message_ids": list(range(1, 41)),
+                "chat": {"id": 555, "first_name": "Sam"}})
+    body = calls[0]["body"]
+    assert utf16_len(body) <= 4096
+    assert body.startswith("🗑 40 messages deleted") and "more" in body.rsplit("\n", 1)[-1]
+
+
+async def test_a_bulk_clear_of_files_resends_only_a_capped_few(biz, monkeypatch):
+    """Every cached file of a bulk clear was re-sent, one API call each, flooding the
+    owner's DM (PR #1550 review)."""
+    b.deletions.set_quiet(b.deletions.REASON_WIPED, False)
+    calls = _capture_dispatch(monkeypatch)
+    store = _store()
+    for i in range(1, 61):
+        _seed(store, 555, i, sender_id=777, sender_name="operator",
+              media={"file_id": f"F{i}", "file_unique_id": f"u{i}", "kind": "photo"})
+    ch = _ch()
+    await b.handle_deleted_business_messages(
+        ch, {"business_connection_id": "bc1", "message_ids": list(range(1, 61)),
+             "chat": {"id": 555, "first_name": "Sam"}})
+    photos = [c for c in ch._api_call.call_args_list if c.args and c.args[0] == "sendPhoto"]
+    assert len(photos) == b._MEDIA_MAX
+    assert f"{60 - b._MEDIA_MAX} more file(s) not re-sent" in calls[0]["body"]

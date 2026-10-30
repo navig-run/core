@@ -234,6 +234,35 @@ async def test_execute_multi_step_action_stops_on_failure():
     assert "t3" not in call_log  # halted before 3rd step
 
 
+async def test_execute_multi_step_action_is_gated_by_the_approval_interlock():
+    """Regression: the chain dispatched LLM-produced steps with no approval gate.
+
+    `_execute_step` gated every step; this sibling reached `ToolRouter.async_execute`
+    directly, so a denied `bash_exec` still ran. A denial must raise PermissionError
+    before the router is touched.
+    """
+    _reset()
+    from navig.agent.conv.executor import TaskExecutor
+    from navig.tools.approval import ApprovalDecision, get_approval_gate
+    from navig.tools.router import get_tool_router
+    from navig.tools.schemas import MultiStepAction, ToolCallAction
+
+    async def deny(_req):
+        return ApprovalDecision.DENIED
+
+    get_approval_gate().backend = deny
+    with patch.object(
+        get_tool_router().__class__, "async_execute", new_callable=AsyncMock
+    ) as mock_exec:
+        multi = MultiStepAction(
+            steps=[ToolCallAction(tool="bash_exec", parameters={"command": "rm -rf /"})]
+        )
+        with pytest.raises(PermissionError, match="bash_exec"):
+            await TaskExecutor().execute_multi_step_action(multi)
+
+    assert mock_exec.call_count == 0
+
+
 # ---------------------------------------------------------------------------
 # Bridge — adapt_base_tool / bridge_all
 # ---------------------------------------------------------------------------

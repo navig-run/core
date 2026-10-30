@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from navig.core.click_compat import click_module, is_group
 from navig.llm import liveness
 from navig.llm.liveness import (
     RETIRED_MODELS,
@@ -341,15 +342,14 @@ def test_a_keyless_provider_contributes_no_head(monkeypatch, no_network):
 def test_the_nokey_advice_names_a_real_option():
     """The phantom-hint class: advice that names something which does not exist.
     `--add` must still be an option on `navig ai providers`."""
-    import click
     import typer
 
     from navig.commands import ai as ai_cmd
 
     cmd = typer.main.get_command(ai_cmd.ai_app)
-    assert isinstance(cmd, click.Group)
+    assert is_group(cmd)
     providers = cmd.commands["providers"]
-    ctx = click.Context(providers)
+    ctx = click_module().Context(providers)
     opts = {o for p in providers.get_params(ctx) for o in getattr(p, "opts", ())}
     assert "--add" in opts, f"the nokey advice names --add, which is gone: {sorted(opts)}"
 
@@ -607,3 +607,23 @@ def test_json_rows_carry_whether_the_model_is_priced(monkeypatch):
     rows = {row["model"]: row for row in json.loads(r.output)}
     assert rows["grok-4.6"]["priced"] is True
     assert rows["grok-3-fast"]["priced"] is True  # a variant of grok-3
+
+
+def test_a_transient_probe_is_not_reported_as_a_live_unpriced_model():
+    """A 429/5xx probe says nothing about whether the id exists — calling it a live model
+    that needs a price would send the operator to price a stale id."""
+    from navig.commands import ai as ai_cmd
+
+    printed: list[str] = []
+    console = type("C", (), {"print": lambda self, s="", *a, **k: printed.append(str(s))})()
+    rows = [
+        {"provider": "xai", "model": "grok-3", "status": "live", "priced": True},
+        {"provider": "xai", "model": "grok-stale", "status": "transient", "priced": False},
+    ]
+    ai_cmd._report_unpriced(console, rows)
+    assert not any("grok-stale" in line for line in printed), printed
+
+    rows[1]["status"] = "live"
+    printed.clear()
+    ai_cmd._report_unpriced(console, rows)
+    assert any("xai:grok-stale" in line for line in printed), printed

@@ -27,6 +27,8 @@ from pathlib import Path
 from typing import Any
 
 from navig.spaces import habit_tracker
+from navig.telegram import card_nav
+from navig.telegram.card_doc import Card, Heading, Para, PullQuote, Raw, Table, Tasks, esc
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +79,8 @@ def extension_banner_cli() -> tuple[str, str] | None:
 #: Button state markers. An empty checkbox plus an icon read as "white square and
 #: icon" — no word, no state, nothing to act on. A word and an unmistakable mark
 #: are what make a button answerable at 22:15 without thinking.
-MARK_DONE = "✅"
-MARK_OPEN = "❌"
+MARK_DONE = "✓"
+MARK_OPEN = ""
 
 #: Toggle rows: (tracker label, button word). First row is the floor.
 #: The tracker label stays as it is on disk — only the button reads in English.
@@ -268,82 +270,28 @@ def floor_line(logged: dict[str, str]) -> str:
     )
 
 
-def build_card(path: Path, day: str, morning: bool = False) -> tuple[str, dict[str, Any]]:
-    """Render the check-in card for *day* from the tracker at *path*.
+def _all_labels() -> list[str]:
+    """Every tappable habit, in button order: the floor first, then the rest."""
+    return [label for row in CHECKIN_ROWS for label, _english in row]
 
-    ``morning=True`` frames the same card as the start of the day. The buttons are
-    identical on purpose: waking up is the one thing that can only be marked at the
-    moment it happens, and by 22:15 it is a memory. One card in the morning and one
-    in the evening beats a single card that scrolls out of reach by lunchtime.
+
+def _checkin_keyboard(
+    logged: dict[str, str], day: str, morning: bool
+) -> list[list[dict[str, str]]]:
+    """The tap rows: one per non-negotiable pair, the faces, then close.
+
+    Identical in both renders — the buttons ARE the card's input surface. The frame
+    rides in the callback (`:m`), because a tap re-renders the card and the handler
+    has nothing else to tell a morning card from an evening one.
     """
-    logged = habit_tracker.day_map(path, day)
-    rows = habit_tracker.read_tracker(path)
+    stamp = _compact(day)
+    frame = MORNING_SUFFIX if morning else ""
 
     def done(label: str) -> bool:
         return habit_tracker.is_done(logged.get(label, ""))
 
-    open_floor = [_word(h) for h in habit_tracker.NON_NEGOTIABLES if not done(h)]
-
-    if morning:
-        lines = [
-            f"☀️ <b>{html.escape(_t('habit.card.morning_title'))}</b>"
-            f" · {html.escape(_human_day(day))}",
-            "",
-        ]
-        lines.append(html.escape(_t("habit.card.morning_line")))
-        # `{wake}` is the localized label, so the sentence names the button the
-        # operator can actually see rather than the English word "Wake".
-        lines.append(_t("habit.card.morning_tap", wake=html.escape(word("wake"))))
-    else:
-        lines = [
-            f"✍️ <b>{html.escape(_t('habit.card.evening_title'))}</b>"
-            f" · {html.escape(_human_day(day))}"
-        ]
-
-    lines += ["", f"<b>{html.escape(_floor_title())}</b>", floor_line(logged)]
-
-    if not morning:
-        if open_floor:
-            lines.append(
-                _t(
-                    "habit.card.still_open",
-                    names=html.escape(", ".join(open_floor)),
-                )
-            )
-        else:
-            lines.append(f"✅ <b>{html.escape(_t('habit.card.all_three'))}</b>")
-
-    lines += [
-        "",
-        "<i>"
-        + html.escape(_t("habit.card.tap_hint", open=MARK_OPEN, done=MARK_DONE))
-        + "</i>",
-    ]
-
-    try:
-        today = date.fromisoformat(day)
-        streaks = " · ".join(
-            f"{_word(h)} "
-            + _t("habit.card.streak_day", n=habit_tracker.streak_for(rows, h, today))
-            for h in habit_tracker.NON_NEGOTIABLES
-        )
-        lines.append(
-            f"<i>{html.escape(_t('habit.card.streaks', value=streaks))}</i>"
-        )
-    except ValueError:
-        pass
-
     score = logged.get("score", "")
-    if score and habit_tracker.is_done(score):
-        lines.append(f"<i>{html.escape(_t('habit.card.day_score', value=score))}</i>")
-
     keyboard: list[list[dict[str, str]]] = []
-    stamp = _compact(day)
-    # The frame rides in the callback (`:m`), because a tap re-renders the card and
-    # the handler has nothing else to tell a morning card from an evening one — a
-    # tap on the 08:00 card used to come back as the evening "Чек-ин". Optional, so
-    # every card already in a chat keeps working.
-    frame = MORNING_SUFFIX if morning else ""
     for row in CHECKIN_ROWS:
         keyboard.append(
             [
@@ -353,8 +301,11 @@ def build_card(path: Path, day: str, morning: bool = False) -> tuple[str, dict[s
                     # name `word` also shadowed the word() function right here —
                     # which is why the card text localized and the buttons under
                     # it stayed in English.
-                    "text": f"{MARK_DONE if done(label) else MARK_OPEN} {_word(label)}",
+                    "text": f"{MARK_DONE + ' ' if done(label) else ''}{_word(label)}",
                     "callback_data": f"{CALLBACK_PREFIX}t:{label}:{stamp}{frame}",
+                    # Colour carries the state on a client that renders button
+                    # styles; the mark still says it on one that does not.
+                    **({"style": "success"} if done(label) else {}),
                 }
                 for label, _english in row
             ]
@@ -364,6 +315,7 @@ def build_card(path: Path, day: str, morning: bool = False) -> tuple[str, dict[s
             {
                 "text": f"{'▶' if score == value else ''}{face}",
                 "callback_data": f"{CALLBACK_PREFIX}s:{value}:{stamp}{frame}",
+                **({"style": "primary"} if score == value and score else {}),
             }
             for value, face in SCORE_FACES
         ]
@@ -374,56 +326,157 @@ def build_card(path: Path, day: str, morning: bool = False) -> tuple[str, dict[s
             "callback_data": f"{CALLBACK_PREFIX}x:{stamp}",
         }]
     )
+    return keyboard
 
-    return "\n".join(lines), {"inline_keyboard": keyboard}
 
+def checkin_card(path: Path, day: str, morning: bool = False) -> tuple[Card, dict[str, Any]]:
+    """The check-in card for *day*, as one definition both renders read.
 
-def build_closing_text(path: Path, day: str) -> str:
-    """What the card becomes once the day is closed — buttons removed.
+    ``morning=True`` frames the same card as the start of the day. The buttons are
+    identical on purpose: waking up is the one thing that can only be marked at the
+    moment it happens, and by 22:15 it is a memory. One card in the morning and one
+    in the evening beats a single card that scrolls out of reach by lunchtime.
 
-    Names the three and says which one was missed. The previous version reported
-    "2/3 non-negotiables", which is a score for a machine: it never said what the
-    three were, which one broke, or what to do about it tomorrow.
+    The three non-negotiables are a task list in the rich render: a checkbox says
+    "done" or "open" at a glance, and the row under it is still the thing that
+    changes it (a rich checkbox is state, not input).
     """
     logged = habit_tracker.day_map(path, day)
-    missed = [
-        _word(h) for h in habit_tracker.NON_NEGOTIABLES if not habit_tracker.is_done(logged.get(h, ""))
-    ]
+    rows = habit_tracker.read_tracker(path)
 
-    lines = [
-        f"🌙 <b>{html.escape(_t('habit.card.closed', day=_human_day(day)))}</b>",
-        "",
-        f"<b>{html.escape(_floor_title())}</b>",
-        floor_line(logged),
-        "",
-    ]
+    def done(label: str) -> bool:
+        return habit_tracker.is_done(logged.get(label, ""))
 
-    if missed:
-        # Escaped BEFORE it reaches the locale string, because the translation
-        # itself carries <b> markup that must survive.
-        names = html.escape(", ".join(missed))
-        lines.append(f"⚠️ <b>{_t('habit.card.missed', names=names)}</b>")
-        lines.append(_t("habit.card.never_miss_twice", names=names))
-    else:
-        lines.append(f"✅ <b>{html.escape(_t('habit.card.all_three'))}</b>")
+    open_floor = [_word(h) for h in habit_tracker.NON_NEGOTIABLES if not done(h)]
 
-    # Everything outside the three, minus the score — which gets its own line
-    # rather than sitting in a list of habits as if "score" were something you do.
-    extra = sorted(
-        _word(k)
-        for k, v in logged.items()
-        if habit_tracker.is_done(v) and k not in habit_tracker.NON_NEGOTIABLES and k != "score"
-    )
-    if extra:
-        done_names = html.escape(", ".join(extra))
-        lines += ["", f"<i>{_t('habit.card.also_done', names=done_names)}</i>"]
+    floor = list(habit_tracker.NON_NEGOTIABLES)
+    extras = [h for h in _all_labels() if h not in floor]
+    done_floor = sum(1 for h in floor if done(h))
+
+    blocks: list[Any] = []
+    if morning:
+        blocks.append(Para(_t("habit.card.morning_line")))
+        # The locale string carries <b>{wake}</b> for the classic parse_mode, so it
+        # rides as Raw with the word escaped — a plain Para would print the tags.
+        blocks.append(
+            Para(Raw(_t("habit.card.morning_tap", wake=esc(word("wake")))), style="italic")
+        )
+
+    # The floor is what the day is judged on, so it is named as "required" rather than
+    # as "the ones that decide the day" — the other three are tappable habits too, and
+    # a card that hides them answers a question nobody asked.
+    blocks.append(Heading(_t("habit.card.floor_title")))
+    blocks.append(Tasks([(_word(h), done(h)) for h in floor]))
+    if extras:
+        blocks.append(Heading(_t("habit.card.extras_title")))
+        blocks.append(Tasks([(_word(h), done(h)) for h in extras]))
+
+    if not morning:
+        open_floor = [_word(h) for h in floor if not done(h)]
+        if open_floor:
+            blocks.append(
+                Para(Raw(_t("habit.card.still_open", names=esc(", ".join(open_floor)))))
+            )
+        else:
+            blocks.append(Para(Raw(f"<b>{esc(_t('habit.card.all_three'))}</b>")))
+
+    try:
+        today = date.fromisoformat(day)
+        streaks = " · ".join(
+            f"{_word(h)} " + _t("habit.card.streak_day", n=habit_tracker.streak_for(rows, h, today))
+            for h in floor
+        )
+        blocks.append(Para(_t("habit.card.streaks", value=streaks), style="italic"))
+    except ValueError:
+        pass
 
     score = logged.get("score", "")
     if score and habit_tracker.is_done(score):
-        lines.append(f"<i>{html.escape(_t('habit.card.day_score', value=score))}</i>")
+        blocks.append(Para(_t("habit.card.day_score", value=score), style="italic"))
 
-    lines += ["", _t("habit.card.journal_nudge")]
-    return "\n".join(lines)
+    meta = f"{_human_day(day)} · {done_floor}/{len(floor)}"
+
+    title = _t("habit.card.morning_title") if morning else _t("habit.card.evening_title")
+    card = Card(
+        title,
+        glyph="☀️" if morning else "✍️",
+        meta=meta,
+        blocks=blocks,
+    )
+    return card, {"inline_keyboard": _checkin_keyboard(logged, day, morning)}
+
+
+def build_card(path: Path, day: str, morning: bool = False) -> tuple[str, dict[str, Any]]:
+    """The plain render of :func:`checkin_card` — what a message without rich support gets."""
+    card, keyboard = checkin_card(path, day, morning)
+    return card.classic_html(), keyboard
+
+
+def build_card_rich(path: Path, day: str, morning: bool = False) -> tuple[str, dict[str, Any]]:
+    """The rich render: a task list instead of a dot-joined line."""
+    card, keyboard = checkin_card(path, day, morning)
+    return card.rich_html(), keyboard
+
+
+def closing_card(path: Path, day: str) -> Card:
+    """The day once it is closed: what happened, and what to do tomorrow.
+
+    Names every habit, split the same way the check-in splits them, because the
+    closing message is where the operator compares the day to the intention. The
+    "never miss twice" line is a pull quote: it is the one sentence worth reading
+    twice, and it was buried in body text before.
+    """
+    logged = habit_tracker.day_map(path, day)
+    floor = list(habit_tracker.NON_NEGOTIABLES)
+    known = set(_all_labels())
+    extras = [h for h in _all_labels() if h not in floor]
+    # A label written by an older build (or a hand edit) still gets a row instead of
+    # vanishing from the closing summary.
+    extras += sorted(k for k in logged if k not in known and k != "score")
+
+    def done(label: str) -> bool:
+        return habit_tracker.is_done(logged.get(label, ""))
+
+    missed = [_word(h) for h in floor if not done(h)]
+    names = esc(", ".join(missed))
+
+    blocks: list[Any] = [
+        Heading(_t("habit.card.floor_title")),
+        Tasks([(_word(h), done(h)) for h in floor]),
+    ]
+    if extras:
+        blocks += [
+            Heading(_t("habit.card.extras_title")),
+            Tasks([(_word(h), done(h)) for h in extras]),
+        ]
+
+    if missed:
+        blocks.append(Para(Raw(f"<b>{_t('habit.card.missed', names=names)}</b>")))
+        blocks.append(PullQuote(Raw(_t("habit.card.never_miss_twice", names=names))))
+    else:
+        blocks.append(Para(Raw(f"<b>{esc(_t('habit.card.all_three'))}</b>")))
+
+    score = logged.get("score", "")
+    if score and habit_tracker.is_done(score):
+        blocks.append(Para(_t("habit.card.day_score", value=score), style="italic"))
+
+    return Card(
+        _t("habit.card.closed", day=_human_day(day)),
+        glyph="🌙",
+        meta="",
+        blocks=blocks,
+        footer=_t("habit.card.journal_nudge"),
+    )
+
+
+def build_closing_text(path: Path, day: str) -> str:
+    """The plain render of :func:`closing_card` — buttons already removed."""
+    return closing_card(path, day).classic_html()
+
+
+def build_closing_rich(path: Path, day: str) -> str:
+    """The rich render: checklist, pull quote, footer."""
+    return closing_card(path, day).rich_html()
 
 
 # ── /stats — the cycle, on the phone ──────────────────────────────────────────
@@ -438,6 +491,15 @@ STATS_RANGES: list[tuple[int, str]] = [(7, "7 days"), (14, "14 days"), (0, "All"
 _WEEKDAY_NAMES = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 
+#: Telegram's ceiling for one message's text, counted in UTF-16 code units. The raw
+#: HTML is measured, which over-counts the tags — erring on the side that fits.
+STATS_TEXT_LIMIT = 4096
+
+
+def _utf16_len(text: str) -> int:
+    return len(text.encode("utf-16-le")) // 2
+
+
 def build_stats(path: Path, today: date, days: int = 7) -> tuple[str, dict[str, Any]]:
     """The whole cycle as one message: totals, day-of-week, and a day list.
 
@@ -446,13 +508,15 @@ def build_stats(path: Path, today: date, days: int = 7) -> tuple[str, dict[str, 
     column says which day of the week you lose and therefore what to change.
     """
     rows = habit_tracker.read_tracker(path)
-    if not rows:
+    # Empty is judged on the days that PARSE: a hand-edited file whose every date is
+    # malformed has rows but no cycle, and summarize() then has no start to show.
+    s = habit_tracker.summarize(rows, today) if rows else None
+    if not s or not s["start"]:
         return (
             f"📊 <b>{_t('habit.stats.title')}</b>\n\n{_t('habit.stats.empty')}",
             {"inline_keyboard": []},
         )
 
-    s = habit_tracker.summarize(rows, today)
     pct = round(100 * s["complete"] / s["days"]) if s["days"] else 0
 
     lines = [
@@ -530,36 +594,50 @@ def build_stats(path: Path, today: date, days: int = 7) -> tuple[str, dict[str, 
     habit_w = {h: len(_word(h)) + 1 for h in habit_tracker.NON_NEGOTIABLES}
     stamp_w = max(len(f"{_weekday_name(i)} 00") for i in range(7)) + 1
     head = "".join(f"{_word(h):>{habit_w[h]}}" for h in habit_tracker.NON_NEGOTIABLES)
-    grid = [f"{'':<{stamp_w}}{head}"]
-    month: int | None = None
-    blanks = full = 0
-    for day, marks in habit_tracker.day_rows(rows, start, today):
-        if day.month != month:
-            month = day.month
-            grid.append(_month_name(month))
-        cells = "".join(
-            f"{MARK_ON if marks[h] else MARK_OFF:>{habit_w[h]}}"
-            for h in habit_tracker.NON_NEGOTIABLES
-        )
-        hit = sum(marks.values())
-        tail = ""
-        if hit == 0:
-            tail, blanks = "  ←", blanks + 1
-        elif hit == 3:
-            tail, full = "  ★", full + 1
-        stamp = f"{_weekday_name(day.weekday())} {day.day:02d}"
-        grid.append(f"{stamp:<{stamp_w}}{cells}{tail}")
-    lines += [f"<b>{_t('habit.stats.day_by_day')}</b>", _pre(grid)]
+    while True:
+        grid = [f"{'':<{stamp_w}}{head}"]
+        month: int | None = None
+        blanks = full = 0
+        for day, marks in habit_tracker.day_rows(rows, start, today):
+            if day.month != month:
+                month = day.month
+                grid.append(_month_name(month))
+            cells = "".join(
+                f"{MARK_ON if marks[h] else MARK_OFF:>{habit_w[h]}}"
+                for h in habit_tracker.NON_NEGOTIABLES
+            )
+            hit = sum(marks.values())
+            tail = ""
+            if hit == 0:
+                tail, blanks = "  ←", blanks + 1
+            elif hit == 3:
+                tail, full = "  ★", full + 1
+            stamp = f"{_weekday_name(day.weekday())} {day.day:02d}"
+            grid.append(f"{stamp:<{stamp_w}}{cells}{tail}")
+        tail_lines = [f"<b>{_t('habit.stats.day_by_day')}</b>", _pre(grid)]
+        omitted = (start - s["start"]).days
+        if omitted > 0:
+            tail_lines.append(f"<i>{html.escape(_t('habit.stats.earlier_omitted', n=omitted))}</i>")
 
-    # A bare symbol is a symbol you have to ask about — the same defect as a
-    # button reading "Groom". The legend only appears when the symbol does.
-    legend = []
-    if full:
-        legend.append(_t("habit.stats.legend_all"))
-    if blanks:
-        legend.append(_t("habit.stats.legend_none"))
-    if legend:
-        lines.append(f"<i>{' · '.join(legend)}</i>")
+        # A bare symbol is a symbol you have to ask about — the same defect as a
+        # button reading "Groom". The legend only appears when the symbol does.
+        legend = []
+        if full:
+            legend.append(_t("habit.stats.legend_all"))
+        if blanks:
+            legend.append(_t("habit.stats.legend_none"))
+        if legend:
+            tail_lines.append(f"<i>{' · '.join(legend)}</i>")
+
+        # "All" grows one line a day, and the panel is sent as ONE editMessageText —
+        # past Telegram's limit the edit is refused outright. Keep the most recent
+        # days that fit and say how many earlier ones were left out.
+        over = _utf16_len("\n".join(lines + tail_lines)) - STATS_TEXT_LIMIT
+        if over <= 0 or start >= today:
+            break
+        per_day = max(1, _utf16_len(grid[-1]) + 1)
+        start = min(today, start + timedelta(days=max(1, -(-over // per_day))))
+    lines += tail_lines
 
     keyboard = [
         [
@@ -571,6 +649,87 @@ def build_stats(path: Path, today: date, days: int = 7) -> tuple[str, dict[str, 
         ]
     ]
     return "\n".join(lines), {"inline_keyboard": keyboard}
+
+
+def stats_card(path: Path, today: date, days: int = 7) -> tuple[Card, dict[str, Any]]:
+    """The cycle as a rich card: two real tables instead of three `<pre>` blocks.
+
+    The plain render still needs monospace (Telegram has no table markup there), but a
+    rich message has one, with borders, a header row and cells that reflow on a phone.
+    The data is the same `habit_tracker.summarize`; only the presentation changes.
+
+    NOTE: `build_stats` below still computes its own rows. The shapes drifted apart once
+    already — when the next edit touches either, fold both onto this one definition.
+    """
+    rows = habit_tracker.read_tracker(path)
+    keys = [
+        {"text": f"{'▶ ' if n == days else ''}{_range_label(n)}",
+         **({"style": "primary"} if n == days else {}),
+         "callback_data": f"{CALLBACK_PREFIX}st:{n}"}
+        for n, _ in STATS_RANGES
+    ]
+    keyboard = {"inline_keyboard": [keys]}
+
+    if not rows:
+        return Card(_t("habit.stats.title"), glyph="📊", meta=_range_label(days),
+                    blocks=[Para(_t("habit.stats.empty"), style="italic")]), keyboard
+
+    s = habit_tracker.summarize(rows, today)
+    pct = round(100 * s["complete"] / s["days"]) if s["days"] else 0
+
+    by_habit = Table(
+        header=[_t("habit.stats.col_habit"), _t("habit.stats.col_done"),
+                _t("habit.stats.col_now"), _t("habit.stats.col_best")],
+        rows=[
+            [
+                Raw(f"<b>{esc(_word(label))}</b>"),
+                f"{s['habits'][label]['done']}/{s['days']}",
+                _t("habit.card.streak_day", n=s["habits"][label]["streak"]),
+                _t("habit.card.streak_day", n=s["habits"][label]["best"]),
+            ]
+            for label in habit_tracker.NON_NEGOTIABLES
+        ],
+        striped=True,
+    )
+
+    weekday_rows = []
+    for i in range(7):
+        bucket = s["by_weekday"].get(i, {"days": 0})
+        if not bucket["days"]:
+            continue
+        hit, total = bucket["complete"], bucket["days"]
+        weekday_rows.append([
+            _weekday_name(i),
+            f"{hit}/{total}",
+            Raw(f"{MARK_ON * hit}{MARK_OFF * (total - hit)}"),
+        ])
+    by_weekday = Table(
+        header=[_t("habit.stats.col_day"), _t("habit.stats.col_counted"), ""],
+        rows=weekday_rows,
+    )
+
+    blocks: list[Any] = [
+        Para(Raw(
+            f"<b>{esc(_t('habit.card.days_counted', done=s['complete'], total=s['days']))}</b>"
+            f" · {pct}%"
+        )),
+        Heading(_t("habit.stats.by_habit")),
+        by_habit,
+        Heading(_t("habit.stats.by_weekday")),
+        by_weekday,
+    ]
+
+    return Card(
+        _t("habit.stats.title"),
+        glyph="📊",
+        meta=f"{_range_label(days)} · {_human_day(s['start'].isoformat())} → {_human_day(s['end'].isoformat())}",
+        blocks=blocks,
+    ), keyboard
+
+
+def build_stats_rich(path: Path, today: date, days: int = 7) -> tuple[str, dict[str, Any]]:
+    card, keyboard = stats_card(path, today, days)
+    return card.rich_html(), keyboard
 
 
 # ── /pause — switching the reminders off, from the phone ──────────────────────
@@ -601,13 +760,40 @@ def _next_run(job: dict) -> str:
     return f"{_weekday_name(when.weekday())} {when:%H:%M}"
 
 
-def build_pause_menu() -> tuple[str, dict[str, Any]]:
+def _schedule_word(schedule: str) -> str:
+    """``0 8 * * *`` → ``08:00 · daily``; anything unusual keeps its own text.
+
+    A cron expression is a machine setting and a phone-sized table cell is not the
+    place to read one. Only the two shapes a habit reminder actually uses are
+    translated — a daily time and a weekly one — and every other expression is
+    passed through untouched rather than guessed at.
+    """
+    parts = str(schedule or "").split()
+    if len(parts) != 5:
+        return str(schedule or "—")
+    minute, hour, dom, month, dow = parts
+    if not (minute.isdigit() and hour.isdigit()):
+        return str(schedule)
+    clock = f"{int(hour):02d}:{int(minute):02d}"
+    if (dom, month, dow) == ("*", "*", "*"):
+        return f"{clock} · {_t('habit.pause.every_day')}"
+    if dom == "*" and month == "*" and dow.isdigit():
+        # Cron counts Sunday as 0; `_weekday_name` counts Monday as 0.
+        return f"{clock} · {_weekday_name((int(dow) + 6) % 7)}"
+    return str(schedule)
+
+
+def pause_card() -> tuple[Card, dict[str, Any]]:
     """Every reminder with its state and next fire; tapping a row flips that one.
 
     Deliberately lists them rather than offering a bare on/off: a switch you cannot
     verify is how you end up unsure whether the silence is you or a failure. The
     next-run column is the same reason — a reminder that is "on" but never fires
     looks identical to one that works until you can see when it is due.
+
+    The three columns are a real table now instead of ``—``-joined prose: habit,
+    schedule and next fire line up, and the state glyph rides on the habit rather
+    than on a bullet the reader has to decode.
     """
     jobs = _habit_jobs()
     # The extension state OUTRANKS every per-habit switch below: with Habits off
@@ -615,30 +801,45 @@ def build_pause_menu() -> tuple[str, dict[str, Any]]:
     # arrives. Say so first, or the screen is a lie.
     banner = extension_banner()
     if not jobs:
-        return (
-            banner + f"⏰ <b>{_t('habit.pause.title')}</b>\n\n{_t('habit.pause.none')}",
-            {"inline_keyboard": []},
-        )
+        card = Card(_t("habit.pause.title"), glyph="⏰")
+        if banner:
+            card.add(Para(Raw(banner)))
+        card.add(Para(_t("habit.pause.none"), style="italic"))
+        return card, {"inline_keyboard": []}
 
     on = [j for j in jobs if j.get("enabled", True)]
-    lines = ([banner] if banner else []) + [
-        f"⏰ <b>{_t('habit.pause.title')}</b> — "
-        f"{_t('habit.pause.count', on=len(on), total=len(jobs))}",
-        "",
-    ]
+    rows: list[list[str | Raw]] = []
     for j in jobs:
-        mark = "🔔" if j.get("enabled", True) else "🔕"
-        when = _next_run(j) if j.get("enabled", True) else _t("habit.pause.paused")
-        lines.append(
-            f"{mark} <b>{html.escape(_word(_job_key(j)))}</b> — "
-            f"<code>{html.escape(str(j.get('schedule', '—')))}</code> · {when}"
+        live = j.get("enabled", True)
+        when = _next_run(j) if live else _t("habit.pause.paused")
+        rows.append(
+            [
+                Raw(f"{'🔔' if live else '🔕'} <b>{esc(_word(_job_key(j)))}</b>"),
+                Raw(f"<code>{esc(_schedule_word(j.get('schedule', '—')))}</code>"),
+                Raw(f"<i>{esc(when)}</i>"),
+            ]
         )
-    lines += [
-        "",
-        f"<i>{_t('habit.pause.explain')}</i>",
-        "",
-        f"<i>{_t('habit.pause.tap_hint')}</i>",
-    ]
+
+    card = Card(
+        _t("habit.pause.title"),
+        glyph="⏰",
+        meta=_t("habit.pause.count", on=len(on), total=len(jobs)),
+    )
+    if banner:
+        card.add(Para(Raw(banner)))
+    card.add(
+        Table(
+            header=[
+                _t("habit.pause.col.habit"),
+                _t("habit.pause.col.schedule"),
+                _t("habit.pause.col.next"),
+            ],
+            rows=rows,
+            striped=True,
+        ),
+        Para(_t("habit.pause.explain"), style="italic"),
+    )
+    card.footer = _t("habit.pause.tap_hint")
 
     keyboard = [
         [
@@ -663,7 +864,20 @@ def build_pause_menu() -> tuple[str, dict[str, Any]]:
             },
         ]
     )
-    return "\n".join(lines), {"inline_keyboard": keyboard}
+    keyboard.append(card_nav.close_row(CALLBACK_PREFIX.rstrip(":")))
+    return card, {"inline_keyboard": keyboard}
+
+
+def build_pause_menu() -> tuple[str, dict[str, Any]]:
+    """The reminder switchboard as the plain body (the classic transport)."""
+    card, keyboard = pause_card()
+    return card.classic_html(), keyboard
+
+
+def build_pause_menu_rich() -> tuple[str, dict[str, Any]]:
+    """The same switchboard with its table, for a chat that draws rich messages."""
+    card, keyboard = pause_card()
+    return card.rich_html(), keyboard
 
 
 def _set_reminders(key: str | None, *, enabled: bool) -> list[str]:
@@ -680,7 +894,7 @@ async def handle_callback(
     user_id: int | None = None,
 ) -> str:
     """Apply one button press and re-render the card. Returns the toast text."""
-    path = habit_tracker.resolve_target(chat_id)
+    path = habit_tracker.resolve_target(chat_id, message_id)
     body = cb_data[len(CALLBACK_PREFIX) :]
     parts = body.split(":")
     action = parts[0] if parts else ""
@@ -688,6 +902,12 @@ async def handle_callback(
     morning = action in ("t", "s") and len(parts) >= 4 and parts[3] == "m"
 
     try:
+        if action in ("t", "s") and len(parts) >= 3:
+            # An older card can outlive the close (its edit or delete failed, or it
+            # is past Telegram's 48 h): a tap on it must not rewrite a finished day.
+            if habit_tracker.is_day_closed(chat_id, _expand(parts[2])):
+                return f"🔒 {_t('habit.toast.day_is_closed')}"
+
         if action == "t" and len(parts) >= 3:
             label, day = parts[1], _expand(parts[2])
             current = habit_tracker.day_map(path, day).get(label, "")
@@ -702,7 +922,16 @@ async def handle_callback(
 
         elif action == "x" and len(parts) >= 2:
             day = _expand(parts[1])
-            await _edit(channel, chat_id, message_id, build_closing_text(path, day), None)
+            # Close in place: the card the operator is looking at BECOMES the
+            # verdict. Buttons are cleared explicitly — leaving them would keep a
+            # "close the day" control live on a day that is already closed.
+            if not await _edit_card(
+                channel, chat_id, message_id, closing_card(path, day), {"inline_keyboard": []}
+            ):
+                # The card still has live buttons: recording the close now would make
+                # the scheduled close skip its fallback and leave nothing to retry.
+                return f"⚠️ {_t('habit.toast.close_failed')}"
+            habit_tracker.remember_closing(chat_id, message_id, day)
             habit_tracker.mark_day_closed(chat_id, day)
             await ask_for_journal(channel, chat_id, day)
             return _t("habit.toast.day_closed")
@@ -710,7 +939,8 @@ async def handle_callback(
         elif action == "st" and len(parts) >= 2:
             days = int(parts[1]) if parts[1].lstrip("-").isdigit() else 7
             text, keyboard = build_stats(path, date.today(), days)
-            await _edit(channel, chat_id, message_id, text, keyboard)
+            if not await _edit(channel, chat_id, message_id, text, keyboard):
+                return f"⚠️ {_t('habit.toast.card_not_updated')}"
             return (
                 _t("habit.toast.all_days")
                 if days <= 0
@@ -721,13 +951,21 @@ async def handle_callback(
             enabled = action == "r"
             target = None if parts[1] == "*" else parts[1]
             changed = _set_reminders(target, enabled=enabled)
-            text, keyboard = build_pause_menu()
-            await _edit(channel, chat_id, message_id, text, keyboard)
+            card, keyboard = pause_card()
+            await _edit_card(channel, chat_id, message_id, card, keyboard)
             if not changed:
                 return f"⚠️ {_t('habit.toast.nothing_changed')}"
             names = ", ".join(sorted(_word(k) for k in changed))
             key = "habit.pause.on_toast" if enabled else "habit.pause.paused_toast"
             return f"{'🔔' if enabled else '🔕'} {_t(key, names=names)}"[:200]
+
+        elif action == card_nav.VERB_CLOSE:
+            # A settings screen is done when the operator says so; closing it must
+            # not leave six live toggles under a card that claims to be finished.
+            await card_nav.settle(
+                channel, chat_id, message_id, title=_t("habit.pause.title")
+            )
+            return ""
 
         else:
             return f"⚠️ {_t('habit.toast.unknown_button')}"
@@ -735,8 +973,11 @@ async def handle_callback(
         logger.warning("habit check-in write failed (chat=%s): %s", chat_id, exc)
         return f"⚠️ {_t('habit.toast.save_failed')}"
 
-    text, keyboard = build_card(path, day, morning=morning)
-    await _edit(channel, chat_id, message_id, text, keyboard)
+    card, keyboard = checkin_card(path, day, morning=morning)
+    if not await _edit_card(channel, chat_id, message_id, card, keyboard):
+        # Saved, but the card still shows the old marks — saying only "✅ Wake"
+        # would make the next tap look like it undid the habit.
+        return f"⚠️ {_t('habit.toast.saved_card_stale')}"
     return toast
 
 
@@ -806,13 +1047,42 @@ async def ask_for_journal(channel: Any, chat_id: int, day: str) -> None:
     habit_tracker.set_journal_prompt(chat_id, day, prompt_id)
 
 
+async def _edit_card(
+    channel: Any,
+    chat_id: int,
+    message_id: int,
+    card: Card,
+    keyboard: dict[str, Any] | None,
+) -> bool:
+    """Re-render the check-in card in place, rich where the chat supports it."""
+    from navig.telegram import card_transport  # noqa: PLC0415 — avoids a cycle
+
+    if card_transport.rich_available(channel) and hasattr(channel, "edit_rich_message"):
+        try:
+            await channel.edit_rich_message(
+                chat_id,
+                message_id,
+                html=card.rich_html(),
+                fallback_html=card.classic_html(),
+                keyboard=keyboard,
+            )
+            return True
+        except Exception as exc:  # noqa: BLE001 — a failed edit is not worth a tap
+            logger.debug("rich check-in edit failed, retrying plain: %s", exc)
+    return await _edit(channel, chat_id, message_id, card.classic_html(), keyboard)
+
+
 async def _edit(
     channel: Any,
     chat_id: int,
     message_id: int,
     text: str,
     keyboard: dict[str, Any] | None,
-) -> None:
+) -> bool:
+    """Edit the card. True when Telegram took the edit (or had nothing to change).
+
+    ``channel._api_call`` answers a refusal with None rather than raising, so the
+    result is what tells a stale card from an updated one."""
     payload: dict[str, Any] = {
         "chat_id": chat_id,
         "message_id": message_id,
@@ -826,8 +1096,26 @@ async def _edit(
         # buttons live on a message that says the day is closed.
         payload["reply_markup"] = {"inline_keyboard": []}
     try:
-        await channel._api_call("editMessageText", payload)
+        result = await channel._api_call("editMessageText", payload)
     except Exception as exc:  # noqa: BLE001
         # "message is not modified" is Telegram's answer to a tap that changed
         # nothing visible; it is not a failure worth surfacing to the user.
-        logger.debug("check-in card edit failed: %s", exc)
+        if "not modified" in str(exc).lower():
+            return True
+        logger.warning("check-in card edit failed: %s", exc)
+        return False
+    if result is not None:
+        return True
+    if "not modified" in _last_telegram_error().lower():
+        return True
+    logger.warning("check-in card edit refused (chat=%s, message=%s)", chat_id, message_id)
+    return False
+
+
+def _last_telegram_error() -> str:
+    """The description of the gateway channel's last refused call, when known."""
+    try:
+        from navig.gateway.channels.telegram import _LAST_API_ERROR  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        return ""
+    return _LAST_API_ERROR.get() or ""

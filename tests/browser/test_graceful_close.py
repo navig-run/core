@@ -68,6 +68,22 @@ def test_stop_falls_through_to_the_kill_when_the_ask_fails(registry, monkeypatch
     assert calls == ["ask", "kill:4242"], "a refused ask must still end in the proven kill"
 
 
+def test_stop_never_asks_a_browser_it_cannot_attribute(registry, monkeypatch):
+    """Review F2028: a stale entry whose port a FOREIGN browser now holds. Browser.close
+    went to whatever answered the port before any ownership check, closing that browser."""
+    calls: list[str] = []
+    monkeypatch.setattr(t, "request_browser_close", lambda port, **_: (calls.append("ask"), True)[1])
+    monkeypatch.setattr(t, "_pid_is_still_the_recorded_process", lambda *_a, **_k: False)
+    monkeypatch.setattr(t, "_terminate_pid", lambda pid: (calls.append(f"kill:{pid}"), True)[1])
+    monkeypatch.setattr(t, "_debug_browser_pids", lambda *_a, **_k: [], raising=False)
+    monkeypatch.setattr(t, "probe_port", lambda _p, timeout=1.0: {"Browser": "foreign"})  # live
+
+    r = t.stop_launched(9280)
+
+    assert calls == [], f"an unattributed browser was asked to close or killed: {calls}"
+    assert not r["closed"]
+
+
 def test_the_ask_is_wired_into_stop_launched_not_only_defined():
     """A helper nothing calls protects nothing. Pin the call site on the AST."""
     import ast

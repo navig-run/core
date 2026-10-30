@@ -267,7 +267,7 @@ async def _send_cover(channel, chat_id: int, message_id: int, meta: dict | None)
     except Exception as exc:  # noqa: BLE001
         logger.debug("tiktok: cover unavailable (%s): %s", cover[:80], exc)
         return
-    caption = "🖼 photo post" if meta.get("is_photo") else None
+    caption = _t("tiktok.cover.photo_post") if meta.get("is_photo") else None
     try:
         await channel.send_photo(chat_id, data, caption=caption,
                                  reply_to_message_id=message_id)
@@ -310,7 +310,7 @@ async def offer_card(channel, chat_id: int, message_id: int, text: str, *,
         return False
     if not permissions.can_use("download", is_owner=is_owner):
         return False
-    card = "🎵 <b>TikTok link</b>"
+    card = _t("tiktok.card.title")
     meta: dict | None = None
     try:
         # BOUNDED: this is a live fetch of tiktok.com, and it now sits on the 1:1
@@ -490,6 +490,11 @@ _TMP_PREFIX = "navig_tiktok_"
 #: is an empty directory, the cost of being wrong is deleting a live download.
 _SWEEP_AGE_S = 6 * 3600
 
+#: Dropped into a workdir whose file we printed but could not move out
+#: (``_Clip.detached``). The sweep skips any directory carrying it: that file is
+#: one the operator was told to go and get, not an abandoned download.
+_KEEP_MARKER = ".navig-keep"
+
 _swept = False
 
 
@@ -515,6 +520,8 @@ def _sweep_stale_tempdirs() -> None:
             try:
                 if entry.stat().st_mtime > cutoff:
                     continue
+                if (entry / _KEEP_MARKER).exists():
+                    continue  # holds a file whose path we printed
                 shutil.rmtree(entry, ignore_errors=True)
                 removed += 1
             except OSError:
@@ -574,6 +581,12 @@ class _Clip:
             logger.warning("tiktok: keeping %s in place: %s", self.path, exc)
             self.detached = True
             self.kept = self.path
+            try:
+                # Without this a later process's stale sweep deletes the very
+                # directory holding the file we just pointed the operator at.
+                (Path(self.workdir) / _KEEP_MARKER).write_text(self.path, encoding="utf-8")
+            except OSError as mexc:
+                logger.warning("tiktok: could not mark %s as kept: %s", self.workdir, mexc)
         return self.kept
 
 
@@ -598,12 +611,46 @@ _cache: dict[tuple[str, bool], tuple[str, float]] = {}
 #: instead of racing — the second waits and then copies.
 _cache_locks: dict[tuple[str, bool], asyncio.Lock] = {}
 
+#: How many callers currently hold or wait on each key's lock. `lock.locked()` is
+#: not proof a lock is unused: `release()` clears it before the woken waiter
+#: resumes, so a prune in that window would hand the next caller a second lock.
+_cache_lock_users: dict[tuple[str, bool], int] = {}
+
+
+#: The cache dir this process has already emptied (see `_cache_dir`).
+_cache_dir_claimed: str | None = None
+
 
 def _cache_dir() -> Path:
-    """Cache root, under our own temp prefix so the stale sweep collects it too."""
+    """Cache root, under our own temp prefix so the stale sweep collects it too.
+
+    The cache is per-process (`_cache` is in memory and file names carry the
+    per-process `hash(key)`), so files an earlier process left here are never
+    reused and never counted against `_CACHE_MAX_BYTES` — and every write keeps
+    the directory too fresh for the stale sweep. The first use in a process
+    therefore empties it, which is what makes the byte budget global again.
+    """
+    global _cache_dir_claimed
     d = Path(tempfile.gettempdir()) / f"{_TMP_PREFIX}cache"
     d.mkdir(parents=True, exist_ok=True)
+    if _cache_dir_claimed != str(d):
+        _cache_dir_claimed = str(d)
+        tracked = {p for p, _ in _cache.values()}
+        for leftover in d.iterdir():
+            if leftover.is_file() and str(leftover) not in tracked:
+                _discard_cached(str(leftover))
     return d
+
+
+def _discard_cached(path: str) -> None:
+    """Delete an evicted cache file, tolerating a Windows/antivirus lock.
+
+    Eviction runs before every fetch; a file held open for a moment must not fail
+    the user's download. The stale sweep collects what is left behind."""
+    try:
+        Path(path).unlink(missing_ok=True)
+    except OSError as exc:
+        logger.debug("tiktok: could not delete evicted %s: %s", path, exc)
 
 
 def _evict(now: float) -> None:
@@ -611,7 +658,7 @@ def _evict(now: float) -> None:
     for key, (path, expires) in list(_cache.items()):
         if expires <= now:
             _cache.pop(key, None)
-            Path(path).unlink(missing_ok=True)
+            _discard_cached(path)
 
     def _size(p: str) -> int:
         try:
@@ -629,7 +676,7 @@ def _evict(now: float) -> None:
             break
         total -= _size(path)
         _cache.pop(key, None)
-        Path(path).unlink(missing_ok=True)
+        _discard_cached(path)
 
     _prune_locks()
 
@@ -641,18 +688,15 @@ def _prune_locks() -> None:
     nothing — one entry per distinct (url, audio_only) for the lifetime of the
     daemon, which over months of links is a dict that only ever grows.
 
-    Only unlocked keys are dropped. A held lock has a coroutine inside it, and a
-    key can also be *cached* while unlocked, which is the steady state — neither
-    is garbage. There is one benign race left, and it is deliberate: a coroutine
-    that has taken the object from ``setdefault`` but has not yet awaited
-    ``acquire()`` looks unlocked, so a concurrent prune could hand the next caller
-    a fresh lock and let both fetch. The cost of losing that coalescing once is a
-    single duplicate download — exactly what happened on every tap before the
-    cache existed — so the failure mode is "no worse than before", never wrong
-    data.
+    Only keys nobody holds or waits on are dropped (``_cache_lock_users``), and a
+    key can also be *cached* while unused, which is the steady state — neither is
+    garbage. ``lock.locked()`` alone is not enough: ``release()`` clears it before
+    the waiter it woke has resumed, and dropping the lock in that window let a new
+    caller fetch the same clip concurrently with that waiter, writing the same
+    cache path underneath a reader.
     """
     for key, lock in list(_cache_locks.items()):
-        if key not in _cache and not lock.locked():
+        if key not in _cache and not lock.locked() and not _cache_lock_users.get(key):
             _cache_locks.pop(key, None)
 
 
@@ -673,6 +717,20 @@ async def _fetch_or_reuse(url: str, workdir: str, *, audio_only: bool) -> str:
     """
     key = (url, audio_only)
     lock = _cache_locks.setdefault(key, asyncio.Lock())
+    _cache_lock_users[key] = _cache_lock_users.get(key, 0) + 1
+    try:
+        return await _fetch_or_reuse_locked(key, lock, url, workdir, audio_only=audio_only)
+    finally:
+        left = _cache_lock_users.get(key, 1) - 1
+        if left > 0:
+            _cache_lock_users[key] = left
+        else:
+            _cache_lock_users.pop(key, None)
+
+
+async def _fetch_or_reuse_locked(
+    key: tuple[str, bool], lock: asyncio.Lock, url: str, workdir: str, *, audio_only: bool
+) -> str:
     async with lock:
         now = time.time()
         _evict(now)
@@ -784,7 +842,10 @@ async def _spoken_text(url: str, *, channel=None, chat_id: int | None = None) ->
         async with _fetched(url, audio_only=True) as clip:
             from navig.agent.voice_input import transcribe_audio
 
-            return await transcribe_audio(clip.path, language=_language() or None)
+            # Auto-detect, never `_language()`: that is the briefing's OUTPUT
+            # language (a name like "Russian" is valid there), not the clip's spoken
+            # one, and a Russian clip briefed in English must still be heard as Russian.
+            return await transcribe_audio(clip.path, language=None)
     except Exception as exc:  # noqa: BLE001 — never let enrichment break the briefing
         logger.debug("tiktok brief: transcript enrichment unavailable: %s", exc)
         return None
@@ -837,7 +898,7 @@ async def _post_text(url: str, *, channel=None, chat_id: int | None = None) -> _
     # nonsense the briefing would summarise as fact, and slides that could not be
     # read at all are why the briefing is about to summarise a song instead.
     caveat = _ocr_caveat("Slide text")
-    if slides:
+    if slides and slides.text:
         # …and a briefing off a capped read describes part of a post as the whole.
         note = " ".join(x for x in (slides.capped, caveat) if x)
         return _Read(slides.text, "slide text", note)
@@ -886,10 +947,10 @@ async def _do_analyse(channel, chat_id: int, url: str) -> None:
         await channel.send_message(chat_id, _t("tiktok.err.engine_missing"), parse_mode=None)
         return
     except _UNREADABLE:
-        await channel.send_message(chat_id, _UNREADABLE_HINT, parse_mode=None)
+        await channel.send_message(chat_id, _unreadable_hint(), parse_mode=None)
         return
     except _LOGIN:
-        await channel.send_message(chat_id, _LOGIN_HINT, parse_mode=None)
+        await channel.send_message(chat_id, _login_hint(), parse_mode=None)
         return
     except _BLOCKED:
         # Honesty: a bot-wall is NOT "couldn't analyse" — say so and how to escalate.
@@ -903,19 +964,22 @@ async def _do_analyse(channel, chat_id: int, url: str) -> None:
         await channel.send_message(chat_id, _t("tiktok.err.analyse"), parse_mode=None)
         return
     meta = result["meta"]
+    used = bool(result.get("used_transcript")) and read is not None
     if meta.get("comments_blocked"):
-        # Distinguish "no comments" from "comments gated" so the brief isn't misread.
+        # Distinguish "no comments" from "comments gated" so the brief isn't misread
+        # — and do not say "description only" when the post's own words were read.
         await channel.send_message(
             chat_id,
             _t(
-                "tiktok.comments_gated",
+                "tiktok.comments_gated_read" if used else "tiktok.comments_gated",
                 count=f"{meta.get('comment_count') or 0:,}",
             ),
             parse_mode=None)
-    brief = result["brief"] or _fallback_brief(meta)
+    # No model (or a failed call) leaves the brief empty. The fallback must still
+    # carry the transcript the header is about to claim, not drop it.
+    brief = result["brief"] or _fallback_brief(meta, read.text if used else "")
     # The brief is markdown (headings/bullets/quotes) — send it as a RICH message so
     # Telegram renders it natively; send_rich_message falls back to HTML if needed.
-    used = bool(result.get("used_transcript")) and read is not None
     await channel.send_rich_message(
         chat_id,
         markdown=_brief_markdown(meta, brief, source=read.label if used else None),
@@ -980,10 +1044,10 @@ async def _do_download(channel, chat_id: int, url: str) -> None:
     except _UNAVAILABLE:
         await channel.send_message(chat_id, _t("tiktok.err.downloader_missing"), parse_mode=None)
     except _UNREADABLE:
-        await channel.send_message(chat_id, _UNREADABLE_HINT, parse_mode=None)
+        await channel.send_message(chat_id, _unreadable_hint(), parse_mode=None)
         return
     except _LOGIN:
-        await channel.send_message(chat_id, _LOGIN_HINT, parse_mode=None)
+        await channel.send_message(chat_id, _login_hint(), parse_mode=None)
         return
     except _BLOCKED:
         # The bot-wall is transient and fixable; the three sibling actions have
@@ -1031,8 +1095,14 @@ async def _do_download_images(channel, chat_id: int, url: str) -> None:
                 if not sent:
                     logger.debug("tiktok: media group rejected — falling back to singles")
             if not sent:
-                for i, data in enumerate(blobs, 1):
-                    caption = f"🖼 {i}/{total} via NAVIG" if total > 1 else "🖼 via NAVIG"
+                for i, (path, data) in enumerate(zip(paths, blobs), 1):
+                    # Caption by the slide's ORIGINAL position (the engine names it
+                    # `NN.jpg`): after a failed slide, `enumerate` relabelled slide 2
+                    # as 1/2.
+                    stem = Path(path).stem
+                    i = int(stem) if stem.isdigit() else i
+                    caption = (_t("tiktok.photo.caption_n", i=i, total=total) if total > 1
+                               else _t("tiktok.photo.caption"))
                     # send_photo returns None on a rejected send WITHOUT raising, so
                     # count what landed instead of assuming the loop delivered.
                     if await channel.send_photo(chat_id, data, caption=caption) is not None:
@@ -1042,10 +1112,18 @@ async def _do_download_images(channel, chat_id: int, url: str) -> None:
                     chat_id,
                     _t("tiktok.photo.partial", sent=sent, total=len(paths)),
                     parse_mode=None)
-            if total > len(paths):
+            requested = min(total, _MAX_SLIDES)
+            if len(paths) < requested:
+                # A slide that failed to download is not the cap: say so separately,
+                # or the post reads as complete while slides are missing.
+                await channel.send_message(
+                    chat_id,
+                    _t("tiktok.photo.failed", failed=requested - len(paths), total=requested),
+                    parse_mode=None)
+            if total > requested:
                 # A cap that says nothing presents part of a post as the whole.
                 await channel.send_message(
-                    chat_id, _t("tiktok.photo.capped", shown=len(paths), total=total),
+                    chat_id, _t("tiktok.photo.capped", shown=requested, total=total),
                     parse_mode=None)
     except Exception as exc:  # noqa: BLE001
         logger.warning("tiktok photo download failed: %s", exc)
@@ -1053,8 +1131,8 @@ async def _do_download_images(channel, chat_id: int, url: str) -> None:
             chat_id, _t("tiktok.err.photo_download"), parse_mode=None)
 
 
-def _fallback_brief(meta: dict) -> str:
-    bits = [meta.get("description") or ""]
+def _fallback_brief(meta: dict, transcript: str = "") -> str:
+    bits = [meta.get("description") or "", (transcript or "").strip()]
     for c in (meta.get("comments") or [])[:5]:
         bits.append(f"• ({c['likes']}♥) {c['text'][:200]}")
     return "\n".join(b for b in bits if b)
@@ -1105,10 +1183,10 @@ async def _do_audio(channel, chat_id: int, url: str) -> None:
         await channel.send_message(
             chat_id, _t("tiktok.err.downloader_missing"), parse_mode=None)
     except _UNREADABLE:
-        await channel.send_message(chat_id, _UNREADABLE_HINT, parse_mode=None)
+        await channel.send_message(chat_id, _unreadable_hint(), parse_mode=None)
         return
     except _LOGIN:
-        await channel.send_message(chat_id, _LOGIN_HINT, parse_mode=None)
+        await channel.send_message(chat_id, _login_hint(), parse_mode=None)
         return
     except _BLOCKED:
         await channel.send_message(
@@ -1134,10 +1212,10 @@ async def _do_full_text(channel, chat_id: int, url: str) -> None:
             parse_mode=None)
         return
     except _UNREADABLE:
-        await channel.send_message(chat_id, _UNREADABLE_HINT, parse_mode=None)
+        await channel.send_message(chat_id, _unreadable_hint(), parse_mode=None)
         return
     except _LOGIN:
-        await channel.send_message(chat_id, _LOGIN_HINT, parse_mode=None)
+        await channel.send_message(chat_id, _login_hint(), parse_mode=None)
         return
     except _BLOCKED:
         await channel.send_message(
@@ -1159,9 +1237,9 @@ async def _do_full_text(channel, chat_id: int, url: str) -> None:
         await channel.send_message(
             chat_id, _t("tiktok.caption.empty"), parse_mode=None)
         return
-    body = f"📄 <b>Full caption</b>\n\n{_html.escape(desc)}"
+    body = f"{_t('tiktok.caption.full')}\n\n{_html.escape(desc)}"
     if link := meta.get("url"):
-        body += f'\n\n<a href="{_html.escape(link)}">open on TikTok</a>'
+        body += f'\n\n<a href="{_html.escape(link)}">{_t("tiktok.caption.open")}</a>'
     await channel.send_message(chat_id, body, parse_mode="HTML")
 
 
@@ -1231,11 +1309,16 @@ async def _audio_meta(url: str) -> dict | None:
 
 async def _send_audio(channel, chat_id: int, data: bytes, filename: str,
                       meta: dict | None = None):
-    """Prefer sendAudio; fall back to sendDocument on channels without it."""
+    """Prefer sendAudio; fall back to sendDocument on channels without it.
+
+    sendAudio takes only MP3 and M4A. yt-dlp's audio ladder can end on another
+    container (WebM/Opus when no ffmpeg could convert it), and that goes as a
+    document rather than an upload Telegram rejects.
+    """
     labels = _audio_labels(meta, filename)
     caption = _audio_caption(meta)
     sender = getattr(channel, "send_audio", None)
-    if callable(sender):
+    if callable(sender) and labels["filename"].lower().endswith((".mp3", ".m4a")):
         return await sender(
             chat_id, data, caption=caption, filename=labels["filename"],
             title=labels["title"], performer=labels["performer"],
@@ -1266,11 +1349,14 @@ async def _do_transcript(channel, chat_id: int, url: str) -> None:
     try:
         await channel.send_message(chat_id, _t("tiktok.read.video"), parse_mode=None)
         async with _fetched(url) as clip:
+            from navig.core.ocr import language_override
             from navig.gateway.channels.telegram_catalog_analyzer import analyze_video_file
 
-            spoken, on_screen, note = await analyze_video_file(
-                Path(clip.path), language=_language() or None, max_ocr_frames=_OCR_FRAMES
-            )
+            # The feature's language key reaches frame OCR too, not only the speech.
+            with language_override(_language()):
+                spoken, on_screen, note = await analyze_video_file(
+                    Path(clip.path), language=_language() or None, max_ocr_frames=_OCR_FRAMES
+                )
     except _NO_VIDEO:
         # A `/video/` link that is really a slideshow — the same reader applies.
         await _do_transcript_photo(channel, chat_id, url)
@@ -1280,10 +1366,10 @@ async def _do_transcript(channel, chat_id: int, url: str) -> None:
             chat_id, _t("tiktok.err.downloader_missing"), parse_mode=None)
         return
     except _UNREADABLE:
-        await channel.send_message(chat_id, _UNREADABLE_HINT, parse_mode=None)
+        await channel.send_message(chat_id, _unreadable_hint(), parse_mode=None)
         return
     except _LOGIN:
-        await channel.send_message(chat_id, _LOGIN_HINT, parse_mode=None)
+        await channel.send_message(chat_id, _login_hint(), parse_mode=None)
         return
     except _BLOCKED:
         await channel.send_message(
@@ -1320,7 +1406,7 @@ async def _do_transcript(channel, chat_id: int, url: str) -> None:
     # replied "No speech in this clip" about a clip nothing ever listened to.
     caveat = " ".join(x for x in (
         _ocr_caveat("On-screen text"),
-        ("" if (spoken or "").strip() else _speech_caveat("Speech")),
+        ("" if (spoken or "").strip() else _video_speech_caveat("Speech")),
     ) if x)
     if note == "ocr_unavailable":
         if sections:
@@ -1360,17 +1446,27 @@ def _ocr_caveat(subject: str) -> str:
     for the language in the image — which is **worse**, because Tesseract does
     not decline: it returns confident-looking nonsense that reads as content.
     """
-    from navig.core.ocr import OCR_INSTALL_HINT, ocr_language_gap, ocr_unavailable_reason
+    from navig.core.ocr import (
+        OCR_INSTALL_HINT,
+        language_override,
+        ocr_language_gap,
+        ocr_unavailable_reason,
+    )
 
     why = ocr_unavailable_reason()
     if why:
         return f"⚠️ {subject} not read — {why}. To enable it, {OCR_INSTALL_HINT}."
-    gap = ocr_language_gap()
+    with language_override(_language()):  # judge the pack the read actually used
+        gap = ocr_language_gap()
     return f"⚠️ {subject} may be misread — {gap}." if gap else ""
 
 
 class _Slides(NamedTuple):
-    """Text read off a photo post's slides, and how much of the post that was."""
+    """Text read off a photo post's slides, and how much of the post that was.
+
+    ``read == 0`` means no slide could be retrieved at all (a gated page, every
+    signed download failing) — not a post whose slides carry no text.
+    """
 
     text: str
     read: int
@@ -1379,7 +1475,7 @@ class _Slides(NamedTuple):
     @property
     def capped(self) -> str:
         """A note when only part of the post was read, else ""."""
-        if self.total > self.read:
+        if self.read and self.total > self.read:
             return f"🖼 Read the first {self.read} of {self.total} slides."
         return ""
 
@@ -1399,8 +1495,26 @@ def _speech_caveat(subject: str) -> str:
     return f"⚠️ {subject} not read — {why}. To enable it, {STT_INSTALL_HINT}." if why else ""
 
 
+def _video_speech_caveat(subject: str) -> str:
+    """:func:`_speech_caveat` for the VIDEO reader, which listens through a different
+    backend.
+
+    ``analyze_video_file`` transcribes with ``navig.voice.stt`` (the navig-audio
+    plugin), not ``navig.agent.voice_input``. Without navig-audio the video path
+    can never hear anything while voice_input may still find a backend — so the
+    voice_input check alone stayed silent and the clip was reported as having no
+    speech."""
+    try:
+        import navig.voice.stt  # noqa: F401 — availability of the analyzer's own STT
+    except Exception:  # noqa: BLE001 — ImportError, or a plugin that fails to load
+        return (f"⚠️ {subject} not read — the navig-audio plugin, which transcribes "
+                f"video, is not installed. To enable it, pip install navig-audio.")
+    return _speech_caveat(subject)
+
+
 async def _ocr_slides(url: str) -> _Slides | None:
-    """OCR a photo post's slides. None when nothing could be read.
+    """OCR a photo post's slides. None when the slides were read and carry no text;
+    ``_Slides("", 0, total)`` when no slide could be retrieved at all.
 
     Goes through the one shared OCR seam (:mod:`navig.core.ocr`) rather than
     growing a second one, so an install without Tesseract reports the same way
@@ -1412,20 +1526,25 @@ async def _ocr_slides(url: str) -> _Slides | None:
     ``download_post_images`` returns the total precisely so a capped caller can
     say so.
     """
-    from navig.core.ocr import extract_ocr_text_from_image_bytes
+    from navig.core.ocr import extract_ocr_text_from_image_bytes, language_override
 
+    # The feature's language key (not only `user.language`) picks the Tesseract pack.
     try:
-        async with _workdir() as workdir:
-            paths, total = await asyncio.to_thread(
-                engine.download_post_images, url, dest_dir=workdir, limit=_MAX_SLIDES)
-            chunks: list[str] = []
-            for path in paths:
-                data = await asyncio.to_thread(Path(path).read_bytes)
-                text = await asyncio.to_thread(extract_ocr_text_from_image_bytes, data)
-                if text and text.strip():
-                    chunks.append(text.strip())
-            joined = "\n\n".join(chunks)
-            return _Slides(joined, len(paths), total) if joined else None
+        with language_override(_language()):
+            async with _workdir() as workdir:
+                paths, total = await asyncio.to_thread(
+                    engine.download_post_images, url, dest_dir=workdir, limit=_MAX_SLIDES)
+                if not paths:
+                    # Nothing was looked at: that must not read as "no text detected".
+                    return _Slides("", 0, total)
+                chunks: list[str] = []
+                for path in paths:
+                    data = await asyncio.to_thread(Path(path).read_bytes)
+                    text = await asyncio.to_thread(extract_ocr_text_from_image_bytes, data)
+                    if text and text.strip():
+                        chunks.append(text.strip())
+                joined = "\n\n".join(chunks)
+                return _Slides(joined, len(paths), total) if joined else None
     except Exception as exc:  # noqa: BLE001 — half a transcript beats none at all
         logger.debug("tiktok: slide OCR unavailable: %s", exc)
         return None
@@ -1445,7 +1564,7 @@ async def _do_transcript_photo(channel, chat_id: int, url: str) -> None:
     sections: list[str] = []
     if (spoken or "").strip():
         sections.append(f"**Spoken**\n\n{spoken.strip()}")
-    if on_screen:
+    if on_screen and on_screen.text:
         sections.append(f"**Slide text**\n\n{on_screen.text}")
 
     # Nothing read is a real answer for a silent post with no printed text — but
@@ -1466,9 +1585,11 @@ async def _do_transcript_photo(channel, chat_id: int, url: str) -> None:
             await channel.send_message(chat_id, caveat, parse_mode=None)
         return
 
+    unreachable = on_screen is not None and on_screen.read == 0
     await channel.send_message(
         chat_id,
-        _t("tiktok.transcript.nothing_slides")
+        _t("tiktok.transcript.slides_unreadable" if unreachable
+           else "tiktok.transcript.nothing_slides")
         + (f"\n\n{caveat}" if caveat else ""),
         parse_mode=None)
 

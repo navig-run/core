@@ -214,7 +214,12 @@ def _iter_typer_commands(
             cb = getattr(cb_info, "callback", None) or (
                 cb_info if callable(cb_info) else None
             )
-            if cb is not None:
+            # `__navig_platform_stub__` marks a callback registered ONLY to refuse on a
+            # platform the feature does not support (`navig desktop` off Windows). Such a
+            # group is not a command of the product: the shipped manifest is generated on
+            # Windows, where no callback exists, so emitting this row made every Linux
+            # checkout call `generated/commands.json` stale (2026-10-30, outpost).
+            if cb is not None and not getattr(cb, "__navig_platform_stub__", False):
                 # typer stores `.help` as a DefaultPlaceholder when unset — never hand
                 # that object to _first_line (no .splitlines); a string only.
                 cb_help = getattr(cb_info, "help", None)

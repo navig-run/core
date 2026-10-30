@@ -88,3 +88,29 @@ def test_a_genuinely_failed_run_is_still_reported(
     assert any("FAILED" in p for p in out["problems"]), (
         f"result {code} should still be reported as a failed run: {out['problems']}"
     )
+
+
+def _health_with_state(monkeypatch: pytest.MonkeyPatch, *, last: int, state: str):
+    payload = json.dumps(
+        {"last": last, "state": state, "next": "2026-01-01T00:00:00", "reps": 1, "enabled": True}
+    )
+    monkeypatch.setattr(sm.sys, "platform", "win32")
+    monkeypatch.setattr(
+        sm.subprocess,
+        "run",
+        lambda *a, **kw: subprocess.CompletedProcess(a[0] if a else [], 0, payload, ""),
+    )
+    return sm.task_scheduler_health()
+
+
+def test_a_refusal_with_no_running_instance_is_still_a_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """0x800710E0 is the generic ERROR_REQUEST_REFUSED. Only an overlapping Running
+    instance makes it IgnoreNew at work; refused by policy or a condition while the
+    daemon is down, it read as Healthy over a watchdog that cannot recover anything."""
+    out = _health_with_state(monkeypatch, last=2147946720, state="Ready")
+    assert any("FAILED" in p for p in out["problems"]), out["problems"]
+
+    out = _health_with_state(monkeypatch, last=2147946720, state="Running")
+    assert out["problems"] == []

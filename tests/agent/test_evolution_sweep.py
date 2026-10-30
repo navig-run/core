@@ -58,6 +58,10 @@ def test_normalise_reply_strips_the_wrapper_and_restores_lost_indentation() -> N
     ("new", "test_fix", "expected"),
     [
         (["    return dat  # noqa: F821"], False, "silenced the check"),
+        # ruff honours any case of the marker, so the refusal must too
+        (["    return dat  # NOQA: F821"], False, "silenced the check"),
+        (["    return dat  # NoQa"], False, "silenced the check"),
+        (["    return dat  # Type: Ignore"], False, "silenced the check"),
         (["    return dat"], False, "changed nothing"),
         ([""], False, "empty"),
         (["    pytest.skip('later')", "    return dat"], True, "silenced the check"),
@@ -187,6 +191,27 @@ def test_a_cheating_answer_is_refused_and_nothing_is_committed(tmp_path: Path) -
     assert outcome.attempts == 2
     assert not report.kept_branch  # nothing fixed → the empty branch is deleted
     assert report.branch not in _git(root, "branch", "--list")
+
+
+@runs_git
+@needs_ruff
+def test_fixing_another_same_rule_diagnostic_is_not_the_targeted_fix(tmp_path: Path) -> None:
+    """Two F841 in one snippet: an answer that clears the OTHER one drops the per-rule count,
+    but the targeted diagnostic is still there, so it must not be reported as fixed."""
+    root = _repo(tmp_path, {"pkg/two.py": "def f():\n    a = 1\n    b = 2\n    return 0\n"})
+    # whichever F841 is targeted, the answer removes `b` and keeps the unused `a`
+    model = _replying(("m7", "```python\ndef f():\n    a = 1\n    return 0\n```"))
+
+    report = run_sweep(
+        root,
+        SweepOptions(model="m7", fallback_model=None, tests=False, retries=1),
+        call_model=model,
+    )
+
+    target_a = next(
+        o for o in report.outcomes if o.diagnostic.code == "F841" and o.diagnostic.line == 2
+    )
+    assert target_a.status == "failed" and "line 2" in target_a.reason
 
 
 _CALC = "def add(a, b):\n    return a - b\n"
@@ -342,3 +367,33 @@ def test_a_later_fix_is_shown_the_right_code_after_an_earlier_fix_moved_it(tmp_p
     assert [o.status for o in report.outcomes] == ["fixed", "fixed"]
     assert "def later" in shown[-1] and "def grow" not in shown[-1]
     assert report.final_failures == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A ruff that could not run is not a clean tree
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("rc, timed_out", [(2, False), (-1, True)])
+def test_a_failed_ruff_check_raises_instead_of_reporting_clean(monkeypatch, tmp_path, rc, timed_out):
+    """Review #1676: `--exit-zero` still exits 2 on a config error, with empty stdout,
+    and `run.out or "[]"` turned that into "no diagnostics"."""
+    from navig.core.evolution import sweep
+
+    monkeypatch.setattr(
+        sweep, "_run", lambda *a, **k: sweep._Run(rc=rc, out="", err="ruff failed", timed_out=timed_out)
+    )
+    with pytest.raises(sweep.SweepError):
+        sweep.ruff_diagnostics(["ruff"], tmp_path, ["."])
+    with pytest.raises(sweep.SweepError):
+        sweep.ruff_autofix(["ruff"], tmp_path, None)
+
+
+def test_a_successful_ruff_run_still_parses(monkeypatch, tmp_path):
+    from navig.core.evolution import sweep
+
+    monkeypatch.setattr(
+        sweep, "_run", lambda *a, **k: sweep._Run(rc=0, out="[]", err="", timed_out=False)
+    )
+    assert sweep.ruff_diagnostics(["ruff"], tmp_path, ["."]) == []
+    sweep.ruff_autofix(["ruff"], tmp_path, None)

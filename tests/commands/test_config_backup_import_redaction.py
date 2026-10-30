@@ -54,6 +54,24 @@ def test_marker_over_marker_is_dropped_not_kept():
     assert out == {}
 
 
+def test_partially_redacted_string_keeps_live_value():
+    # redact_dict embeds markers inside kept strings (connection strings, key prefixes).
+    out = cb._restore_redacted_secrets(
+        {"dsn": "postgres://u:***REDACTED***@db", "key": "sk-***REDACTED***"},
+        {"dsn": "postgres://u:hunter2@db", "key": "sk-live-abcdef123"},
+    )
+    assert out == {"dsn": "postgres://u:hunter2@db", "key": "sk-live-abcdef123"}
+
+
+def test_redacted_list_keeps_live_value_or_is_dropped():
+    out = cb._restore_redacted_secrets(
+        {"tokens": ["a", "***REDACTED***"], "tags": ["web", "prod"]},
+        {"tokens": ["a", "real-token"]},
+    )
+    assert out == {"tokens": ["a", "real-token"], "tags": ["web", "prod"]}
+    assert cb._restore_redacted_secrets({"tokens": ["[REDACTED]"]}, None) == {}
+
+
 # --- import_config --replace (integration) ------------------------------------
 
 def test_import_replace_preserves_live_secret(tmp_path, monkeypatch):

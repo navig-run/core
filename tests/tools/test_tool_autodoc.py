@@ -96,6 +96,18 @@ class TestToolRegistryMarkdownSummary:
         assert "tool_a" in md
         assert "tool_b" not in md
 
+    def test_available_only_filter(self):
+        # `navig tools list --format markdown` passes available_only (review F1650); the
+        # method used to reject it with a TypeError whenever any tool was registered.
+        reg = self._make_registry()
+        off = _make_meta("tool_off", description="Off")
+        off.status = ToolStatus.UNAVAILABLE
+        reg.register(off)
+        md = reg.to_markdown_summary(available_only=True, domain=None)
+        assert "tool_a" in md
+        assert "tool_off" not in md
+        assert "tool_off" in reg.to_markdown_summary(available_only=False)
+
 
 class TestToolRegistryOpenapiSchema:
     def _make_registry(self):

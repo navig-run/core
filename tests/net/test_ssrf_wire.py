@@ -98,6 +98,24 @@ async def test_browser_fetch_rejects_empty_url(monkeypatch):
     assert "url arg required" in (result.error or "")
 
 
+def _unresolvable(hostname):
+    import socket
+
+    raise socket.gaierror(11001, "getaddrinfo failed")
+
+
+async def test_browser_fetch_dns_failure_is_a_tool_failure(monkeypatch):
+    # An unresolvable host must honour BaseTool.run's contract (review F0365): a failed
+    # ToolResult, not a socket.gaierror escaping to the caller.
+    _patch_config(monkeypatch, {})
+    monkeypatch.setattr("navig.net.ssrf.resolve_host", _unresolvable)
+    from navig.tools.browser_fetch import BrowserFetchTool
+
+    result = await BrowserFetchTool().run({"url": "https://no-such-host.invalid/"})
+    assert result.success is False
+    assert "cannot resolve host" in (result.error or "")
+
+
 # ── stage-2 Playwright route guard ──────────────────────────────────────────
 # The entry check and stage-1 safe_fetch only cover the httpx path. Stage 2
 # navigates from scratch, following redirects / meta-refresh / JS location= and
@@ -288,6 +306,19 @@ def test_web_fetch_blocks_localhost(monkeypatch):
     result = web_fetch("http://127.0.0.1:8765/api/deck/exec")
     assert result.success is False
     assert "private/internal" in (result.error or "")
+
+
+def test_web_fetch_dns_failure_is_a_failed_result(monkeypatch):
+    # review F0376: socket.gaierror from the SSRF resolver escaped web_fetch.
+    _patch_config(monkeypatch, {})
+    monkeypatch.setattr("navig.net.ssrf.resolve_host", _unresolvable)
+    from navig.tools.web import REQUESTS_AVAILABLE, web_fetch
+
+    if not REQUESTS_AVAILABLE:
+        pytest.skip("requests not installed")
+    result = web_fetch("https://no-such-host.invalid/", use_cache=False)
+    assert result.success is False
+    assert "Could not resolve host" in (result.error or "")
 
 
 # ── api_pack web.api.get_json / post_json (agent-controlled "any endpoint") ──

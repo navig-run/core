@@ -36,9 +36,16 @@ def _restore_external_defs():
 
     This module is the one that documents that hazard; leaving a hijacked `contacts` def
     behind for the rest of the worker would be a poor advertisement for it.
+
+    Entry-point plugin loading runs BEFORE the snapshot. It is one-shot per process
+    (`_EP_PLUGINS_LOADED`, plus each plugin's own register() guard), so if a test here
+    triggered it — `discover()` does — restoring an earlier, plugin-less list would
+    leave the flag set and the plugins' defs gone for every later test in the worker.
+    Loading first makes the snapshot already contain them, so the restore is complete.
     """
     import navig.modules.registry as reg
 
+    reg._load_entry_point_plugins_once()
     saved = list(reg._EXTERNAL_DEFS)
     saved_registry = reg._REGISTRY
     yield
@@ -105,6 +112,18 @@ def test_registering_a_brand_new_module_is_silent(caplog):
     assert not [r for r in caplog.records if "drops" in r.getMessage()]
 
 
+def test_the_restore_snapshot_already_holds_entry_point_plugins():
+    """The isolation fixture must snapshot AFTER one-shot entry-point loading.
+
+    Otherwise its teardown can roll `_EXTERNAL_DEFS` back to a list without the
+    plugins' defs while `_EP_PLUGINS_LOADED` stays true, and no later `discover()` in
+    the worker ever loads them again.
+    """
+    import navig.modules.registry as reg
+
+    assert reg._EP_PLUGINS_LOADED, "the fixture snapshotted before plugins were loaded"
+
+
 def test_the_real_plugin_set_is_silent():
     """The measured baseline: 1 collision, 0 dropped fields.
 
@@ -118,10 +137,12 @@ def test_the_real_plugin_set_is_silent():
     builtins = {m.id: m for m in BUILTIN_MODULES}
     import dataclasses
 
+    collisions = 0
     for ext in reg._EXTERNAL_DEFS:
         builtin = builtins.get(ext.id)
         if builtin is None:
             continue
+        collisions += 1
         lost = [
             f.name
             for f in dataclasses.fields(ModuleDef)
@@ -129,4 +150,12 @@ def test_the_real_plugin_set_is_silent():
         ]
         if lost:
             offenders.append(f"{ext.id} drops {sorted(lost)}")
+    if collisions == 0:
+        # Without the plugin set on the path there is nothing to examine, and an empty
+        # loop must never read as a passed baseline.
+        import importlib.util
+
+        if importlib.util.find_spec("navig_blackbox") is None:
+            pytest.skip("navig-blackbox is not importable; the plugin baseline needs it")
+        pytest.fail("navig-blackbox is importable but no builtin collision was examined")
     assert not offenders, "installed plugins drop builtin fields: " + "; ".join(offenders)

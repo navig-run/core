@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.metadata
 import importlib.util
 import json
 import re
@@ -339,8 +340,113 @@ def test_committed_manifest_reflects_this_tree_not_a_drifted_installed_plugin():
     """
     paths = {c["path"] for c in _shipped_manifest()["commands"]}
     assert "navig mind status" in paths
-    # ``navig email otp …`` exists only in a drifted navig_email install; this tree's
-    # plugin does not ship it, so it must not appear in the committed manifest.
-    assert not [p for p in paths if p.startswith("navig email otp")]
-    # Same class of contamination: a command from a newer navig_social build.
+    # ``navig email otp …`` is part of THIS tree now, so the committed manifest must carry it:
+    # the artifact follows the checkout, which is the whole point of the test.
+    assert "navig email otp fill" in paths
+    # Same class of contamination, still absent: a command from a newer navig_social build.
     assert not [p for p in paths if p.startswith("navig social cards")]
+
+
+# ---------------------------------------------------------------------------
+# Entry-point tree scope. Pinning sys.path fixes WHICH source a plugin loads; it cannot
+# uninstall a package this repository does not ship. On 2026-10-25 the tracked manifest
+# carried 11 commands (6 `navig display`, 5 `navig signing`) whose plugin directories were
+# tracked in NO commit, so a clean clone could not regenerate its own manifest.
+# ---------------------------------------------------------------------------
+
+# Installed on a developer machine, tracked in no commit: legitimate at runtime, absent
+# from this repository's command surface, therefore absent from the committed manifest.
+_UNTRACKED_PLUGIN_MODULES = (
+    "navig_display",
+    "navig_signing",
+    "navig_leaks",
+    "navig_disk",
+    "navig_exif",
+    "navig_flipper",
+    "navig_proc",
+    "navig_domain_audit",
+)
+
+
+def _entry_point(name: str, value: str, group: str = "navig.commands") -> importlib.metadata.EntryPoint:
+    return importlib.metadata.EntryPoint(name=name, value=value, group=group)
+
+
+def test_entry_point_scope_keeps_this_tree_and_drops_the_rest():
+    """The rule is "tracked in this checkout", not "under this worktree".
+
+    Editable installs legitimately resolve to another checkout of the same repository (a
+    worktree), so a path prefix would throw away real plugins; a package the repository
+    does not track has no tracked file at all and must go.
+    """
+    module = _load_export_module()
+    tracked = module._tracked_in_this_checkout(module._REPO_ROOT)
+    assert tracked is not None, "this test only makes sense inside a git checkout"
+    toplevels: dict[str, str | None] = {}
+
+    in_tree = _entry_point("core", "navig.registry.manifest:build_public_manifest")
+    foreign = _entry_point("pytest", "pytest:main")
+
+    assert module.entry_point_is_in_this_tree(in_tree, tracked, toplevels) is True
+    assert module.entry_point_is_in_this_tree(foreign, tracked, toplevels) is False
+
+
+def test_entry_point_scope_filters_only_the_command_group(monkeypatch):
+    """Scoping must be invisible to every other entry-point group, and must undo itself."""
+    module = _load_export_module()
+    in_tree = _entry_point("core", "navig.registry.manifest:build_public_manifest")
+    foreign = _entry_point("pytest", "pytest:main")
+    unrelated = _entry_point("other", "pytest:main", group="other.group")
+
+    def fake_entry_points(*args: object, **kwargs: object):
+        group = kwargs.get("group")
+        if group == "navig.commands":
+            return importlib.metadata.EntryPoints((in_tree, foreign))
+        if group == "other.group":
+            return importlib.metadata.EntryPoints((unrelated,))
+        return importlib.metadata.EntryPoints(())
+
+    monkeypatch.setattr(importlib.metadata, "entry_points", fake_entry_points)
+
+    with module.tree_scoped_entry_points() as dropped:
+        kept = importlib.metadata.entry_points(group="navig.commands")
+        untouched = importlib.metadata.entry_points(group="other.group")
+
+    assert [ep.name for ep in kept] == ["core"]
+    assert [ep.name for ep in untouched] == ["other"]
+    assert any(entry.startswith("pytest -> ") for entry in dropped)
+    assert importlib.metadata.entry_points is fake_entry_points
+
+
+def test_committed_manifest_names_no_untracked_plugin_module():
+    """Pin on the artifacts: a plugin no commit ships must not be documented."""
+    modules = {(c.get("module") or "").split(".", 1)[0] for c in _shipped_manifest()["commands"]}
+    leaked = sorted(modules & set(_UNTRACKED_PLUGIN_MODULES))
+    assert not leaked, (
+        "generated/commands.json documents commands from plugin packages that no commit "
+        f"tracks: {leaked}. Regenerate with: python tools/export_registry.py --format both "
+        "--deprecations-report"
+    )
+
+
+def test_git_queries_ignore_an_inherited_git_dir(monkeypatch, tmp_path):
+    """The pre-commit hook runs the exporter from INSIDE a commit, so the process inherits
+    ``GIT_DIR`` / ``GIT_WORK_TREE`` binding git to the repository that called out. Honouring
+    them made every entry point look foreign (measured: 65 of 65 dropped, a core-only
+    manifest), which the hook then reported as stale generated surfaces on a clean checkout.
+    """
+    module = _load_export_module()
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "not-a-repo"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(tmp_path))
+
+    tracked = module._tracked_in_this_checkout(module._REPO_ROOT)
+    assert tracked is not None, "git must still answer for the checkout we asked about"
+    assert "core/tools/export_registry.py" in tracked
+
+    toplevels: dict[str, str | None] = {}
+    in_tree = _entry_point("core", "navig.registry.manifest:build_public_manifest")
+    assert module.entry_point_is_in_this_tree(in_tree, tracked, toplevels) is True
+
+
+
+

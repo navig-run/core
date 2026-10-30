@@ -62,3 +62,21 @@ def test_save_default_config_does_not_repair_over_a_transiently_locked_file(monk
     entry.save_default_config()
 
     assert cfg_path.read_bytes() == on_disk  # config left intact — not repaired to defaults
+
+
+def test_save_default_config_recreates_a_config_that_vanished_during_the_read(monkeypatch, tmp_path):
+    """FileNotFoundError is an OSError: a file removed between exists() and the read
+    returned a path that did not exist, and `service config --show` then failed on it."""
+    cfg_path = tmp_path / "daemon.json"
+    cfg_path.write_text(json.dumps({"custom": 1}), encoding="utf-8")
+    monkeypatch.setattr(entry, "_daemon_config_path", lambda: cfg_path)
+
+    def _vanished(p, **_k):
+        p.unlink()
+        raise FileNotFoundError(str(p))
+
+    monkeypatch.setattr(entry, "read_text_retrying", _vanished)
+    got = entry.save_default_config()
+
+    assert got.exists(), "save_default_config returned a path that does not exist"
+    assert json.loads(got.read_text(encoding="utf-8")) == entry.DEFAULT_DAEMON_CONFIG

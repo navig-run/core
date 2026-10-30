@@ -39,14 +39,22 @@ class _FakeStore:
 
 
 class _FakeChannel:
-    """Minimal stand-in for TelegramChannel: only `send_message` is used by the method."""
+    """Minimal stand-in for TelegramChannel: only the senders are used by the method."""
 
     def __init__(self, send_result=True):
         self._send_result = send_result
         self.sent: list[tuple[int, str]] = []
+        self.keyboards: list[object] = []
 
-    async def send_message(self, chat_id, text, parse_mode=None):
+    async def send_message(self, chat_id, text, parse_mode=None, keyboard=None):
         self.sent.append((chat_id, text))
+        self.keyboards.append(keyboard)
+        return self._send_result
+
+    async def send_rich_message(self, chat_id, *, html=None, fallback_html=None, keyboard=None):
+        # The channel prefers the rich projection; the reminder path always has one.
+        self.sent.append((chat_id, fallback_html or html or ""))
+        self.keyboards.append(keyboard)
         return self._send_result
 
 
@@ -249,3 +257,31 @@ async def test_none_chat_reminder_also_delivers_via_notify(monkeypatch):
     ch = _FakeChannel()
     await _deliver(ch, store, _reminder(chat_id=None))
     assert counter["n"] == 1 and store.completed == [7] and ch.sent == []
+
+
+# ── one reminder row is one message in the chat ──────────────────────────────
+# On 2026-10-26 the owner received one reminder twice: the send reached Telegram, the
+# settle step then failed, the row was pushed 60 s forward and the same words arrived
+# again — the second copy raw, with its markdown intact. The claim behind the send is
+# what makes a retry a no-op once the words have been shown.
+
+
+async def test_a_reminder_that_arrives_twice_is_one_message(monkeypatch):
+    _patch_prefs(monkeypatch, telegram_on=True, others=[])
+    store = _FakeStore()
+    ch = _FakeChannel(send_result={"message_id": 1})
+    await _deliver(ch, store, _reminder(retry_count=0))
+    await _deliver(ch, store, _reminder(retry_count=1))  # the retry after a failed settle
+    assert len(ch.sent) == 1  # the owner sees it once
+    assert store.completed == [7, 7]  # ...and the row is closed both times
+
+
+async def test_a_failed_send_gives_the_claim_back_so_the_retry_arrives(monkeypatch):
+    _patch_prefs(monkeypatch, telegram_on=True, others=[])
+    store = _FakeStore()
+    await _deliver(_FakeChannel(send_result=None), store, _reminder(retry_count=0))
+    assert store.retried and not store.completed
+    retry = _FakeChannel(send_result={"message_id": 2})
+    await _deliver(retry, store, _reminder(retry_count=1))
+    assert len(retry.sent) == 1  # the retry was not swallowed as a duplicate
+    assert store.completed == [7]

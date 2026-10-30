@@ -120,16 +120,67 @@ def test_app_categories_are_canonical():
     every future app, unlike the hardcoded lists above.
     """
     for m in BUILTIN_MODULES:
-        if m.app_category is not None:
-            assert m.app_category in APP_CATEGORY_ORDER, (
-                f"{m.id}: app_category {m.app_category!r} not in {APP_CATEGORY_ORDER}"
-            )
-        elif any(s.startswith("os-tile:") for s in m.surfaces):
-            raise AssertionError(
-                f"{m.id}: declares an os-tile: surface but has no app_category — it "
-                f"would be invisible in the desktop grid + sidebar. Set one of "
-                f"{APP_CATEGORY_ORDER}."
-            )
+        assert_app_category_is_canonical(m)
+
+
+def assert_app_category_is_canonical(m) -> None:
+    """Builtins: a canonical category, and one on every os-tile app."""
+    if m.app_category is not None:
+        assert m.app_category in APP_CATEGORY_ORDER, (
+            f"{m.id}: app_category {m.app_category!r} not in {APP_CATEGORY_ORDER}"
+        )
+    else:
+        assert_os_tile_has_app_category(m)
+
+
+def assert_os_tile_has_app_category(m) -> None:
+    """Shared by builtins and discovered defs: an os-tile app with no usable category vanishes."""
+    if m.app_category in APP_CATEGORY_ORDER:
+        return
+    if any(s.startswith("os-tile:") for s in m.surfaces):
+        raise AssertionError(
+            f"{m.id}: declares an os-tile: surface but no canonical app_category "
+            f"({m.app_category!r}) — it "
+            f"would be invisible in the desktop grid + sidebar. Set one of "
+            f"{APP_CATEGORY_ORDER}."
+        )
+
+
+def test_discovered_os_tiles_have_an_app_category():
+    """The os-tile rule over the DISCOVERED catalog, not only the builtins.
+
+    `GET /api/deck/modules` serves `ModuleRegistry().discover()`, which adds
+    entry-point plugin defs (`register_module`) and `navig.module.json` launchers on
+    top of `BUILTIN_MODULES`. An os-tile app from either source with no
+    `app_category` is dropped by `collectDesktopApps` exactly like a builtin would be.
+    """
+    from navig.modules.registry import ModuleRegistry
+
+    reg = ModuleRegistry().discover()
+    defs = list(reg._defs.values())
+    assert defs, "discovery returned nothing to check"
+    for m in defs:
+        assert_os_tile_has_app_category(m)
+
+
+def test_app_category_rule_rejects_an_uncategorised_os_tile():
+    """The shared rule fails on a discovered-style def that would vanish from the OS."""
+    import pytest
+
+    from navig.modules.registry import ModuleDef
+
+    def make(mid, **kw):
+        return ModuleDef(id=mid, label=mid, description="", **kw)
+
+    for bad in (
+        make("x", surfaces=["os-tile:x"]),
+        make("y", surfaces=["os-tile:y"], app_category="Nope"),
+    ):
+        with pytest.raises(AssertionError):
+            assert_os_tile_has_app_category(bad)
+    assert_os_tile_has_app_category(make("z", surfaces=["os-tile:z"], app_category="Money"))
+    # No os-tile: the desktop never renders it, so no category is needed.
+    assert_os_tile_has_app_category(make("w", surfaces=["cli:w"]))
 
 
 def test_merged_apps_reference_existing_hosts():

@@ -25,7 +25,10 @@ import json
 import logging
 import math
 import re
+import threading
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -86,14 +89,21 @@ _CONNECTORS = re.compile(
 
 
 def _seconds(span: str) -> int:
-    """Seconds in a duration phrase; a unit with no number counts once."""
+    """Seconds in a duration phrase; a unit with no number counts once.
+
+    Each unit counts on its own: "an hour and 30 minutes" is 90 minutes. Counting
+    the implicit one only when nothing else matched read it as 30."""
     total = 0.0
+    counted: list[tuple[int, int]] = []
     for m in _AMOUNT_RE.finditer(span):
         unit = next(i for i in range(len(_UNITS)) if m.group(f"u{i}"))
         total += float(m.group("n").replace(",", ".")) * _UNITS[unit][1]
-    if not total and (m := _ONE_UNIT_RE.search(span)) is not None:
+        counted.append(m.span())
+    for m in _ONE_UNIT_RE.finditer(span):
+        if any(m.start() < end and start < m.end() for start, end in counted):
+            continue  # the unit of a "<n> <unit>" already counted above
         unit = next(i for i in range(len(_UNITS)) if m.group(f"u{i}"))
-        total = _UNITS[unit][1]
+        total += _UNITS[unit][1]
     return int(total)
 
 
@@ -163,7 +173,9 @@ _DAYSPEC_RE = re.compile(
 )
 _AMPM = r"am|pm|a\.m\.|p\.m\.|утра|вечера|дня|ночи|du matin|du soir|de l'après-midi"
 _HUNIT = r"(?:\s*(?:h|ч|час(?:а|ов)?|heures?)(?![\w]))?"
-_AT = r"(?:at|в|во|à|a|vers|к)"
+# A bare "a" (an unaccented "à") is also the English article: "buy a 2 litre bottle".
+# It announces a clock only when what follows is written as one: "a 9h", "a 10:30".
+_AT = r"(?:at|в|во|à|a(?=\s+\d{1,2}(?:[:hH]\d{2}|\s*(?:h|heures?))(?![\w]))|vers|к)"
 #: A clock time that cannot be mistaken for any other number: announced by
 #: at/в/à, or written as a time (10:30, 9h, 14h30, 5pm).
 _CLOCK_RE = re.compile(
@@ -290,6 +302,16 @@ def _repeat(raw: str) -> tuple[dict[str, Any], str] | None:
     return {"every": "week"}, rest
 
 
+def _on_the_wall(due: datetime) -> datetime:
+    """*due*'s wall-clock time with the offset the local zone will REALLY have then.
+
+    `datetime.now().astimezone()` carries a FIXED offset — today's. Calendar maths in
+    it keeps that offset across a DST change, so "tomorrow at 10" said the day before
+    the clocks move came out an hour off. A naive time re-localised by
+    `astimezone()` takes the system zone's rule for that date."""
+    return due.replace(tzinfo=None).astimezone()
+
+
 def next_occurrence(repeat: dict[str, Any], after: datetime) -> datetime:
     """The first moment strictly after *after* that *repeat* names (local time)."""
     hour, minute = repeat.get("clock") or (_DEFAULT_HOUR, 0)
@@ -301,7 +323,7 @@ def next_occurrence(repeat: dict[str, Any], after: datetime) -> datetime:
         if ok and repeat["every"] == "week" and repeat.get("weekday") is not None:
             ok = due.weekday() == repeat["weekday"]
         if ok:
-            return due
+            return _on_the_wall(due)
         due += timedelta(days=1)
     return after + timedelta(days=1)
 
@@ -363,9 +385,13 @@ def parse_full(text: str, *, now: datetime | None = None) -> dict[str, Any] | No
                 and seen["weekday"] is not None
             ):
                 repeat["weekday"] = seen["weekday"]
+            if repeat["every"] == "week" and repeat.get("weekday") is None:
+                # "every week at 9": weekly from today, as the no-clock branch does —
+                # a weekly rule without a weekday fires every day.
+                repeat["weekday"] = local_now.weekday()
             due = next_occurrence(repeat, local_now)
         # Rounded UP: truncating made "завтра в 10" fire — and read — at 09:59.
-        seconds, absolute = math.ceil((due - local_now).total_seconds()), True
+        seconds, absolute = math.ceil((_on_the_wall(due) - local_now).total_seconds()), True
     elif repeat is not None:
         if repeat["every"] == "week" and repeat.get("weekday") is None:
             repeat["weekday"] = local_now.weekday()
@@ -625,12 +651,43 @@ def _save(items: list[dict[str, Any]]) -> None:
     atomic_write_text(path, json.dumps(items, ensure_ascii=False, indent=1))
 
 
+_STORE_LOCK = threading.RLock()
+_lock_state = threading.local()
+
+
+@contextmanager
+def _locked(path: Path | None = None) -> Iterator[None]:
+    """Serialise a read-modify-write of the store (or a claim) across processes.
+
+    The supervisor runs two processes holding the bot: two reminders settling at once
+    both read ``[A, B]``, write ``[B]`` and ``[A]``, and the last write resurrected a
+    delivered one. Re-entrant within a thread; a lock that cannot be taken degrades to
+    the old unlocked behaviour (see `daily_once._locked`), never a failed delivery.
+    """
+    if getattr(_lock_state, "depth", 0):
+        _lock_state.depth += 1
+        try:
+            yield
+        finally:
+            _lock_state.depth -= 1
+        return
+    from navig.telegram.daily_once import _locked as _file_lock  # noqa: PLC0415
+
+    with _STORE_LOCK, _file_lock(path or _path()):
+        _lock_state.depth = 1
+        try:
+            yield
+        finally:
+            _lock_state.depth = 0
+
+
 #: A delivered reminder is kept this long, so its "+1 h" / "+1 day" still works.
 DELIVERED_KEEP = timedelta(days=2)
 
 
 def _remove(rid: str) -> None:
-    _save([r for r in _load() if r.get("id") != rid])
+    with _locked():
+        _save([r for r in _load() if r.get("id") != rid])
 
 
 def _find(rid: str) -> dict[str, Any] | None:
@@ -676,13 +733,14 @@ def cancel(rid: str) -> bool:
 def reschedule(channel: Any, rid: str, due: datetime) -> dict[str, Any] | None:
     """Move one to ``due`` and arm it in THIS process. The old timer, in this process
     or the sibling, sees a different ``due`` and stands down."""
-    items = _load()
-    item = next((r for r in items if r.get("id") == rid), None)
-    if item is None:
-        return None
-    item["due"] = due.astimezone(timezone.utc).isoformat()
-    item.pop("delivered", None)
-    _save(items)
+    with _locked():
+        items = _load()
+        item = next((r for r in items if r.get("id") == rid), None)
+        if item is None:
+            return None
+        item["due"] = due.astimezone(timezone.utc).isoformat()
+        item.pop("delivered", None)
+        _save(items)
     if channel is not None:
         _arm(channel, item, item.get("owner_id"))
     return item
@@ -693,7 +751,11 @@ def reschedule(channel: Any, rid: str, due: datetime) -> dict[str, Any] | None:
 
 def _claim(rid: str) -> bool:
     """True if this process delivers *rid*. Atomic create, like the deletion digest;
-    fails OPEN — one reminder twice beats one never sent."""
+    fails OPEN — one reminder twice beats one never sent.
+
+    An expired claim (a crash between claim and settle) is taken over under the claim
+    lock and rewritten with a fresh stamp, so only ONE process inherits it — returning
+    True on the stale stamp alone let both supervisor processes post the reminder."""
     import time  # noqa: PLC0415
 
     from navig.platform import paths  # noqa: PLC0415
@@ -701,16 +763,20 @@ def _claim(rid: str) -> bool:
     path = paths.cache_dir() / "business_reminder_claims" / rid
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with open(path, "x", encoding="utf-8") as fh:
-                fh.write(str(time.time()))
-            return True
-        except FileExistsError:
+        with _locked(path.parent / ".claims"):
             try:
-                age = time.time() - float(path.read_text(encoding="utf-8").strip() or 0)
-            except (OSError, ValueError):
-                age = float("inf")
-            return age >= CLAIM_TTL_SEC
+                with open(path, "x", encoding="utf-8") as fh:
+                    fh.write(str(time.time()))
+                return True
+            except FileExistsError:
+                try:
+                    age = time.time() - float(path.read_text(encoding="utf-8").strip() or 0)
+                except (OSError, ValueError):
+                    age = float("inf")
+                if age < CLAIM_TTL_SEC:
+                    return False
+                path.write_text(str(time.time()), encoding="utf-8")
+                return True
     except OSError:
         return True
 
@@ -737,25 +803,98 @@ def _arm(channel: Any, item: dict[str, Any], owner_id: int | None) -> None:
     _ARMED[rid] = spawn(_later())
 
 
-async def _deliver(channel: Any, item: dict[str, Any], owner_id: int | None) -> None:
+#: When neither the chat nor the owner's DM took a reminder (Telegram down, network
+#: gone — `_api_call` returns None for both), it is kept and tried again this often,
+#: up to this many times, before it is settled as before.
+RETRY_SEC = 300.0
+RETRY_MAX = 6
+
+
+def _release(claim: str) -> None:
+    from navig.platform import paths  # noqa: PLC0415
+
+    try:
+        (paths.cache_dir() / "business_reminder_claims" / claim).unlink()
+    except OSError:
+        pass
+
+
+def _retry(
+    channel: Any, item: dict[str, Any], owner_id: int | None, attempt: int, claim: str
+) -> None:
+    """Nothing reached anyone: keep the reminder and deliver it again later."""
+    _release(claim)  # this occurrence was not delivered; the retry claims it again
+
+    async def _again() -> None:
+        await asyncio.sleep(RETRY_SEC)
+        await _deliver(channel, item, owner_id, attempt + 1)
+
+    from navig.core.background import spawn  # noqa: PLC0415
+
+    logger.info(
+        "business reminder %s undelivered — retry %d in %.0fs", item["id"], attempt + 1, RETRY_SEC
+    )
+    _ARMED[item["id"]] = spawn(_again())
+
+
+async def _send_card(
+    channel: Any,
+    item: dict[str, Any],
+    lang: str,
+    text: str,
+    buttons: list[tuple[str, str]],
+) -> Any:
+    """Send the reminder as a card with its original button payloads; None on any failure."""
+    try:
+        from navig.telegram import biz_card, card_transport  # noqa: PLC0415
+
+        repeat = ""
+        if item.get("repeat"):
+            repeat = _rep_label(item["repeat"], lang)
+        card = biz_card.reminder_card(
+            text=text,
+            when=_at_label(datetime.fromisoformat(item["due"]), lang),
+            repeat=repeat,
+        )
+        rows = [[{"text": t, "callback_data": d} for t, d in buttons]]
+        return await card_transport.send_card(
+            channel,
+            item["chat_id"],
+            card,
+            keyboard=rows,
+            business_connection_id=item.get("bcid"),
+            reply_to_message_id=item.get("reply_to"),
+        )
+    except Exception:  # noqa: BLE001 — the caller falls back to the plain message
+        logger.debug("business reminder card failed", exc_info=True)
+        return None
+
+
+async def _deliver(
+    channel: Any, item: dict[str, Any], owner_id: int | None, attempt: int = 0
+) -> None:
     rid = item["id"]
     try:
         current = _find(rid)
         if current is None or current.get("delivered") or current.get("due") != item["due"]:
             return  # cancelled, snoozed or rescheduled while it waited
         due_ts = int(datetime.fromisoformat(item["due"]).timestamp())
-        if not _claim(f"{rid}-{due_ts}"):
+        claim = f"{rid}-{due_ts}"
+        if not _claim(claim):
             return  # the sibling process has it (one claim per occurrence)
         lang = item.get("lang") or "en"
         late = datetime.now(timezone.utc) - datetime.fromisoformat(item["due"])
         text = _COPY[lang]["due"].format(about=_about(item.get("about") or ""))
         if late > LATE_GRACE and not item.get("repeat"):
+            told = await _dm(
+                channel, owner_id, f"{text}\n<i>(missed — NAVIG was offline when it was due)</i>"
+            )
+            if not told and attempt < RETRY_MAX:
+                _retry(channel, item, owner_id, attempt, claim)
+                return
             _remove(rid)
             logger.info(
                 "business reminder %s dropped: %.1f h late", rid, late.total_seconds() / 3600
-            )
-            await _dm(
-                channel, owner_id, f"{text}\n<i>(missed — NAVIG was offline when it was due)</i>"
             )
             return
         data: dict[str, Any] = {"chat_id": item["chat_id"], "text": text, "parse_mode": "HTML"}
@@ -771,22 +910,34 @@ async def _deliver(channel: Any, item: dict[str, Any], owner_id: int | None) -> 
         if item.get("repeat"):
             buttons.append((c["b_stop"], f"bzr:x:{rid}"))
         data["reply_markup"] = _keyboard(*buttons)
-        sent = late <= LATE_GRACE and await channel._api_call("sendMessage", data)
-        _settle(channel, item, sent, owner_id)
-        if sent:
-            logger.info("business reminder %s delivered to chat=%s", rid, item["chat_id"])
+        sent = None
+        if late <= LATE_GRACE:
+            sent = await _send_card(channel, item, lang, text, buttons)
+            if sent is None:
+                # The card could not be drawn (old server, rich switched off, a raise):
+                # the plain message below is the same reminder, not a lost one.
+                sent = await channel._api_call("sendMessage", data)
+        if sent or late > LATE_GRACE:
+            # (late here = a repeat that was missed: rescheduled, not dropped into the chat)
+            _settle(channel, item, sent, owner_id)
+            if sent:
+                logger.info("business reminder %s delivered to chat=%s", rid, item["chat_id"])
             return
-        if late > LATE_GRACE:
-            return  # a repeat that was missed: rescheduled, not dropped into the chat
         logger.info(
             "business reminder %s refused in chat=%s — sent to the owner", rid, item["chat_id"]
         )
-        await _dm(
+        told = await _dm(
             channel,
             owner_id,
             f"{text}\n<i>(Telegram would not post it in "
             f"{_escape(item.get('chat_title') or 'the chat')} — here it is)</i>",
         )
+        if not told and attempt < RETRY_MAX:
+            # Settled only once someone has it: settling first lost the reminder for
+            # good when Telegram was unreachable for both sends.
+            _retry(channel, item, owner_id, attempt, claim)
+            return
+        _settle(channel, item, sent, owner_id)
     except Exception:  # noqa: BLE001
         logger.warning("business reminder %s delivery failed", rid, exc_info=True)
     finally:
@@ -799,39 +950,42 @@ async def _deliver(channel: Any, item: dict[str, Any], owner_id: int | None) -> 
 def _settle(channel: Any, item: dict[str, Any], sent: Any, owner_id: int | None) -> None:
     """After a delivery: a repeat moves to its next time and is re-armed; a one-off
     is kept (marked delivered) so its snooze buttons still work for a while."""
-    items = _load()
-    for r in items:
-        if r.get("id") != item["id"]:
-            continue
-        if r.get("repeat"):
-            nxt = next_occurrence(r["repeat"], datetime.now().astimezone())
-            r["due"] = nxt.astimezone(timezone.utc).isoformat()
+    with _locked():
+        items = _load()
+        for r in items:
+            if r.get("id") != item["id"]:
+                continue
+            if r.get("repeat"):
+                nxt = next_occurrence(r["repeat"], datetime.now().astimezone())
+                r["due"] = nxt.astimezone(timezone.utc).isoformat()
+            else:
+                r["delivered"] = datetime.now(timezone.utc).isoformat()
+                if isinstance(sent, dict) and sent.get("message_id"):
+                    r["msg_id"] = sent["message_id"]
+            updated = dict(r)
+            break
         else:
-            r["delivered"] = datetime.now(timezone.utc).isoformat()
-            if isinstance(sent, dict) and sent.get("message_id"):
-                r["msg_id"] = sent["message_id"]
-        updated = dict(r)
-        break
-    else:
-        return
-    _save(_prune(items))
+            return
+        _save(_prune(items))
     if updated.get("repeat"):
         _ARMED.pop(updated["id"], None)
         _arm(channel, updated, owner_id)
 
 
-async def _dm(channel: Any, owner_id: int | None, text: str) -> None:
+async def _dm(channel: Any, owner_id: int | None, text: str) -> bool:
+    """Send *text* to the owner. True only when Telegram accepted it."""
     if not owner_id:
-        return
+        return False
     from navig.telegram import chat_tidy  # noqa: PLC0415
 
     try:
         # A business reminder that fell back to the DM is a reminder like any other:
         # tidied tomorrow, not left there for good.
         with chat_tidy.routine("reminder"):
-            await channel.send_message(owner_id, text, parse_mode="HTML")
+            return bool(await channel.send_message(owner_id, text, parse_mode="HTML"))
     except Exception:  # noqa: BLE001
         logger.debug("business reminder DM failed", exc_info=True)
+        return False
 
 
 async def resume_pending(channel: Any, owner_id: int | None = None) -> int:
@@ -873,15 +1027,22 @@ async def handle_callback(
     if action == "s" and len(parts) == 4 and parts[3].isdigit():
         secs = min(int(parts[3]), 7 * 86400)
         due = datetime.now(timezone.utc) + timedelta(seconds=secs)
+        # One snooze per delivered message: a double tap sends two callback queries,
+        # and each one used to append and arm its own copy.
+        source = f"{rid}:{message_id}"
         new = {k: v for k, v in item.items() if k not in ("delivered", "msg_id", "repeat")}
         new.update(
             id=uuid.uuid4().hex[:12],
             due=due.isoformat(),
             created=datetime.now(timezone.utc).isoformat(),
+            snoozed_from=source,
         )
-        items = _load()
-        items.append(new)
-        _save(_prune(items))
+        with _locked():
+            items = _load()
+            if any(r.get("snoozed_from") == source for r in items):
+                return c["t_snoozed"]
+            items.append(new)
+            _save(_prune(items))
         _arm(channel, new, item.get("owner_id"))
         text = c["snoozed"].format(text=c["due"].format(about=about), at=_at_label(due, lang))
         await _edit(channel, chat_id, bcid, message_id, text)
@@ -952,12 +1113,13 @@ async def command(
     if first in _CANCEL_WORDS:
         if not is_owner:
             return copy["usage"], None
-        before = _load()
-        keep = [r for r in before if r.get("chat_id") != chat_id or r.get("delivered")]
+        with _locked():
+            before = _load()
+            keep = [r for r in before if r.get("chat_id") != chat_id or r.get("delivered")]
+            _save(keep)
         for r in before:
             if r.get("chat_id") == chat_id and (t := _ARMED.pop(r["id"], None)):
                 t.cancel()
-        _save(keep)
         return copy["cancelled"].format(n=len(before) - len(keep)), None
     parsed = parse_full(words)
     if parsed is None:
@@ -970,31 +1132,32 @@ async def command(
     )
     if timedelta(seconds=seconds) > MAX_DELAY:
         return copy["too_far"], None
-    items = _prune(_load())
-    if (
-        sum(1 for r in items if r.get("chat_id") == chat_id and not r.get("delivered"))
-        >= MAX_PER_CHAT
-    ):
-        return copy["too_many"], None
-    due = datetime.now(timezone.utc) + timedelta(seconds=seconds)
-    chat = (trigger or {}).get("chat") or {}
-    item = {
-        "id": uuid.uuid4().hex[:12],
-        "chat_id": chat_id,
-        "bcid": bcid,
-        "owner_id": owner_id,
-        "due": due.isoformat(),
-        "about": about,
-        "lang": lang,
-        "chat_title": chat.get("title") or chat.get("first_name") or "",
-        # The owner's trigger is deleted; the other person's stays, so the reminder
-        # can point back at the message that asked for it.
-        "reply_to": None if is_owner else (trigger or {}).get("message_id"),
-        "created": datetime.now(timezone.utc).isoformat(),
-        "repeat": repeat,
-    }
-    items.append(item)
-    _save(items)
+    with _locked():
+        items = _prune(_load())
+        if (
+            sum(1 for r in items if r.get("chat_id") == chat_id and not r.get("delivered"))
+            >= MAX_PER_CHAT
+        ):
+            return copy["too_many"], None
+        due = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+        chat = (trigger or {}).get("chat") or {}
+        item = {
+            "id": uuid.uuid4().hex[:12],
+            "chat_id": chat_id,
+            "bcid": bcid,
+            "owner_id": owner_id,
+            "due": due.isoformat(),
+            "about": about,
+            "lang": lang,
+            "chat_title": chat.get("title") or chat.get("first_name") or "",
+            # The owner's trigger is deleted; the other person's stays, so the reminder
+            # can point back at the message that asked for it.
+            "reply_to": None if is_owner else (trigger or {}).get("message_id"),
+            "created": datetime.now(timezone.utc).isoformat(),
+            "repeat": repeat,
+        }
+        items.append(item)
+        _save(items)
     _arm(channel, item, owner_id)
     logger.info("business reminder %s set: chat=%s in=%ss", item["id"], chat_id, seconds)
     markup = _keyboard((copy["b_stop"] if repeat else copy["b_cancel"], f"bzr:x:{item['id']}"))

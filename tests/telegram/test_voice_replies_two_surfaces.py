@@ -61,7 +61,9 @@ def _run(ch, *, session_value, audio_value):
     cfg = MagicMock()
     cfg.voice_replies_enabled = audio_value
 
-    with patch("navig.gateway.channels.telegram.get_session_manager", return_value=_Sessions):
+    # HAS_VOICE is False in a core-only install (no navig-audio); these tests assert the
+    # enabled-gate, not TTS, so pin the plugin as present.
+    with patch("navig.gateway.channels.telegram.HAS_VOICE", True),             patch("navig.gateway.channels.telegram.get_session_manager", return_value=_Sessions):
         with patch("navig.gateway.channels.audio_menu.state.load_config", return_value=cfg):
             asyncio.run(ch._maybe_send_voice(1, 2, False, "hello"))
     return reached["tts"]

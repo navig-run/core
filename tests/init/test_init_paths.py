@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import click
 import pytest
+import typer
 
 from navig.commands import init as init_mod
 
@@ -48,7 +48,7 @@ def test_legacy_documents_migration_conflict_keeps_source(
     monkeypatch.setattr(init_mod, "_legacy_documents_config_dir", lambda: source_dir)
     monkeypatch.setattr(init_mod, "_local_log_dir", lambda: log_dir)
 
-    with pytest.raises(click.exceptions.Exit):
+    with pytest.raises(typer.Exit):
         init_mod._migrate_legacy_documents_dir(target_dir)
 
     assert source_dir.exists()
@@ -68,7 +68,7 @@ def test_run_init_aborts_cleanly_on_directory_permission_error(
 
     monkeypatch.setattr(init_mod, "_ensure_dirs", _raise_permission_error)
 
-    with pytest.raises(click.exceptions.Exit):
+    with pytest.raises(typer.Exit):
         init_mod.run_init(dry_run=True, no_genesis=True, name="test-node")
 
 

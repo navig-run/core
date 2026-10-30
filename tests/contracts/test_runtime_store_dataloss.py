@@ -153,3 +153,15 @@ def test_corrupt_nodes_file_does_not_block_receipt_persistence(tmp_path):
 
     assert _receipt_ids_on_disk(d) == {"r-iso"}  # receipts persisted despite bad nodes
     assert (d / "nodes.json").read_text(encoding="utf-8") == corrupt_nodes  # preserved
+
+
+def test_two_stores_recording_concurrently_both_persist(tmp_path):
+    """Two `receipt record` processes: each loads, records one, flushes — neither is lost."""
+    d = tmp_path / "rt"
+    a, b = RuntimeStore(d), RuntimeStore(d)  # both loaded the same (empty) snapshot
+    a.record_receipt(_receipt("r-a"))
+    b.record_receipt(_receipt("r-b"))
+    a.flush()
+    b.flush()
+    assert _receipt_ids_on_disk(d) == {"r-a", "r-b"}
+

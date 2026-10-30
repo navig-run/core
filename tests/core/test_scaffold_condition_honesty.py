@@ -66,6 +66,8 @@ def test_the_original_error_is_chained():
         ("{{ flag }}", {"flag": "true"}, True),
         ("{{ flag }}", {"flag": "false"}, False),
         ("{{ missing }}", {}, False),  # undefined -> "" -> False, NOT an error
+        ("{{ options.tests }}", {}, False),  # nested undefined raises in Jinja -> False
+        ("options.tests", {}, False),  # bare form, same
         (None, {}, True),
     ],
 )

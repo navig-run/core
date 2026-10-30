@@ -10,6 +10,7 @@ the machine; stale leases must protect nothing or dev stacks die hourly).
 
 from __future__ import annotations
 
+import collections
 import json
 
 from navig.commands import guard as G
@@ -95,6 +96,21 @@ def test_lease_spared_with_reason():
         min_age_min=0, start_of=_start_of(10), now=NOW,
     )
     assert kill == [] and "dev stack" in skipped[0][2]
+
+
+def test_an_orphan_root_holding_a_protected_descendant_is_not_killed():
+    """kill_tree(root) takes the whole subtree, so skipping the protected child per-pid
+    protected nothing: the orphan shell stayed on the kill list and took `claude` with it."""
+    table = _table((10, "bash", 99), (11, "claude", 10), (12, "node", 10))
+    kill, skipped = G.classify_orphans(
+        table, {11: "navig pid-file root"}, {},
+        min_age_min=0, start_of=_start_of(10, 11, 12), now=NOW,
+    )
+    assert 10 not in kill, "the shell's tree would kill the protected claude"
+    assert kill == [12], "an unprotected sibling branch is still reaped on its own"
+    reasons = {pid: why for pid, _name, why in skipped}
+    assert reasons[11] == "navig pid-file root"
+    assert "claude (11)" in reasons[10]
 
 
 # ─── leases ─────────────────────────────────────────────────────────────────
@@ -420,3 +436,86 @@ def test_cdp_dirs_keeps_live_profiles_and_deletes_dead_ones(tmp_path):
     r3 = G.sweep_cdp_dirs(dry_run=False, chrome_cmds=None, stop_fn=None,
                           tmp_root=tmp_root, sessions_root=sessions)
     assert r3["skipped"] and live.exists()
+
+
+# ─── review regressions (PR #1909 / #1947) ─────────────────────────────────
+
+
+def test_kill_mb_zero_never_kills():
+    assert G.guard_verdict(100, warn_mb=8000, kill_mb=0, prev_mb=0) == "keep"
+    assert G.guard_verdict(90000, warn_mb=8000, kill_mb=0, prev_mb=0) == "warn", \
+        "--kill-mb 0 disables killing; the warn threshold still applies"
+
+
+def test_deprioritize_uses_psutil_nice(monkeypatch):
+    class FakeProc:
+        def __init__(self, pid):
+            self.pid = pid
+            self.info = {"name": "node.exe"}
+            self.calls = []
+
+        def nice(self, value=None):
+            if value is None:
+                return 32  # NORMAL_PRIORITY_CLASS
+            self.calls.append(value)
+
+    procs = [FakeProc(5)]
+
+    class FakePsutil:
+        NORMAL_PRIORITY_CLASS = 32
+        BELOW_NORMAL_PRIORITY_CLASS = 16384
+        NoSuchProcess = AccessDenied = RuntimeError
+
+        @staticmethod
+        def process_iter(_attrs):
+            return procs
+
+    monkeypatch.setattr(G, "psutil", FakePsutil)
+    monkeypatch.setattr(G.sys, "platform", "win32")
+    assert G.deprioritize(("node",), protected=set()) == 1
+    assert procs[0].calls == [16384]
+
+
+def test_leaked_browser_with_unreadable_owner_is_spared():
+    table = _t((1, "chrome", 0))
+    cmds = {1: r"chrome --headless --remote-debugging-port=0 --user-data-dir=C:\Temp\cdp-profile-x"}
+    r = G.sweep_leaked_browsers(cmds, table, {1: NOW - 3600}, min_age_min=15, dry_run=True,
+                                now=NOW, owner_fn=lambda udd, t, s: "unreadable")
+    assert r["killed"] == []
+    assert any("unreadable" in why for _p, _n, why in r["skipped"])
+
+
+def test_cdp_dirs_never_uses_a_relative_temp_root(tmp_path, monkeypatch):
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    monkeypatch.chdir(tmp_path)
+    victim = tmp_path / "Temp" / "cdp-project-data"
+    victim.mkdir(parents=True)
+    G.sweep_cdp_dirs(dry_run=False, chrome_cmds={}, stop_fn=None,
+                     sessions_root=tmp_path / "no-sessions")
+    assert victim.exists(), "an unset LOCALAPPDATA must not turn ./Temp into the sweep root"
+
+
+def test_chrome_argv_with_spaces_keeps_the_whole_profile_path():
+    udd = r"C:\Users\John Doe\p"
+    cmd = G._join_argv(["chrome.exe", "--user-data-dir=" + udd, "--headless"])
+    assert G.parse_user_data_dir(cmd) == udd
+    assert "--headless" in cmd
+    assert G.parse_user_data_dir(G._join_argv(["chrome.exe", r"--user-data-dir=C:\Temp\x"])) == r"C:\Temp\x"
+
+
+def test_spinner_pass_spares_leased_processes(monkeypatch):
+    seen = {}
+
+    def fake_spinners(**kw):
+        seen["protected"] = kw["protected"]
+        return {"killed": [], "skipped": [], "hits": []}
+
+    monkeypatch.setattr(G, "snapshot_table", lambda: _t((77, "node", 0)))
+    monkeypatch.setattr(G, "_CreateTimes", lambda: collections.defaultdict(lambda: NOW))
+    monkeypatch.setattr(G, "navig_tree_pids", lambda *a: {})
+    monkeypatch.setattr(G, "load_leases", lambda *a: {77: "lease dev-stack"})
+    monkeypatch.setattr(G.psutil, "process_iter", lambda *a: [])
+    monkeypatch.setattr(G, "_chrome_cmdlines", lambda: ({}, True))
+    monkeypatch.setattr(G, "sample_spinners", fake_spinners)
+    G.sweep_once(dry_run=True, echo=False, lease_files=[], cdp_dirs=False)
+    assert 77 in seen["protected"], "a leased pid is protected from the spinner sweep too"

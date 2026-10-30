@@ -139,6 +139,35 @@ def test_prune_never_touches_a_registered_worktree(repo: Path) -> None:
     assert "live" in out  # still a tracked worktree
 
 
+def _link_dir(link: Path, target: Path) -> None:
+    """A directory link: a symlink where allowed, else (Windows) a junction."""
+    try:
+        link.symlink_to(target, target_is_directory=True)
+        return
+    except OSError:
+        pass
+    try:
+        import _winapi  # noqa: PLC0415 — Windows only
+    except ImportError:
+        pytest.skip("cannot create a directory link here")
+    _winapi.CreateJunction(str(target), str(link))
+
+
+def test_prune_refuses_a_linked_worktrees_home(repo: Path, tmp_path: Path) -> None:
+    """Review #515: a .dev/worktrees linked to another directory made that target the
+    approved parent, so `prune --yes` deleted data outside the repository."""
+    outside = tmp_path / "outside"
+    victim = outside / "precious"
+    victim.mkdir(parents=True)
+    (victim / "data.txt").write_text("keep\n", encoding="utf-8")
+    (repo / ".dev").mkdir()
+    _link_dir(repo / ".dev" / "worktrees", outside)
+
+    result = runner.invoke(repo_app, ["prune", "--repo", str(repo), "--yes"])
+    assert result.exit_code == 1, result.output
+    assert (victim / "data.txt").read_text(encoding="utf-8") == "keep\n"
+
+
 def test_prune_reports_clean_when_nothing_orphaned(repo: Path) -> None:
     result = runner.invoke(repo_app, ["prune", "--repo", str(repo), "--json"])
     assert result.exit_code == 0, result.output
@@ -287,6 +316,48 @@ def test_remove_refuses_dirty_without_force(repo: Path) -> None:
     forced = runner.invoke(repo_app, ["remove", "dirty", "--repo", str(repo), "--force", "--json"])
     assert forced.exit_code == 0, forced.output
     assert not wt.exists()
+
+
+def test_remove_refuses_a_slug_that_escapes_the_worktrees_home(repo: Path, tmp_path: Path) -> None:
+    """Review #518: an absolute slug made Path drop .dev/worktrees, so a registered
+    SIBLING worktree was removed — with --force, its uncommitted work too."""
+    sibling = tmp_path / "sibling"
+    _git("worktree", "add", str(sibling), "-b", "feat/sibling", cwd=repo)
+    (sibling / "f.txt").write_text("modified\n", encoding="utf-8")
+    for slug in (str(sibling), "../../../sibling", "a/b"):
+        result = runner.invoke(repo_app, ["remove", slug, "--repo", str(repo), "--force"])
+        assert result.exit_code == 1, f"{slug}: {result.output}"
+        assert "invalid worktree slug" in result.output.lower(), result.output
+    assert (sibling / "f.txt").read_text(encoding="utf-8") == "modified\n"
+
+
+@pytest.mark.parametrize("code", [124, 125])
+def test_remove_keeps_a_dirty_worktree_when_the_recheck_fails(
+    repo: Path, monkeypatch, code: int
+) -> None:
+    """Reviews #700 / #1091: git refused a dirty worktree, then the listing that checks
+    whether it was unregistered timed out (124) or failed to start (125). That came back
+    as [] — read as "unregistered" — and _rmtree_force deleted the uncommitted work."""
+    from navig.commands import repo as repo_mod
+
+    wt = _registered_worktree(repo, "dirty", "feat/dirty")
+    (wt / "f.txt").write_text("modified\n", encoding="utf-8")
+
+    real_git = repo_mod._git
+    state = {"removed": False}
+
+    def flaky(args, cwd, timeout=None):
+        if args[:2] == ["worktree", "remove"]:
+            state["removed"] = True
+        elif args[:2] == ["worktree", "list"] and state["removed"]:
+            return subprocess.CompletedProcess(args, code, stdout="", stderr="no answer")
+        return real_git(args, cwd, timeout=timeout)
+
+    monkeypatch.setattr(repo_mod, "_git", flaky)
+    result = runner.invoke(repo_app, ["remove", "dirty", "--repo", str(repo)])
+    assert result.exit_code == 1, result.output
+    assert "could not verify" in result.output.lower()
+    assert (wt / "f.txt").read_text(encoding="utf-8") == "modified\n"  # work preserved
 
 
 # ── how far behind main each worktree's base is ───────────────────────────────

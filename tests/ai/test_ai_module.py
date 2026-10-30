@@ -174,6 +174,14 @@ class TestAskAiWithContext:
             ask_ai_with_context("q", model="gpt-4o")
         assert mock.call_args.kwargs.get("model_override") == "gpt-4o"
 
+    def test_timeout_forwarded_only_when_given(self):
+        with patch(self._PATCH, return_value="r") as mock:
+            ask_ai_with_context("q", timeout=7.5)
+        assert mock.call_args.kwargs.get("timeout") == 7.5
+        with patch(self._PATCH, return_value="r") as mock:
+            ask_ai_with_context("q")
+        assert "timeout" not in mock.call_args.kwargs
+
     def test_effort_forwarded(self):
         with patch(self._PATCH, return_value="r") as mock:
             ask_ai_with_context("q", effort="high")

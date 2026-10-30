@@ -78,6 +78,10 @@ def test_readonly_tools_are_exempt(hook, root: Path) -> None:
         "git stash",
         "git stash pop",
         "cd sub && git cherry-pick abc123",
+        # Tree-writing plumbing: `merge-file` rewrites its first file in place.
+        "git merge-file a.txt base.txt b.txt",
+        "git checkout-index -a -f",
+        "git read-tree -u -m HEAD",
     ],
 )
 def test_mutating_git_is_enforced(hook, root: Path, command: str) -> None:
@@ -144,6 +148,24 @@ def test_worktree_add_target_parsing(hook) -> None:
     assert hook.worktree_add_target("-B feat/x --detach ../x main") == "../x"
     assert hook.worktree_add_target('"..\\my path\\wt"') == "..\\my path\\wt"
     assert hook.worktree_add_target("-b feat/x") is None
+    assert hook.worktree_add_target("--orphan ../scratch") == "../scratch"  # F0073
+    assert hook.worktree_add_target("--orphan -b gh-pages .dev/worktrees/s") == ".dev/worktrees/s"
+
+
+def test_every_worktree_add_in_a_chain_is_judged(hook, root: Path) -> None:
+    """An in-repo first add no longer exempts a sibling add after it (F0074)."""
+    for cmd in ("git worktree add .dev/worktrees/a && git worktree add ../b",
+                "git worktree add .dev/worktrees/a; git worktree add -b feat/b ../b"):
+        assert hook.classify_tool(_bash(cmd, cwd=str(root)), root) == "block-sibling", cmd
+    both_inside = "git worktree add .dev/worktrees/a && git worktree add .dev/worktrees/b"
+    assert hook.classify_tool(_bash(both_inside, cwd=str(root)), root) == "exempt"
+
+
+def test_an_orphan_worktree_add_is_judged_by_its_path(hook, root: Path) -> None:
+    sibling = _bash("git worktree add --orphan ../scratch", cwd=str(root))
+    assert hook.classify_tool(sibling, root) == "block-sibling"
+    inside = _bash("git worktree add --orphan .dev/worktrees/s", cwd=str(root))
+    assert hook.classify_tool(inside, root) == "exempt"
 
 
 def test_powershell_is_classified_like_bash(hook, root: Path) -> None:
@@ -207,7 +229,7 @@ def test_git_c_via_an_unexpandable_shell_variable(hook, root: Path) -> None:
 
 def test_from_msys_converts_only_bash_drive_paths(hook, monkeypatch) -> None:
     """git-bash renders `C:\\foo` as `/c/foo`; convert that to native, nothing else."""
-    monkeypatch.setattr(hook.os, "name", "nt")
+    monkeypatch.setattr(hook.sys, "platform", "win32")
     assert hook._from_msys("/c/projects/x") == "C:\\projects\\x"
     assert hook._from_msys("/c/Users/a/b") == "C:\\Users\\a\\b"
     # already-native, non-drive POSIX, and short forms are all untouched
@@ -215,7 +237,7 @@ def test_from_msys_converts_only_bash_drive_paths(hook, monkeypatch) -> None:
     assert hook._from_msys("/tmp/foo") == "/tmp/foo"  # multi-char first segment is not a drive
     assert hook._from_msys("/e") == "/e"
     # POSIX: always a no-op (there are no drive-letter paths)
-    monkeypatch.setattr(hook.os, "name", "posix")
+    monkeypatch.setattr(hook.sys, "platform", "linux")
     assert hook._from_msys("/c/projects/x") == "/c/projects/x"
 
 
@@ -376,6 +398,24 @@ def test_pathspec_commit_is_fine_when_the_deletion_is_not_named(hook, tmp_path: 
     assert hook.pathspec_commit_discards(payload, repo) == []
 
 
+def test_a_pathspec_without_the_optional_separator_is_still_a_pathspec(hook, tmp_path: Path) -> None:
+    """`git commit -h`: `[--] [<pathspec>...]` -- the `--` is optional (F2019)."""
+    repo = _scratch_repo(tmp_path)
+    _rm_cached(repo, "gen.txt")
+    for cmd in ("git commit -m x gen.txt", 'git commit -qm "untrack it" gen.txt',
+                "git commit --author 'A <a@b>' -m x gen.txt", "git commit -C HEAD gen.txt"):
+        assert hook.pathspec_commit_discards(_bash(cmd, cwd=str(repo)), repo) == ["gen.txt"], cmd
+
+
+def test_a_separator_inside_a_quoted_message_is_not_the_pathspec(hook, tmp_path: Path) -> None:
+    """Only an unquoted `--` starts the pathspec (F2024)."""
+    repo = _scratch_repo(tmp_path)
+    _rm_cached(repo, "gen.txt")
+    payload = _bash('git commit -m "document git commit -- gen.txt" -- other.txt', cwd=str(repo))
+    assert hook.pathspec_commit_discards(payload, repo) == []
+    assert hook._commit_pathspecs(' -m "a -- b" -F msg.txt --amend -- x "y z"') == ["x", "y z"]
+
+
 def test_commit_without_a_pathspec_is_never_blocked(hook, tmp_path: Path) -> None:
     repo = _scratch_repo(tmp_path)
     _rm_cached(repo, "gen.txt")
@@ -411,6 +451,101 @@ def test_honours_a_dash_C_target_and_fails_open_on_a_variable(hook, tmp_path: Pa
     # -C $var cannot be expanded: fail open rather than inspect the wrong tree.
     payload = _bash('git -C $WT commit -m "x" -- gen.txt', cwd=str(repo))
     assert hook.pathspec_commit_discards(payload, repo) == []
+
+
+def test_commit_reuse_message_dash_c_is_not_a_directory(hook, tmp_path: Path) -> None:
+    """`git commit -C HEAD -- x` reuses a message; `-C` there is no repo (review F2020)."""
+    repo = _scratch_repo(tmp_path)
+    _rm_cached(repo, "gen.txt")
+    (repo / "gen.txt").write_text("modified\n", encoding="utf-8")
+    for cmd in ("git commit -C HEAD -- gen.txt", "git commit --reuse-message HEAD -- gen.txt"):
+        assert hook.pathspec_commit_discards(_bash(cmd, cwd=str(repo)), repo) == ["gen.txt"], cmd
+
+
+def test_a_pathspec_typed_in_a_subdirectory_is_resolved_by_git(hook, tmp_path: Path) -> None:
+    """`gen.txt` typed in `sub/` names `sub/gen.txt` (review F2017)."""
+    import subprocess
+
+    repo = _scratch_repo(tmp_path)
+    (repo / "sub").mkdir()
+    (repo / "sub" / "gen.txt").write_text("generated\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "sub"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "sub"], check=True)
+    _rm_cached(repo, "sub/gen.txt")
+    for cmd, cwd in (
+        ("git commit -m x -- gen.txt", repo / "sub"),
+        ("git -C sub commit -m x -- gen.txt", repo),
+        ("cd sub && git commit -m x -- gen.txt", repo),
+        ("git commit -m x -- sub", repo),
+    ):
+        assert hook.pathspec_commit_discards(_bash(cmd, cwd=str(cwd)), repo) == ["sub/gen.txt"], cmd
+    # The ROOT's gen.txt is not that file.
+    assert hook.pathspec_commit_discards(_bash("git commit -m x -- gen.txt", cwd=str(repo)), repo) == []
+
+
+def test_a_deletion_staged_earlier_in_the_same_command_is_caught(hook, tmp_path: Path) -> None:
+    """The index is read before the line runs: `rm --cached x && commit -- x` (F2016)."""
+    repo = _scratch_repo(tmp_path)
+    (repo / "gen.txt").write_text("modified\n", encoding="utf-8")
+    for cmd in (
+        "git rm --cached gen.txt && git commit -m x -- gen.txt",
+        "git rm --cached -q gen.txt; git commit -m x -- .",
+        "git update-index --force-remove gen.txt && git commit -m x -- gen.txt",
+    ):
+        assert hook.pathspec_commit_discards(_bash(cmd, cwd=str(repo)), repo) == ["gen.txt"], cmd
+    for cmd in (
+        "git rm gen.txt && git commit -m x -- gen.txt",  # deleted from disk too: fine
+        "git rm --cached gen.txt && git commit -m x -- other.txt",  # not in the pathspec
+        "git commit -m x -- gen.txt && git rm --cached gen.txt",  # after the commit
+    ):
+        assert hook.pathspec_commit_discards(_bash(cmd, cwd=str(repo)), repo) == [], cmd
+
+
+def test_magic_pathspecs_are_matched_by_git(hook, tmp_path: Path) -> None:
+    """`:(top)` / `:(literal)` name gen.txt to git, staged before or in the line (F2021)."""
+    repo = _scratch_repo(tmp_path)
+    (repo / "gen.txt").write_text("modified\n", encoding="utf-8")
+    for spec in ("':(top)gen.txt'", "':(literal)gen.txt'"):
+        cmd = f"git rm --cached gen.txt && git commit -m x -- {spec}"
+        assert hook.pathspec_commit_discards(_bash(cmd, cwd=str(repo)), repo) == ["gen.txt"], cmd
+    _rm_cached(repo, "gen.txt")
+    payload = _bash("git commit -m x -- ':(top)gen.txt'", cwd=str(repo))
+    assert hook.pathspec_commit_discards(payload, repo) == ["gen.txt"]
+
+
+def test_quoted_and_dash_operands_of_an_earlier_rm_cached(hook, tmp_path: Path) -> None:
+    """`"gen file.txt"` is one operand (F2018); `-- -gen` is an operand (F2023)."""
+    import subprocess
+
+    repo = _scratch_repo(tmp_path)
+    for name in ("gen file.txt", "-gen"):
+        (repo / name).write_text("generated\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "--", "gen file.txt", "-gen"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "more"], check=True)
+    for cmd, want in (
+        ('git rm --cached "gen file.txt" && git commit -m x -- "gen file.txt"', ["gen file.txt"]),
+        ("git rm --cached -- -gen && git commit -m x -- -gen", ["-gen"]),
+    ):
+        assert hook.pathspec_commit_discards(_bash(cmd, cwd=str(repo)), repo) == want, cmd
+
+
+def test_a_dangling_symlink_still_on_disk_is_reported(hook, tmp_path: Path) -> None:
+    """exists() follows a symlink; git commits the link itself (F2022)."""
+    import os
+    import subprocess
+
+    repo = _scratch_repo(tmp_path)
+    try:
+        os.symlink("missing-target", repo / "link")
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable here")
+    subprocess.run(["git", "-C", str(repo), "config", "core.symlinks", "true"], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "link"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "link"], check=True)
+    _rm_cached(repo, "link")
+    assert not (repo / "link").exists() and (repo / "link").is_symlink()
+    payload = _bash("git commit -m x -- link", cwd=str(repo))
+    assert hook.pathspec_commit_discards(payload, repo) == ["link"]
 
 
 def test_the_full_hook_returns_2_for_the_footgun(hook, tmp_path: Path, monkeypatch) -> None:
@@ -460,6 +595,25 @@ def test_an_exempt_call_by_the_holder_refreshes_the_lock(hook, tmp_path: Path, m
     refreshed = hook.read_lock(repo)
     assert refreshed["session_id"] == "s-holder"
     assert datetime.fromisoformat(refreshed["updated_at"]) > old
+
+
+def test_a_read_tool_call_by_the_holder_refreshes_the_lock(hook, tmp_path: Path, monkeypatch) -> None:
+    """The wiring now routes EVERY tool here (matcher ``*``): a holder spending the TTL in
+    Read/Grep must keep its claim, not lose the main checkout to another session."""
+    repo = _scratch_repo(tmp_path)
+    old = datetime.now(timezone.utc) - timedelta(minutes=hook.TTL_MINUTES - 5)
+    hook.lock_path(repo).parent.mkdir(parents=True, exist_ok=True)
+    hook.lock_path(repo).write_text(
+        __import__("json").dumps(_lock("s-holder", old)), encoding="utf-8"
+    )
+    payload = {
+        "session_id": "s-holder",
+        "tool_name": "Read",
+        "tool_input": {"file_path": str(repo / "f.txt")},
+        "cwd": str(repo),
+    }
+    assert _run_main(hook, monkeypatch, repo, payload) == 0
+    assert datetime.fromisoformat(hook.read_lock(repo)["updated_at"]) > old
 
 
 def test_an_exempt_call_by_a_stranger_never_claims_or_touches(hook, tmp_path: Path, monkeypatch) -> None:
@@ -522,6 +676,27 @@ def test_repo_root_from_a_linked_worktree_is_the_main_tree(tmp_path: Path) -> No
     repo, wt = _real_repo_with_worktree(tmp_path)
     assert _hook_loaded_from(wt).repo_root().resolve() == repo.resolve()
     assert _hook_loaded_from(repo).repo_root().resolve() == repo.resolve()
+
+
+def test_a_relative_gitdir_resolves_against_the_worktree_not_the_cwd(tmp_path: Path, monkeypatch) -> None:
+    """`gitdir: ../../../.git/worktrees/x` is relative to the `.git` FILE (F2096)."""
+    repo = tmp_path / "repo"
+    (repo / ".git" / "worktrees" / "x").mkdir(parents=True)
+    wt = repo / ".dev" / "worktrees" / "x"
+    wt.mkdir(parents=True)
+    (wt / ".git").write_text("gitdir: ../../../.git/worktrees/x\n", encoding="utf-8")
+    elsewhere = tmp_path / "elsewhere" / "deep" / "down"
+    elsewhere.mkdir(parents=True)
+    monkeypatch.chdir(elsewhere)
+    assert _hook_loaded_from(wt).repo_root() == repo.resolve()
+    spec = importlib.util.spec_from_file_location(
+        "session_start_relative_gitdir", _REPO_ROOT / "scripts" / "agent-hooks" / "session_start.py"
+    )
+    briefing = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(briefing)
+    (wt / "scripts" / "agent-hooks" / "session_start.py").write_bytes(Path(spec.origin).read_bytes())
+    briefing.__file__ = str(wt / "scripts" / "agent-hooks" / "session_start.py")
+    assert briefing.repo_root() == repo.resolve()
 
 
 def test_from_a_worktree_session_a_sibling_worktree_add_in_the_main_tree_is_not_a_sibling(tmp_path: Path) -> None:
@@ -604,6 +779,38 @@ def test_powershell_set_location_into_a_worktree_stays_exempt(hook, root: Path) 
     assert hook.classify_tool(payload, root) == "exempt"
 
 
+def test_powershell_location_verbs_are_not_bash_hops(hook, root: Path) -> None:
+    """Git Bash fails `Set-Location`/`chdir` and runs the git verb where it was (F2254)."""
+    wt = root / ".dev" / "worktrees" / "slug"
+    wt.mkdir(parents=True)
+    for verb in ("Set-Location", "Push-Location", "chdir", "CD"):
+        cmd = f"{verb} '{wt}'; git checkout main"
+        assert hook.classify_tool(_bash(cmd, cwd=str(root)), root) == "enforce", verb
+        payload = {"tool_name": "PowerShell", "tool_input": {"command": cmd}, "cwd": str(root)}
+        assert hook.classify_tool(payload, root) == "exempt", verb
+    assert hook.classify_tool(_bash(f"pushd '{wt}'; git checkout main", cwd=str(root)), root) == "exempt"
+
+
+def test_a_cd_in_a_pipeline_or_background_does_not_move_the_verb(hook, root: Path) -> None:
+    """`cd x | git ...` / `cd x & git ...` run the cd in a subshell (review F0143)."""
+    wt = root / ".dev" / "worktrees" / "slug"
+    wt.mkdir(parents=True)
+    for cmd in (
+        "cd .dev/worktrees/slug | git checkout main",
+        "git status | cd .dev/worktrees/slug && git checkout main",
+        "cd .dev/worktrees/slug & git checkout main",
+        f"cd '{wt}' | git checkout main",
+        "false || cd .dev/worktrees/slug && git checkout main",
+    ):
+        assert hook.classify_tool(_bash(cmd, cwd=str(root)), root) == "enforce", cmd
+    for cmd in (
+        "cd .dev/worktrees/slug && git checkout main",
+        "cd .dev/worktrees/slug; git checkout main",
+        "cd .dev/worktrees/slug\ngit checkout main",
+    ):
+        assert hook.classify_tool(_bash(cmd, cwd=str(root)), root) == "exempt", cmd
+
+
 # -- a `cd` whose target cannot be resolved ------------------------------------
 # `cd "$ROOT"`, `cd $env:ROOT`, `cd -` leave the shell somewhere the hook cannot know,
 # yet the verb was judged by the directory it LEFT — so from inside a worktree,
@@ -646,6 +853,25 @@ def test_cd_to_a_variable_naming_an_absolute_worktree_is_exempt(hook, root: Path
     assert hook.classify_tool(_bash(cmd, cwd=str(root)), root) == "exempt"
 
 
+def test_worktree_evidence_is_bound_to_the_variable_actually_used(hook, root: Path) -> None:
+    """An unused `WT=<wt>` next to `cd "$ROOT"` proves nothing about $ROOT (review F2268)."""
+    wt = _wt(root)
+    for cmd in (
+        f'WT="{wt}"; ROOT="{root}"; cd "$ROOT" && git checkout main',
+        f'WT="{wt}"; git -C "$ROOT" checkout main',
+        f'$wt = "{wt}"; cd $env:ROOT; git checkout main',
+        f'WT="{wt}"; cd "$WT/.." && git checkout main',
+        f'WT="{wt}"; WT="{root}"; cd "$WT" && git checkout main',  # the LAST assignment counts
+    ):
+        assert hook.classify_tool(_bash(cmd, cwd=str(root)), root) == "enforce", cmd
+    for cmd in (
+        f'WT="{wt}"; cd "$WT" && git checkout main',
+        f'WT="{wt}"; cd "${{WT}}" && git -C core checkout main',
+        f'$env:WT = "{wt}"; cd $env:WT; git checkout main',
+    ):
+        assert hook.classify_tool(_bash(cmd, cwd=str(root)), root) == "exempt", cmd
+
+
 def test_an_absolute_cd_after_an_unknown_one_makes_the_location_known(hook, root: Path) -> None:
     wt = _wt(root)
     cmd = f'cd "$X" && cd "{wt}" && git rebase origin/main'
@@ -668,6 +894,26 @@ def test_cd_tilde_is_expanded_not_treated_as_unknown(hook, root: Path, monkeypat
     for var in ("HOME", "USERPROFILE"):
         monkeypatch.setenv(var, str(wt))
     assert hook.classify_tool(_bash("cd ~ && git rebase origin/main", cwd=str(root)), root) == "exempt"
+
+
+def test_cd_tilde_after_the_command_reassigns_home_is_unknown(hook, root: Path, tmp_path_factory, monkeypatch) -> None:
+    """`HOME="<root>"; cd ~` goes where the COMMAND put HOME, not the hook's (F2269)."""
+    elsewhere = tmp_path_factory.mktemp("hook-home")
+    for var in ("HOME", "USERPROFILE"):
+        monkeypatch.setenv(var, str(elsewhere))  # the hook's home is outside the repo
+    for cmd in (
+        f'HOME="{root}"; cd ~ && git checkout main',
+        f"export HOME={root} && cd ~/sub && git checkout main",
+    ):
+        assert hook.classify_tool(_bash(cmd, cwd=str(root)), root) == "enforce", cmd
+    payload = {
+        "tool_name": "PowerShell",
+        "tool_input": {"command": f"$env:USERPROFILE = '{root}'; cd ~; git checkout main"},
+        "cwd": str(root),
+    }
+    assert hook.classify_tool(payload, root) == "enforce"
+    # Unchanged HOME: `~` still expands to the hook's home, outside the repo.
+    assert hook.classify_tool(_bash("cd ~ && git checkout main", cwd=str(root)), root) == "exempt"
 
 
 def test_a_read_only_command_after_an_unknown_cd_stays_exempt(hook, root: Path) -> None:
@@ -736,12 +982,49 @@ def test_a_detached_head_is_never_checked(hook, root: Path) -> None:
 
 def test_a_switch_then_commit_in_one_command_is_not_a_move(hook, root: Path) -> None:
     _gitdir(root, head="main", branches=("main",))
+    msg, expected = hook.commit_branch_check(
+        "git checkout -b feat/x && git add -- a.py && git commit -m x", root, "old"
+    )
+    assert msg is None and expected == "feat/x"
+    # PowerShell-style separator: fine while the state before the switch is fine too.
+    for before in (None, "main"):
+        msg, expected = hook.commit_branch_check("git switch -c feat/x; git commit -m x", root, before)
+        assert msg is None and expected == "feat/x", before
+
+
+def test_a_checkout_in_a_comment_or_a_string_is_not_a_move(hook, root: Path) -> None:
+    """Only a git the shell RUNS moves HEAD: not a comment, not echoed text (F2310)."""
+    _gitdir(root, head="theirs", branches=("main", "mine", "theirs"))
     for cmd in (
-        "git checkout -b feat/x && git add -- a.py && git commit -m x",
-        "git switch -c feat/x; git commit -m x",  # PowerShell-style separator
+        "# git checkout theirs\ngit commit -m work",
+        'echo "git checkout theirs" && git commit -m work',
+        "echo 'git switch theirs' && git commit -m work",
+        "true # git checkout theirs && git commit -m x\ngit commit -m work",
     ):
-        msg, expected = hook.commit_branch_check(cmd, root, "old")
-        assert msg is None and expected == "feat/x", cmd
+        msg, expected = hook.commit_branch_check(cmd, root, "mine")
+        assert msg and "'theirs'" in msg and "'mine'" in msg, cmd
+        assert expected == "mine", cmd
+    # A hash glued to a word is no comment: the real checkout still counts.
+    assert hook.commit_branch_check("git checkout theirs && git commit -m a#b", root, "mine") == (
+        None, "theirs"
+    )
+
+
+def test_a_switch_that_may_have_failed_does_not_excuse_a_moved_head(hook, root: Path) -> None:
+    """After `;`/`||`/a newline the commit runs even when the switch failed (F2309)."""
+    _gitdir(root, head="theirs", branches=("main", "mine", "theirs", "feat/x"))
+    for cmd in (
+        "git switch -c feat/x; git commit -m w",
+        "git switch -c feat/x || git commit -m w",
+        "git switch -c feat/x\ngit commit -m w",
+        "git switch -c feat/x && git status; git commit -m w",
+    ):
+        msg, _ = hook.commit_branch_check(cmd, root, "mine")
+        assert msg and "'theirs'" in msg and "'mine'" in msg, cmd
+    # Only `&&` makes the commit depend on the switch having run.
+    assert hook.commit_branch_check("git switch -c feat/y && git commit -m w", root, "mine") == (
+        None, "feat/y"
+    )
 
 
 def test_switch_forms_that_are_recorded(hook, root: Path) -> None:
@@ -788,10 +1071,33 @@ def test_commands_that_do_not_move_head_keep_the_record(hook, root: Path) -> Non
         assert hook.commit_branch_check(cmd, root, "mine") == (None, "mine"), cmd
 
 
-def test_a_commit_in_another_checkout_via_dash_c_is_not_checked(hook, root: Path) -> None:
+def test_a_commit_in_another_checkout_via_dash_c_is_not_checked(
+    hook, root: Path, tmp_path_factory
+) -> None:
+    """A `-C` target outside this checkout is somebody else's HEAD.
+
+    The fixture used to be a Windows-shaped path (`C:/c/.dev/worktrees/y`). On POSIX that
+    string is RELATIVE, so it resolved to `<root>/C:/c/...` — inside the checkout — and the
+    hook correctly blocked: the test was asserting a Windows filesystem fact, not the rule
+    (2026-10-30, outpost).
+    """
     _gitdir(root, head="theirs", branches=("main", "theirs"))
-    cmd = 'git -C "C:/c/.dev/worktrees/y" commit -m x'
+    other = tmp_path_factory.mktemp("other-checkout")
+    cmd = f'git -C "{other}" commit -m x'
     assert hook.commit_branch_check(cmd, root, "mine")[0] is None
+
+
+def test_a_commit_via_dash_c_into_the_main_checkout_is_checked(hook, root: Path, tmp_path_factory) -> None:
+    """`-C <root>` is THIS checkout: skipping every `-C` let the commit land on theirs (F2308)."""
+    _gitdir(root, head="theirs", branches=("main", "mine", "theirs"))
+    for cmd in (f'git -C "{root}" commit -m work', "git -C . commit -m work"):
+        msg, _ = hook.commit_branch_check(cmd, root, "mine", root)
+        assert msg and "'theirs'" in msg, cmd
+    # A worktree, another checkout and an unexpandable variable are still not checked.
+    elsewhere = tmp_path_factory.mktemp("elsewhere")
+    for cmd in (f'git -C "{root / ".dev" / "worktrees" / "y"}" commit -m x',
+                f'git -C "{elsewhere}" commit -m x', "git -C $wt commit -m x"):
+        assert hook.commit_branch_check(cmd, root, "mine", root)[0] is None, cmd
 
 
 # -- the record survives the lock's own refreshes ------------------------------
@@ -947,12 +1253,52 @@ def test_work_already_upstream_as_a_rebased_copy_is_not_lost(hook, tmp_path: Pat
     assert lost == []
 
 
+def test_an_old_unique_commit_under_fifty_upstream_copies_is_still_lost(hook, tmp_path: Path) -> None:
+    """The cherry filter runs on EVERY candidate, not on the newest 50 (review F2940)."""
+    import subprocess
+
+    repo = _scratch_repo(tmp_path)
+    base = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+    def commit(ref: str, when: int, msg: str, name: str, start: str | None) -> str:
+        frm = f"from {start}\n" if start else ""
+        return (f"commit {ref}\ncommitter t <t@t> {when} +0000\ndata {len(msg)}\n{msg}\n{frm}"
+                f"M 100644 inline {name}\ndata 2\n{name[0]}\n\n")
+
+    stream = commit("refs/heads/work", 1000, "the unique one", "u.txt", base)
+    stream += "".join(commit("refs/heads/work", 1000 + i, f"c{i}", f"f{i}.txt", None) for i in range(1, 51))
+    stream += commit("refs/heads/target", 2000, "c1", "f1.txt", base)
+    stream += "".join(commit("refs/heads/target", 2000 + i, f"c{i}", f"f{i}.txt", None) for i in range(2, 51))
+    subprocess.run(["git", "-C", str(repo), "fast-import", "--quiet"], input=stream.encode(), check=True)
+    lost = hook._orphaned(repo, "work", "target", "work")
+    assert [line.split(" ", 1)[1] for line in lost] == ["the unique one"]
+
+
 def test_resets_that_keep_the_content_are_not_judged(hook, tmp_path: Path) -> None:
     repo = _repo_with_remote(tmp_path)
     _commit(repo, "a.txt", "work")
     for cmd in ("git reset --soft origin/main", "git reset origin/main", "git reset --hard",
                 "git reset HEAD -- a.txt", "git status"):
         assert hook.unpushed_commits_dropped(_bash(cmd, cwd=str(repo)), repo)[0] == [], cmd
+
+
+def test_every_reset_and_branch_move_in_a_chain_is_judged(hook, tmp_path: Path) -> None:
+    """A harmless first reset or move no longer hides a destructive one after it (F2937)."""
+    import subprocess
+
+    repo = _repo_with_remote(tmp_path)
+    subprocess.run(["git", "-C", str(repo), "branch", "-q", "feat/y"], check=True)
+    _commit(repo, "a.txt", "unpushed work")
+    for cmd in (
+        "git reset --soft HEAD && git reset --hard origin/main",
+        "git reset HEAD -- a.txt; git reset --hard origin/main",
+        "git branch -f feat/y origin/main && git branch -f main origin/main",
+    ):
+        lost, branch = hook.unpushed_commits_dropped(_bash(cmd, cwd=str(repo)), repo)
+        assert branch == "main", cmd
+        assert [line.split(" ", 1)[1] for line in lost] == ["unpushed work"], cmd
 
 
 def test_force_moving_a_branch_off_unpushed_commits_is_blocked(hook, tmp_path: Path) -> None:
@@ -973,6 +1319,29 @@ def test_force_moving_a_branch_off_unpushed_commits_is_blocked(hook, tmp_path: P
     ) == ([], "")
 
 
+def test_force_branch_moves_are_parsed_with_options_anywhere(hook, tmp_path: Path) -> None:
+    """`branch -q -f x <start>` and `branch -f -- x <start>` move x too (review F2939)."""
+    import subprocess
+
+    repo = _repo_with_remote(tmp_path)
+    subprocess.run(["git", "-C", str(repo), "checkout", "-qb", "feat/x"], check=True)
+    _commit(repo, "a.txt", "feature work")
+    subprocess.run(["git", "-C", str(repo), "checkout", "-q", "main"], check=True)
+    for cmd in (
+        "git branch -q -f feat/x origin/main",
+        "git branch -f -- feat/x origin/main",
+        "git branch --force -q feat/x origin/main",
+        "git checkout -q -B feat/x origin/main",
+        "git switch --force-create feat/x origin/main",
+        "git status && git branch -f feat/x origin/main",
+    ):
+        lost, branch = hook.unpushed_commits_dropped(_bash(cmd, cwd=str(repo)), repo)
+        assert branch == "feat/x", cmd
+        assert [line.split(" ", 1)[1] for line in lost] == ["feature work"], cmd
+    for cmd in ("git branch -f -d feat/x", "git branch --list -f", "git branch -f"):
+        assert hook.unpushed_commits_dropped(_bash(cmd, cwd=str(repo)), repo) == ([], ""), cmd
+
+
 def test_the_reset_guard_follows_git_c_and_fails_open_on_a_variable(hook, tmp_path: Path) -> None:
     repo = _repo_with_remote(tmp_path)
     _commit(repo, "a.txt", "work")
@@ -984,6 +1353,26 @@ def test_the_reset_guard_follows_git_c_and_fails_open_on_a_variable(hook, tmp_pa
     assert hook.unpushed_commits_dropped(
         _bash("git -C $wt reset --hard origin/main", cwd=elsewhere), repo
     ) == ([], "")
+
+
+def test_the_reset_guard_reads_only_the_directory_state_before_the_reset(hook, tmp_path: Path) -> None:
+    """A trailing `cd` or an earlier unrelated `git -C` does not move the reset (F2938)."""
+    repo = _repo_with_remote(tmp_path)
+    _commit(repo, "a.txt", "work")
+    safe = tmp_path / "safe"
+    safe.mkdir()
+    for cmd in (
+        f'git reset --hard origin/main && cd "{safe}"',
+        f'git -C "{safe}" status && git reset --hard origin/main',
+        f'cd "{safe}" | git reset --hard origin/main',
+    ):
+        lost, _ = hook.unpushed_commits_dropped(_bash(cmd, cwd=str(repo)), repo)
+        assert len(lost) == 1, cmd
+    # A cd BEFORE the reset still moves it: from elsewhere into the repo is judged there.
+    lost, _ = hook.unpushed_commits_dropped(
+        _bash(f'cd "{repo}" && git reset --hard origin/main', cwd=str(safe)), repo
+    )
+    assert len(lost) == 1
 
 
 def test_main_blocks_the_drop_for_the_lock_holder_too(hook, tmp_path: Path, monkeypatch) -> None:
@@ -1040,3 +1429,11 @@ def test_a_real_verb_still_counts_with_any_message(hook, root: Path) -> None:
         'git worktree add .dev/worktrees/x -b feat/x && git reset --hard origin/main',
     ):
         assert hook.classify_tool(_bash(command), root) == "enforce", command
+
+
+def test_a_quoted_subcommand_is_still_the_verb(hook, root: Path) -> None:
+    """The shell strips the quotes: `git "reset" --hard` runs reset (review F2957)."""
+    for command in ('git "reset" --hard', "git 'commit' -m x", 'git -C "d" "checkout" main'):
+        assert hook.classify_tool(_bash(command), root) == "enforce", command
+    for command in ('git log --grep "reset"', "git 'status'", 'git show "HEAD"'):
+        assert hook.classify_tool(_bash(command), root) == "exempt", command

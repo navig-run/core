@@ -244,3 +244,61 @@ def test_invocation_dir_wins_when_it_already_holds_the_file(tmp_path, monkeypatc
     (tmp_path / "metrics.csv").write_text(HEADER, encoding="utf-8")
     monkeypatch.setenv("NAVIG_INVOCATION_CWD", str(tmp_path))
     assert bm.metrics_path() == tmp_path / "metrics.csv"
+
+
+# ── concurrent writers ────────────────────────────────────────────────────────
+
+
+def test_concurrent_upserts_to_one_day_both_persist(metrics, monkeypatch):
+    """Two writers reading the same snapshot must not drop each other's cell.
+
+    The row count is equal on both sides, so the shrink guard cannot catch it;
+    only serialising the read-modify-write does. Without the lock the slow
+    writer's ``os.replace`` lands last and erases the fast writer's mood.
+    """
+    import threading
+    import time
+
+    real_read = bm.read_metrics
+    calls = {"n": 0}
+    first_read_done = threading.Event()
+
+    def slow_first_read(path):
+        result = real_read(path)
+        calls["n"] += 1
+        if calls["n"] == 1:
+            first_read_done.set()
+            time.sleep(0.4)
+        return result
+
+    monkeypatch.setattr(bm, "read_metrics", slow_first_read)
+
+    slow = threading.Thread(target=bm.upsert, args=(metrics, "2026-04-12", {"weight_kg": "87.4"}))
+    slow.start()
+    assert first_read_done.wait(5)
+    bm.upsert(metrics, "2026-04-12", {"mood_1_10": "9"})
+    slow.join(15)
+
+    _, rows = real_read(metrics)
+    assert len(rows) == 1
+    assert rows[0]["weight_kg"] == "87.4"
+    assert rows[0]["mood_1_10"] == "9"
+
+
+def test_duplicate_legacy_dates_count_once_in_the_averages(tmp_path):
+    """The old append-based writer could leave two rows for one date; the average must
+    weight that day once, like ``logged_ratio`` does — and the row ``upsert`` edits
+    (the first) is the one read back."""
+    path = tmp_path / "metrics.csv"
+    path.write_text(
+        HEADER
+        + "2026-09-04,90,,,,,,,\n"
+        + "2026-09-05,88,,,,,,,\n"
+        + "2026-09-05,80,,,,,,,\n",
+        encoding="utf-8",
+    )
+    assert bm.series(path) == [(date(2026, 9, 4), 90.0), (date(2026, 9, 5), 88.0)]
+    assert bm.moving_average(path, days=7, ending=date(2026, 9, 5)) == 89.0
+
+    bm.upsert(path, "2026-09-05", {"weight_kg": "87"})
+    assert bm.latest(path) == (date(2026, 9, 5), 87.0)

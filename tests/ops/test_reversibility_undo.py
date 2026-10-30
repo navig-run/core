@@ -86,6 +86,8 @@ class _StubConfigManager:
         self.hosts = set(hosts)
         self.saves = 0
         self.active_host_calls: list[str] = []
+        # `navig host use`'s cache pointer — absent here, so the legacy key is used.
+        self.active_host_file = Path(__file__).with_name("__no_active_host_cache__.txt")
 
     @property
     def global_config(self) -> dict:

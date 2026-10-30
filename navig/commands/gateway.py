@@ -223,6 +223,7 @@ def _free_port(
     *,
     holders_reader=None,
     config_dir_reader=None,
+    cmdline_reader=None,
     killer=None,
 ) -> list[int]:
     """Free *port* by killing ONLY our own stale gateway. Returns the PIDs killed.
@@ -256,6 +257,7 @@ def _free_port(
         return []
 
     read_dir = config_dir_reader or config_dir_of
+    read_cmdline = cmdline_reader or _cmdline_of
     kill = killer or _kill_pid
     try:
         ours = paths.config_dir().resolve()
@@ -264,6 +266,15 @@ def _free_port(
 
     killed: list[int] = []
     for pid in holders:
+        # Identity FIRST: config_dir_of() reports OUR default config dir for any process
+        # without NAVIG_CONFIG_DIR, so a matching dir alone does not prove a NAVIG process.
+        if not _is_navig_service_cmdline(read_cmdline(pid)):
+            _logger.warning(
+                "Port {} is held by PID {}, which is not a NAVIG gateway/daemon — NOT "
+                "killing it. The gateway will bind to a free port instead.",
+                port, pid,
+            )
+            continue
         theirs = read_dir(pid)
         if theirs is None:
             _logger.warning(
@@ -284,6 +295,26 @@ def _free_port(
         _logger.info("Freed port {} — superseded our own stale gateway (PID {})", port, pid)
 
     return killed
+
+
+def _cmdline_of(pid: int) -> str | None:
+    """The command line of *pid*, or None when it cannot be read."""
+    try:
+        import psutil  # noqa: PLC0415
+
+        return " ".join(psutil.Process(pid).cmdline() or []) or None
+    except Exception:  # noqa: BLE001 — NoSuchProcess / AccessDenied / no psutil
+        return None
+
+
+def _is_navig_service_cmdline(cmdline: str | None) -> bool:
+    """Is *cmdline* a NAVIG gateway or daemon process (incl. its telegram worker)?"""
+    if not cmdline:
+        return False
+    from navig.daemon.single_instance import DAEMON_PATTERNS, GATEWAY_PATTERNS  # noqa: PLC0415
+
+    low = " ".join(cmdline.lower().replace(".exe", "").split())
+    return any(p in low for p in GATEWAY_PATTERNS + DAEMON_PATTERNS)
 
 
 def _kill_pid(pid: int) -> None:
@@ -1058,12 +1089,11 @@ def gateway_session(
         return
 
     if action == "show" and session_key:
-        # GET /sessions/{key} has NEVER existed — only the collection GET /sessions and
-        # the memory routes do. The route that serves a single session's contents is
-        # GET /memory/history/{session_key}.
+        # Same store `list` reads (the gateway SessionManager). The /memory/* routes
+        # serve the unrelated ConversationStore, where a listed session is empty.
         session = _gw_api(
             "GET",
-            f"/memory/history/{session_key}",
+            f"/sessions/{session_key}",
             action=f"show session {session_key}",
             not_found=f"Session not found: {session_key}",
         )
@@ -1072,11 +1102,9 @@ def gateway_session(
         return
 
     if action == "clear" and session_key:
-        # Same dead path: DELETE /sessions/{key} does not exist.
-        # DELETE /memory/sessions/{session_key} is the real one.
         _gw_api(
             "DELETE",
-            f"/memory/sessions/{session_key}",
+            f"/sessions/{session_key}",
             action=f"clear session {session_key}",
             expect_payload=False,
             not_found=f"Session not found: {session_key}",

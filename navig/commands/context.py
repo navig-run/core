@@ -281,6 +281,26 @@ def _git_toplevel(path: Path) -> Path | None:
     return None
 
 
+def _git_check_ignored(cwd: Path, rel: str) -> bool | None:
+    """True/False from ``git check-ignore`` for *rel* under *cwd*; None if git can't say."""
+    import subprocess
+
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(cwd), "check-ignore", "-q", rel],
+            capture_output=True,
+            text=True,
+            timeout=5, encoding="utf-8", errors="replace",
+        )
+    except Exception:  # noqa: BLE001 — git missing/timeout → unknown
+        return None
+    if r.returncode == 0:
+        return True
+    if r.returncode == 1:
+        return False
+    return None
+
+
 def _ensure_navig_gitignored(cwd: Path) -> Path | None:
     """Add ``.navig/`` to the repo's ROOT ``.gitignore`` when *cwd* is inside a git work
     tree and it isn't already ignored. Returns the ``.gitignore`` path written, or None
@@ -293,7 +313,13 @@ def _ensure_navig_gitignored(cwd: Path) -> Path | None:
     if repo_root is None:
         return None
     gitignore = repo_root / ".gitignore"
-    if gitignore.exists():
+    # Ask git for the EFFECTIVE rule at *cwd*: a substring match on ".navig" also
+    # accepted an anchored `/.navig/` (root only), a comment or a negation, which left
+    # `svc/api/.navig/` trackable. Only when git cannot answer fall back to the text.
+    ignored = _git_check_ignored(cwd, ".navig/")
+    if ignored is True:
+        return None
+    if ignored is None and gitignore.exists():
         try:
             content = gitignore.read_text(encoding="utf-8")
         except OSError:

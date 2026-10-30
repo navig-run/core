@@ -239,8 +239,10 @@ class UpdateEngine:
         self, nr: NodeResult, on_progress: ProgressCallback | None
     ) -> None:
         """Restart the local daemon so the new code is live. Never raises: a reload
-        problem must not fail an update whose bits are already on disk — it's recorded
-        as a soft step note (e.g. an elevated daemon that needs a manual --admin restart)."""
+        problem must not fail an install whose bits are already on disk (``ok`` stays
+        True, nothing is rolled back) — but it marks the node ``restart_pending`` (e.g. an
+        elevated daemon that needs a manual --admin restart), so the update is not
+        reported as live."""
         self._emit(on_progress, nr.node_id, "reload", "running", "")
         try:
             from navig.commands.update import _step_reload_daemon
@@ -252,6 +254,8 @@ class UpdateEngine:
             res = _step_reload_daemon(interactive)
         except Exception as exc:  # noqa: BLE001
             nr.steps.append(f"reload:fail:{str(exc)[:80]}")
+            nr.restart_pending = True
+            nr.restart_note = f"daemon reload failed: {str(exc)[:80]} — run:  navig service restart"
             self._emit(on_progress, nr.node_id, "reload", "fail", str(exc)[:80])
             return
         if res.ok:
@@ -259,6 +263,8 @@ class UpdateEngine:
             self._emit(on_progress, nr.node_id, "reload", "ok", res.note)
         else:
             nr.steps.append(f"reload:warn:{res.note[:80]}")
+            nr.restart_pending = True
+            nr.restart_note = res.note
             self._emit(on_progress, nr.node_id, "reload", "skip", res.note)
 
     # ------------------------------------------------------------------

@@ -421,3 +421,461 @@ def test_undone_entries_are_not_reverted_twice(tmp_path, monkeypatch):
     import asyncio
     res = asyncio.run(tgc.undo_run("r", confirm=False))
     assert [r["user_id"] for r in res["todo"]] == [2]
+
+
+# ── a flood on the post-wait retry still aborts the run ──────────────────────
+
+
+class _FakeClient:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def get_me(self):
+        return _fake("User", id=999)
+
+    async def get_input_entity(self, uid):
+        return _fake("User", id=uid, access_hash=1)
+
+    async def get_entity(self, handle):
+        uid = int(handle.lstrip("u"))
+        return _fake("User", id=uid, first_name=f"F{uid}", last_name="", username=handle,
+                    bot=False, deleted=False)
+
+
+def _flood_then(second: Exception):
+    """A write stub: the first call floods briefly, the retry raises *second*."""
+    from telethon.errors import FloodWaitError
+
+    calls: list[int] = []
+
+    async def write(client, user, first, last, note=None):
+        calls.append(user.id)
+        if len(calls) == 1:
+            raise FloodWaitError(request=None, capture=5)
+        if len(calls) == 2:
+            raise second
+
+    return write, calls
+
+
+def _second_errors():
+    from telethon.errors import FloodWaitError, PeerFloodError
+
+    return [PeerFloodError(request=None), FloodWaitError(request=None, capture=5)]
+
+
+@pytest.fixture
+def _offline(monkeypatch):
+    async def no_sleep(_s):
+        return None
+
+    async def none(*_a, **_k):
+        return []
+
+    monkeypatch.setattr(tgc, "UserClient", _FakeClient)
+    monkeypatch.setattr(tgc.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(tgc, "_contacts", none)
+    monkeypatch.setattr(tgc, "_unpersisted", none)
+    monkeypatch.setattr(tgc, "_append_journal", lambda rec: None)
+
+
+@pytest.mark.parametrize("second", _second_errors(), ids=["peer-flood", "flood-again"])
+def test_tag_members_aborts_when_the_retry_floods(_offline, monkeypatch, second):
+    import asyncio
+
+    async def members(client, chat, **_k):
+        return [_member(1), _member(2), _member(3)]
+
+    write, calls = _flood_then(second)
+    monkeypatch.setattr(tgc, "_members", members)
+    monkeypatch.setattr(tgc, "_write_contact", write)
+    out = asyncio.run(tgc.tag_members("grp", mark="surname", confirm=True, delay=0))
+    assert out["aborted"], "a flood on the retry must stop the run"
+    assert calls == [1, 1], "no further member is written after the retry floods"
+    assert out["failed"] == [] and out["written"] == []
+
+
+@pytest.mark.parametrize("second", _second_errors(), ids=["peer-flood", "flood-again"])
+def test_tag_handles_aborts_when_the_retry_floods(_offline, monkeypatch, second):
+    import asyncio
+
+    write, calls = _flood_then(second)
+    monkeypatch.setattr(tgc, "_write_contact", write)
+    entries = [{"handle": "u1"}, {"handle": "u2"}, {"handle": "u3"}]
+    out = asyncio.run(tgc.tag_handles(entries, mark="surname", confirm=True, delay=0,
+                                      resolve_delay=0))
+    assert out["aborted"]
+    assert calls == [1, 1]
+    assert out["failed"] == [] and out["written"] == []
+
+
+# ── a journal that cannot be written stops the run ───────────────────────────
+
+
+def _journal_fails(monkeypatch):
+    def boom(rec):
+        raise OSError(30, "Read-only file system")
+
+    monkeypatch.setattr(tgc, "_append_journal", boom)
+    calls: list[int] = []
+
+    async def write(client, user, first, last, note=None):
+        calls.append(user.id)
+
+    monkeypatch.setattr(tgc, "_write_contact", write)
+    return calls
+
+
+def test_tag_members_stops_and_names_the_write_it_could_not_journal(_offline, monkeypatch):
+    """The Telegram write already happened: raising past it left the contact with no
+    undo record and no report; carrying on wrote more changes nothing could reverse."""
+    import asyncio
+
+    async def members(client, chat, **_k):
+        return [_member(1), _member(2), _member(3)]
+
+    monkeypatch.setattr(tgc, "_members", members)
+    calls = _journal_fails(monkeypatch)
+    out = asyncio.run(tgc.tag_members("grp", mark="surname", confirm=True, delay=0))
+    assert calls == [1], "no further contact is written once journaling fails"
+    assert out["aborted"] and out["aborted"].startswith("JOURNAL"), out["aborted"]
+    assert [r["user_id"] for r in out["written"]] == [1]
+
+
+def test_tag_handles_stops_and_names_the_write_it_could_not_journal(_offline, monkeypatch):
+    import asyncio
+
+    calls = _journal_fails(monkeypatch)
+    entries = [{"handle": "u1"}, {"handle": "u2"}]
+    out = asyncio.run(tgc.tag_handles(entries, mark="surname", confirm=True, delay=0,
+                                      resolve_delay=0))
+    assert calls == [1]
+    assert out["aborted"] and "@u1" in out["aborted"], out["aborted"]
+    assert [r["user_id"] for r in out["written"]] == [1]
+
+
+# ── undo resolves people a fresh session has never seen ──────────────────────
+
+
+class _ColdClient(_FakeClient):
+    """A fresh StringSession: no entity is cached, so a bare id cannot resolve."""
+
+    async def get_input_entity(self, uid):
+        raise ValueError(f"Could not find the input entity for {uid}")
+
+    async def __call__(self, request):
+        self.requests.append(request)
+        return None
+
+
+def test_undo_reverts_with_the_journaled_access_hash(tmp_path, monkeypatch):
+    import asyncio
+
+    p = tmp_path / "contact_runs.jsonl"
+    monkeypatch.setattr(tgc, "journal_path", lambda: p)
+    tgc._append_journal({"run_id": "r", "kind": "write", "user_id": 7, "action": "add",
+                         "access_hash": 42})
+    tgc._append_journal({"run_id": "r", "kind": "write", "user_id": 8, "action": "update",
+                         "access_hash": 43, "before_first": "A", "before_last": "B",
+                         "new_note": None})
+    client = _ColdClient()
+    client.requests = []
+    monkeypatch.setattr(tgc, "UserClient", lambda: client)
+    written: list = []
+
+    async def write(c, user, first, last, note=None):
+        written.append((user.user_id, user.access_hash, first, last))
+
+    monkeypatch.setattr(tgc, "_write_contact", write)
+    res = asyncio.run(tgc.undo_run("r", confirm=True))
+    assert res["failed"] == []
+    assert [r["user_id"] for r in res["reverted"]] == [7, 8]
+    (delete,) = client.requests
+    assert [(u.user_id, u.access_hash) for u in delete.id] == [(7, 42)]
+    assert written == [(8, 43, "A", "B")]
+
+
+def test_undo_warms_the_contact_list_for_rows_without_a_hash(tmp_path, monkeypatch):
+    import asyncio
+
+    p = tmp_path / "contact_runs.jsonl"
+    monkeypatch.setattr(tgc, "journal_path", lambda: p)
+    tgc._append_journal({"run_id": "r", "kind": "write", "user_id": 9, "action": "add"})
+    warmed: list = []
+
+    class _Warmable(_ColdClient):
+        async def get_input_entity(self, uid):
+            if not warmed:
+                raise ValueError("not cached")
+            return _fake("User", id=uid, access_hash=1)
+
+    client = _Warmable()
+    client.requests = []
+
+    async def contacts(c):
+        warmed.append(True)
+        return []
+
+    monkeypatch.setattr(tgc, "UserClient", lambda: client)
+    monkeypatch.setattr(tgc, "_contacts", contacts)
+    res = asyncio.run(tgc.undo_run("r", confirm=True))
+    assert res["failed"] == [] and [r["user_id"] for r in res["reverted"]] == [9]
+
+
+@pytest.mark.parametrize("flood", ["long-flood-wait", "peer-flood", "flood-again"])
+def test_undo_stops_on_a_flood_instead_of_firing_the_rest(tmp_path, monkeypatch, flood):
+    """A flood mid-undo used to read as one contact's failure, and the loop fired
+    every remaining request into the known rate-limit window."""
+    import asyncio
+
+    from telethon.errors import FloodWaitError, PeerFloodError
+
+    p = tmp_path / "contact_runs.jsonl"
+    monkeypatch.setattr(tgc, "journal_path", lambda: p)
+    for uid in (1, 2, 3):
+        tgc._append_journal({"run_id": "r", "kind": "write", "user_id": uid,
+                             "action": "update", "access_hash": uid, "new_note": None})
+    client = _ColdClient()
+    client.requests = []
+    monkeypatch.setattr(tgc, "UserClient", lambda: client)
+    slept: list[float] = []
+
+    async def no_sleep(s):
+        slept.append(s)
+
+    monkeypatch.setattr(tgc.asyncio, "sleep", no_sleep)
+    attempted: list[int] = []
+
+    async def write(c, user, first, last, note=None):
+        attempted.append(user.user_id)
+        if user.user_id != 2:
+            return
+        if flood == "long-flood-wait":
+            raise FloodWaitError(request=None, capture=600)
+        if flood == "peer-flood":
+            raise PeerFloodError(request=None)
+        raise FloodWaitError(request=None, capture=5)  # short, but floods again on retry
+
+    monkeypatch.setattr(tgc, "_write_contact", write)
+    res = asyncio.run(tgc.undo_run("r", confirm=True, delay=0.5))
+    assert res["aborted"], "a flood must stop the undo"
+    assert 3 not in attempted, "nothing is sent after the flood"
+    assert [r["user_id"] for r in res["reverted"]] == [1]
+    assert res["failed"] == []
+    assert 0.5 in slept, "requests are spaced by the delay"
+    # The unreached records are still un-undone, so a later undo resumes them.
+    assert [r["user_id"] for r in asyncio.run(tgc.undo_run("r"))["todo"]] == [2, 3]
+
+
+# ── an overwritten note is journaled so undo can bring it back ───────────────
+
+
+def test_tag_handles_journals_the_note_it_overwrites(_offline, monkeypatch):
+    import asyncio
+
+    async def contacts(c):
+        return [{"user_id": 1, "first_name": "Ann", "last_name": "Lee"}]
+
+    async def read_note(c, user):
+        return "met in Lyon"
+
+    async def write(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(tgc, "_contacts", contacts)
+    monkeypatch.setattr(tgc, "_read_note", read_note)
+    monkeypatch.setattr(tgc, "_write_contact", write)
+    out = asyncio.run(tgc.tag_handles([{"handle": "u1"}], mark="note", confirm=True,
+                                      delay=0, resolve_delay=0))
+    (rec,) = out["written"]
+    assert rec["action"] == "update" and rec["before_note"] == "met in Lyon"
+
+
+def _saved_tagged(monkeypatch, note: str):
+    async def contacts(c):
+        return [{"user_id": 1, "first_name": "Ivan", "last_name": "Popov MTP"}]
+
+    async def read_note(c, user):
+        return note
+
+    monkeypatch.setattr(tgc, "_contacts", contacts)
+    monkeypatch.setattr(tgc, "_read_note", read_note)
+
+
+@pytest.mark.parametrize("mark", ["both", "note"])
+def test_tag_handles_adds_the_missing_note_to_a_surname_tagged_contact(_offline, monkeypatch,
+                                                                      mark):
+    """A legacy surname-tagged contact used to be skipped whatever the mark, so in
+    note/both mode it never received the note the run was asked to write."""
+    import asyncio
+
+    _saved_tagged(monkeypatch, "")
+    out = asyncio.run(tgc.tag_handles([{"handle": "u1"}], tag="MTP", mark=mark,
+                                      resolve_delay=0))
+    (row,) = out["todo"]
+    assert row["new_note"] == "MTP"
+    assert (row["new_first"], row["new_last"]) == ("Ivan", "Popov MTP"), "the name stays as saved"
+
+
+def test_tag_handles_skips_a_contact_that_carries_every_marker(_offline, monkeypatch):
+    import asyncio
+
+    _saved_tagged(monkeypatch, "MTP")
+    out = asyncio.run(tgc.tag_handles([{"handle": "u1"}], tag="MTP", mark="both",
+                                      resolve_delay=0))
+    assert out["todo"] == []
+
+
+def test_tag_handles_paces_every_lookup_not_only_the_ones_it_keeps(_offline, monkeypatch):
+    """Dead handles `continue` before a row is appended; the delay used to run only
+    after an append, so consecutive dead lookups went out back-to-back."""
+    import asyncio
+
+    slept: list[float] = []
+
+    async def record_sleep(s):
+        slept.append(s)
+
+    async def dead(self, handle):
+        raise ValueError(f"No user has {handle!r} as username")
+
+    monkeypatch.setattr(tgc.asyncio, "sleep", record_sleep)
+    monkeypatch.setattr(_FakeClient, "get_entity", dead)
+    out = asyncio.run(tgc.tag_handles([{"handle": "u1"}, {"handle": "u2"}, {"handle": "u3"}],
+                                      resolve_delay=1.5))
+    assert len(out["unresolved"]) == 3
+    assert slept == [1.5, 1.5], "one pause between each pair of lookups"
+
+
+# ── a flood on the resolve retry is never an unresolved handle ───────────────
+
+
+def test_tag_handles_aborts_rather_than_marking_a_twice_flooded_handle_dead(_offline,
+                                                                          monkeypatch):
+    import asyncio
+
+    from telethon.errors import FloodWaitError
+
+    async def get_entity(self, handle):
+        raise FloodWaitError(request=None, capture=5)
+
+    monkeypatch.setattr(_FakeClient, "get_entity", get_entity)
+    out = asyncio.run(tgc.tag_handles([{"handle": "u1"}, {"handle": "u2"}], mark="surname",
+                                      confirm=False, resolve_delay=0))
+    assert out["unresolved"] == []
+    assert out["aborted"] and "FLOOD_WAIT" in out["aborted"]
+
+
+# ── note mode never rewrites a surname, even with an explicit override ───────
+
+
+def test_tag_handles_note_mode_ignores_a_surname_override(_offline, monkeypatch):
+    """A `last_name` override used to replace the saved surname in note mode,
+    where the documented promise is that names are left untouched."""
+    import asyncio
+
+    async def contacts(c):
+        return [{"user_id": 1, "first_name": "Ann", "last_name": "Lee"}]
+
+    async def read_note(c, user):
+        return ""
+
+    monkeypatch.setattr(tgc, "_contacts", contacts)
+    monkeypatch.setattr(tgc, "_read_note", read_note)
+    out = asyncio.run(tgc.tag_handles([{"handle": "u1", "last_name": "Lyon"}], tag="MTP",
+                                      mark="note", resolve_delay=0))
+    (row,) = out["todo"]
+    assert (row["new_first"], row["new_last"]) == ("Ann", "Lee")
+    assert row["new_note"] == "MTP"
+
+
+# ── prune --tag finds a cohort marked only in the note ───────────────────────
+
+
+def test_prune_tag_scope_matches_a_note_only_marker(_offline, monkeypatch):
+    """A `--mark note` cohort carries its marker only in the private note; the
+    name-only filter used to plan nothing for it."""
+    import asyncio
+
+    users = [_fake("User", id=1, first_name="Ann", last_name="Lee", username="u1",
+                   status=None),
+             _fake("User", id=2, first_name="Bob", last_name="Ray MTP", username="u2",
+                   status=None),
+             _fake("User", id=3, first_name="Cy", last_name="Doe", username="u3",
+                   status=None)]
+
+    async def call(self, request):
+        return _fake("Contacts", users=users)
+
+    asked: list[int] = []
+
+    async def read_note(c, user):
+        asked.append(user.id)
+        return "MTP" if user.id == 1 else "met in Lyon"
+
+    monkeypatch.setattr(_FakeClient, "__call__", call, raising=False)
+    monkeypatch.setattr(tgc, "_read_note", read_note)
+    out = asyncio.run(tgc.prune_contacts(tag="MTP"))
+    assert sorted(r["user_id"] for r in out["todo"]) == [1, 2]
+    assert sorted(asked) == [1, 3], "notes are read only where the name misses the marker"
+
+
+# ── undoing a prune never re-adds whoever holds the username now ─────────────
+
+
+def test_undo_prune_refuses_a_reassigned_username(tmp_path, monkeypatch):
+    import asyncio
+
+    p = tmp_path / "contact_runs.jsonl"
+    monkeypatch.setattr(tgc, "journal_path", lambda: p)
+    tgc._append_journal({"run_id": "r", "kind": "prune", "user_id": 5, "username": "u77",
+                         "removed_first": "Ann", "removed_last": "Lee"})
+    client = _FakeClient()
+    monkeypatch.setattr(tgc, "UserClient", lambda: client)
+    written: list = []
+
+    async def write(c, user, first, last, note=None):
+        written.append(user.id)
+
+    monkeypatch.setattr(tgc, "_write_contact", write)
+    res = asyncio.run(tgc.undo_run("r", confirm=True))
+    assert written == [], "the new owner of the handle is never added"
+    assert res["reverted"] == []
+    (row,) = res["failed"]
+    assert row["error"] == "HandleReassigned"
+    # Not journalled as undone, so the record is still pending.
+    assert [r["user_id"] for r in asyncio.run(tgc.undo_run("r"))["todo"]] == [5]
+
+
+def test_persisted_count_excludes_writes_that_did_not_stick():
+    written = [{"user_id": 1}, {"user_id": 2}, {"user_id": 3}]
+    assert tgc.persisted_count(written, [{"user_id": 2}]) == 2
+    assert tgc.persisted_count(written, []) == 3
+
+
+def test_tag_list_success_line_counts_only_contacts_that_stuck(tmp_path, monkeypatch):
+    """`Not counted as filed` must be true: the success line used len(written)."""
+    from typer.testing import CliRunner
+
+    import navig.commands.telegram as tgcmd
+
+    written = [{"user_id": i, "handle": f"u{i}"} for i in range(1, 4)]
+    gone = [written[1]]
+
+    async def fake_tag_handles(entries, **kw):
+        return {"run_id": "r1", "label": "handles", "tag": "MTP", "mark": "both",
+                "todo": written, "unresolved": [], "written": written, "failed": [],
+                "aborted": None, "not_persisted": gone,
+                "persisted": tgc.persisted_count(written, gone), "dry_run": False}
+
+    monkeypatch.setattr(tgc, "tag_handles", fake_tag_handles)
+    f = tmp_path / "h.jsonl"
+    f.write_text('{"handle": "@u1"}\n', encoding="utf-8")
+    res = CliRunner().invoke(
+        tgcmd.telegram_app, ["contacts", "tag-list", str(f), "--confirm"])
+    assert res.exit_code == 0, res.output
+    assert "2 marked" in res.output
+    assert "3 marked" not in res.output

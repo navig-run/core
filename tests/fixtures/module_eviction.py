@@ -56,10 +56,16 @@ def evicted_modules(
     #      and the end state is (entry restored, attribute stale).
     pre_existing: set[str] = set()
     absent_attrs: list[tuple[object, str]] = []
+    # Snapshots reinstated by the finally below, so the pre-context state is back the
+    # moment the `with` closes -- not only when the caller's monkeypatch finalises, which
+    # left the originals missing from sys.modules for any code after the block.
+    saved_modules: dict[str, object] = {}
+    saved_attrs: list[tuple[object, str, object]] = []
     for mod in list(sys.modules):
         if not matches(mod, prefixes):
             continue
         pre_existing.add(mod)
+        saved_modules[mod] = sys.modules[mod]
         parent_name, _, leaf = mod.rpartition(".")
         parent = sys.modules.get(parent_name)
         if parent is not None and not hasattr(parent, leaf):
@@ -80,6 +86,7 @@ def evicted_modules(
         parent_name, _, leaf = mod.rpartition(".")
         parent = sys.modules.get(parent_name)
         if parent is not None and hasattr(parent, leaf):
+            saved_attrs.append((parent, leaf, getattr(parent, leaf)))
             monkeypatch.setattr(parent, leaf, getattr(parent, leaf))
     try:
         yield
@@ -108,3 +115,8 @@ def evicted_modules(
                     delattr(parent, leaf)
                 except AttributeError:
                     pass
+        # Put the originals back now. The caller's monkeypatch still restores the same
+        # objects at teardown, which is then a no-op.
+        sys.modules.update(saved_modules)  # type: ignore[arg-type]
+        for parent, leaf, value in saved_attrs:
+            setattr(parent, leaf, value)

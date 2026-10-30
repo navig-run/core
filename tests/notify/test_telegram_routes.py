@@ -88,7 +88,7 @@ def test_the_daily_sales_summary_is_silent_by_default(tg):
     assert fake.dm[-1]["silent"] is True
 
     tr.set_route("sales_digest", MONEY, "Money Machine")
-    tr.deliver("sales_digest", "📊 yesterday")
+    tr.deliver("sales_digest", "📊 yesterday's totals")
     assert fake.routed[-1]["disable_notification"] is True
 
 
@@ -226,10 +226,53 @@ def test_a_buttons_keyboard_survives_routing(tg):
     assert fake.dm[-1]["keyboard"] == kb
 
     tr.set_route("system_alert", MONEY, "Money Machine")
-    tr.deliver("system_alert", "🚨 key rejected", keyboard=kb)
+    tr.deliver("system_alert", "🚨 key rejected (second alert)", keyboard=kb)
     assert fake.routed[-1]["reply_markup"] == {"inline_keyboard": kb}
 
     # Unrouted, no keyboard: the call shape stays exactly what older callers expect.
     tr.set_route("system_alert", None)
     tr.deliver("system_alert", "🚨 plain")
     assert "keyboard" not in fake.dm[-1]
+
+
+def test_five_identical_sale_cards_collapse_to_one(tg):
+    """On 2026-10-26 five "💰 Sale — $19.99" cards arrived inside one minute.
+
+    Whatever sent them five times, the operator must receive ONE card per payment:
+    the delivery seam claims the rendered payload, so a retry loop, a second sender
+    holding the same token, or a producer with a loop cannot ring five times.
+    """
+    tr, fake = tg
+    card = "💰 Sale — $19.99\n\nb*@shop.io paid $19.99"
+
+    first = tr.deliver("sale", card)
+    rest = [tr.deliver("sale", card) for _ in range(4)]
+
+    assert first == (True, "sent")
+    assert all(outcome == (True, "duplicate collapsed") for outcome in rest)
+    assert len(fake.dm) == 1
+
+
+def test_a_collapsed_claim_is_given_back_when_nothing_was_delivered(tg, monkeypatch):
+    """A send that never reached a chat must not swallow the real retry."""
+    from navig.messaging import notify_operator as no
+
+    tr, fake = tg
+    monkeypatch.setattr(no, "notify_operator", lambda text, **kw: False)
+
+    assert tr.deliver("sale", "💰 Sale — $19.99")[0] is False
+
+    monkeypatch.setattr(no, "notify_operator", fake.notify_operator)
+    ok, detail = tr.deliver("sale", "💰 Sale — $19.99")
+    assert (ok, detail) == (True, "sent")
+    assert len(fake.dm) == 1
+
+
+def test_a_different_sale_still_arrives_inside_the_window(tg):
+    """Collapsing is about the same words, never about the type: a second, real
+    payment ($24.00) must ring even a minute after the first."""
+    tr, fake = tg
+    tr.deliver("sale", "💰 Sale — $19.99")
+    tr.deliver("sale", "💰 Sale — $24.00")
+    assert len(fake.dm) == 2
+

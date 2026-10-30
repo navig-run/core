@@ -262,7 +262,7 @@ class AppManager:
                 del host_config["apps"][app_name]
                 if not host_config["apps"]:
                     del host_config["apps"]
-                self._config.save_host_config(host_name, host_config)
+                self._save_host_to_owner(host_name, host_config)
                 if self._config.verbose:
                     from navig import console_helper as ch
 
@@ -280,14 +280,36 @@ class AppManager:
         the deleted app (guarded now, but only against non-existence), and a re-added same-name
         app would silently inherit "default". Best-effort — the app is already deleted, so a
         cleanup failure must never turn a successful delete into an error. Removes the key rather
-        than auto-promoting another app (picking a new default is the operator's choice)."""
+        than auto-promoting another app (picking a new default is the operator's choice).
+
+        Only when the app is really GONE: the managers merge individual files with the
+        host's embedded ``apps`` map, so deleting an individual file that shadowed an
+        embedded app of the same name leaves that app present — and still the default."""
         try:
+            if self.exists(host_name, app_name):
+                return
             host_config = self._config.load_host_config(host_name)
             if host_config.get("default_app") == app_name:
                 host_config.pop("default_app", None)
-                self._config.save_host_config(host_name, host_config)
+                self._save_host_to_owner(host_name, host_config)
         except Exception:  # noqa: BLE001
             pass  # best-effort cleanup; deletion already succeeded
+
+    def _save_host_to_owner(self, host_name: str, host_config: dict[str, Any]) -> None:
+        """Write an edited host back to the file it was LOADED from.
+
+        A generic ``save_host_config`` writes to the app-local config whenever one is
+        active, while the load may have fallen through to the global host. Editing a
+        global host from inside a project then left the global file unchanged (a stale
+        ``default_app`` that a re-added app silently inherits) and created a shadow
+        project-local copy nobody asked for.
+        """
+        source = getattr(self._config, "host_config_source", None)
+        host_file = source(host_name) if callable(source) else None
+        if host_file is None:
+            self._config.save_host_config(host_name, host_config)
+        else:
+            self._config.save_host_config(host_name, host_config, host_file=host_file)
 
     # ================================================================
     # Individual App File Support

@@ -234,3 +234,21 @@ async def test_the_card_goes_out_tagged_for_the_system_sweep() -> None:
         chat_tidy._ROUTINE.reset(token)
 
     assert seen == {"kind": "system", "routine": True}
+
+
+async def test_the_sent_card_is_remembered_on_its_pending_request(tmp_path, monkeypatch) -> None:
+    """The tidy keeps an approval card until its request is answered or expired —
+    which needs the card's message id written next to the pending request."""
+    import time
+
+    from navig.approval import journal
+
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+    journal.record_pending("req-123", command="x", channel="mission", user_id="system",
+                           level="CONFIRM", expires_at=time.time() + 900)
+    h = TelegramApprovalHandler(_Manager(), bot=_Channel(), owner_chat_id=159901607)
+    await h.on_approval_request(_Req())
+
+    assert journal.pending_cards() == {(159901607, 1)}
+    journal.clear_pending("req-123")
+    assert journal.pending_cards() == set()

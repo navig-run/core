@@ -153,7 +153,13 @@ _WEB_PROVIDER_VAULT_LABELS: dict[str, tuple[str, ...]] = {
     "grok": ("grok", "xai", "web/grok_api_key", "xai/api_key", "xai_api_key"),
     "kimi": ("kimi", "web/kimi_api_key", "moonshot/api_key", "moonshot_api_key"),
     "tavily": ("tavily", "web/tavily_api_key", "tavily/api_key", "tavily_api_key"),
-    "serpapi": ("serpapi", "serpapi/api_key", "serpapi_api_key", "web/serpapi_api_key"),
+    "serpapi": (
+        "serpapi",
+        "serpapi/api_key",
+        "serpapi/key",  # where onboarding's runtime-secrets import stores SERPAPI_KEY
+        "serpapi_api_key",
+        "web/serpapi_api_key",
+    ),
 }
 
 
@@ -439,6 +445,8 @@ def web_fetch(
                 "To allow local/internal fetches: navig config set net.ssrf.allow_private_network true"
             ),
         )
+    except OSError as exc:  # after SsrfBlockedError (an OSError): DNS failure (gaierror)
+        return WebFetchResult(success=False, error=f"Could not resolve host: {exc}")
     except ValueError as exc:
         return WebFetchResult(success=False, error=f"Invalid URL: {exc}")
 
@@ -656,7 +664,7 @@ def _search_brave(
 
 def _ddg_unwrap_url(href: str) -> str:
     """Unwrap DuckDuckGo's redirect wrapper (``//duckduckgo.com/l/?uddg=<encoded>``)."""
-    from urllib.parse import parse_qs, unquote, urlsplit
+    from urllib.parse import parse_qs, urlsplit
 
     if not href:
         return ""
@@ -668,7 +676,9 @@ def _ddg_unwrap_url(href: str) -> str:
         if parts.netloc.endswith("duckduckgo.com") and parts.path.startswith("/l/"):
             target = parse_qs(parts.query).get("uddg", [""])[0]
             if target:
-                return unquote(target)
+                # parse_qs already percent-decoded it once; a second unquote would turn
+                # an encoded reserved char in the target (q=a%26b) into a different URL.
+                return target
     except Exception:  # noqa: BLE001
         pass  # best-effort unwrap; fall through to the raw href
     return href
@@ -1188,15 +1198,21 @@ def _search_serpapi(
 def _search_firecrawl(
     query: str,
     count: int = 5,
+    api_key: str = "",
 ) -> WebSearchResult:
     """Search via Firecrawl with graceful error mapping.
 
     Firecrawl is treated as the premium default; callers should decide fallback behavior.
+    ``api_key`` is the key dispatch already resolved; without one the client resolves its own.
     """
     try:
-        from navig.integrations.firecrawl import FirecrawlError, get_firecrawl_client
+        from navig.integrations.firecrawl import (
+            FirecrawlClient,
+            FirecrawlError,
+            get_firecrawl_client,
+        )
 
-        client = get_firecrawl_client()
+        client = FirecrawlClient(api_key=api_key) if api_key else get_firecrawl_client()
         data = client.search(query=query, limit=count, scrape_inline=False)
 
         items: list[dict[str, Any]] = []
@@ -1497,7 +1513,7 @@ def web_search(
 
     # Perform search
     if selected_provider == "firecrawl":
-        result = _search_firecrawl(query, count)
+        result = _search_firecrawl(query, count, api_key=selected_key)
         if not result.success:
             if requested_provider == "firecrawl":
                 return result

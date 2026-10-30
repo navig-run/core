@@ -48,7 +48,10 @@ class _RunningDaemon:
 def running_on_windows(monkeypatch: pytest.MonkeyPatch):
     """A running daemon on a Windows-shaped host, with the enable call recorded."""
     monkeypatch.setattr("navig.daemon.supervisor.NavigDaemon", _RunningDaemon)
-    monkeypatch.setattr("os.name", "nt")
+    # Patch the platform the code READS (`sys.platform`), not `os.name`: the latter
+    # also changes what `pathlib` builds, so a Windows-shaped test on Linux died in
+    # `WindowsPath` before reaching the repair path (2026-10-30, outpost).
+    monkeypatch.setattr("sys.platform", "win32")
     calls: list[str] = []
     monkeypatch.setattr(
         "navig.daemon.service_manager.task_scheduler_enable",
@@ -132,3 +135,54 @@ def test_a_failed_repair_is_reported_not_swallowed(
     assert result.exit_code == 0, result.output
     assert "Access is denied" in result.output, result.output
     assert "navig service install" in result.output, result.output
+
+
+# ── a leftover stop intent would make the repair a lie ───────────────────────
+# `service stop` leaves stop_requested set (and may arm a watchdog). A daemon started by
+# another route afterwards is "already running" here, but every scheduled boot then exits
+# at entry.py's stop-intent guard — enabling the task alone repaired nothing.
+
+
+def _stop_flag(monkeypatch: pytest.MonkeyPatch, *, tty: bool) -> list[str]:
+    cleared: list[str] = []
+    flag = {"set": True}
+    monkeypatch.setattr(
+        "navig.daemon.service_manager.stop_flag_is_set", lambda: flag["set"]
+    )
+    monkeypatch.setattr(
+        "navig.daemon.service_manager.clear_stop_flag",
+        lambda: (cleared.append("stop_flag"), flag.update(set=False)),
+    )
+    monkeypatch.setattr(
+        "navig.daemon.service_manager.clear_watchdog_deadline",
+        lambda: cleared.append("watchdog"),
+    )
+    monkeypatch.setattr("navig.commands.service._stdin_is_tty", lambda: tty)
+    return cleared
+
+
+def test_an_interactive_start_lifts_the_stop_guards_before_repairing(
+    monkeypatch: pytest.MonkeyPatch, running_on_windows: list[str]
+) -> None:
+    _set_state(monkeypatch, (False, True, "installed but DISABLED - ..."))
+    cleared = _stop_flag(monkeypatch, tty=True)
+
+    result = runner.invoke(service_app, ["start"])
+
+    assert result.exit_code == 0, result.output
+    assert sorted(cleared) == ["stop_flag", "watchdog"], result.output
+    assert running_on_windows == ["enable"], result.output
+
+
+def test_a_noninteractive_start_honours_the_stop_and_repairs_nothing(
+    monkeypatch: pytest.MonkeyPatch, running_on_windows: list[str]
+) -> None:
+    _set_state(monkeypatch, (False, True, "installed but DISABLED - ..."))
+    cleared = _stop_flag(monkeypatch, tty=False)
+
+    result = runner.invoke(service_app, ["start"])
+
+    assert result.exit_code == 0, result.output
+    assert cleared == [], "a tray app or script must not override a deliberate stop"
+    assert running_on_windows == [], "reported a repair every scheduled boot would undo"
+    assert "stopped by user intent" in result.output, result.output

@@ -23,6 +23,7 @@ from navig.debug_logger import get_debug_logger
 from navig.formations.schema import (
     FormationValidationError,
     validate_agent_file,
+    validate_formation_data,
     validate_formation_file,
     validate_profile_data,
 )
@@ -192,6 +193,15 @@ def formation_load_errors() -> list[tuple[Path, str]]:
                 continue
             if not isinstance(data, dict):
                 errors.append((subdir, "formation.json is not a JSON object"))
+                continue
+            # Same schema check load_formation() applies (validate_formation_file), so a
+            # parseable manifest that cannot actually load is not counted as healthy.
+            try:
+                _, schema_errors = validate_formation_data(data, path=manifest)
+            except Exception as e:  # noqa: BLE001 — best-effort, never raises
+                schema_errors = [str(e)]
+            if schema_errors:
+                errors.append((subdir, f"invalid formation.json ({'; '.join(schema_errors)})"))
     return errors
 
 

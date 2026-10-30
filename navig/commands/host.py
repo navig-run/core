@@ -589,23 +589,59 @@ def remove_host(name: str, options: dict[str, Any]):
             ch.error(f"Host '{name}' not found.")
         raise typer.Exit(2)
 
+    if options.get("dry_run"):
+        if not quiet:
+            ch.info(f"DRY RUN: would remove host '{name}' and clear any selector naming it.")
+        return
+
     if not options.get("yes"):
         if not ch.confirm_action(f"Are you sure you want to remove host '{name}'?"):
             ch.warning("Cancelled.")
             return
 
-    # Capture BEFORE the delete: get_active_host() filters out non-existent hosts, so checking
-    # after delete_host_config always returns False and the stale pointer file would linger — then
-    # a re-added same-name host silently becomes active again without `navig host use`.
-    was_active = config_manager.get_active_host() == name
-
     config_manager.delete_host_config(name)
-
-    if was_active:
-        config_manager.active_host_file.unlink(missing_ok=True)
+    _clear_host_selectors(name)
 
     if not quiet:
         ch.success(f"Host '{name}' removed.")
+
+
+def _clear_host_selectors(name: str) -> list[str]:
+    """Clear every persisted selector that names ``name`` (the sources
+    ``get_active_host`` resolves): project ``.navig/config.yaml``, the legacy
+    ``.navig`` file, the ``navig host use`` cache, global ``active_host`` and
+    ``default_host``. Each is read raw — ``get_active_host()`` filters deleted
+    hosts — and any left in place would silently re-activate a re-added host
+    of the same name, or let a project-local removal fall through to another."""
+    cleared: list[str] = []
+    local_navig = Path.cwd() / ".navig"  # the same root ContextManager resolves
+    if local_navig.is_dir():
+        local = config_manager.get_local_config(local_navig.parent)
+        if str(local.get("active_host") or "").strip() == name:
+            local.pop("active_host", None)
+            config_manager.set_local_config(local, local_navig.parent)
+            cleared.append("project")
+    elif local_navig.is_file():
+        try:
+            content = local_navig.read_text(encoding="utf-8").strip()
+        except OSError:
+            content = ""
+        if content.split(":", 1)[0].strip() == name:
+            local_navig.unlink(missing_ok=True)
+            cleared.append("legacy")
+    cache = config_manager.active_host_file
+    try:
+        cached = cache.read_text(encoding="utf-8").strip() if cache.exists() else ""
+    except OSError:
+        cached = ""
+    if cached == name:
+        cache.unlink(missing_ok=True)
+        cleared.append("user")
+    for key in ("active_host", "default_host"):
+        if str(config_manager.global_config.get(key) or "").strip() == name:
+            config_manager.set_global(key, None)
+            cleared.append(key)
+    return cleared
 
 
 def inspect_host(options: dict[str, Any]) -> dict[str, Any] | None:
@@ -2125,7 +2161,10 @@ def host_lock_acquire(
     from navig.core import host_lock
 
     target = _lock_target(host)
-    st = host_lock.lock_state(host_lock.read_lock(target))
+    with host_lock.exclusive(target):
+        st = host_lock.lock_state(host_lock.read_lock(target))
+        if not st.blocking or force:
+            host_lock.claim(target, note or "navig host lock acquire", kind="explicit")
     if st.blocking and not force:
         ch.error(
             f"Cannot acquire — {target} is locked by another session.",
@@ -2135,7 +2174,6 @@ def host_lock_acquire(
         )
         raise typer.Exit(2)
 
-    host_lock.claim(target, note or "navig host lock acquire", kind="explicit")
     ch.success(f"host lock acquired — {target} (explicit: frees after {host_lock.LOCK_TTL_MINUTES}m idle)")
 
 

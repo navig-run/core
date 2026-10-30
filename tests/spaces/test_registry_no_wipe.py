@@ -50,16 +50,23 @@ def test_transient_lock_refuses_every_mutator_no_wipe(tmp_path, monkeypatch):
     assert f.read_bytes() == before  # both spaces + all flags survived — nothing wiped
 
 
-def test_register_under_lock_returns_entry_but_does_not_wipe(tmp_path, monkeypatch):
+def test_register_under_lock_raises_and_does_not_wipe(tmp_path, monkeypatch):
+    """It returned a phantom entry stored nowhere, so `space register` and the deck
+    route reported success for a registration that never happened."""
+    import pytest
+
     f = _isolate(tmp_path, monkeypatch)
     _seed_two(tmp_path)
     before = f.read_bytes()
 
     monkeypatch.setattr(registry, "load_json_for_update", _raise_lock)
-    entry = registry.register(tmp_path / "delta", id="delta", name="Delta")
+    with pytest.raises(registry.RegistryUnavailable):
+        registry.register(tmp_path / "delta", id="delta", name="Delta")
 
-    assert entry["id"] == "delta"  # usable in-memory (next write persists)
     assert f.read_bytes() == before  # alpha + beta preserved — not overwritten by {delta}
+    monkeypatch.undo()
+    _isolate(tmp_path, monkeypatch)
+    assert "delta" not in {s["id"] for s in registry.load_registry()["spaces"]}
 
 
 def test_set_trusted_under_lock_never_resets_trust(tmp_path, monkeypatch):

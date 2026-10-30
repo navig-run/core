@@ -144,6 +144,32 @@ def test_speed_ramp_only_retimes_the_picture() -> None:
     assert "atempo" not in frag
 
 
+def _output_seconds(frag: str, t: float, tb: float = 1 / 90000) -> float:
+    """Evaluate a ``setpts`` expression in Python at input time *t* (seconds)."""
+    expr = frag.removeprefix("setpts=").replace(chr(92) + ",", ",")
+    env = {"T": t, "TB": tb, "PTS": t / tb,
+           "gte": lambda a, b: a >= b, "if_": lambda c, a, b: a if c else b}
+    return eval(expr.replace("if(", "if_("), {"__builtins__": {}}, env) * tb  # noqa: S307
+
+
+@pytest.mark.parametrize("segments", [
+    [(0.0, 1.0), (2.0, 0.5)],
+    [(0.0, 1.0), (2.0, 2.0), (5.0, 0.25)],
+    [(0.0, 0.5), (3.0, 4.0)],
+])
+def test_speed_ramp_output_time_is_continuous_at_every_boundary(segments) -> None:
+    frag = speed_ramp(segments)
+    eps = 1e-6
+    for start, _ in segments[1:]:
+        before = _output_seconds(frag, start - eps)
+        after = _output_seconds(frag, start + eps)
+        assert after == pytest.approx(before, abs=1e-4)
+        assert after >= before  # time never runs backwards
+    # [(0,1),(2,0.5)]: 2 s at 1x then 1 s of input at half speed is 2 s of output.
+    if segments == [(0.0, 1.0), (2.0, 0.5)]:
+        assert _output_seconds(frag, 3.0) == pytest.approx(4.0)
+
+
 def test_a_zero_speed_is_refused() -> None:
     with pytest.raises(ValueError, match="speed"):
         speed_ramp([(0.0, 0)])
@@ -392,7 +418,11 @@ def test_a_flash_lifts_midtones_and_leaves_black_alone() -> None:
     picture out to olive. Gamma leaves true black at zero.
     """
     chain = fx.flash([1.0, 2.0], amount=0.35)
-    assert "gamma=0.65" in chain
+    # ffmpeg's eq applies pow(v, 1/gamma): gamma BELOW 1 darkens, so a flash that lifts
+    # the midtones must emit gamma above 1.
+    gamma = float(chain.split("gamma=")[1].split(":")[0])
+    assert gamma > 1
+    assert abs(gamma - 1 / 0.65) < 1e-3
     assert "brightness" not in chain
     assert "between(t,1,1.05)" in chain
 
@@ -461,6 +491,21 @@ def test_each_trippy_effect_is_off_at_zero() -> None:
     assert fx.breathe(0) == ""
     assert fx.pulse_invert(0) == ""
     assert fx.solarize(0) == ""
+
+
+def _curve_points(chain: str) -> list[tuple[float, float]]:
+    body = chain.split("all='")[1].rstrip("'")
+    return [tuple(float(v) for v in pt.split("/")) for pt in body.split()]
+
+
+def test_a_faint_solarize_stays_close_to_the_untouched_picture() -> None:
+    # A blend that starts near identity: a tiny amount must not send mid-grey to white.
+    for x, y in _curve_points(fx.solarize(0.01)):
+        assert abs(y - x) <= 0.02, (x, y)
+
+
+def test_a_full_solarize_is_the_full_fold() -> None:
+    assert fx.solarize(1.0) == "curves=all='0/0 0.35/0.45 0.75/1 1/0'"
 
 
 def test_a_trails_decay_must_leave_something_to_decay() -> None:

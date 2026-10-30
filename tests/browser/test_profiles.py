@@ -195,12 +195,82 @@ def test_resolve_port_prefers_running_active_profile(cfg, monkeypatch):
 
     prof = p.create_profile("cy")
     p.set_active("cy")
-    # active profile RUNNING → its stable port is used for the default
+    # active profile RUNNING → an OMITTED port uses its stable port (the default path this
+    # test names). Contract: 4f4d1ee4be on main, "an explicit --port is an address — only an
+    # omitted one follows the profile"; plugin-side pins live in
+    # plugins/navig-browser/tests/test_resolve_port.py.
     monkeypatch.setattr("navig.browser.targets.probe_port",
                         lambda port, timeout=0.3: object() if port == prof.port else None)
-    assert _resolve_port(None, 9222) == prof.port
+    assert _resolve_port(None, None) == prof.port
+    # ... and a literal 9222 is an ADDRESS, not "the caller said nothing". The old expectation
+    # here was `_resolve_port(None, 9222) == prof.port` (9280): 9222-as-default rewrote a
+    # pinned `-p 9222` run to whatever browser the active profile had open — the measured bug
+    # 4f4d1ee4be removed (the pixel harness drove the operator's browser, not its own).
+    assert _resolve_port(None, 9222) == 9222
     # an explicit non-default port is always respected
     assert _resolve_port(None, 9250) == 9250
     # active profile NOT running → keep 9222 (don't attach to a dead port)
     monkeypatch.setattr("navig.browser.targets.probe_port", lambda *a, **k: None)
+    assert _resolve_port(None, None) == 9222
     assert _resolve_port(None, 9222) == 9222
+
+
+def test_profile_open_applies_the_saved_profile_proxy(cfg, monkeypatch):
+    """`cdp profile proxy NAME …` must reach the launch, without the credentials."""
+    p.create_profile("px")
+    assert p.set_profile_proxy("px", "http://user:secret@proxy.example:8080")
+    seen: dict = {}
+
+    def fake_launch(*a, **k):
+        seen["extra"] = k.get("extra_args")
+        return None  # launch "fails" — only the args matter here
+
+    monkeypatch.setattr("navig.browser.targets.is_running", lambda app: False)
+    monkeypatch.setattr("navig.browser.targets.launch_with_cdp", fake_launch)
+    A.profile_open("px", headless=True, context="script")
+    assert "--proxy-server=http://proxy.example:8080" in seen["extra"]
+    assert not any("secret" in a for a in seen["extra"])
+
+
+def test_profile_open_without_a_proxy_adds_no_proxy_switch(cfg, monkeypatch):
+    p.create_profile("np")
+    seen: dict = {}
+    monkeypatch.setattr("navig.browser.targets.is_running", lambda app: False)
+    monkeypatch.setattr("navig.browser.targets.launch_with_cdp",
+                        lambda *a, **k: seen.setdefault("extra", k.get("extra_args")) and None)
+    A.profile_open("np", headless=True, context="script")
+    assert not any(a.startswith("--proxy-server") for a in seen["extra"])
+
+
+def test_profile_new_reports_a_locked_registry_instead_of_crashing(cfg, monkeypatch):
+    """create_profile() returns None on a registry lock; if the lock clears before the
+    follow-up read, get_profile() finds a profile and profile_new used to read None.port."""
+    existing = p.Profile(name="cy", port=9281, user_data_dir="x")
+    calls = {"n": 0}
+
+    def get_profile(name):
+        calls["n"] += 1
+        return None if calls["n"] == 1 else existing  # absent first, present after the lock
+
+    monkeypatch.setattr(p, "get_profile", get_profile)
+    monkeypatch.setattr(p, "create_profile", lambda *a, **k: None)
+    r = A.profile_new("cy")
+    assert r["ok"] is False and "busy" in r["error"]
+
+
+def test_persona_import_fails_when_the_profile_cannot_be_registered(cfg, monkeypatch, tmp_path):
+    import types
+
+    from navig_browser import persona as _persona
+    from navig_browser.commands import cdp as cdp_cmd
+    from typer.testing import CliRunner
+
+    capsule = tmp_path / "x.navigpersona"
+    capsule.write_bytes(b"capsule")
+    per = types.SimpleNamespace(profile="ghost", proxy=None)
+    monkeypatch.setattr(_persona, "import_capsule", lambda blob, passphrase=None: (per, None))
+    monkeypatch.setattr(p, "create_profile", lambda *a, **k: None)  # registry locked
+
+    res = CliRunner().invoke(cdp_cmd.profile_app, ["import", str(capsule)])
+    assert res.exit_code == 1, res.output
+    assert "busy" in res.output and "Imported persona" not in res.output

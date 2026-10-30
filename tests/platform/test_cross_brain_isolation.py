@@ -136,6 +136,11 @@ def _brain_paths(cfg: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
                 "NAVIG_PACKAGES_DIR", "NAVIG_STACK_DIR"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(cfg))
+    # stack_dir() returns the machine-global /opt/navig for a system service, or whenever
+    # that directory exists on a Unix host — a real server layout, not a second user brain.
+    # Neutralise both so the measurement is the per-user default on every machine.
+    monkeypatch.setattr(paths, "_is_system_service", lambda: False)
+    monkeypatch.setattr(paths, "_OPT_NAVIG", cfg.parent / "no-opt-navig")
 
     out: dict[str, Path] = {}
     for name, fn in inspect.getmembers(paths, inspect.isfunction):
@@ -306,7 +311,7 @@ def test_shared_set_is_exactly_the_reviewed_list(
 ) -> None:
     """A path that becomes machine-global unexpectedly (the #192 failure mode) shows up here
     as a shared path missing its reason."""
-    _a, _b, _owned, shared = _classify(monkeypatch, tmp_path)
+    a, _b, _owned, shared = _classify(monkeypatch, tmp_path)
     unexpected = sorted(shared - set(EXPECTED_SHARED) - set(EXPECTED_SHARED_WHEN_PRESENT))
     assert not unexpected, (
         "These paths are shared across brains but not in the reviewed EXPECTED_SHARED list:\n"
@@ -322,6 +327,31 @@ def test_shared_set_is_exactly_the_reviewed_list(
         "These are no longer machine-global (now per-brain) — remove from EXPECTED_SHARED "
         "or move to EXPECTED_OWNED:\n" + "\n".join(f"  {n}" for n in stale)
     )
+    # ...but where a conditional entry DOES resolve, it must still be machine-global.
+    drifted = _conditional_paths_not_shared(a, shared)
+    assert not drifted, (
+        "These are declared machine-global in EXPECTED_SHARED_WHEN_PRESENT but resolved "
+        "per-brain on this platform:\n" + "\n".join(f"  {n}" for n in drifted)
+    )
+
+
+def _conditional_paths_not_shared(resolved: dict[str, Path], shared: set[str]) -> list[str]:
+    """Conditional machine-global entries that resolved here yet differ between brains."""
+    return sorted(n for n in EXPECTED_SHARED_WHEN_PRESENT if n in resolved and n not in shared)
+
+
+def test_a_conditional_path_turning_per_brain_is_caught(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``shell_rc_path`` deriving from config_dir() must fail the shared-set check."""
+    def per_brain_rc() -> Path:
+        return paths.config_dir() / ".bashrc"
+
+    per_brain_rc.__module__ = paths.__name__  # enumerated like the real function
+    monkeypatch.setattr(paths, "shell_rc_path", per_brain_rc)
+    a, _b, _owned, shared = _classify(monkeypatch, tmp_path)
+    assert "shell_rc_path" in a
+    assert _conditional_paths_not_shared(a, shared) == ["shell_rc_path"]
 
 
 def test_platform_conditional_paths_are_accounted_for(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -365,6 +395,23 @@ def test_platform_conditional_paths_are_accounted_for(monkeypatch: pytest.Monkey
         "there — but it is in no expected list, so every non-Windows contributor's first "
         "test run fails. Add it to EXPECTED_SHARED_WHEN_PRESENT with a reason."
     )
+
+
+def test_stack_dir_stays_owned_on_a_host_with_opt_navig(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A Unix host with /opt/navig present must not make stack_dir read as shared."""
+    fake_opt = tmp_path / "opt-navig"
+    fake_opt.mkdir()
+    monkeypatch.setattr(paths, "is_unix", lambda: True)
+    monkeypatch.setattr(paths, "_OPT_NAVIG", fake_opt)
+    monkeypatch.delenv("NAVIG_STACK_DIR", raising=False)
+    assert paths.stack_dir() == fake_opt, "the /opt/navig probe this guards no longer exists"
+
+    a = _brain_paths(tmp_path / "brain-A" / ".navig", monkeypatch)
+    b = _brain_paths(tmp_path / "brain-B" / ".navig", monkeypatch)
+    assert a["stack_dir"] != b["stack_dir"]
+    assert a["stack_dir"].is_relative_to(a["config_dir"])
 
 
 def test_vault_is_never_shared(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

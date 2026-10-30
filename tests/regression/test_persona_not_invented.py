@@ -45,7 +45,10 @@ def store(tmp_path, monkeypatch):
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("NAVIG_DATA_DIR", str(tmp_path / "data"))
     s = runtime_mod.RuntimeStore(tmp_path / "runtime.db")
-    monkeypatch.setattr(runtime_mod, "_store", s)
+    # Patch the seam, not the private singleton: `get_runtime_store()` keys its cache by the
+    # database each caller resolves, so seeding `_store` alone is skipped when the resolved
+    # data dir differs from the seeded file.
+    monkeypatch.setattr(runtime_mod, "get_runtime_store", lambda db_path=None: s)
     yield s
     s.close()
 

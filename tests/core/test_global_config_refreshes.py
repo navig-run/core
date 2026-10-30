@@ -123,25 +123,56 @@ def test_a_missing_config_file_does_not_blank_the_in_memory_copy(
 ) -> None:
     """Same rule, the other way the file can go bad.
 
-    The path is redirected rather than the file deleted: on Windows the freshly
-    written `config.yaml` is intermittently still held (an antivirus or the
-    atomic-replace settling), so `unlink()` raises `PermissionError` and the test
-    fails for a reason that has nothing to do with the branch under test. Verified
-    it is not a leaked handle of ours — a plain read then `unlink()` succeeds.
+    The file is hidden rather than deleted: on Windows the freshly written
+    `config.yaml` is intermittently still held (an antivirus or the atomic-replace
+    settling), so `unlink()` raises `PermissionError` and the test fails for a
+    reason that has nothing to do with the branch under test. Verified it is not a
+    leaked handle of ours — a plain read then `unlink()` succeeds.
+
+    It must be the SAME path that vanishes: a path that changed means the config
+    root moved, which is a different rule (see the next test).
     """
     _write_language("Russian")
     config = ConfigSingleton()
     assert config.get(CFG_LANGUAGE, "", scope="global") == "Russian"
 
+    gone = config.global_config_path
+    real_exists = Path.exists
     monkeypatch.setattr(
-        type(config),
-        "global_config_path",
-        property(lambda _self: tmp_path / "gone" / "config.yaml"),
+        Path, "exists", lambda self, *a, **k: False if self == gone else real_exists(self, *a, **k)
     )
 
     assert config.get(CFG_LANGUAGE, "", scope="global") == "Russian", (
         "a config file that disappeared blanked the in-memory copy"
     )
+
+
+def test_a_moved_config_root_without_a_config_does_not_inherit_the_old_one(
+    isolated_config: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """Switching NAVIG_CONFIG_DIR to an empty dir must not carry the old dir's data.
+
+    Review #321: the singleton kept the dict it had loaded from dir A, so `get()`
+    in dir B served A's values and `set()` + `save()` wrote them into B's new
+    `config.yaml` — one sandbox (or brain) leaking into another.
+    """
+    from navig.config import ConfigManager
+
+    ConfigManager().set_global("secret_key", "from_a")
+    config = ConfigSingleton()
+    assert config.get("secret_key", None, scope="global") == "from_a"
+
+    other = tmp_path / "other_root"
+    other.mkdir()
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(other))
+
+    assert config.get("secret_key", None, scope="global") is None
+    config.set("marker", "b", scope="global")
+    config.save()
+
+    written = (other / "config.yaml").read_text(encoding="utf-8")
+    assert "from_a" not in written
+    assert "marker" in written
 
 
 def test_an_unchanged_file_is_not_reparsed(isolated_config, monkeypatch) -> None:

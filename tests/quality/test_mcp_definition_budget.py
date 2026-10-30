@@ -19,6 +19,8 @@ publishes, so the report and the gate cannot disagree.
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from navig.mcp.catalogue_audit import SIBLING_TOOL, STATES_RESULT, counts, signals
@@ -74,6 +76,13 @@ BATCH_ONE = frozenset(
 )
 
 
+# Tools whose bundle is registered on Windows only (`navig/mcp/tools/__init__.py` appends
+# `desktop` and `windows` only when `sys.platform == "win32"`), so their absence off Windows
+# is the capability contract, not a regression: advertising a tool every call refuses is
+# worse than a shorter list.
+WINDOWS_ONLY_TOOLS = frozenset({"desktop_registry_set"})
+
+
 @pytest.fixture(scope="module")
 def handler() -> MCPProtocolHandler:
     return MCPProtocolHandler()
@@ -88,6 +97,8 @@ def test_every_advertised_tool_has_a_handler(handler: MCPProtocolHandler) -> Non
 def test_batch_one_tools_keep_routing_and_their_result_contract(handler: MCPProtocolHandler) -> None:
     broken: list[str] = []
     for name in sorted(BATCH_ONE):
+        if name in WINDOWS_ONLY_TOOLS and sys.platform != "win32":
+            continue
         tool = handler.tools.get(name)
         assert tool is not None, f"{name} disappeared from the catalogue"
         description = tool.get("description") or ""

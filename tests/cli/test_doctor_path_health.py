@@ -44,8 +44,14 @@ _REAL_REGISTRY_READER = doctor._user_path_from_registry
 
 @pytest.fixture(autouse=True)
 def _as_windows(monkeypatch):
-    """The 8191 ceiling is a cmd.exe property; the row is Windows-only."""
-    monkeypatch.setattr(doctor.os, "name", "nt")
+    """The 8191 ceiling is a cmd.exe property; the row is Windows-only.
+
+    Flips the module's own platform flag rather than ``os.name``: patching ``os.name``
+    turned the whole interpreter into "nt" — ``pathlib`` reads it too — so on Linux every
+    test here died with ``cannot instantiate 'WindowsPath' on your system`` before the
+    code under test ran (2026-10-30, outpost).
+    """
+    monkeypatch.setattr(doctor.sys, "platform", "win32")
     # Stub the registry read too. Without it every assertion below would depend on
     # whatever the developer's real user PATH happens to contain that day.
     monkeypatch.setattr(doctor, "_user_path_from_registry", lambda: "")
@@ -69,7 +75,7 @@ def _row(rows):
 
 def test_contributes_no_row_off_windows(monkeypatch):
     """A green row about a limit that does not exist would be noise, not information."""
-    monkeypatch.setattr(doctor.os, "name", "posix")
+    monkeypatch.setattr(doctor.sys, "platform", "linux")
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
     assert doctor.check_path_health() == []
 
@@ -340,7 +346,7 @@ def test_json_output_is_machine_readable(tmp_path, monkeypatch):
 
 
 def test_off_windows_says_so_and_exits_nonzero(monkeypatch):
-    monkeypatch.setattr(doctor.os, "name", "posix")
+    monkeypatch.setattr(doctor.sys, "platform", "linux")
     res = CliRunner().invoke(doctor_app, ["clean-path"])
     assert res.exit_code == 1
     assert "Windows-only" in res.output

@@ -220,7 +220,10 @@ async def _run_with_forced_compaction(monkeypatch, captured):
 
     class _CapturingClient:
         async def complete(self, request):
-            captured.append(request)
+            # Snapshot at call time: request.messages aliases the agent's working list,
+            # which keeps growing after complete() returns, so inspecting the live
+            # object after the run would credit the model with blocks added later.
+            captured.append(SimpleNamespace(messages=list(request.messages)))
             return next(responses)
 
     monkeypatch.setattr(

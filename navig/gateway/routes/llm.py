@@ -20,6 +20,7 @@ Synapse additions (2026-02-24):
 
 from __future__ import annotations
 
+import hmac
 import time
 import uuid as _uuid
 from collections import deque
@@ -124,6 +125,18 @@ def _chat(gw: NavigGateway):
         if auth is not None:
             return auth
 
+        # Which of the two accepted credentials presented itself? This route takes the
+        # admin token (the operator — NAVIG OS, anchor, echo, the deck) OR the
+        # fleet-shared `gateway.mesh_token`, which is a PEER credential: require_bearer_auth
+        # documents that it "never unlocks an admin-only endpoint", and letting a peer's
+        # chat text reach the CLI subprocess would do exactly that (see allow_cli below).
+        # Narrowing a privilege nobody legitimately used is why this is decided here and
+        # not by dropping mesh access from the route: the mesh token exists to forward
+        # chat between peers.
+        _mesh = gateway_mesh_token(gw)
+        _presented = request.headers.get("Authorization", "")
+        from_peer = bool(_mesh) and hmac.compare_digest(_presented, f"Bearer {_mesh}")
+
         # ── Parse body ──────────────────────────────────────────
         try:
             body = await request.json()
@@ -172,11 +185,18 @@ def _chat(gw: NavigGateway):
 
         # ── Route through the gateway's conversational pipeline ─
         try:
+            # allow_cli: a message starting "navig " runs that command as a subprocess
+            # with NO approval gate. Only the operator's admin token may reach it —
+            # a mesh peer's chat text must not, because require_bearer_auth's contract is
+            # that the mesh secret never unlocks an admin capability (#1667 gate). The
+            # admin path stays as it is: NAVIG OS / anchor / echo deliberately type
+            # `navig …` into this route and expect the command to run.
             response_text = await gw.router.route_message(
                 channel="http",
                 user_id="bridge",
                 message=text,
                 metadata=metadata,
+                allow_cli=not from_peer,
             )
         except Exception as exc:
             logger.exception("LLM chat handler error")

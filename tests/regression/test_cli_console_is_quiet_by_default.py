@@ -123,6 +123,34 @@ def test_loguru_records_flow_through_the_navig_tree_not_stderr(navig_root_with_s
     assert "skills" not in capsys.readouterr().err
 
 
+def test_loguru_debug_reaches_navig_log_but_not_the_console(tmp_path, monkeypatch):
+    """The `navig` root sits at INFO; a bridged loguru DEBUG must still reach the DEBUG
+    file handler (it was dropped by the logger-level gate before any handler saw it)."""
+    loguru = pytest.importorskip("loguru")
+    monkeypatch.setattr(nlog, "_CONSOLE_LEVEL_OVERRIDE", None)
+    log_file = tmp_path / "navig.log"
+    nlog._configure_root_logger(log_file)
+    root = logging.getLogger("navig")
+    buf = io.StringIO()
+    for h in list(root.handlers):
+        if getattr(h, "navig_console", False):
+            h.stream = buf
+    try:
+        loguru.logger.debug("bridged-debug-line 100%")
+        loguru.logger.trace("bridged-trace-line")
+        for h in root.handlers:
+            h.flush()
+        text = log_file.read_text(encoding="utf-8")
+        assert "bridged-debug-line 100%" in text
+        assert "bridged-trace-line" in text
+        assert "bridged-" not in buf.getvalue()
+    finally:
+        for h in list(root.handlers):
+            if isinstance(h, logging.FileHandler):
+                h.close()
+        nlog._configure_root_logger()
+
+
 @pytest.mark.integration
 def test_a_real_command_prints_no_log_lines_to_stderr(tmp_path):
     """End to end: `navig version` in a virgin config dir, stderr must be empty."""

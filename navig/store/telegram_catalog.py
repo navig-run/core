@@ -421,6 +421,7 @@ class TelegramCatalogStore(BaseStore):
         self, since: str, *, kind: str | None = None,
         exclude_chats: set[int] | frozenset[int] | None = None,
         exclude_reasons: set[str] | frozenset[str] | None = None,
+        until: str | None = None,
     ) -> dict[str, int]:
         """``{"messages": n, "chats": m, "latest": iso|None}`` deleted at or after *since*.
 
@@ -433,9 +434,10 @@ class TelegramCatalogStore(BaseStore):
 
         ``kind`` / ``exclude_chats`` take the SAME meaning as in
         :meth:`list_deleted`, so a caller can make the count and the list agree —
-        the digest card's number and what its Show button reveals must match."""
+        the digest card's number and what its Show button reveals must match.
+        ``until`` (exclusive) bounds the window from above."""
         where, params = _deleted_filters(since=since, kind=kind, exclude_chats=exclude_chats,
-                                         exclude_reasons=exclude_reasons)
+                                         exclude_reasons=exclude_reasons, until=until)
         row = self._read_one(
             "SELECT COUNT(*) AS messages, COUNT(DISTINCT m.chat_id) AS chats, "
             "MAX(m.deleted_at) AS latest "
@@ -452,6 +454,7 @@ class TelegramCatalogStore(BaseStore):
         self, since: str, *, owner_id: int | None = None, kind: str | None = None,
         exclude_chats: set[int] | frozenset[int] | None = None, limit: int = 50,
         exclude_reasons: set[str] | frozenset[str] | None = None,
+        until: str | None = None,
     ) -> list[dict[str, Any]]:
         """Deleted rows since *since*, grouped per chat, biggest first.
 
@@ -460,7 +463,7 @@ class TelegramCatalogStore(BaseStore):
         many. Same filters as :meth:`count_deleted_since` (the shared builder), so the
         per-chat lines always add up to the number on the card."""
         where, params = _deleted_filters(since=since, kind=kind, exclude_chats=exclude_chats,
-                                         exclude_reasons=exclude_reasons)
+                                         exclude_reasons=exclude_reasons, until=until)
         rows = self._read_all(
             "SELECT m.chat_id AS chat_id, r.title AS title, COUNT(*) AS n, "
             "SUM(CASE WHEN m.sender_id = ? THEN 1 ELSE 0 END) AS mine "
@@ -525,6 +528,7 @@ class TelegramCatalogStore(BaseStore):
         self, *, chat_id: int | None = None, limit: int = 100, since: str | None = None,
         kind: str | None = None, exclude_chats: set[int] | frozenset[int] | None = None,
         exclude_reasons: set[str] | frozenset[str] | None = None,
+        until: str | None = None,
     ) -> list[dict[str, Any]]:
         """Deleted messages across every room, newest first, with the room title.
 
@@ -543,10 +547,11 @@ class TelegramCatalogStore(BaseStore):
         route marks catalog rows deleted too, and a message the operator deleted
         in a group is not a "business deletion". ``exclude_chats`` drops chats
         (the digest passes the muted set; the browse surfaces do not, because mute
-        stops the announcing, not the record)."""
+        stops the announcing, not the record). ``until`` (exclusive) bounds the
+        window from above, as in :meth:`count_deleted_since`."""
         where, params = _deleted_filters(
             since=since, kind=kind, exclude_chats=exclude_chats, chat_id=chat_id,
-            exclude_reasons=exclude_reasons)
+            exclude_reasons=exclude_reasons, until=until)
         params.append(max(1, min(500, limit)))
         clauses = [where]
         rows = self._read_all(
@@ -761,6 +766,7 @@ def _deleted_filters(
     *, since: str | None = None, kind: str | None = None,
     exclude_chats: set[int] | frozenset[int] | None = None, chat_id: int | None = None,
     exclude_reasons: set[str] | frozenset[str] | None = None,
+    until: str | None = None,
 ) -> tuple[str, list[Any]]:
     """WHERE clause + params for "deleted rows", shared by the count and the list.
 
@@ -778,6 +784,10 @@ def _deleted_filters(
     if since:
         clauses.append("m.deleted_at >= ?")
         params.append(since)
+    if until:
+        # Exclusive, so the next window (which starts at `until`) owns the edge.
+        clauses.append("m.deleted_at < ?")
+        params.append(until)
     if kind:
         clauses.append("m.kind = ?")
         params.append(kind)

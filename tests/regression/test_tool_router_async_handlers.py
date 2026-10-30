@@ -143,6 +143,35 @@ async def test_the_sync_path_inside_a_running_loop_refuses_instead_of_lying(
     assert ran == [], "handler must not have run"
 
 
+async def test_the_sync_path_inside_a_running_loop_cancels_a_returned_task(
+    registry_with,
+) -> None:
+    """A handler that returns an already-scheduled Task has no close(): refusing with
+    ERROR while it keeps running would let a caller retry a side effect that happened
+    (review F0720). The refusal must cancel it."""
+    ran: list[str] = []
+
+    async def work():
+        await asyncio.sleep(0)
+        ran.append("yes")
+
+    holder: list[asyncio.Task] = []
+
+    def handler(**kwargs):
+        task = asyncio.get_running_loop().create_task(work())
+        holder.append(task)
+        return task
+
+    registry_with("probe_task_inloop", handler)
+    result = ToolRouter().execute(ToolCallAction(tool="probe_task_inloop", parameters={}))
+
+    assert result.status is ToolResultStatus.ERROR
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert holder and holder[0].cancelled()
+    assert ran == [], "the refused task must not have run"
+
+
 def test_a_sync_handler_is_unaffected(registry_with) -> None:
     """The common case must not have changed shape."""
 

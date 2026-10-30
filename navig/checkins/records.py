@@ -189,15 +189,17 @@ def adherence(
 
 
 def count_total(rows: list[dict], item: str, day: str) -> int:
-    """Today's glasses: the sum of the day's ``add`` values, never below zero."""
+    """Today's glasses: the day's ``add`` values applied in record order, floored at
+    zero after EACH one — an undo larger than the running total must not leave a hidden
+    negative balance that swallows the next glass logged."""
     total = 0
     for r in rows:
         if r.get("item") == item and r.get("date") == day and r.get("status") == ADD:
             try:
-                total += int(r.get("value") or 0)
+                total = max(0, total + int(r.get("value") or 0))
             except (TypeError, ValueError):
                 continue
-    return max(0, total)
+    return total
 
 
 def done_today(rows: list[dict], item: Any, day: str, *, now_hhmm: str | None = None) -> bool:

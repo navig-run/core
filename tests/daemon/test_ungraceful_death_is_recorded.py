@@ -13,6 +13,7 @@ Telegram — exactly once, because the file is gone after the first detection.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -23,9 +24,21 @@ from navig.daemon import supervisor as sup
 
 @pytest.fixture
 def isolated_pid_file(tmp_path, monkeypatch):
-    """Point the supervisor at a throwaway pid file and capture incidents."""
+    """Throwaway pid file, heartbeat-bearing state file, captured incidents.
+
+    The state file carries heartbeats because that is exactly what an ungraceful
+    death leaves behind (a clean stop removes both files). `_reap_stale_pid_file`
+    only consults `last_seen_alive()` when it does — and that call is the interleave
+    point between the compare and the atomic take where the mid-reap race tests
+    claim the pid file. Without the state file the claim never happens and the
+    race tests test nothing.
+    """
     pf = tmp_path / "supervisor.pid"
     monkeypatch.setattr(sup, "PID_FILE", pf)
+    monkeypatch.setattr(sup, "STATE_FILE", tmp_path / "state.json")
+    (tmp_path / "state.json").write_text(
+        json.dumps({"heartbeat_s": sup.HEARTBEAT_S}), encoding="utf-8"
+    )
     recorded: list[tuple[str, dict]] = []
 
     from navig.core import incidents
@@ -116,3 +129,64 @@ def test_the_incident_has_an_operator_facing_description():
     assert incidents.DAEMON_DIED_UNGRACEFULLY in incidents.DESCRIPTIONS
     text = incidents.DESCRIPTIONS[incidents.DAEMON_DIED_UNGRACEFULLY].lower()
     assert "without shutting down" in text
+
+
+def test_an_uninspectable_live_daemon_is_not_reaped(isolated_pid_file, monkeypatch):
+    """A non-elevated status check against an elevated daemon reads AccessDenied.
+    That is "unknown", not a death: reaping deleted the LIVE daemon's pid file and
+    let the watchdog boot a duplicate."""
+    psutil = pytest.importorskip("psutil")
+    pf, recorded = isolated_pid_file
+    pf.write_text(str(os.getpid()), encoding="utf-8")
+
+    def _denied(self):
+        raise psutil.AccessDenied(self.pid)
+
+    monkeypatch.setattr(psutil.Process, "create_time", _denied)
+
+    assert sup.NavigDaemon.is_running() is True
+    assert pf.exists(), "an uninspectable daemon's pid file was reaped"
+    assert recorded == []
+
+
+def test_a_pid_file_claimed_mid_reap_survives(isolated_pid_file, monkeypatch):
+    """The compare and the removal were separate steps: a relaunching daemon that
+    claimed the pid file between them lost it to the reaper, and the next start
+    booted a second daemon."""
+    pf, recorded = isolated_pid_file
+    dead = _dead_pid()
+    pf.write_text(str(dead), encoding="utf-8")
+    newborn = str(os.getpid())
+
+    def _relaunch_claims_meanwhile():
+        pf.unlink()
+        pf.write_text(newborn, encoding="utf-8")
+        return None
+
+    monkeypatch.setattr(sup.NavigDaemon, "last_seen_alive", staticmethod(_relaunch_claims_meanwhile))
+
+    sup.NavigDaemon._reap_stale_pid_file(dead, "test")
+
+    assert pf.read_text(encoding="utf-8") == newborn, "the newborn daemon's pid file was reaped"
+    assert recorded == []
+    assert not list(pf.parent.glob("*.reaping.*")), "the reaper left its temp file behind"
+
+
+def test_two_concurrent_reaps_record_one_death(isolated_pid_file, monkeypatch):
+    pf, recorded = isolated_pid_file
+    dead = _dead_pid()
+    pf.write_text(str(dead), encoding="utf-8")
+    inner_done: list[bool] = []
+
+    def _second_checker_runs_meanwhile():
+        if not inner_done:
+            inner_done.append(True)
+            sup.NavigDaemon._reap_stale_pid_file(dead, "second checker")
+        return None
+
+    monkeypatch.setattr(sup.NavigDaemon, "last_seen_alive", staticmethod(_second_checker_runs_meanwhile))
+
+    sup.NavigDaemon._reap_stale_pid_file(dead, "first checker")
+
+    assert not pf.exists()
+    assert len(recorded) == 1, recorded

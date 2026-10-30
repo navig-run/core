@@ -112,6 +112,7 @@ def _cmdline_match_primitive(node: ast.Call) -> str | None:
 # Killing methods that, called inside a psutil.process_iter loop, turn a whole-table
 # enumeration into a kill. os.kill(...) shares the ``kill`` attribute name and is caught too.
 _KILL_METHODS = frozenset({"kill", "terminate", "send_signal"})
+_PSUTIL_KILL_LOOP = "psutil.process_iter loop body calls ."
 
 
 def _psutil_kill_loop(node: ast.AST) -> str | None:
@@ -136,7 +137,7 @@ def _psutil_kill_loop(node: ast.AST) -> str | None:
             and isinstance(inner.func, ast.Attribute)
             and inner.func.attr in _KILL_METHODS
         ):
-            return f"psutil.process_iter loop body calls .{inner.func.attr}() (enumerate-then-kill)"
+            return f"{_PSUTIL_KILL_LOOP}{inner.func.attr}() (enumerate-then-kill)"
     return None
 
 
@@ -159,8 +160,22 @@ def _violations() -> list[tuple[str, int, str]]:
     return out
 
 
+def _offenders(violations: list[tuple[str, int, str]]) -> list[tuple[str, int, str]]:
+    """Violations the allowlist does not excuse.
+
+    The allowlist documents why each file's *command-string* sites are safe. It never
+    excuses a psutil enumerate-then-kill loop: a new one in an allowlisted file is the same
+    machine-wide sweep, and no entry's reason covers it.
+    """
+    return [
+        (rel, ln, why)
+        for rel, ln, why in violations
+        if rel not in _ALLOWLIST or why.startswith(_PSUTIL_KILL_LOOP)
+    ]
+
+
 def test_no_unscoped_navig_process_killer():
-    offenders = [(rel, ln, why) for rel, ln, why in _violations() if rel not in _ALLOWLIST]
+    offenders = _offenders(_violations())
     assert not offenders, (
         "Unscoped command-line-match process killer(s) found. Route the kill through "
         "navig.daemon.single_instance.kill_other_instances(patterns, config_dir=paths.config_dir()) "
@@ -250,3 +265,13 @@ def test_detector_ignores_psutil_iter_listing():
 def test_detector_ignores_pkill_in_a_hint_string():
     # `pkill` in a help/hint string is not a subprocess call, so it is never a violation.
     assert not _is_subprocess_call(_first_call('ch.info("kill it manually: pkill -f navig gateway")'))
+
+
+def test_allowlist_does_not_excuse_a_psutil_kill_loop():
+    # A process_iter kill loop added to an allowlisted module must still fail the build;
+    # only that file's documented command-string sites are excused.
+    why = _psutil_kill_loop(_first_for("for p in psutil.process_iter():\n    p.kill()\n"))
+    assert why is not None
+    assert _offenders([("daemon/supervisor.py", 1, why)]) == [("daemon/supervisor.py", 1, why)]
+    cmd = "pkill/pgrep (cmdline-match process enumeration/kill)"
+    assert _offenders([("daemon/supervisor.py", 2, cmd)]) == []

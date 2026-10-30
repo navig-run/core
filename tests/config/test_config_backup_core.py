@@ -34,6 +34,36 @@ def test_delete_export_requires_file_option(monkeypatch):
     assert any("Input file is required" in message for message in messages)
 
 
+def test_inspect_export_of_a_corrupt_archive_exits_1(tmp_path, monkeypatch):
+    monkeypatch.setattr(config_backup.ch, "error", lambda *a, **k: None)
+    bad = tmp_path / "broken.tar.gz"
+    bad.write_bytes(b"not a gzip archive")
+
+    with pytest.raises(typer.Exit) as exc:
+        config_backup.inspect_export({"file": str(bad)})
+
+    assert exc.value.exit_code == 1
+
+
+@pytest.mark.parametrize("json_out", [False, True])
+def test_delete_export_failure_exits_1(tmp_path, monkeypatch, json_out):
+    monkeypatch.setattr(config_backup.ch, "error", lambda *a, **k: None)
+    monkeypatch.setattr(config_backup.ch, "raw_print", lambda *a, **k: None)
+    target = tmp_path / "export.tar.gz"
+    target.write_bytes(b"x")
+
+    def _locked(path):
+        raise PermissionError("in use")
+
+    monkeypatch.setattr(config_backup.os, "remove", _locked)
+
+    with pytest.raises(typer.Exit) as exc:
+        config_backup.delete_export({"file": str(target), "yes": True, "json": json_out})
+
+    assert exc.value.exit_code == 1
+    assert target.exists()
+
+
 def test_safe_extract_tar_blocks_path_traversal(tmp_path):
     archive_path = tmp_path / "bad.tar.gz"
 

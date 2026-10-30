@@ -43,6 +43,10 @@ if sys.platform != "win32":
             typer.echo("error: navig desktop is Windows only", err=True)
             raise typer.Exit(1)
 
+    # Refuse-on-invocation only: the registry keeps `navig desktop` out of the shipped
+    # manifest, which is generated on Windows where this callback does not exist.
+    _windows_only.__navig_platform_stub__ = True  # type: ignore[attr-defined]
+
 
 # ─────────────────────────── Agent RPC client ─────────────────────────────────
 

@@ -103,6 +103,24 @@ def _append_journal(record: dict) -> None:
         fh.flush()
 
 
+def _journal_written(rec: dict) -> str | None:
+    """Journal a contact change that already happened. ``None`` = recorded.
+
+    The Telegram write has succeeded by now, so a journal that cannot be written
+    (read-only home, full disk) leaves that change with no undo record. The run
+    must stop there and name it — never raise past it, and never keep writing
+    changes nothing can reverse."""
+    try:
+        _append_journal(rec)
+        return None
+    except OSError as exc:
+        logger.warning("contact journal write failed: %s", exc)
+        who = f"@{rec['username']}" if rec.get("username") else f"id {rec.get('user_id')}"
+        return (f"JOURNAL — {who} was written but could not be journaled ({exc}), so "
+                f"`undo` cannot reverse it. Stopped before any further write; fix "
+                f"{journal_path()} and revert that contact by hand if needed.")
+
+
 def read_journal(run_id: str | None = None) -> list[dict]:
     """Journal records, newest run last. ``run_id`` filters to one run."""
     p = journal_path()
@@ -453,6 +471,12 @@ def unpersisted_ids(written: list[dict], contact_ids: set[int]) -> list[dict]:
     return [r for r in written if r.get("user_id") not in contact_ids]
 
 
+def persisted_count(written: list[dict], not_persisted: list[dict]) -> int:
+    """How many written rows actually filed a contact — the honest success count."""
+    gone = {r.get("user_id") for r in not_persisted}
+    return sum(1 for r in written if r.get("user_id") not in gone)
+
+
 async def _unpersisted(client, written: list[dict]) -> list[dict]:
     """Re-read the contact list once and report writes that did not stick."""
     if not written:
@@ -568,6 +592,17 @@ async def tag_members(
                     user = await c.get_input_entity(row["user_id"])
                     await _write_contact(c, user, row["new_first"], row["new_last"],
                                          row.get("new_note"))
+                except PeerFloodError as exc2:
+                    # Both inherit RPCError: caught below they read as one contact's
+                    # failure, and the run kept writing into a restricted account.
+                    aborted = ("PEER_FLOOD — Telegram has limited this account for adding "
+                               "too many contacts. Stopped; wait a day before resuming.")
+                    logger.warning("peer flood during contact tagging: %s", exc2)
+                    break
+                except FloodWaitError as exc2:
+                    aborted = (f"FLOOD_WAIT {int(getattr(exc2, 'seconds', 0) or 0)}s again "
+                               f"right after a {wait}s wait. Stopped; resume later.")
+                    break
                 except RPCError as exc2:
                     failed.append({**row, "error": type(exc2).__name__, "detail": str(exc2)})
                     continue
@@ -587,8 +622,11 @@ async def tag_members(
             }
             # Journalled before the next write is attempted: an abort here still
             # leaves an undo record for everything already written.
-            _append_journal(rec)
+            journal_error = _journal_written(rec)
             written.append(rec)
+            if journal_error:
+                aborted = journal_error
+                break
             if progress:
                 progress({"done": len(written), "total": len(todo), **rec})
             if delay and i < len(todo) - 1:
@@ -599,7 +637,8 @@ async def tag_members(
     return {"run_id": run_id, "chat": str(chat), "tag": tag, "mark": mark,
             "note": note, "plan": plan, "counts": counts, "todo": todo,
             "written": written, "failed": failed, "aborted": aborted,
-            "not_persisted": not_persisted, "dry_run": False}
+            "not_persisted": not_persisted,
+            "persisted": persisted_count(written, not_persisted), "dry_run": False}
 
 
 #: Telethon status class → the bucket Telegram shows in the UI.
@@ -690,10 +729,17 @@ async def tag_handles(
         saved = {r["user_id"]: r for r in await _contacts(c)}
 
         todo: list[dict] = []
+        lookups = 0
         for e in entries:
             handle = str(e.get("handle") or "").strip().lstrip("@")
             if not handle:
                 continue
+            # Paced BEFORE every lookup after the first: a dead handle, a channel
+            # or an already-marked contact `continue`s early, and pacing only the
+            # appended rows sent their lookups back-to-back.
+            if resolve_delay and lookups:
+                await asyncio.sleep(resolve_delay)
+            lookups += 1
             try:
                 ent = await c.get_entity(handle)
             except FloodWaitError as exc:
@@ -710,6 +756,12 @@ async def tag_handles(
                 await asyncio.sleep(wait + 1)
                 try:
                     ent = await c.get_entity(handle)
+                except FloodWaitError as exc2:
+                    # Still rate-limited after the wait: stop, never read as dead.
+                    aborted = (f"FLOOD_WAIT {int(getattr(exc2, 'seconds', 0) or 0)}s again "
+                               f"while resolving @{handle}, right after a {wait}s wait. "
+                               f"Stopped after {len(todo)} resolved; nothing here is 'dead'.")
+                    break
                 except (ValueError, RPCError) as exc2:
                     unresolved.append({"handle": handle, "error": type(exc2).__name__,
                                        "detail": str(exc2)})
@@ -727,33 +779,50 @@ async def tag_handles(
             cur = saved.get(uid)
             first = ((cur or {}).get("first_name") if cur else None) \
                 or getattr(ent, "first_name", None) or e.get("first_name") or handle
-            if "last_name" in e:
+            if "last_name" in e and writes_name:
                 # An explicit surname base from the file wins over both the saved
                 # and the profile surname. This is how a caller that knows more
                 # than Telegram does — a city, a cohort — puts it in the name,
                 # e.g. {"last_name": "Lyon"} with tag DAVI → "Lyon DAVI".
+                # Only for a mark that writes the surname: note mode leaves the
+                # name exactly as it is.
                 last = str(e.get("last_name") or "").strip()
             else:
                 last = ((cur or {}).get("last_name") if cur else None) \
                     or getattr(ent, "last_name", None) or ""
             note = e.get("note") or tag
-            # Check the SAVED name, not the computed one: with an override the
-            # computed surname is the bare city, which never looks tagged, so
+            new_note = note[:NOTE_LENGTH_LIMIT] if writes_note else None
+            # The write replaces an existing contact's note, so undo needs the
+            # note it had — journalling None would restore it to empty.
+            before_note = ((await _read_note(c, ent)) or None) if cur and writes_note else None
+            # Done is decided per marker the chosen mark writes, as plan_tagging
+            # does: a surname-tagged contact still needs its note in note/both
+            # mode. Check the SAVED name, not the computed one: with an override
+            # the computed surname is the bare city, which never looks tagged, so
             # comparing it would rewrite an already-marked contact every run.
-            if cur and is_tagged(cur.get("first_name"), cur.get("last_name"), tag):
-                continue                      # already carries the marker
+            name_done = bool(cur) and (
+                not writes_name or is_tagged(cur.get("first_name"), cur.get("last_name"), tag))
+            note_done = bool(cur) and (
+                not writes_note or _has_tag(before_note, tag)
+                or (before_note or "").strip() == (new_note or "").strip())
+            if name_done and note_done:
+                continue                      # already carries every marker
+            if name_done and writes_name:
+                # Only the note is missing: leave the marked name exactly as saved.
+                first = (cur or {}).get("first_name") or first
+                new_last = str((cur or {}).get("last_name") or "").strip()
+            else:
+                new_last = apply_tag(last, tag) if writes_name else str(last).strip()
             todo.append({
                 "user_id": uid, "handle": handle, "username": getattr(ent, "username", None),
                 "action": "update" if cur else "add",
                 "before_first": (cur or {}).get("first_name") if cur else None,
                 "before_last": (cur or {}).get("last_name") if cur else None,
-                "before_note": None,
+                "before_note": before_note,
                 "new_first": str(first).strip(),
-                "new_last": apply_tag(last, tag) if writes_name else str(last).strip(),
-                "new_note": (note[:NOTE_LENGTH_LIMIT] if writes_note else None),
+                "new_last": new_last,
+                "new_note": new_note,
             })
-            if resolve_delay:
-                await asyncio.sleep(resolve_delay)
 
         if limit is not None:
             todo = todo[:limit]
@@ -787,6 +856,16 @@ async def tag_handles(
                     user = await c.get_input_entity(row["user_id"])
                     await _write_contact(c, user, row["new_first"], row["new_last"],
                                          row.get("new_note"))
+                except PeerFloodError as exc2:
+                    # The retry gets the same abort as the first attempt.
+                    aborted = ("PEER_FLOOD — Telegram limited this account mid-run. "
+                               "Stopped; wait before resuming.")
+                    logger.warning("peer flood during handle tagging: %s", exc2)
+                    break
+                except FloodWaitError as exc2:
+                    aborted = (f"FLOOD_WAIT {int(getattr(exc2, 'seconds', 0) or 0)}s again "
+                               f"right after a {wait}s wait. Stopped; resume later.")
+                    break
                 except Exception as exc2:  # noqa: BLE001 — see below
                     failed.append({**row, "error": type(exc2).__name__, "detail": str(exc2)})
                     continue
@@ -806,8 +885,11 @@ async def tag_handles(
                    # about this person by id at all — only by re-resolving the
                    # handle, which spends the daily lookup budget.
                    "access_hash": getattr(user, "access_hash", None)}
-            _append_journal(rec)
+            journal_error = _journal_written(rec)
             written.append(rec)
+            if journal_error:
+                aborted = journal_error
+                break
             if progress:
                 progress({"done": len(written), "total": len(todo), **rec})
             if delay and i < len(todo) - 1:
@@ -817,7 +899,8 @@ async def tag_handles(
 
     return {"run_id": run_id, "label": label, "tag": tag, "mark": mark, "todo": todo,
             "unresolved": unresolved, "written": written, "failed": failed,
-            "aborted": aborted, "not_persisted": not_persisted, "dry_run": False}
+            "aborted": aborted, "not_persisted": not_persisted,
+            "persisted": persisted_count(written, not_persisted), "dry_run": False}
 
 
 async def prune_contacts(
@@ -838,7 +921,8 @@ async def prune_contacts(
     journalled after, and :func:`undo_run` can put them back.
 
     ``tag`` scopes the sweep to one cohort, so pruning an imported list cannot
-    touch contacts you added by hand.
+    touch contacts you added by hand. The marker is matched in the name and, for
+    in-bucket contacts whose name lacks it, in the private note (``note`` mode).
     """
     from telethon.errors import RPCError
     from telethon.tl.functions.contacts import DeleteContactsRequest, GetContactsRequest
@@ -850,12 +934,19 @@ async def prune_contacts(
     async with UserClient() as c:
         res = await c(GetContactsRequest(hash=0))
         todo: list[dict] = []
-        for u in getattr(res, "users", []):
-            if status_bucket(u) != status:
-                continue
-            if tag and not is_tagged(getattr(u, "first_name", None),
-                                     getattr(u, "last_name", None), tag):
-                continue
+        candidates = [u for u in getattr(res, "users", []) if status_bucket(u) == status]
+        if tag:
+            # A cohort filed with ``--mark note`` carries its marker only in the
+            # private note, so a name-only check would silently plan nothing for
+            # it. Notes are fetched only for in-bucket contacts the name misses.
+            named = {int(u.id) for u in candidates
+                     if is_tagged(getattr(u, "first_name", None),
+                                  getattr(u, "last_name", None), tag)}
+            notes = await _notes_for(c, [int(u.id) for u in candidates
+                                         if int(u.id) not in named])
+            candidates = [u for u in candidates
+                          if int(u.id) in named or _has_tag(notes.get(int(u.id)), tag)]
+        for u in candidates:
             todo.append({
                 "user_id": int(u.id), "username": getattr(u, "username", None),
                 "removed_first": getattr(u, "first_name", None),
@@ -908,7 +999,11 @@ def expected_contacts(records: Iterable[dict]) -> dict[int, dict]:
             continue
         kind = rec.get("kind")
         if kind == "write":
-            expected.setdefault(uid, rec)
+            first = expected.setdefault(uid, rec)
+            if first is not rec and first.get("access_hash") is None                     and rec.get("access_hash") is not None:
+                # Keep when they were first filed, but take the hash a later write
+                # journalled — without it the by-id lookup cannot ask about them.
+                expected[uid] = {**first, "access_hash": rec["access_hash"]}
         elif kind == "prune":
             gone = expected.pop(uid, None)
             pruned[uid] = gone or rec
@@ -952,7 +1047,12 @@ async def missing_contacts(
     ``resolve=True`` falls back to resolving their old username — paced, capped at
     ``resolve_limit``, and stopped (never misread) by a flood over the ceiling.
     """
-    from telethon.errors import FloodWaitError, RPCError
+    from telethon.errors import (
+        FloodWaitError,
+        RPCError,
+        UsernameInvalidError,
+        UsernameNotOccupiedError,
+    )
     from telethon.tl.functions.contacts import GetContactsRequest
     from telethon.tl.functions.users import GetUsersRequest
     from telethon.tl.types import InputUser
@@ -988,6 +1088,7 @@ async def missing_contacts(
 
         aborted = None
         resolved = 0
+        lookup_errors: dict[int, str] = {}
         if resolve:
             for uid in no_hash:
                 handle = gone[uid].get("handle") or gone[uid].get("username")
@@ -1006,8 +1107,16 @@ async def missing_contacts(
                     aborted = (f"FLOOD_WAIT {getattr(exc, 'seconds', '?')}s while resolving "
                                f"@{handle} — stopped; nothing after this was checked.")
                     break
-                except (ValueError, RPCError):
+                except (ValueError, UsernameNotOccupiedError, UsernameInvalidError):
+                    # Telethon raises ValueError for "No user has … as username".
                     verdict[uid] = "handle_gone"
+                    continue
+                except RPCError as exc:
+                    # A server, auth or rate-limit failure says nothing about the
+                    # handle: leave the row unknown rather than call a live account
+                    # deleted, and say why it went unchecked.
+                    lookup_errors[uid] = type(exc).__name__
+                    logger.debug("resolving @%s failed", handle, exc_info=True)
                     continue
                 if int(getattr(ent, "id", 0) or 0) == uid:
                     verdict[uid] = "deleted" if getattr(ent, "deleted", False) else "removed"
@@ -1023,6 +1132,7 @@ async def missing_contacts(
             "chat": rec.get("chat"),
             "filed_at": rec.get("at"),
             "verdict": verdict.get(uid, "unknown"),
+            **({"lookup_error": lookup_errors[uid]} if uid in lookup_errors else {}),
         })
     rows.sort(key=lambda r: (r["verdict"], str(r.get("chat")), str(r.get("filed_at"))))
     counts: dict[str, int] = {}
@@ -1032,7 +1142,8 @@ async def missing_contacts(
             "missing": rows, "counts": counts, "resolved": resolved, "aborted": aborted}
 
 
-async def undo_run(run_id: str | None = None, *, confirm: bool = False) -> dict:
+async def undo_run(run_id: str | None = None, *, confirm: bool = False,
+                   delay: float = 1.0) -> dict:
     """Reverse a marking or prune run.
 
     A contact this run *created* is deleted outright, which takes its note with
@@ -1040,8 +1151,15 @@ async def undo_run(run_id: str | None = None, *, confirm: bool = False) -> dict:
     before; one it *pruned* is added back under the name it was removed with.
     Undo is itself journalled, and an entry already undone is skipped, so running
     it twice is safe.
+
+    Requests are spaced by *delay*. A ``FLOOD_WAIT`` up to :data:`MAX_FLOOD_WAIT`
+    is slept off and the record retried once; a longer one, a second flood or a
+    ``PEER_FLOOD`` stops the run (``aborted``) — firing the rest of the undo into
+    a known rate-limit window only fails it and deepens the restriction. What was
+    not reached stays un-undone, so re-running the undo later resumes it.
     """
-    from telethon.errors import RPCError
+    from telethon.errors import FloodWaitError, PeerFloodError, RPCError
+    from telethon.tl.types import InputUser
 
     records = read_journal(run_id)
     if run_id is None:
@@ -1061,51 +1179,93 @@ async def undo_run(run_id: str | None = None, *, confirm: bool = False) -> dict:
 
     reverted: list[dict] = []
     failed: list[dict] = []
+    aborted: str | None = None
     async with UserClient() as c:
         from telethon.tl.functions.contacts import DeleteContactsRequest
-        for rec in writes:
+        if any(r.get("kind") != "prune" and r.get("access_hash") is None for r in writes):
+            # The session is a StringSession and caches no entities between runs:
+            # a bare id cannot be resolved until the contact list has been read.
             try:
-                if rec.get("kind") == "prune":
-                    # The contact is gone, so the session may no longer hold an
-                    # access hash for the id — the username is the reliable way
-                    # back. Without one there is nothing to resolve.
-                    handle = rec.get("username")
-                    if not handle:
-                        failed.append({**rec, "error": "NoUsername",
-                                       "detail": "pruned contact had no username to re-add by"})
-                        continue
-                    ent = await c.get_entity(handle)
-                    await _write_contact(c, await c.get_input_entity(ent.id),
-                                         rec.get("removed_first") or handle,
-                                         rec.get("removed_last") or "", None)
-                    entry = {"run_id": run_id, "kind": "undo",
-                             "at": datetime.now(timezone.utc).isoformat(),
-                             "user_id": rec["user_id"], "action": "prune"}
-                    _append_journal(entry)
-                    reverted.append(rec)
-                    continue
+                await _contacts(c)
+            except Exception:  # noqa: BLE001 — undo still tries each record
+                logger.debug("contact-list warm-up before undo failed", exc_info=True)
+        async def _undo_one(rec: dict) -> dict | None:
+            """Revert one record; a failure dict when it cannot be, else None."""
+            if rec.get("kind") == "prune":
+                # The contact is gone, so the session may no longer hold an
+                # access hash for the id — the username is the reliable way
+                # back. Without one there is nothing to resolve.
+                handle = rec.get("username")
+                if not handle:
+                    return {**rec, "error": "NoUsername",
+                            "detail": "pruned contact had no username to re-add by"}
+                ent = await c.get_entity(handle)
+                if int(getattr(ent, "id", 0) or 0) != int(rec["user_id"]):
+                    # The username was released and now belongs to someone else:
+                    # re-adding it would file a stranger under the pruned name.
+                    return {**rec, "error": "HandleReassigned",
+                            "detail": f"@{handle} now resolves to a different account"}
+                await _write_contact(c, await c.get_input_entity(ent.id),
+                                     rec.get("removed_first") or handle,
+                                     rec.get("removed_last") or "", None)
+                return None
 
+            if rec.get("access_hash") is not None:
+                user = InputUser(user_id=int(rec["user_id"]),
+                                 access_hash=int(rec["access_hash"]))
+            else:
                 user = await c.get_input_entity(rec["user_id"])
-                if rec.get("action") == "add":
-                    # Deleting the contact takes its note with it.
-                    await c(DeleteContactsRequest(id=[user]))
-                else:
-                    # Restore name *and* note. A note this run wrote over an empty
-                    # one restores to "" rather than being left behind — passing
-                    # None here would keep the marker on a contact we just undid.
-                    await _write_contact(
-                        c, user,
-                        rec.get("before_first") or "",
-                        rec.get("before_last") or "",
-                        (rec.get("before_note") or "") if rec.get("new_note") is not None else None,
-                    )
+            if rec.get("action") == "add":
+                # Deleting the contact takes its note with it.
+                await c(DeleteContactsRequest(id=[user]))
+            else:
+                # Restore name *and* note. A note this run wrote over an empty
+                # one restores to "" rather than being left behind — passing
+                # None here would keep the marker on a contact we just undid.
+                await _write_contact(
+                    c, user,
+                    rec.get("before_first") or "",
+                    rec.get("before_last") or "",
+                    (rec.get("before_note") or "") if rec.get("new_note") is not None else None,
+                )
+            return None
+
+        for i, rec in enumerate(writes):
+            if delay and i:
+                await asyncio.sleep(delay)
+            try:
+                try:
+                    problem = await _undo_one(rec)
+                except FloodWaitError as exc:
+                    wait = int(getattr(exc, "seconds", 0) or 0)
+                    if wait > MAX_FLOOD_WAIT:
+                        aborted = (f"FLOOD_WAIT {wait}s — over the {MAX_FLOOD_WAIT}s ceiling. "
+                                   f"Stopped after {len(reverted)} reverted; run undo again later.")
+                        break
+                    await asyncio.sleep(wait + 1)
+                    problem = await _undo_one(rec)
+            except PeerFloodError as exc:
+                aborted = ("PEER_FLOOD — Telegram limited this account mid-undo. Stopped "
+                           f"after {len(reverted)} reverted; run undo again later.")
+                logger.warning("peer flood during contact undo: %s", exc)
+                break
+            except FloodWaitError as exc:
+                aborted = (f"FLOOD_WAIT {int(getattr(exc, 'seconds', 0) or 0)}s again right "
+                           f"after a wait. Stopped after {len(reverted)} reverted; run undo "
+                           f"again later.")
+                break
             except (RPCError, TypeError, ValueError) as exc:
                 failed.append({**rec, "error": type(exc).__name__, "detail": str(exc)})
                 continue
+            if problem is not None:
+                failed.append(problem)
+                continue
             entry = {"run_id": run_id, "kind": "undo",
                      "at": datetime.now(timezone.utc).isoformat(),
-                     "user_id": rec["user_id"], "action": rec.get("action")}
+                     "user_id": rec["user_id"],
+                     "action": "prune" if rec.get("kind") == "prune" else rec.get("action")}
             _append_journal(entry)
             reverted.append(rec)
 
-    return {"run_id": run_id, "reverted": reverted, "failed": failed, "dry_run": False}
+    return {"run_id": run_id, "reverted": reverted, "failed": failed, "aborted": aborted,
+            "dry_run": False}

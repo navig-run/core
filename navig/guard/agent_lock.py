@@ -8,7 +8,7 @@ edits (this happened; see memory ``navig-shared-tree-rebase-hazard``).
 
 What this does (stdlib-only, fail-open — any internal error allows the call):
 
-* PreToolUse (Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell): the first session to
+* PreToolUse (every tool, matcher ``*``): the first session to
   edit claims ``.dev/agent.lock``; every later edit refreshes it, and so does
   ANY tool call by the holder (a read, a test run, a patch script) — activity
   is activity. A DIFFERENT live session gets **exit 2** (blocked) with
@@ -64,6 +64,10 @@ SHELL_TOOLS = {"Bash", "PowerShell"}
 _DANGEROUS_VERBS = frozenset({
     "checkout", "switch", "rebase", "reset", "merge", "pull", "cherry-pick",
     "revert", "clean", "restore", "commit", "add", "rm", "mv", "am", "apply", "stash",
+    # Plumbing that writes the working tree: `merge-file` rewrites its <current-file>,
+    # `checkout-index` and `read-tree -u` check files out. `merge-base`/`merge-tree`
+    # stay exempt -- they only read.
+    "merge-file", "checkout-index", "read-tree",
 })
 #: Global options whose NEXT token is their value (`git -C "my dir" reset`).
 _GIT_VALUE_FLAGS = frozenset({"-C", "-c", "--exec-path", "--namespace", "--config-env"})
@@ -114,8 +118,18 @@ def _dangerous_git_at(cmd: str) -> int | None:
             while (tok := _read_token(cmd, pos, seg_end)) is not None:
                 token, _start, nxt = tok
                 if token[0] in "\"'":
-                    pos = nxt  # an argument, never the verb
-                    continue
+                    # The shell strips the quotes before git reads its argv, so
+                    # `git "reset" --hard` runs `reset`. Only a token that is still
+                    # quoted after one layer (or never closed) is skipped. Every
+                    # token here comes BEFORE the verb (the loop stops at it), so a
+                    # quoted message or pattern after the verb is never read.
+                    if len(token) < 2 or token[-1] != token[0]:
+                        pos = nxt  # unterminated: an argument, never the verb
+                        continue
+                    token = token[1:-1]
+                    if not token:
+                        pos = nxt
+                        continue
                 if token in _GIT_VALUE_FLAGS:
                     value = _read_token(cmd, nxt, seg_end)
                     pos = value[2] if value else nxt
@@ -142,21 +156,91 @@ _GIT_C_TARGET = re.compile(r"\bgit\b\s+(?:[^\s]+\s+)*?-C\s+([^\s\"']+|\"[^\"]+\"
 # Anchored to a segment boundary so it cannot match inside a quoted message.
 # A `-C` target we cannot expand: `$wt`, `${wt}`, `$env:wt`, `%WT%`.
 _SHELL_VAR = re.compile(r"[$%]")
+# The operators around the `cd`: `sep` before it (None at the start), `after` behind its
+# target. Only a `cd` between `;`/`&&`/a newline/the ends moves THIS shell: one that is a
+# pipeline member (`cd x | git ...`, `a | cd x && git ...`) or backgrounded (`cd x & git`)
+# runs in a subshell, and one after `||` may not run at all -- so such a hop is only
+# POSSIBLE (`_cd_is_certain`), never certain (review F0143).
+_CD_ARG = (
+    r"\s+(?P<target>[^\s;&|\"']+|\"[^\"]+\"|'[^']+')"
+    r"(?=[ \t]*(?P<after>\|\||&&|[|&])?)"
+)
+_CD_SEP = r"(?:^|(?P<sep>&&|\|\||[;&|\n])\s*)"
+
+
+def _cd_is_certain(cd: re.Match[str]) -> bool:
+    """Does this `cd` match certainly move the shell that runs what follows it?"""
+    return cd.group("sep") not in ("|", "&", "||") and cd.group("after") not in ("|", "&")
 _CD_TARGET = re.compile(
     # PowerShell's own verb is `Set-Location` (`cd`/`chdir` are its aliases); without it a
     # `Set-Location <main>; git checkout main` from a worktree was judged by the worktree.
-    r"(?:^|[;&|]\s*)(?:cd|chdir|pushd|Push-Location|Set-Location)\s+"
-    r"([^\s;&|\"']+|\"[^\"]+\"|'[^']+')",
+    _CD_SEP + r"(?:cd|chdir|pushd|Push-Location|Set-Location)" + _CD_ARG,
     re.IGNORECASE,
 )
+# Bash knows only `cd`/`pushd` (case-sensitive): `Set-Location x; git checkout main` in Git
+# Bash fails the first command and runs the checkout where the shell already was, so
+# reading it as a hop exempted a main-checkout mutation (review F2254).
+_CD_TARGET_BASH = re.compile(_CD_SEP + r"(?:cd|pushd)" + _CD_ARG)
+
+
+def _cd_pattern(payload: dict) -> re.Pattern[str]:
+    """The directory-change verbs of the shell that runs this command."""
+    return _CD_TARGET_BASH if payload.get("tool_name") == "Bash" else _CD_TARGET
 _WORKTREE_ADD = re.compile(r"\bgit\b[^\n|&;]*?\bworktree\s+add\s+([^\n|&;]+)")
 
-# A `git commit` that names paths after a standalone `--`. Everything after it is the
-# pathspec; `--amend`/`--no-verify` do not match because the `--` must stand alone.
-_PATHSPEC_COMMIT = re.compile(r"\bgit\b[^\n|&;]*?\bcommit\b[^\n|&;]*?\s--\s+([^\n|&;]+)")
+# A `git commit` invocation, in git's grammar (`git [-C dir] [-c k=v] [--opt] commit`);
+# its pathspec is read from the arguments by `_commit_pathspecs`.
+_PATHSPEC_COMMIT = re.compile(
+    r"\bgit\b(?:\s+-C\s+(?:\"[^\"]*\"|'[^']*'|\S+)|\s+-c\s+\S+|\s+--?[A-Za-z][\w-]*(?:=\S+)?)*?"
+    r"\s+commit\b([^\n|&;]*)"
+)
+#: `git commit` short options whose value is the NEXT token when nothing follows them.
+_COMMIT_SHORT_VALUE = frozenset("mFCct")
+#: `git commit` long options whose value is the next token (unless written `--opt=v`).
+_COMMIT_LONG_VALUE = frozenset({
+    "--message", "--file", "--reuse-message", "--reedit-message", "--fixup", "--squash",
+    "--author", "--date", "--cleanup", "--template", "--trailer", "--pathspec-from-file",
+})
 
-# `git worktree add` flags that consume the following token as their value.
-_WT_VALUE_FLAGS = {"-b", "-B", "--reason", "--orphan"}
+
+def _commit_pathspecs(args: str) -> list[str]:
+    """The pathspec of `git commit <args>`: every operand, and everything after `--`.
+
+    `git commit -h` documents `[--] [<pathspec>...]` -- the separator is optional, so
+    `git commit -m x gen.txt` is just as path-scoped (review F2019). Tokenized with the
+    quotes kept, so a `--` inside a quoted message is not the separator (F2024).
+    """
+    tokens = re.findall(r'"[^"]*"|\'[^\']*\'|\S+', args)
+    specs: list[str] = []
+    skip = opts_done = False
+    for tok in tokens:
+        if skip:
+            skip = False
+        elif opts_done or not tok.startswith("-") or tok == "-":
+            specs.append(tok.strip("\"'"))
+        elif tok == "--":
+            opts_done = True
+        elif tok.startswith("--"):
+            skip = tok in _COMMIT_LONG_VALUE
+        else:
+            # A short cluster (`-am`): a value flag takes the rest of the token, or the
+            # next token when it ends the cluster.
+            for i, ch in enumerate(tok[1:], 1):
+                if ch in _COMMIT_SHORT_VALUE:
+                    skip = i == len(tok) - 1
+                    break
+    return [s for s in specs if s]
+
+# A `git rm`/`git update-index` whose flags may stage a deletion before a later commit.
+_STAGE_DELETE = re.compile(
+    r"\bgit\b(?:\s+-C\s+(?:\"[^\"]*\"|'[^']*'|\S+)|\s+-c\s+\S+)*\s+"
+    r"(?P<verb>rm|update-index)\b(?P<args>[^\n|&;]*)"
+)
+
+# `git worktree add` flags that consume the following token as their value. `--orphan`
+# is not one: `git worktree add -h` lists `[--orphan] ... <path>`, and reading it as one
+# skipped the path, so `git worktree add --orphan ../x` was exempt (review F0073).
+_WT_VALUE_FLAGS = {"-b", "-B", "--reason"}
 
 
 def repo_root() -> Path:
@@ -186,6 +270,9 @@ def repo_root() -> Path:
                 return parent
             if text.startswith("gitdir:"):
                 gitdir = Path(text[len("gitdir:"):].strip())
+                if not gitdir.is_absolute():
+                    # Relative to the `.git` file, not to wherever the hook's cwd drifted.
+                    gitdir = (dot.parent / gitdir).resolve()
                 # <main>/.git/worktrees/<name>  ->  <main>
                 if gitdir.parent.name == "worktrees" and gitdir.parent.parent.name == ".git":
                     return gitdir.parent.parent.parent
@@ -206,7 +293,10 @@ def _from_msys(path_str: str) -> str:
     legitimate worktree command got blocked. Only a single-letter ``/c/`` prefix converts,
     so real POSIX paths like ``/tmp/foo`` are untouched.
     """
-    if os.name == "nt":
+    # `sys.platform`, not `os.name`: the value is the same on real platforms, and tests can
+    # pin it on this module alone — patching `os.name` rewrites the process-global module and
+    # makes pathlib reach for WindowsPath on Linux (2026-10-30, outpost).
+    if sys.platform == "win32":
         m = re.match(r"^/([A-Za-z])/(.*)$", path_str)
         if m:
             return m.group(1).upper() + ":\\" + m.group(2).replace("/", "\\")
@@ -307,29 +397,32 @@ def pathspec_commit_discards(payload: dict, root: Path) -> list[str]:
     if payload.get("tool_name", "") not in SHELL_TOOLS:
         return []
     cmd = str((payload.get("tool_input") or {}).get("command", ""))
-    m = _PATHSPEC_COMMIT.search(cmd)
-    if not m:
-        return []
-    specs = [t for t in m.group(1).split() if not t.startswith("-")]
-    if not specs:
+    m, specs = next(
+        ((c, sp) for c in _PATHSPEC_COMMIT.finditer(cmd) if (sp := _commit_pathspecs(c.group(1)))),
+        (None, []),
+    )
+    if m is None:
         return []
 
-    # Which repo? Honour `-C`, else the shell's cwd. Unexpandable `-C $var`: fail open --
-    # we cannot inspect a repo we cannot name, and a wrong guess would block the wrong tree.
-    repo = Path(payload.get("cwd") or root)
-    c = _GIT_C_TARGET.search(cmd)
-    if c:
-        target = c.group(1).strip("\"'")
-        if _SHELL_VAR.search(target):
-            return []
-        t = Path(target)
-        repo = t if t.is_absolute() else repo / t
+    # Which repo? This commit's own global `-C` (only between `git` and `commit`: the
+    # `-C <commit>` of `git commit -C HEAD` reuses a message, and reading it as a
+    # directory inspected `<cwd>/HEAD`, failed, and let the commit through -- review
+    # F2020), after any `cd` before it, else the shell's cwd. Unexpandable `-C $var`:
+    # fail open -- we cannot inspect a repo we cannot name, and a wrong guess would
+    # block the wrong tree.
+    repo = _command_repo(payload, cmd, root, m.start())
+    if repo is None:
+        return []
 
     import subprocess
 
+    # git matches the pathspec itself, from the directory the commit runs in: `gen.txt`
+    # typed in `sub/` names `sub/gen.txt`, which a string compare against git's
+    # root-relative names missed (review F2017). The names come back root-relative.
     try:
         out = subprocess.run(
-            ["git", "-C", str(repo), "diff", "--cached", "--diff-filter=D", "--name-only", "-z"],
+            ["git", "-c", "diff.relative=false", "-C", str(repo), "diff", "--cached",
+             "--diff-filter=D", "--name-only", "-z", "--", *(s.strip("\"'") for s in specs)],
             capture_output=True, timeout=10, check=True,
         ).stdout
         top = subprocess.run(
@@ -338,11 +431,64 @@ def pathspec_commit_discards(payload: dict, root: Path) -> list[str]:
         ).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return []
-    staged = [p for p in out.decode("utf-8", "replace").split("\0") if p]
-    return sorted(
-        p for p in staged
-        if any(_pathspec_covers(s, p) for s in specs) and (Path(top) / p).exists()
-    )
+    staged = {p for p in out.decode("utf-8", "replace").split("\0") if p}
+    staged.update(_staged_earlier_in_command(payload, cmd, root, m.start(), repo, specs))
+    # lexists, not exists: a dangling symlink is still a working-tree entry git commits
+    # (review F2022); exists() follows it to the missing target and read it as gone.
+    return sorted(p for p in staged if os.path.lexists(Path(top) / p))
+
+
+def _cached_paths(repo: Path, specs: list[str]) -> set[str]:
+    """Root-relative index entries that git itself matches to ``specs`` from ``repo``.
+
+    git applies its own pathspec grammar -- `:(top)`/`:(literal)` magic, globs, the
+    directory prefix -- which a string compare re-implemented badly (review F2021).
+    """
+    if not specs:
+        return set()
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "ls-files", "--cached", "--full-name", "-z", "--", *specs],
+            capture_output=True, timeout=10, check=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    return {p for p in out.decode("utf-8", "replace").split("\0") if p}
+
+
+def _staged_earlier_in_command(
+    payload: dict, cmd: str, root: Path, commit_at: int, repo: Path, specs: list[str]
+) -> set[str]:
+    """Root-relative paths a `git rm --cached` / `git update-index --remove` EARLIER in the
+    same command will have staged as deleted by the time the pathspec commit runs.
+
+    The index is read before ANY of the command has run, so `git rm --cached gen.txt &&
+    git commit -m x -- gen.txt` -- the exact #1423 footgun in one line -- found nothing
+    staged and was allowed (review F2016). Both sides are matched by git against the
+    index as it stands, which the earlier `rm --cached` has not touched yet.
+    """
+    found: set[str] = set()
+    covered: set[str] | None = None
+    for st in _STAGE_DELETE.finditer(cmd, 0, commit_at):
+        # Quote-aware, like the commit's own pathspec: `"gen file.txt"` is ONE operand
+        # (review F2018), and after `--` a `-gen` is an operand, not an option (F2023).
+        tokens = [t.strip("\"'") for t in re.findall(r'"[^"]*"|\'[^\']*\'|\S+', st.group("args"))]
+        sep = tokens.index("--") if "--" in tokens else len(tokens)
+        opts = set(tokens[:sep])
+        if st.group("verb") == "rm" and "--cached" not in opts:
+            continue  # a real `git rm` deletes from disk too: nothing to discard
+        if st.group("verb") == "update-index" and not {"--remove", "--force-remove"} & opts:
+            continue
+        st_repo = _command_repo(payload, cmd, root, st.start())
+        if st_repo is None:
+            continue
+        operands = [t for t in tokens[:sep] if t and not t.startswith("-")] + tokens[sep + 1:]
+        if covered is None:
+            covered = _cached_paths(repo, specs)
+        found |= _cached_paths(st_repo, [o for o in operands if o]) & covered
+    return found
 
 
 def pathspec_message(discarded: list[str]) -> str:
@@ -382,11 +528,71 @@ _GIT_PREFIX = r"\bgit\b(?:\s+-C\s+(?:\"[^\"]*\"|'[^']*'|\S+)|\s+-c\s+\S+)*\s+"
 _GIT_GLOBAL_C = re.compile(r"\bgit\b(?:\s+-c\s+\S+)*\s+-C\s+(\"[^\"]*\"|'[^']*'|\S+)")
 _RESET = re.compile(_GIT_PREFIX + r"reset\b([^\n|&;]*)")
 _RESET_DESTRUCTIVE = re.compile(r"(?:^|\s)--(?:hard|keep|merge)\b")
-_FORCE_BRANCH = re.compile(
-    _GIT_PREFIX
-    + r"(?:checkout\s+-B|switch\s+(?:-C|--force-create)|branch\s+(?:-f|--force))"
-    + r"\s+([^\s\"';&|]+)(?:\s+([^\s\"';&|-][^\s\"';&|]*))?"
-)
+_BRANCH_MOVER = re.compile(_GIT_PREFIX + r"(?P<verb>checkout|switch|branch)\b(?P<args>[^\n|&;]*)")
+#: The option that force-creates (moves) the named branch, per verb.
+_FORCE_CREATE = {"checkout": ("-B",), "switch": ("-C", "--force-create")}
+#: `git branch` modes in which `-f` does not move the named branch to a start point.
+_BRANCH_OTHER_MODES = frozenset({
+    "-d", "-D", "--delete", "-m", "-M", "--move", "-c", "-C", "--copy", "-l", "--list",
+    "--edit-description", "--unset-upstream", "-a", "--all", "-r", "--remotes",
+})
+#: `git branch` options whose NEXT token is their value.
+_BRANCH_VALUE_FLAGS = frozenset({
+    "-u", "--set-upstream-to", "--contains", "--no-contains", "--merged", "--no-merged",
+    "--points-at", "--sort", "--format",
+})
+
+
+def _force_branch_move(verb: str, args: str) -> tuple[str, str] | None:
+    """(branch, start point) a `checkout -B` / `switch -C` / `branch -f` force-moves.
+
+    Tokenized the way git parses it -- options anywhere before the operands, `--` ends
+    them -- not a regex wanting the flag right after the verb: `git branch -q -f x
+    origin/main` was not matched and `git branch -f -- x origin/main` read `--` as the
+    branch, judged it new, and allowed moving `x` off its only commits (review F2939).
+    """
+    tokens = [t.strip("\"'") for t in re.findall(r'"[^"]*"|\'[^\']*\'|\S+', args)]
+    if verb in _FORCE_CREATE:
+        flags = _FORCE_CREATE[verb]
+        for i, tok in enumerate(tokens):
+            name = None
+            if tok in flags:
+                name = tokens[i + 1] if i + 1 < len(tokens) else None
+                rest = tokens[i + 2:]
+            elif tok.startswith("--force-create="):
+                name, rest = tok.split("=", 1)[1], tokens[i + 1:]
+            if name is None:
+                continue
+            if not name or name.startswith("-"):
+                return None
+            start = "HEAD"
+            for t in rest:
+                if t == "--":
+                    break  # `checkout -B x -- <paths>`: what follows are paths
+                if not t.startswith("-"):
+                    start = t
+                    break
+            return name, start
+        return None
+    # git branch
+    forced, operands, skip, opts_done = False, [], False, False
+    for tok in tokens:
+        if skip:
+            skip = False
+            continue
+        if opts_done or not tok.startswith("-") or tok == "-":
+            operands.append(tok)
+        elif tok == "--":
+            opts_done = True
+        elif tok in ("-f", "--force"):
+            forced = True
+        elif tok in _BRANCH_OTHER_MODES:
+            return None
+        elif tok in _BRANCH_VALUE_FLAGS:
+            skip = True
+    if not forced or not operands:
+        return None
+    return operands[0], operands[1] if len(operands) > 1 else "HEAD"
 
 
 def _git(repo: Path, *args: str) -> str | None:
@@ -403,21 +609,35 @@ def _git(repo: Path, *args: str) -> str | None:
         return None
 
 
-def _command_repo(payload: dict, cmd: str, root: Path) -> Path | None:
-    """The repo a git command runs in: `-C`, else a leading `cd`, else the shell cwd.
+def _command_repo(payload: dict, cmd: str, root: Path, at: int | None = None) -> Path | None:
+    """The repo the git invocation starting at `at` runs in: the shell cwd, moved by every
+    `cd` BEFORE it, then that invocation's own global `-C`.
+
+    Only what precedes the invocation counts: the first `cd`/`-C` anywhere in the line
+    judged `git reset --hard X && cd /tmp` in /tmp and `git -C /safe status && git reset
+    --hard X` in /safe -- the lookups failed there and the real reset was let through
+    (review F2938). A `cd` in a pipeline/background subshell does not move this shell.
 
     An unexpandable target ($var, %VAR%) returns None -- we cannot inspect a repo we
     cannot name, and a wrong guess would judge the wrong tree.
     """
+    end = len(cmd) if at is None else at
     repo = Path(payload.get("cwd") or root)
-    for pattern in (_CD_TARGET, _GIT_GLOBAL_C):
-        m = pattern.search(cmd)
-        if m:
-            target = _from_msys(m.group(1).strip("\"'"))
-            if _SHELL_VAR.search(target):
-                return None
-            t = Path(target)
-            repo = t if t.is_absolute() else repo / t
+    for cd in _cd_pattern(payload).finditer(cmd, 0, end):
+        if not _cd_is_certain(cd):
+            continue
+        home_assigned = _HOME_ASSIGN.search(cmd, 0, cd.start()) is not None
+        hop = _hop_target(cd.group("target"), home_assigned)
+        if hop is None:
+            return None
+        repo = hop if hop.is_absolute() else repo / hop
+    c = _GIT_GLOBAL_C.search(cmd) if at is None else _GIT_GLOBAL_C.match(cmd, at)
+    if c:
+        target = _from_msys(c.group(1).strip("\"'"))
+        if _SHELL_VAR.search(target):
+            return None
+        t = Path(target)
+        repo = t if t.is_absolute() else repo / t
     return repo
 
 
@@ -435,8 +655,11 @@ def _orphaned(repo: Path, tip: str, target: str, keep_out: str | None) -> list[s
         return []
     heads = _git(repo, "for-each-ref", "--format=%(refname)", "refs/heads") or ""
     others = [f"^{h}" for h in heads.splitlines() if h and h != f"refs/heads/{keep_out}"]
+    # No --max-count: capping BEFORE the cherry filter below let the newest 50 commits,
+    # all patch-equivalent upstream, hide an older unique one (review F2940). Only the
+    # display is capped.
     listed = _git(
-        repo, "rev-list", "--max-count=50", tip_sha, f"^{target_sha}",
+        repo, "rev-list", tip_sha, f"^{target_sha}",
         "--not", "--remotes", "--tags", "--not", *others,
     )
     if not listed:
@@ -466,27 +689,39 @@ def unpushed_commits_dropped(payload: dict, root: Path) -> tuple[list[str], str]
     if "git" not in cmd:
         return [], ""
 
-    m = _RESET.search(cmd)
-    if m and _RESET_DESTRUCTIVE.search(m.group(1)):
-        repo = _command_repo(payload, cmd, root)
+    # EVERY reset and branch move in the line is judged: only the first was, so a
+    # harmless `git reset --soft HEAD && git reset --hard origin/main` passed (F2937).
+    judged = ""
+    for m in _RESET.finditer(cmd):
+        if not _RESET_DESTRUCTIVE.search(m.group(1)):
+            continue
+        repo = _command_repo(payload, cmd, root, m.start())
         if repo is None:
-            return [], ""
+            continue
         args = m.group(1).split(" -- ")[0].split()
         refs = [a.strip("\"'") for a in args if not a.startswith("-")]
         target = refs[0] if refs else "HEAD"
         branch = _git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
-        return _orphaned(repo, "HEAD", target, branch), branch or "HEAD"
+        judged = branch or "HEAD"
+        lost = _orphaned(repo, "HEAD", target, branch)
+        if lost:
+            return lost, judged
 
-    f = _FORCE_BRANCH.search(cmd)
-    if f:
-        repo = _command_repo(payload, cmd, root)
+    for f in _BRANCH_MOVER.finditer(cmd):
+        move = _force_branch_move(f.group("verb"), f.group("args"))
+        if move is None:
+            continue
+        repo = _command_repo(payload, cmd, root, f.start())
         if repo is None:
-            return [], ""
-        branch, target = f.group(1), f.group(2) or "HEAD"
+            continue
+        branch, target = move
         if not _git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"):
-            return [], ""  # a NEW branch: nothing is moved off anything
-        return _orphaned(repo, f"refs/heads/{branch}", target, branch), branch
-    return [], ""
+            continue  # a NEW branch: nothing is moved off anything
+        judged = branch
+        lost = _orphaned(repo, f"refs/heads/{branch}", target, branch)
+        if lost:
+            return lost, judged
+    return [], judged
 
 
 def dropped_message(lost: list[str], branch: str) -> str:
@@ -506,17 +741,123 @@ def dropped_message(lost: list[str], branch: str) -> str:
     )
 
 
-def _unresolved_location(cmd: str, root: Path) -> str:
-    """Verdict when a mutating git verb runs somewhere we cannot resolve — a shell variable
-    in a `-C` target or a `cd`, or `cd -`.
+#: A variable reference at the start of a location: `$WT`, `${WT}`, `$env:WT`, `%WT%`.
+_VAR_REF = re.compile(r"\$\{?(?:env:)?([A-Za-z_]\w*)\}?|%([A-Za-z_]\w*)%", re.IGNORECASE)
+_ASSIGN_VALUE = r"(?P<v>\"[^\"]*\"|'[^']*'|[^\s;&|]+)"
 
-    The assignment is normally in the same block, so an ABSOLUTE path under
-    <root>/.dev/worktrees in the command text is taken as the sanctioned worktree path.
+
+def _assigned_value(cmd: str, name: str, before: int) -> str | None:
+    """The value of the LAST assignment to shell variable `name` before `before`."""
+    n = re.escape(name)
+    patterns = (
+        re.compile(rf"(?:^|[\s;&|(])(?:export\s+)?{n}={_ASSIGN_VALUE}"),  # sh: WT=...
+        re.compile(rf"\$(?:env:)?{n}\s*=\s*{_ASSIGN_VALUE}", re.IGNORECASE),  # PS: $WT = ...
+    )
+    found = [m for p in patterns for m in p.finditer(cmd, 0, before)]
+    if not found:
+        return None
+    return max(found, key=lambda m: m.start()).group("v").strip("\"'")
+
+
+def _unresolved_location(cmd: str, root: Path, ref: str = "", before: int | None = None) -> str:
+    """Verdict when a mutating git verb runs somewhere we cannot resolve — a shell variable
+    in a `-C` target or a `cd` (`ref`, written at `before`), or `cd -`.
+
+    The assignment is normally in the same block, so a variable whose own assignment is an
+    ABSOLUTE path under <root>/.dev/worktrees is taken as the sanctioned worktree path.
+    Bound to THAT variable: a worktree path anywhere else in the text (an unused `WT=...`
+    next to `cd "$ROOT"`) proves nothing about where `$ROOT` goes (review F2268).
     Absolute-only on purpose: a bare ".dev/worktrees" mention in a pathspec or a commit
     message must NOT exempt — that was the original substring bypass. Anything else cannot
     be proven to be a worktree, so the lock applies (fail safe).
     """
-    return "exempt" if _mentions_worktree_path(cmd, root) else "enforce"
+    raw = ref.strip("\"'")
+    if before is None:
+        before = len(cmd)
+    if raw.startswith("~"):
+        names = ["HOME", "USERPROFILE"]  # `~` after the command reassigned HOME
+    else:
+        m = _VAR_REF.match(raw)
+        if not m or ".." in raw:
+            return "enforce"  # `cd -`, `foo$X`, `$X/..`: nothing provable
+        names = [m.group(1) or m.group(2)]
+    for name in names:
+        value = _assigned_value(cmd, name, before)
+        if value is not None and _mentions_worktree_path(value, root):
+            return "exempt"
+    return "enforce"
+
+
+# An assignment to the variable `~` expands from. `os.path.expanduser` reads the HOOK's
+# environment, so after `HOME="<root>"; cd ~` it named the hook's home -- outside the repo
+# -> exempt -- while the shell went into the main checkout (review F2269).
+_HOME_ASSIGN = re.compile(
+    r"(?:^|[\s;&|(])(?:HOME|USERPROFILE)=|\$env:(?:HOME|USERPROFILE)\s*=", re.IGNORECASE
+)
+
+
+#: Where a shell is: (directory or None when unknown, the reference that made it unknown,
+#: where in the command that reference was written).
+_Loc = tuple[Path | None, str, int]
+
+
+def _hop_target(target: str, home_assigned: bool = False) -> Path | None:
+    """The path one `cd <target>` names (absolute or relative), or None when unknown.
+
+    `home_assigned`: the command set HOME/USERPROFILE before this `cd`, so `~` is unknown.
+    """
+    raw = target.strip("\"'")
+    if raw.startswith("~"):
+        if home_assigned:
+            return None
+        raw = os.path.expanduser(raw)  # resolvable — not a variable
+    if raw == "-" or _SHELL_VAR.search(raw):
+        # `cd "$ROOT"`, `cd $env:ROOT`, `cd -`: where the shell went is unknown.
+        # Judging the verb by the directory it LEFT made `cd "$ROOT" && git checkout
+        # -b ...` from a worktree exempt — the same hole as the MSYS `cd` below.
+        return None
+    # `_from_msys` as for `-C`: git-bash writes C:\x as /c/x, and Path("/c/x") has a
+    # root but no drive, so `base / hop` kept only the drive -> C:\e\x -> "outside
+    # the repo" -> EXEMPT. That let `cd /c/<repo> && git checkout -b ...` through a
+    # live lock (2026-09-26) and moved HEAD under the lock holder's next commit.
+    return Path(_from_msys(raw))
+
+
+def _hop(loc: _Loc, hop: Path | None, target: str, at: int) -> _Loc:
+    """Where a shell at `loc` is after `cd <target>` (written at `at`) to `hop`."""
+    base = loc[0]
+    if hop is None:
+        return (None, target, at)  # the shell went somewhere unknown, named by `target`
+    if hop.is_absolute():
+        return (hop, "", 0)  # an absolute hop makes the location known again
+    return (base / hop, "", 0) if base is not None else loc
+
+
+def _judge_location(cmd: str, root: Path, loc: _Loc) -> str:
+    """Verdict for a dangerous git verb run from `loc` (an unknown directory: base None)."""
+    base, ref, ref_at = loc
+    m = _GIT_C_TARGET.search(cmd)
+    if m:
+        target = m.group(1).strip("\"'")
+        if _SHELL_VAR.search(target):
+            # `git -C $wt ...` / `%WT%` — a shell variable we cannot expand.
+            return _unresolved_location(cmd, root, m.group(1), m.start())
+        if base is None and not Path(_from_msys(target)).is_absolute():
+            # Relative to an unknown dir: as provable as that dir itself.
+            return _unresolved_location(cmd, root, ref, ref_at)
+        if not _is_within(target, root, base=base):
+            return "exempt"  # explicitly targets another checkout
+        if _is_within(target, root / ".dev" / "worktrees", base=base):
+            return "exempt"  # explicitly targets an isolated worktree
+        return "enforce"  # -C targets THIS checkout — the lock applies
+
+    if base is None:
+        return _unresolved_location(cmd, root, ref, ref_at)
+    if not _is_within(str(base), root):
+        return "exempt"  # the shell is sitting in a different checkout entirely
+    if _is_within(str(base), root / ".dev" / "worktrees"):
+        return "exempt"  # running inside an isolated worktree — the sanctioned path
+    return "enforce"
 
 
 def classify_tool(payload: dict, root: Path) -> str:
@@ -537,15 +878,18 @@ def classify_tool(payload: dict, root: Path) -> str:
     if tool in SHELL_TOOLS:
         cmd = str(tool_input.get("command", ""))
         danger_at = _dangerous_git_at(cmd)
-        wt_add = _WORKTREE_ADD.search(cmd)
-        if wt_add:
-            target = worktree_add_target(wt_add.group(1))
+        wt_adds = list(_WORKTREE_ADD.finditer(cmd))
+        if wt_adds:
             # Resolve relative targets against BOTH the session cwd and the repo
             # root; block only when clearly outside (a malformed/foreign-style
-            # cwd must not turn an in-repo path into a false sibling).
+            # cwd must not turn an in-repo path into a false sibling). EVERY add is
+            # judged: an in-repo first one exempted `... && git worktree add ../b`
+            # (review F0074).
             bases = [Path(payload.get("cwd") or root), root]
-            if target and not any(_is_within(target, root, base=b) for b in bases):
-                return "block-sibling"  # hard rule: no worktrees outside the repo
+            for wt_add in wt_adds:
+                target = worktree_add_target(wt_add.group(1))
+                if target and not any(_is_within(target, root, base=b) for b in bases):
+                    return "block-sibling"  # hard rule: no worktrees outside the repo
             if danger_at is None:
                 return "exempt"  # a pure in-repo worktree add never moves this HEAD
             # ...but the command may MUTATE elsewhere too (`... add ... && git
@@ -569,55 +913,27 @@ def classify_tool(payload: dict, root: Path) -> str:
         # `git commit -m "work in .dev/worktrees"` both bypassed the lock while mutating
         # the MAIN checkout — precisely the concurrent-checkout clobber this guard
         # exists to prevent.
-        # None = "we cannot tell where the shell is" (see the loop below).
-        base: Path | None = Path(payload.get("cwd") or root)
+        # A None directory = "we cannot tell where the shell is" (see `_hop_target`). The
+        # verb may also run in more than one place: a hop after `|`, a lone `&` or `||`
+        # may or may not move the shell that runs it, so both outcomes are kept and the
+        # STRICTER verdict wins -- `cd .dev/worktrees/x | git checkout main` runs the
+        # checkout where the pipeline started, and was exempt (review F0143).
+        states: list[_Loc] = [(Path(payload.get("cwd") or root), "", 0)]
         # Honour a `cd`/`pushd` that happens BEFORE the git verb (e.g.
         # `cd .dev/worktrees/slug && git rebase origin/main`). A `cd` AFTER it cannot
         # move where that verb ran — treating it as if it could would just reopen the
         # hole from the other side (`git checkout main && cd .dev/worktrees/x`).
-        for cd in _CD_TARGET.finditer(cmd):
+        for cd in _cd_pattern(payload).finditer(cmd):
             if cd.start() > danger_at:
                 break
-            raw = cd.group(1).strip("\"'")
-            if raw.startswith("~"):
-                raw = os.path.expanduser(raw)  # resolvable — not a variable
-            if raw == "-" or _SHELL_VAR.search(raw):
-                # `cd "$ROOT"`, `cd $env:ROOT`, `cd -`: where the shell went is unknown.
-                # Judging the verb by the directory it LEFT made `cd "$ROOT" && git checkout
-                # -b ...` from a worktree exempt — the same hole as the MSYS `cd` below.
-                base = None
-                continue
-            # `_from_msys` as for `-C`: git-bash writes C:\x as /c/x, and Path("/c/x") has a
-            # root but no drive, so `base / hop` kept only the drive -> C:\e\x -> "outside
-            # the repo" -> EXEMPT. That let `cd /c/<repo> && git checkout -b ...` through a
-            # live lock (2026-09-26) and moved HEAD under the lock holder's next commit.
-            hop = Path(_from_msys(raw))
-            if hop.is_absolute():
-                base = hop  # an absolute hop makes the location known again
-            elif base is not None:
-                base = base / hop
-
-        m = _GIT_C_TARGET.search(cmd)
-        if m:
-            target = m.group(1).strip("\"'")
-            if _SHELL_VAR.search(target):
-                # `git -C $wt ...` / `%WT%` — a shell variable we cannot expand.
-                return _unresolved_location(cmd, root)
-            if base is None and not Path(_from_msys(target)).is_absolute():
-                return _unresolved_location(cmd, root)  # relative to an unknown dir
-            if not _is_within(target, root, base=base):
-                return "exempt"  # explicitly targets another checkout
-            if _is_within(target, root / ".dev" / "worktrees", base=base):
-                return "exempt"  # explicitly targets an isolated worktree
-            return "enforce"  # -C targets THIS checkout — the lock applies
-
-        if base is None:
-            return _unresolved_location(cmd, root)
-        if not _is_within(str(base), root):
-            return "exempt"  # the shell is sitting in a different checkout entirely
-        if _is_within(str(base), root / ".dev" / "worktrees"):
-            return "exempt"  # running inside an isolated worktree — the sanctioned path
-        return "enforce"
+            home_assigned = _HOME_ASSIGN.search(cmd, 0, cd.start()) is not None
+            hop = _hop_target(cd.group("target"), home_assigned)
+            moved = [_hop(loc, hop, cd.group("target"), cd.start("target")) for loc in states]
+            if not _cd_is_certain(cd):
+                moved = states + moved
+            states = list(dict.fromkeys(moved))
+        verdicts = [_judge_location(cmd, root, loc) for loc in states]
+        return "enforce" if "enforce" in verdicts else "exempt"
 
     return "exempt"
 
@@ -688,6 +1004,8 @@ _GIT_VERB = re.compile(
     r"(?P<verb>checkout|switch|commit|branch|bisect)\b(?P<args>[^\n|&;]*)"
 )
 _GH_MOVES_HEAD = re.compile(r"\bgh\s+pr\s+(?:checkout|merge)\b")
+#: The shell operators that join commands: only `&&` makes the next one depend on success.
+_SHELL_OP = re.compile(r"&&|\|\||[;&|\n]")
 _SWITCH_VALUE_FLAGS = {"-b", "-B", "-c", "-C", "--create", "--force-create", "--orphan"}
 
 
@@ -721,36 +1039,104 @@ def _branch_switch(verb: str, args: str, root: Path) -> tuple[str, str | None] |
     return ("clear", None)  # a sha, a tag, a remote ref: detached or unknown
 
 
+def _acts_on_this_checkout(cmd: str, at: int, root: Path, base: Path) -> bool:
+    """Does the git invocation at `at` act on the MAIN checkout's HEAD?
+
+    Without a global `-C` it does. `git -C <path>` acts on <path>: another checkout or a
+    worktree is not this HEAD's business, but `-C <root>` is -- skipping every `-C` let
+    `git -C <root> commit` land on a branch something else had moved HEAD to (F2308).
+    An unexpandable `-C $var` cannot be named, so it is not checked (fail open).
+    """
+    c = _GIT_GLOBAL_C.match(cmd, at)
+    if not c:
+        return True
+    target = _from_msys(c.group(1).strip("\"'"))
+    if _SHELL_VAR.search(target):
+        return False
+    return _is_within(target, root, base=base) and not _is_within(
+        target, root / ".dev" / "worktrees", base=base
+    )
+
+
+def _inert_spans(cmd: str) -> list[tuple[int, int]]:
+    """Spans of *cmd* the shell never runs as a command: quoted strings and `#` comments.
+
+    `echo "git checkout theirs" && git commit` printed a checkout that the event scan
+    read as a real HEAD move, which excused the commit after it (review F2310). A `#`
+    starts a comment only at the start of a line or after whitespace, outside quotes.
+    An unterminated quote runs to the end: what follows is not judged (fail open).
+    """
+    spans: list[tuple[int, int]] = []
+    i, n = 0, len(cmd)
+    while i < n:
+        ch = cmd[i]
+        if ch in "\"'":
+            close = cmd.find(ch, i + 1)
+            end = n if close < 0 else close + 1
+            spans.append((i, end))
+            i = end
+        elif ch == "#" and (i == 0 or cmd[i - 1].isspace()):
+            nl = cmd.find("\n", i)
+            end = n if nl < 0 else nl
+            spans.append((i, end))
+            i = end
+        else:
+            i += 1
+    return spans
+
+
 def commit_branch_check(
-    cmd: str, root: Path, expected: str | None
+    cmd: str, root: Path, expected: str | None, cwd: Path | None = None
 ) -> tuple[str | None, str | None]:
     """Walk *cmd* in order. Returns ``(block_message_or_None, new_expected)``.
 
     A switch earlier in the same command moves HEAD before the commit runs, so it counts
-    as where HEAD will be — `git checkout -b x && git commit` is not a move.
+    as where HEAD will be — `git checkout -b x && git commit` is not a move. `cwd` is
+    the shell's directory, which a relative `-C` target is resolved against.
     """
     head = _head_branch(root)
+    base = cwd or root
+    inert = _inert_spans(cmd)
+
+    def live(at: int) -> bool:
+        return not any(a <= at < b for a, b in inert)
+
     events: list[tuple[int, str, str]] = [
         (m.start(), m.group("verb"), m.group("args"))
         for m in _GIT_VERB.finditer(cmd)
-        # `git -C <path> ...` acts on another checkout (the classifier already decided
-        # whether the command as a whole touches this one) — not this HEAD's business.
-        if "-C" not in cmd[m.start() : m.start("verb")].split()
+        if live(m.start()) and _acts_on_this_checkout(cmd, m.start(), root, base)
     ]
-    events += [(m.start(), "gh", "") for m in _GH_MOVES_HEAD.finditer(cmd)]
-    for _pos, verb, args in sorted(events):
+    events += [(m.start(), "gh", "") for m in _GH_MOVES_HEAD.finditer(cmd) if live(m.start())]
+    # Each HEAD move seen so far: (where it was written, the (expected, head) it leaves).
+    moves: list[tuple[int, tuple[str | None, str | None]]] = []
+    start = (expected, head)
+    for pos, verb, args in sorted(events):
         if verb == "gh":
+            moves.append((pos, (None, None)))
             expected, head = None, None
             continue
         if verb == "commit":
-            if expected and head and head != expected:
-                return _moved_message(expected, head), expected
+            # Every place HEAD may be when this commit runs. A move only certainly ran
+            # when nothing but `&&` joins it to the commit: after `;`, a newline, `||`,
+            # `|` or `&` the commit runs even if the switch FAILED (`git switch -c x;
+            # git commit` with x already taken), so the state before it stays possible
+            # and was wrongly assumed away (review F2309).
+            states = {start}
+            for at, state in moves:
+                if all(op == "&&" for op in _SHELL_OP.findall(cmd, at, pos)):
+                    states = {state}
+                else:
+                    states.add(state)
+            for want, have in sorted(states, key=str):
+                if want and have and have != want:
+                    return _moved_message(want, have), expected
             continue
         change = _branch_switch(verb, args, root)
         if change is None:
             continue
         kind, name = change
         expected, head = (name, name) if kind == "set" else (None, None)
+        moves.append((pos, (expected, head)))
     return None, expected
 
 
@@ -901,7 +1287,8 @@ def main() -> int:
         # Only a lock this session already held carries an intent of ours to check.
         previous_expected = (lock or {}).get("expected_branch") if action == "refresh" else None
         cmd = str((payload.get("tool_input") or {}).get("command", ""))
-        moved, expected = commit_branch_check(cmd, root, previous_expected) if cmd else (
+        cwd = Path(payload["cwd"]) if payload.get("cwd") else None
+        moved, expected = commit_branch_check(cmd, root, previous_expected, cwd) if cmd else (
             None,
             previous_expected,
         )

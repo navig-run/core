@@ -633,3 +633,56 @@ def test_provider_status_surfaces_unknown_configured_value(monkeypatch):
     )
 
     assert provider_status()["provider"] == "nonesuch"
+
+
+def test_web_search_firecrawl_uses_a_bare_vault_label(monkeypatch):
+    """review F0204: `navig vault add firecrawl` stores the bare 'firecrawl' label; the
+    Firecrawl branch ignored the key dispatch resolved and its client never checked it."""
+    monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+    monkeypatch.setattr("navig.tools.web.REQUESTS_AVAILABLE", True)
+    monkeypatch.setattr(
+        "navig.vault.core.get_vault",
+        lambda: _SecretStrVault({"firecrawl": "fc-bare-key"}),
+    )
+    captured: dict[str, Any] = {}
+
+    def _search(self, query, limit=5, sources=None, scrape_inline=False):  # noqa: ARG001
+        captured["key"] = self.api_key
+        return {"data": {"web": [{"title": "t", "url": "https://e.x", "description": "ok"}]}}
+
+    monkeypatch.setattr("navig.integrations.firecrawl.client.FirecrawlClient.search", _search)
+    monkeypatch.setattr("navig.tools.web._search_keyless", _ok_ddg)
+    monkeypatch.setattr(
+        "navig.tools.web.get_web_config",
+        lambda config_manager=None: {
+            "search": {"provider": "firecrawl", "api_key": "", "api_keys": {}}
+        },
+    )
+
+    result = web_search("python", provider="firecrawl", use_cache=False)
+
+    assert result.success is True
+    assert result.provider == "firecrawl"
+    assert captured["key"] == "fc-bare-key"
+
+
+def test_get_firecrawl_client_resolves_the_bare_vault_label(monkeypatch):
+    from navig.integrations.firecrawl import client as fc
+
+    monkeypatch.setattr(
+        fc, "resolve_secret", lambda env_vars, vault_labels: "k" if "firecrawl" in vault_labels else ""
+    )
+    assert fc.get_firecrawl_client().api_key == "k"
+
+
+def test_serpapi_key_imported_by_onboarding_is_resolved(monkeypatch):
+    """review F0205: onboarding imports SERPAPI_KEY under `serpapi/key`."""
+    from navig.tools.web import resolve_provider_key
+
+    for var in ("SERPAPI_KEY", "SERPAPI_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(
+        "navig.vault.core.get_vault",
+        lambda: _SecretStrVault({"serpapi/key": "serp-onboarded"}),
+    )
+    assert resolve_provider_key("serpapi", {}) == "serp-onboarded"

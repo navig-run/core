@@ -199,13 +199,18 @@ def test_output_contains_navig_dir():
     assert "navig" in result.output
 
 
-def test_output_contains_home_segment():
+def test_output_names_the_resolved_config_dir():
+    """The row must show the config dir the resolvers report, not one under $HOME.
+
+    The old assertion looked for a segment of `Path.home()`; that passed on Windows only
+    because the suite's isolated dirs sit under the profile. On Linux the suite isolates
+    into a temp dir outside home, so nothing matched — the check measured the host, not
+    the command (2026-10-30, outpost).
+    """
+    from navig.platform import paths as p
+
     result = runner.invoke(paths_app, [])
-    home = str(Path.home())
-    # At least partial home path segment should appear
-    home_parts = Path.home().parts
-    # Check that some meaningful segment appears
-    assert any(p in result.output for p in home_parts if len(p) > 1)
+    assert str(p.config_dir()) in result.output
 
 
 def test_output_contains_existence_marker():

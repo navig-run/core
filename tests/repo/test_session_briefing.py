@@ -258,11 +258,44 @@ def test_a_squash_landed_subject_is_silent(hook, repo: Path) -> None:
     assert hook.lost_work_lines(repo, "main") == []
 
 
+def test_a_shared_subject_with_other_content_does_not_hide_a_loss(hook, repo: Path) -> None:
+    """`fix tests` on main says nothing about a lost `fix tests` elsewhere (F2953)."""
+    _commit(repo, "lost/only_here.py", "the lost change\n", "fix tests")
+    _drop_last(repo)
+    _commit(repo, "other/unrelated.py", "an unrelated change\n", "fix tests")
+    lines = hook.lost_work_lines(repo, "main")
+    assert lines and "fix tests" in lines[1]
+
+
 def test_work_on_base_under_another_subject_is_superseded(hook, repo: Path) -> None:
     """Redone, squashed with more, or re-picked: every file it touched is on base."""
     _commit(repo, "a.txt", "the fix\n", "fix: the first attempt")
     _drop_last(repo)
     _commit(repo, "a.txt", "the fix, better\n", "fix: the real one, later")
+    assert hook.lost_work_lines(repo, "main") == []
+
+
+_SRC = "".join(f"line {i}\n" for i in range(1, 21))
+
+
+def test_a_later_unrelated_edit_of_the_same_file_does_not_hide_a_loss(hook, repo: Path) -> None:
+    """A lost function plus a later comment fix in that file is still lost (F2952)."""
+    _commit(repo, "mod.py", _SRC, "the module")
+    _commit(repo, "mod.py", _SRC.replace("line 15\n", "line 15\ndef lost_function(): ...\n"),
+            "add the function only the reflog keeps")
+    _drop_last(repo)
+    time.sleep(1.1)  # --since is second-granular: the edit must be AFTER the commit
+    _commit(repo, "mod.py", _SRC.replace("line 2\n", "# a comment fix\n"), "fix a comment")
+    lines = hook.lost_work_lines(repo, "main")
+    assert lines and "add the function only the reflog keeps" in lines[1]
+
+
+def test_an_edit_whose_hunks_reached_base_with_more_is_superseded(hook, repo: Path) -> None:
+    _commit(repo, "mod.py", _SRC, "the module")
+    added = _SRC.replace("line 15\n", "line 15\ndef kept(): ...\n")
+    _commit(repo, "mod.py", added, "add kept, first copy")
+    _drop_last(repo)
+    _commit(repo, "mod.py", added.replace("line 2\n", "# a comment fix\n"), "kept, landed with a fix")
     assert hook.lost_work_lines(repo, "main") == []
 
 

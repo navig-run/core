@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import socket
+import sys
 
 import pytest
 
@@ -201,6 +202,9 @@ def test_launch_reports_running_app_needs_force(monkeypatch):
     monkeypatch.setattr(t, "probe_port", lambda port, timeout=1.5: None)
     monkeypatch.setattr(t, "launch_with_cdp", lambda *a, **k: None)
     monkeypatch.setattr(t, "is_running", lambda app: True)
+    # Without an installed Discord the launcher stops at executable resolution and never
+    # reaches the running-app branch this test is about (2026-10-30, outpost).
+    monkeypatch.setattr(t, "resolve_executable", lambda app: sys.executable)
     result = cdp_actions.launch("discord", port=9222, force_restart=False)
     assert result["ok"] is False
     assert "force_restart" in result["error"]
@@ -474,6 +478,7 @@ class TestDefaultSessionPort:
     def test_several_including_9222_keeps_the_old_default(self, monkeypatch, tmp_path):
         # Backward compatibility: this case behaved sensibly before and still does.
         monkeypatch.setattr(t, "_launched_registry_path", lambda: tmp_path / "launched.json")
+        monkeypatch.setattr(t, "probe_port", lambda port, timeout=1.5: None)
         t.record_launched(9222, 111, "chrome", None)
         t.record_launched(7245, 222, "chrome", None)
 
@@ -483,6 +488,7 @@ class TestDefaultSessionPort:
     def test_several_without_9222_refuses_to_guess(self, monkeypatch, tmp_path):
         """Closing the wrong browser is not recoverable — list them instead."""
         monkeypatch.setattr(t, "_launched_registry_path", lambda: tmp_path / "launched.json")
+        monkeypatch.setattr(t, "probe_port", lambda port, timeout=1.5: None)
         t.record_launched(7245, 111, "chrome", None)
         t.record_launched(8310, 222, "chrome", None)
 
@@ -493,6 +499,30 @@ class TestDefaultSessionPort:
         assert res["ok"] is False
         assert res["ports"] == [7245, 8310]
         assert "--port" in res["error"] and "--all" in res["error"]
+
+    def test_a_stale_9222_entry_does_not_beat_the_live_session(self, monkeypatch, tmp_path):
+        """A browser closed outside `cdp stop` leaves its entry; the live one is meant."""
+        monkeypatch.setattr(t, "_launched_registry_path", lambda: tmp_path / "launched.json")
+        t.record_launched(9222, 111, "chrome", None)
+        t.record_launched(50123, 222, "chrome", None)
+        monkeypatch.setattr(
+            t, "probe_port", lambda port, timeout=1.5: object() if port == 50123 else None
+        )
+
+        from navig.browser import cdp_actions
+        assert cdp_actions._default_session_port() == 50123
+
+    def test_stale_entries_do_not_make_one_live_session_ambiguous(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(t, "_launched_registry_path", lambda: tmp_path / "launched.json")
+        t.record_launched(7245, 111, "chrome", None)
+        t.record_launched(8310, 222, "chrome", None)
+        t.record_launched(50123, 333, "chrome", None)
+        monkeypatch.setattr(
+            t, "probe_port", lambda port, timeout=1.5: object() if port == 50123 else None
+        )
+
+        from navig.browser import cdp_actions
+        assert cdp_actions._default_session_port() == 50123
 
     def test_detach_with_no_port_targets_the_launched_session(self, monkeypatch, tmp_path):
         monkeypatch.setattr(t, "_launched_registry_path", lambda: tmp_path / "launched.json")

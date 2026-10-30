@@ -8,7 +8,11 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-from navig.telegram import music_actions
+import pytest
+
+pytest.importorskip("navig_download", reason="music actions need navig-download")
+
+from navig.telegram import music_actions  # noqa: E402
 
 _SPOTIFY = "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC"
 _FAKE = {
@@ -170,3 +174,28 @@ async def test_music_reply_keyword_no_link_owns_message():
 
     assert handled is True  # owns the message rather than leaking "music" to the agent
     assert "No music link" in ch.send_message.call_args[0][1]
+
+
+async def test_a_raising_send_is_logged_at_warning(monkeypatch):
+    """offer_links returns False, so the caller's own except never fires: the
+    failure has to be visible in the live log here, not at DEBUG."""
+    import logging
+
+    monkeypatch.setattr(music_actions, "enabled", lambda: True)
+    monkeypatch.setattr(music_actions, "resolve_links", lambda url: _FAKE)
+    ch = _channel()
+    ch.send_message = AsyncMock(side_effect=RuntimeError("boom"))
+    records: list[logging.LogRecord] = []
+
+    class _Keep(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    handler = _Keep(level=logging.WARNING)
+    music_actions.logger.addHandler(handler)
+    try:
+        assert await music_actions.offer_links(ch, 100, 5, _SPOTIFY) is False
+    finally:
+        music_actions.logger.removeHandler(handler)
+
+    assert any("music send failed" in r.getMessage() for r in records), records

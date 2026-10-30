@@ -180,6 +180,18 @@ async def test_a_russian_timer_starts():
     assert handled and ch.sent()[-1] == "⏳ 05:00"
 
 
+async def test_a_russian_timer_is_cancelled_in_russian():
+    """The countdown's own words follow the word that started it, like the coin."""
+    _handled, ch = await _run("таймер 5 минут")
+    task = bc._TIMERS[555]
+    await asyncio.sleep(0)  # let the countdown start, or cancelling it skips its handler
+    await bc._cmd_timer(ch, 555, "bc1", "cancel", word="таймер")
+    await asyncio.gather(task, return_exceptions=True)
+    assert ch.sent()[-1] == "⏹ Таймер отменён."
+    edits = [d["text"] for m, d in ch.calls if m == "editMessageText"]
+    assert edits and edits[-1] == "⏹ Таймер отменён.", edits
+
+
 # ── whois and weather (audit 2026-10-03, run against the real services) ──────
 
 

@@ -282,10 +282,18 @@ async def run_text_action(
 
         target = arg or (resolve_language() or "")
         if target:
+            # A NAMED target is honoured even when the text is already in it —
+            # `translate French` on French text must not come back in English. The
+            # reciprocal fallback is for the configured default only, where 🌍 on a
+            # message in the operator's own language would otherwise do nothing.
+            fallback = (
+                f"If it is already in {target}, return it unchanged. " if arg
+                else "If it is already in that language, translate it into English instead. "
+            )
             system = (
                 f"You are a translator. Translate the message below into {target}. "
-                "If it is already in that language, translate it into English instead. "
-                "Output ONLY the translation — no preamble, no notes, no quotes."
+                + fallback
+                + "Output ONLY the translation — no preamble, no notes, no quotes."
             )
     content = (content or "").strip()
     if not content:

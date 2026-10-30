@@ -12,6 +12,21 @@ pytestmark = pytest.mark.integration
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def _no_host_supervisor(monkeypatch: pytest.MonkeyPatch):
+    """Measure the CLI, not this machine's supervisor.
+
+    `_launch_daemon` and `service restart` ask the host's init system first (systemd
+    on Linux, the scheduled task on Windows). On a host whose unit really exists —
+    the operator's outpost has `navig-agent.service` — that branch ran real
+    `subprocess.run` calls inside these tests; the `subprocess.Popen` stubs made it
+    die with `TypeError: 'NoneType' object does not support the context manager
+    protocol`, and `restart` reported success through systemd instead of the
+    daemon path under test (2026-10-30).
+    """
+    monkeypatch.setattr("navig.daemon.service_manager.supervising_systemd_unit", lambda: None)
+
+
 def _patch_daemon_start_failure(monkeypatch):
     class FakeDaemon:
         @staticmethod

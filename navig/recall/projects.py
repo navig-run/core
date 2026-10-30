@@ -16,6 +16,7 @@ same folder appears as ``C:\\projects\\…`` and ``C:\\projects\\…`` in one tr
 from __future__ import annotations
 
 import os
+import posixpath
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,9 +31,26 @@ class ProjectRef:
     root: str = ""  # "" for the shared bucket
 
 
+def _looks_windows(path: str) -> bool:
+    """A drive letter or a backslash means the path was written on Windows."""
+    return bool(re.match(r"^[A-Za-z]:", path)) or "\\" in path
+
+
 def _key(path: str) -> str:
-    p = os.path.normcase(os.path.normpath(path.strip().strip('"')))
-    return p.rstrip("\\/")
+    """Comparison key: ``/`` separators, no trailing slash, case folded for Windows paths.
+
+    Separators are normalised whatever the HOST is: recall indexes transcripts written on
+    another machine, and off Windows ``os.path.normpath`` leaves ``E:\\proj\\alpha`` alone, so a
+    Windows-rooted transcript never matched its own registered project and every link
+    resolved to ``shared`` (2026-10-30, outpost). Case folding follows the SHAPE of the
+    path, not the host: Windows is case-insensitive, Linux is not.
+    """
+    raw = path.strip().strip('"')
+    p = posixpath.normpath(raw.replace("\\", "/")) if raw else "."
+    if p.startswith("//"):  # posixpath preserves a leading "//"; a drive path is not one
+        p = "/" + p.lstrip("/")
+    p = p.rstrip("/") or "/"
+    return p.casefold() if _looks_windows(raw) else p
 
 
 def slug(name: str) -> str:
@@ -40,22 +58,26 @@ def slug(name: str) -> str:
 
 
 def _fold_worktree(path: str) -> tuple[str, str | None]:
-    """(path with any in-repo worktree suffix removed, codex worktree folder name or None)."""
-    k = _key(path)
-    sep = os.sep if os.sep in k else "/"
-    for workdir in (".dev", ".navig_worktrees"):
-        marker = os.path.normcase(f"{sep}{workdir}{sep}worktrees{sep}" if workdir == ".dev"
-                                  else f"{sep}{workdir}{sep}")
-        i = k.find(marker)
-        if i >= 0:
-            # `.navig_worktrees/<slug>/…` has no extra `worktrees` segment — it IS the dir.
-            return path[:i], None
-    codex = os.path.normcase(f"{sep}.codex{sep}worktrees{sep}")
-    j = k.find(codex)
-    if j >= 0:
-        parts = [p for p in k[j + len(codex):].split(sep) if p]
-        if len(parts) >= 2:
-            return path, parts[1]
+    """(path with any in-repo worktree suffix removed, codex worktree folder name or None).
+
+    Match on `/`-normalised text and case-insensitively, then cut the ORIGINAL string at the
+    same offset (``str.replace`` is length-preserving), so a Windows-shaped path folds no
+    matter which host is indexing it.
+    """
+    flat = path.replace("\\", "/")
+    folded = flat.casefold()
+    for workdir, tail in ((".dev", "/worktrees/"), (".navig_worktrees", "/"), (".codex", "/worktrees/")):
+        marker = f"/{workdir}{tail}"
+        i = folded.find(marker)
+        if i < 0:
+            continue
+        if workdir == ".codex":
+            parts = [p for p in flat[i + len(marker):].split("/") if p]
+            if len(parts) >= 2:
+                return path, parts[1]
+            continue
+        # `.navig_worktrees/<slug>/…` has no extra `worktrees` segment — it IS the dir.
+        return flat[:i], None
     return path, None
 
 
@@ -67,7 +89,7 @@ class ProjectResolver:
             entries = _registry_entries()
         # (normalised root, id), longest root first so the most specific project wins.
         self._roots = sorted(((_key(p), i) for i, p in entries if p and i), key=lambda t: -len(t[0]))
-        self._by_name = {os.path.basename(r): i for r, i in self._roots}
+        self._by_name = {posixpath.basename(r): i for r, i in self._roots}
         self._home = _key(home if home is not None else str(Path.home()))
         self._cache: dict[str, ProjectRef] = {}
 
@@ -110,7 +132,7 @@ class ProjectResolver:
         for root, pid in self._roots:
             if root == self._home:
                 continue  # a registered home folder must not swallow everything below it
-            if k == root or k.startswith(root + os.sep):
+            if k == root or k.startswith(root.rstrip("/") + "/"):
                 return ProjectRef(pid, root)
         found = _nearest_marked_root(Path(folded), stop=self._home)
         if found is not None:

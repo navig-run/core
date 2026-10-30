@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import html
 import logging
+from typing import Any
 
 logger = logging.getLogger("navig.messaging.notify_operator")
 
@@ -58,6 +59,28 @@ def truncate_for_telegram(text: str, limit: int = TELEGRAM_TEXT_LIMIT) -> str:
     return text[: limit - len(marker)] + marker
 
 
+def _send_rich(target: str, html_text: str, *, keyboard=None, silent: bool = False) -> bool:
+    """``sendRichMessage`` straight through the Bot API — the card path.
+
+    Returns False (never raises) so the caller can fall back to the plain body:
+    a Bot API server without rich messages answers "unknown method", and the
+    notice still has to arrive.
+    """
+    from navig.telegram.api import api_call, load_telegram_token
+
+    payload: dict = {"chat_id": target, "rich_message": {"html": html_text}}
+    if keyboard:
+        payload["reply_markup"] = {"inline_keyboard": keyboard}
+    if silent:
+        payload["disable_notification"] = True
+    try:
+        api_call(load_telegram_token(), "sendRichMessage", payload)
+        return True
+    except Exception as exc:  # noqa: BLE001 — see the fallback in notify_operator
+        logger.debug("notify_operator: rich send refused (%s), falling back to text", exc)
+        return False
+
+
 def notify_operator(
     text: str,
     *,
@@ -65,10 +88,16 @@ def notify_operator(
     chat_id: str | None = None,
     keyboard: list[list[dict]] | None = None,
     silent: bool = False,
+    card: Any = None,
 ) -> bool:
     """Send *text* to the operator. Returns True only when the Bot API accepted it.
 
     ``silent`` sends with ``disable_notification`` — it arrives without a sound.
+
+    ``card`` (a :class:`navig.telegram.card_doc.Card`, when the caller builds one)
+    is sent as a rich message — headings, tables, in-bubble buttons — and falls
+    back to the card's own classic projection, then to *text*, so a server
+    without rich messages still delivers the notice.
 
     Never raises: a notification is a side effect of some other job, and that
     job's own result must not be masked by a Telegram hiccup. The failure is
@@ -80,6 +109,18 @@ def notify_operator(
             "notify_operator: no Telegram chat configured (telegram.allowed_users / NAVIG_TELEGRAM_UID)"
         )
         return False
+    if card is not None:
+        try:
+            rich = card.rich_html()
+        except Exception as exc:  # noqa: BLE001 — a broken card must not swallow the notice
+            logger.warning("notify_operator: card did not render (%s), sending text", exc)
+            rich = ""
+        if rich and _send_rich(target, rich, keyboard=keyboard, silent=silent):
+            return True
+        try:
+            text, parse_mode = card.classic_html(), "HTML"
+        except Exception:  # noqa: BLE001 — keep the caller's text
+            pass
     if not text or not text.strip():
         return False
     try:

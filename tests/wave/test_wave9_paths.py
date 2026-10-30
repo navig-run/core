@@ -102,6 +102,10 @@ def test_ipc_promoted_flag_respects_config_env(tmp_path, monkeypatch):
 
     custom = tmp_path / "cfg"
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(custom))
+    # The shadow log lives in the LOG dir, not the config dir (`_shadow_log()` ->
+    # paths.log_dir()); set it explicitly so the assertion pins call-time resolution
+    # of both roots instead of inheriting the session fixture's isolated log dir.
+    monkeypatch.setenv("NAVIG_LOG_DIR", str(tmp_path / "logs"))
 
     assert ipc_mod._promoted_flag() == custom / ".ipc_promoted"
-    assert ipc_mod._shadow_log() == custom / "shadow_ipc_anomalies.log"
+    assert ipc_mod._shadow_log() == tmp_path / "logs" / "shadow_ipc_anomalies.log"

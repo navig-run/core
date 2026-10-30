@@ -80,7 +80,7 @@ class FakeRemote:
             "reachable": True,
             "platform": "linux",
             "navig_version": "3.28.0",
-            "config_dir": "/home/void/.navig",
+            "config_dir": "/home/tester/.navig",
             "has_config": True,
         }
 
@@ -528,3 +528,272 @@ def test_ssh_transfer_refuses_when_the_bundle_never_arrived(
 
     monkeypatch.setattr(remote, "_remote", lambda *cmd: (0, "deadbeef  /tmp/x\n", ""))
     assert remote.transfer(tmp_path / "brain.tar.gz.enc")["sha256"] == "deadbeef"
+
+def test_ssh_target_inventory_reads_the_miniapp_facts_without_the_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Mini App travels with the move: same public URL, same bundle version.
+
+    The three facts come over ONE round trip and never `config get deck` as a whole —
+    that section carries deck.api_key, and this output lands in the migration log.
+    """
+    remote = mig.SshRemote("outpost")
+    seen: list[str] = []
+
+    def fake_remote(*cmd: str) -> tuple[int, str, str]:
+        seen.append(" ".join(cmd))
+        joined = " ".join(cmd)
+        if "navig-shell-probe" in joined:
+            return 0, "navig-shell-probe", ""
+        if "cron_jobs.json" in joined:
+            return 0, json.dumps({"jobs": []}), ""
+        if "ls -1" in joined:
+            return 0, "default\n", ""
+        return 0, "https://navig-deck.a.workers.dev\nTrue\n3.31.0\n", ""
+
+    monkeypatch.setattr(remote, "_remote", fake_remote)
+    monkeypatch.setattr(remote, "_json", lambda *a, **k: {"plugins": []})
+    inv = remote.target_inventory()
+    assert inv["client"] == {
+        "public_url": "https://navig-deck.a.workers.dev",
+        "telegram_only": True,
+        "deployed_version": "3.31.0",
+    }
+    config_lines = [c for c in seen if "config get" in c]
+    assert config_lines, "the client facts must be read from the target"
+    assert not any("config get deck " in c or c.endswith("config get deck") for c in config_lines)
+    # A non-login ssh shell has no ~/.local/bin, so `navig` travels with its PATH.
+    assert all('PATH="$HOME/.local/bin:$PATH"' in c for c in config_lines)
+
+
+def test_ssh_target_inventory_reports_no_client_facts_rather_than_guessing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    remote = mig.SshRemote("outpost")
+
+    def fake_remote(*cmd: str) -> tuple[int, str, str]:
+        joined = " ".join(cmd)
+        if "navig-shell-probe" in joined:
+            return 0, "navig-shell-probe", ""
+        if "cron_jobs.json" in joined:
+            return 0, "{}", ""
+        if "ls -1" in joined:
+            return 0, "", ""
+        return 127, "", "bash: navig: command not found"
+
+    monkeypatch.setattr(remote, "_remote", fake_remote)
+    monkeypatch.setattr(remote, "_json", lambda *a, **k: {})
+    inv = remote.target_inventory()
+    assert inv["client"] == {}
+
+
+def test_ssh_target_inventory_refuses_to_guess_when_the_host_is_unreachable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unreachable target is an ERROR, never "it is missing everything".
+
+    Live case (OUTPOST, 2026-10-25): `navig brain migrate --to neuron` on the brain
+    answered "jobs missing on the target: <28 names>" for a hostname ssh could not
+    resolve. Empty reads must not become a parity verdict.
+    """
+    remote = mig.SshRemote("neuron")
+
+    def fake_remote(*cmd: str) -> tuple[int, str, str]:
+        return 255, "", "ssh: Could not resolve hostname neuron: Name or service not known\n"
+
+    monkeypatch.setattr(remote, "_remote", fake_remote)
+    monkeypatch.setattr(remote, "_json", lambda *a, **k: {})
+    with pytest.raises(mig.MigrationBlocked) as excinfo:
+        remote.target_inventory()
+    message = str(excinfo.value)
+    assert "could not reach neuron" in message
+    assert "Could not resolve hostname" in message
+
+
+def test_ssh_target_inventory_still_reports_a_reachable_machine_with_nothing_on_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The honest empty case must keep working: exit 1 from a missing file is not 255."""
+    remote = mig.SshRemote("outpost")
+
+    def fake_remote(*cmd: str) -> tuple[int, str, str]:
+        joined = " ".join(cmd)
+        if "navig-shell-probe" in joined:
+            return 0, "navig-shell-probe", ""
+        if "ls -1" in joined:
+            return 0, "", ""
+        return 1, "", "cat: /home/tester/.navig/scheduler/cron_jobs.json: No such file or directory\n"
+
+    monkeypatch.setattr(remote, "_remote", fake_remote)
+    monkeypatch.setattr(remote, "_json", lambda *a, **k: {})
+    inv = remote.target_inventory()
+    assert inv["jobs"] == []
+    assert inv["spaces"] == []
+    assert inv["client"] == {}
+
+
+def test_a_service_that_authenticates_but_gives_no_shell_is_not_an_empty_machine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Live case (OUTPOST, 2026-10-26): the plan said 28 jobs were missing on GitHub.
+
+    The link was fine and the key was accepted — GitHub just refuses a shell, with exit 1
+    and no output, which every probe read as "this machine has nothing".
+    """
+    remote = mig.SshRemote("github.com")
+
+    def fake_remote(*cmd: str) -> tuple[int, str, str]:
+        return (
+            1,
+            "",
+            "Hi navig-user! You've successfully authenticated, but GitHub does not provide shell access.",
+        )
+
+    monkeypatch.setattr(remote, "_remote", fake_remote)
+    monkeypatch.setattr(remote, "_json", lambda *a, **k: {})
+    with pytest.raises(mig.MigrationBlocked) as excinfo:
+        remote.target_inventory()
+    message = str(excinfo.value)
+    assert "shell did not answer" in message
+    assert "nothing was read" in message
+    assert "jobs missing" not in message
+
+
+def test_a_shell_that_answers_the_wrong_thing_is_not_trusted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exit 0 alone is not proof: the marker has to come back."""
+    remote = mig.SshRemote("outpost")
+
+    def fake_remote(*cmd: str) -> tuple[int, str, str]:
+        return 0, "Last login: Sun Oct 25 23:00:00 2026 from 10.0.0.1", ""
+
+    monkeypatch.setattr(remote, "_remote", fake_remote)
+    monkeypatch.setattr(remote, "_json", lambda *a, **k: {})
+    with pytest.raises(mig.MigrationBlocked) as excinfo:
+        remote.target_inventory()
+    assert "shell did not answer" in str(excinfo.value)
+
+
+def test_ssh_target_inventory_re_raises_when_the_connection_dies_mid_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    remote = mig.SshRemote("outpost")
+
+    def fake_remote(*cmd: str) -> tuple[int, str, str]:
+        if "navig-shell-probe" in " ".join(cmd):
+            return 0, "navig-shell-probe", ""
+        return 0, "", ""
+
+    def fake_json(*a: object, **k: object) -> dict[str, object]:
+        raise mig.TransportBlocked("could not reach outpost over ssh (lost connection)")
+
+    monkeypatch.setattr(remote, "_remote", fake_remote)
+    monkeypatch.setattr(remote, "_json", fake_json)
+    with pytest.raises(mig.TransportBlocked):
+        remote.target_inventory()
+
+
+# ── transport vs "the host answered and had nothing" ─────────────────────────
+#
+# The distinction is the whole point: an empty inventory is a FACT about a host that
+# answered, and a transport failure is the ABSENCE of a fact. These pin the classifier
+# on the exact strings this machine's ssh prints, so a wrapper that loses exit 255 (a
+# killed ssh, a dead mux socket, the Windows build exiting 1) still cannot be read as
+# "the target has nothing".
+
+
+@pytest.mark.parametrize(
+    ("code", "err"),
+    [
+        (255, "ssh: Could not resolve hostname neuron: Temporary failure in name resolution"),
+        (255, ""),
+        (1, "ssh: connect to host outpost port 22: Connection refused"),
+        (1, "Connection reset by peer"),
+        (1, "ssh: connect to host 192.0.2.10 port 22: No route to host"),
+        (1, "Host key verification failed."),
+        (1, "Permission denied (publickey,password)."),
+        (1, "kex_exchange_identification: Connection closed by remote host"),
+        (1, "channel 0: open failed: connect failed: Connection timed out"),
+        (1, "mux_client_request_session: read from master failed: Broken pipe"),
+    ],
+)
+def test_transport_failure_recognises_a_dead_link(code: int, err: str) -> None:
+    reason = mig.transport_failure(code, err)
+    assert reason, f"a dead link went unclassified: exit {code} {err!r}"
+    assert reason != f"ssh exited {code} without a reason" or not err
+
+
+@pytest.mark.parametrize(
+    ("code", "err"),
+    [
+        (0, ""),
+        (1, "cat: /home/tester/.navig/scheduler/cron_jobs.json: No such file or directory"),
+        (127, "bash: line 1: navig: command not found"),
+        (1, "navig: error: no such option: --json"),
+        (2, "ls: cannot access '/home/tester/.navig/spaces': No such file or directory"),
+    ],
+)
+def test_transport_failure_leaves_a_real_answer_alone(code: int, err: str) -> None:
+    assert mig.transport_failure(code, err) is None
+
+
+def test_a_message_only_transport_failure_still_blocks_the_inventory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exit code 1 with ssh's own words must not become an empty machine."""
+    remote = mig.SshRemote("outpost")
+
+    def fake_remote(*cmd: str) -> tuple[int, str, str]:
+        return 1, "", "ssh: connect to host outpost port 22: Connection refused\n"
+
+    monkeypatch.setattr(remote, "_remote", fake_remote)
+    monkeypatch.setattr(remote, "_json", lambda *a, **k: {})
+    with pytest.raises(mig.TransportBlocked) as excinfo:
+        remote.target_inventory()
+    assert "Connection refused" in str(excinfo.value)
+
+
+def test_a_spawn_timeout_is_a_transport_failure_not_an_empty_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import subprocess
+
+    remote = mig.SshRemote("outpost", timeout=5.0)
+
+    def fake_run(*a: object, **k: object) -> object:
+        raise subprocess.TimeoutExpired(cmd="ssh", timeout=5.0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(mig.TransportBlocked) as excinfo:
+        remote.target_inventory()
+    assert "did not answer within" in str(excinfo.value)
+
+
+def test_a_missing_ssh_binary_is_a_transport_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import subprocess
+
+    remote = mig.SshRemote("outpost")
+
+    def fake_run(*a: object, **k: object) -> object:
+        raise FileNotFoundError(2, "No such file or directory", "ssh")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(mig.TransportBlocked) as excinfo:
+        remote.target_inventory()
+    assert "could not run ssh" in str(excinfo.value)
+
+
+def test_a_bundle_hash_on_a_dead_link_is_not_reported_as_a_missing_bundle(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: object
+) -> None:
+    from pathlib import Path
+
+    remote = mig.SshRemote("outpost")
+    monkeypatch.setattr(remote, "_remote", lambda *cmd: (255, "", "Connection refused"))
+    with pytest.raises(mig.TransportBlocked) as excinfo:
+        remote.transfer(Path(str(tmp_path)) / "brain.tar.gz.enc")
+    assert "could not reach outpost" in str(excinfo.value)
+    assert "is not on outpost" not in str(excinfo.value)

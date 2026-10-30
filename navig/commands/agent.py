@@ -422,8 +422,8 @@ def agent_run(
         navig agent run cfo --task "Budget analysis for Q3" --plain
     """
     import json as json_module
+    import threading
     import time
-    from concurrent.futures import ThreadPoolExecutor
     from concurrent.futures import TimeoutError as FuturesTimeout
 
     from navig.agent.effort import resolve_effort
@@ -459,17 +459,27 @@ def agent_run(
         def _run():
             return ask_ai_with_context(task, system_prompt=agent.system_prompt, effort=effort)
 
-        # NOT a `with` block: ThreadPoolExecutor.__exit__ calls shutdown(wait=True),
-        # which JOINS the worker — so on timeout `future.result` would raise but the
-        # block would still block until the AI call finished, DEFEATING the cap. Shut
-        # down without waiting (a Python thread can't be force-killed; the orphaned call
-        # finishes in the background) so [TIMEOUT] is surfaced at `timeout`.
-        executor = ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(_run)
-        try:
-            response = future.result(timeout=timeout) or "[No response]"
-        finally:
-            executor.shutdown(wait=False)
+        # A DAEMON thread, not a ThreadPoolExecutor: the pool's workers are joined by
+        # concurrent.futures' interpreter-exit hook, so after [TIMEOUT] the CLI process
+        # would still hang until the AI call finished (forever if it never does). A
+        # Python thread can't be force-killed; a daemon thread is simply abandoned when
+        # the interpreter exits, so the cap holds for the process, not just this call.
+        outcome: dict[str, object] = {}
+
+        def _worker():
+            try:
+                outcome["value"] = _run()
+            except BaseException as exc:  # re-raised on the caller's thread below
+                outcome["error"] = exc
+
+        worker = threading.Thread(target=_worker, name="navig-agent-run", daemon=True)
+        worker.start()
+        worker.join(timeout)
+        if worker.is_alive():
+            raise FuturesTimeout()
+        if "error" in outcome:
+            raise outcome["error"]  # type: ignore[misc]
+        response = outcome.get("value") or "[No response]"
     except FuturesTimeout:
         response = f"[TIMEOUT after {timeout}s]"
         if not json_output and not plain:
@@ -1943,7 +1953,10 @@ def _build_context_report(message: str, persona: str, space: str) -> dict[str, A
 
 @agent_app.command("context")
 def agent_context(
-    message: str = typer.Option("", "--message", "-m", help="Simulate this user turn"),
+    message: str = typer.Option(
+        "", "--message", "-m",
+        help="Record this user turn in the --json report (the audit itself does not change)",
+    ),
     persona: str = typer.Option("", "--persona", help="Resolve as if this persona were active"),
     space: str = typer.Option("", "--space", help="Resolve as if this space were active"),
     show_prompt: bool = typer.Option(False, "--show-prompt", help="Print the system prompt"),

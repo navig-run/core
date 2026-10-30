@@ -22,7 +22,6 @@ These tests hammer many seeds and many repeats, so luck cannot carry them.
 
 from __future__ import annotations
 
-import importlib.util
 import random
 
 import pytest
@@ -34,17 +33,17 @@ _SEEDS = ["work", "personal", "burner-1", "burner-2", "acct-a", "acct-b"]
 
 
 def test_browserforge_is_not_back_on_the_fingerprint_path() -> None:
-    """BrowserForge is installed (via camoufox) — it must NOT be consulted here.
+    """BrowserForge may be installed (the optional ``stealth`` extra, via camoufox) — it
+    must NOT be consulted here.
 
-    It is importable in a normal install, which is exactly why this bug was live rather
+    It is importable in a stealth install, which is exactly why this bug was live rather
     than theoretical. Re-introducing it re-introduces both failures at once: it ignores the
     seed (identity rotates per call) and it emits Safari/Android/Firefox UAs that contradict
     the Chrome TLS target and Chrome WebGL strings we send downstream.
+
+    The check is on ``fingerprint.py`` itself, so it holds whether or not the extra is
+    installed — a bare install without BrowserForge must not fail it.
     """
-    assert importlib.util.find_spec("browserforge") is not None, (
-        "browserforge is no longer installed — this guard is now vacuous; that is fine, but "
-        "the guard below is what actually matters."
-    )
     assert not hasattr(F, "_browserforge_profile"), (
         "fingerprint.py consults BrowserForge again. It cannot satisfy coherence AND "
         "determinism AND variety at once — read the comment above `generate()` before "

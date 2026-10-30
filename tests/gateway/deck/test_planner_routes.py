@@ -128,6 +128,36 @@ async def test_agenda_create_and_accept() -> None:
     assert tasks == []  # an appointment is never in a to-do list
 
 
+async def test_an_item_is_readable_by_id_outside_the_agenda_window() -> None:
+    """A reminder snoozed past its appointment still opens it: the agenda only lists
+    appointments from two hours ago, so the lookup needs a by-id read."""
+    start = (NOW - timedelta(days=1)).replace(tzinfo=None).isoformat(timespec="minutes")
+    resp = await planner.handle_planner_agenda_create(_Req({"title": "Dentist", "start_at": start}))
+    assert resp.status == 201
+    appt = _body(resp)["data"]
+    listed = _body(await planner.handle_planner_agenda(_Req(query={"days": "366"})))["data"]
+    assert listed == []  # out of the agenda window
+
+    got = await planner.handle_planner_item_get(_Req(match_info={"id": appt["id"]}))
+    assert got.status == 200
+    assert _body(got)["data"]["id"] == appt["id"]
+    assert _body(got)["data"]["title"] == "Dentist"
+
+    missing = await planner.handle_planner_item_get(_Req(match_info={"id": "nope"}))
+    assert missing.status == 404
+
+
+async def test_item_get_is_operator_only(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "navig.gateway.deck.auth._deck_config",
+        {"allowed_users": [42], "allowed_users_configured": True},
+    )
+    resp = await planner.handle_planner_item_get(
+        _Req(match_info={"id": "x"}, local=False, user_id=99)
+    )
+    assert resp.status == 403
+
+
 async def test_followups_are_operator_only_and_wire_the_followup_service(monkeypatch) -> None:
     from navig.pim import followups
 
@@ -160,3 +190,25 @@ async def test_followups_are_operator_only_and_wire_the_followup_service(monkeyp
         _Req(match_info={"id": "t1"})
     ))["data"]
     assert suggested["results"][0]["status"] == "delivered"
+
+
+async def test_archived_lists_stay_reachable_for_restore() -> None:
+    """Archiving a list must not make it vanish from Settings (the only Restore surface)."""
+    shared = service.ensure_biz_list(777, bcid=None, owner_id=None, peer_name="Sarah")
+    archived = await planner.handle_planner_list_update(
+        _Req({"archived": True}, match_info={"id": shared["id"]})
+    )
+    assert archived.status == 200
+
+    default_ids = [row["id"] for row in _body(await planner.handle_planner_lists(_Req()))["data"]]
+    assert shared["id"] not in default_ids  # switchers still hide it
+
+    everything = _body(await planner.handle_planner_lists(_Req(query={"archived": "1"})))["data"]
+    row = next(r for r in everything if r["id"] == shared["id"])
+    assert row["archived"] in (True, 1)
+
+    restored = await planner.handle_planner_list_update(
+        _Req({"archived": False}, match_info={"id": shared["id"]})
+    )
+    assert restored.status == 200
+    assert shared["id"] in [r["id"] for r in _body(await planner.handle_planner_lists(_Req()))["data"]]

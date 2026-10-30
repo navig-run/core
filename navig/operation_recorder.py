@@ -311,6 +311,7 @@ class OperationRecorder:
 
         # Write to file
         try:
+            from navig.file_lock import file_lock
             from navig.ledger_chain import compute_entry_hash, read_tail_hash
 
             with self._write_lock:
@@ -326,22 +327,30 @@ class OperationRecorder:
                 if not self.history_dir.exists():
                     self._redirect_to_global()
 
-                entry = record.to_dict()
-                prev = read_tail_hash(self.history_file)
-                entry["prev"] = prev
-                entry["hash"] = compute_entry_hash(prev, entry)
+                # One writer at a time ACROSS PROCESSES, not just across threads.
+                # Two commands finishing in the same second both read the tail hash
+                # and both append a child of it; the chain then reports a
+                # tampering-shaped `prev-hash mismatch` on a file nobody edited
+                # (found on NEURON 2026-10-26: two `vault get` lines sharing
+                # prev=sha256:7cbd3). The lock lives on a sidecar file, so rotation
+                # renaming the ledger cannot orphan it.
+                with file_lock(self.history_file):
+                    entry = record.to_dict()
+                    prev = read_tail_hash(self.history_file)
+                    entry["prev"] = prev
+                    entry["hash"] = compute_entry_hash(prev, entry)
 
-                with open(self.history_file, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(entry) + "\n")
+                    with open(self.history_file, "a", encoding="utf-8") as f:
+                        f.write(json.dumps(entry) + "\n")
 
-                # Rebuild index from file so operation_id -> file line mapping stays
-                # correct even when history includes blank/malformed lines.
-                self._index_loaded = False
-                self._load_index()
+                    # Rebuild index from file so operation_id -> file line mapping
+                    # stays correct even when history includes blank/malformed lines.
+                    self._index_loaded = False
+                    self._load_index()
 
-                # Check for rotation
-                if len(self._operation_ids) > self.max_entries:
-                    self._rotate()
+                    # Check for rotation
+                    if len(self._operation_ids) > self.max_entries:
+                        self._rotate()
 
         except OSError as e:
             from navig import console_helper as ch
@@ -436,7 +445,8 @@ class OperationRecorder:
             The operation ID
         """
         effective_status = (
-            status if status is not None
+            status
+            if status is not None
             else (OperationStatus.SUCCESS if success else OperationStatus.FAILED)
         )
         record.status = effective_status
@@ -557,6 +567,38 @@ class OperationRecorder:
         except Exception as exc:  # noqa: BLE001
             logger.debug("iter_inflight skipped: %s", exc)
             return []
+
+    def in_flight_summary(self) -> tuple[int, int]:
+        """``(running, never_completed)`` counts over the in-flight markers.
+
+        ``running`` counts a live owner. ``never_completed`` counts a marker whose
+        process is gone AND whose operation has no ledger line — exactly the set
+        ``navig ledger reap`` writes an ``interrupted`` line for. A dead marker whose
+        line already exists is stale bookkeeping (the completion raced the marker
+        delete), not a missing operation: counting it told the operator "12
+        operation(s) never completed" while ``reap`` (correctly) reaped one
+        (NEURON, 2026-10-26).
+        """
+        from navig import operation_inflight as _inflight
+
+        markers = self.iter_inflight()
+        if not markers:
+            return 0, 0
+        # Fresh index: a completion may have landed since this recorder loaded it.
+        self._index_loaded = False
+        self._load_index()
+
+        running = never_completed = 0
+        for marker in markers:
+            try:
+                alive = _inflight.pid_is_alive(marker.pid, marker.create_time)
+            except Exception:  # noqa: BLE001 — indeterminate → assume alive, never over-report
+                alive = True
+            if alive:
+                running += 1
+            elif marker.op_id not in self._operations_by_id:
+                never_completed += 1
+        return running, never_completed
 
     def reap_inflight(
         self,
@@ -733,7 +775,7 @@ class OperationRecorder:
                     backup_file.rename(self.history_file)
                     recovered = True
                 except OSError:
-                    pass          # reported below as the un-recovered case
+                    pass  # reported below as the un-recovered case
             # The index was invalidated mid-rotation; rebuild it from whatever is on disk now.
             self._index_loaded = False
 
@@ -1080,7 +1122,9 @@ class RecordedOperation:
         import time
 
         self._start_time = time.time()
-        claimed, claimed_start = (claim_cli_operation(match=self.claim) if self.claim else (None, None))
+        claimed, claimed_start = (
+            claim_cli_operation(match=self.claim) if self.claim else (None, None)
+        )
         if claimed is not None:
             # One ledger line per invocation: enrich the middleware's record rather than
             # writing a sibling. The middleware already classified a `--dry-run` as
@@ -1117,6 +1161,7 @@ class RecordedOperation:
         ):
             try:
                 from navig.file_history import get_file_history_store
+
                 session_id = self.session_id or self._record.id
                 backup = get_file_history_store().checkpoint(
                     self.filepath, session_id, turn_id=self._record.id

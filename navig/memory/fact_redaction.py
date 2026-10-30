@@ -107,7 +107,22 @@ def _redact_ibans(text: str) -> str:
 
 
 def _redact_spoken(text: str) -> str:
-    return _SPOKEN_SECRET.sub(lambda m: f"{m.group(1)}{m.group(2)}{PLACEHOLDER}", text)
+    def _sub(m: re.Match[str]) -> str:
+        # group3 = optional opening quote, group4 = the secret token, which may carry
+        # sentence punctuation ("hunter2xyz!", "4821,"). Only the punctuation is put
+        # back: the token body is never re-emitted, so a secret containing an internal
+        # comma is still redacted whole, and a punctuation-only secret re-emits nothing.
+        token = m.group(4)
+        trail = ""
+        while len(token) > 1 and token[-1] in ",;:.!?":
+            trail = token[-1] + trail
+            token = token[:-1]
+        if not any(ch not in ",;:.!?" for ch in token):
+            trail = ""  # nothing but punctuation was there — don't give any of it back
+        quote = m.group(3)
+        return f"{m.group(1)}{m.group(2)}{quote}{PLACEHOLDER}{quote}{trail}"
+
+    return _SPOKEN_SECRET.sub(_sub, text)
 
 
 def _redact_credential_literals(text: str) -> str:

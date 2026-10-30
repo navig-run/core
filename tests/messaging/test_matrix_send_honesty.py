@@ -192,3 +192,22 @@ async def test_the_bot_returns_none_rather_than_raising_when_unconnected():
 
     assert await bot.send_message("!room:local", "hi") is None
     assert await bot.send_notice("!room:local", "hi") is None
+
+
+@pytest.mark.parametrize("send_return", [None, "$evt1"])
+async def test_ask_unregisters_its_reply_callback(send_return):
+    """Review F0723: every ask() appended a callback to the bot and never removed it."""
+    from navig.comms.matrix import NavigMatrixBot
+    from navig.integrations.comms_router import MatrixHitLChannel
+
+    bot = NavigMatrixBot.__new__(NavigMatrixBot)  # no connect, no config needed
+    bot._message_callbacks = []
+    bot._running = True
+    bot._client = object()
+    bot.send_message = AsyncMock(return_value=send_return)
+    ch = MatrixHitLChannel(lambda: bot, "!room:local")
+
+    for _ in range(3):
+        await ch.ask("Proceed?", timeout=0.01)
+
+    assert bot._message_callbacks == []

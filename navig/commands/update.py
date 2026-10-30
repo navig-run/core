@@ -85,6 +85,47 @@ def _git_head(src_dir) -> str:
         return ""
 
 
+def _git_commits_behind(src_dir) -> int | None:
+    """Commits *src_dir*'s HEAD is behind its upstream after a fetch, or None if unknown.
+
+    The version string only bumps on a release tag, so an editable checkout at the released
+    version with newer upstream commits compares "up to date" — this is the git-truthful
+    signal ``navig update`` plans a git install from.
+    """
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    try:
+        fetch = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(src_dir),
+                "-c",
+                "http.connectTimeout=10",
+                "-c",
+                "http.lowSpeedTime=20",
+                "fetch",
+                "--quiet",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env, encoding="utf-8", errors="replace",
+        )
+        if fetch.returncode != 0:
+            return None
+        r = subprocess.run(
+            ["git", "-C", str(src_dir), "rev-list", "--count", "HEAD..@{u}"],
+            capture_output=True,
+            text=True,
+            timeout=5, encoding="utf-8", errors="replace",
+        )
+        if r.returncode != 0:
+            return None
+        return int((r.stdout or "").strip() or 0)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _is_navig_git_checkout(src_dir) -> bool:
     """True when *src_dir* is a NAVIG source checkout under git that we can ``git pull``.
 
@@ -884,6 +925,12 @@ def update_run(
         else:
             for nr in result.failed_nodes:
                 _p(con, f"[red][✗][/red]  [bold]{nr.node_id}[/bold]  {nr.error}")
+            for nr in result.restart_pending_nodes:
+                _p(
+                    con,
+                    f"[yellow][!][/yellow]  [bold]{nr.node_id}[/bold]  installed, but the "
+                    f"daemon still runs the old code — {nr.restart_note}",
+                )
 
     if not result.success:
         raise typer.Exit(1)

@@ -77,7 +77,7 @@ def test_bot_status_under_the_daemon_names_the_supervisor(monkeypatch):
 
 
 def test_start_repair_step_registers_a_missing_restart_task(monkeypatch):
-    monkeypatch.setattr(svc.os, "name", "nt")
+    monkeypatch.setattr(svc.sys, "platform", "win32")
     monkeypatch.setattr(sm, "task_scheduler_enabled_state", lambda: (True, True, "ok"))
     calls: list = []
     monkeypatch.setattr(
@@ -94,7 +94,7 @@ def test_start_repair_step_registers_a_missing_restart_task(monkeypatch):
 
 def test_start_repair_step_leaves_an_uninstalled_machine_alone(monkeypatch):
     """No daemon task → nothing to register; a start path must not nag."""
-    monkeypatch.setattr(svc.os, "name", "nt")
+    monkeypatch.setattr(svc.sys, "platform", "win32")
     monkeypatch.setattr(sm, "task_scheduler_enabled_state", lambda: (None, False, "no task"))
     monkeypatch.setattr(
         sm,

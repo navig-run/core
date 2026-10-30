@@ -85,6 +85,22 @@ def _in_quiet_hours(hour: int, start: int, end: int) -> bool:
     return hour >= start or hour < end  # wraps midnight
 
 
+def _alert_resolution(type_key: str, title: str, body: str) -> tuple[str, bool]:
+    """``(key, already resolved)`` for an alert, or ``("", False)`` for anything else.
+
+    An alert is a condition, and a condition a person has already cleared must not be
+    announced again on the monitor's next run — the Resolve button on the card is what
+    records that. The key is the alert's own words, so a *different* alert still
+    arrives while the same one stays quiet.
+    """
+    from navig.notify import acks, notify_card
+
+    if not notify_card.resolvable(type_key):
+        return "", False
+    key = acks.key_for(title, body)
+    return key, acks.acknowledged(key)
+
+
 class NotificationRouter:
     _instance: "NotificationRouter | None" = None
 
@@ -110,12 +126,19 @@ class NotificationRouter:
         data: dict[str, Any] | None = None,
         only_channels: list[str] | None = None,
         keyboard: list[list[dict[str, str]]] | None = None,
+        dedupe_key: str | None = None,
     ) -> dict[str, Any]:
         """Fan a notification out to its enabled channels.
 
         ``keyboard`` (inline-button rows) is Telegram-only and optional; every
         other channel ignores it, so a producer can offer a one-tap action without
         caring which channels the operator has on.
+
+        ``dedupe_key`` names the EVENT when the producer knows it (a signed webhook's
+        event id). Two genuinely different payments can render identical words — the
+        same bag sold twice at $19.99 — so keying those on the text alone would swallow
+        the second one. Producers without an identity keep the text key, which is what
+        stops five taps on a test button from ringing five times.
         """
         settings = prefs.get_settings()
         if not settings["master_enabled"]:
@@ -151,7 +174,9 @@ class NotificationRouter:
         if (
             settings["quiet_hours_enabled"]
             and priority != "critical"
-            and _in_quiet_hours(datetime.now().hour, settings["quiet_hours_start"], settings["quiet_hours_end"])
+            and _in_quiet_hours(
+                datetime.now().hour, settings["quiet_hours_start"], settings["quiet_hours_end"]
+            )
         ):
             keep = {"deck"}
             if "pushover" in channels:
@@ -162,11 +187,47 @@ class NotificationRouter:
             channels = [c for c in channels if c in keep]
 
         text = body or ""
+
+        # One event, one arrival — the same wall telegram_routes.deliver raises, one
+        # layer up. The matrix is the OTHER way a Telegram card reaches the operator
+        # (Signals "Send test", monitor producers, briefings), so a producer that
+        # fires twice in a row, or five taps on a test button, must not ring five
+        # times for one event. Keyed on the rendered words, so a second sale at a
+        # different amount, a re-fired reminder and a new brief all still arrive.
+        from navig.notify import dedupe
+
+        collapse = (
+            dedupe.payload_key("dispatch", type_key, dedupe_key)
+            if dedupe_key
+            else dedupe.payload_key("dispatch", type_key, title, text)
+        )
+        if not dedupe.claim(collapse, dedupe.COLLAPSE_WINDOW_S):
+            logger.info(
+                "notify %r collapsed — identical words went out within %ss",
+                type_key,
+                dedupe.COLLAPSE_WINDOW_S,
+            )
+            return {
+                "type": type_key,
+                "priority": priority,
+                "skipped": "duplicate",
+                "channels": [
+                    {"channel": ch, "ok": True, "detail": "duplicate collapsed"} for ch in channels
+                ],
+            }
+
         results: list[dict[str, Any]] = []
         for ch in channels:
             try:
                 ok, detail = await self._send_one(
-                    ch, type_key, title, text, priority, data or {}, keyboard=keyboard
+                    ch,
+                    type_key,
+                    title,
+                    text,
+                    priority,
+                    data or {},
+                    keyboard=keyboard,
+                    dedupe_key=dedupe_key,
                 )
             except Exception as exc:  # noqa: BLE001 — isolate per-channel failures
                 logger.debug("notify channel %s failed: %s", ch, exc)
@@ -178,6 +239,11 @@ class NotificationRouter:
             from navig.notify import health
 
             health.record(ch, ok, detail)
+
+        # Nothing reached any channel: hand the claim back so the producer's honest
+        # retry is not swallowed by the copy that failed.
+        if results and not any(r["ok"] for r in results):
+            dedupe.release(collapse)
 
         return {"type": type_key, "priority": priority, "channels": results}
 
@@ -201,7 +267,9 @@ class NotificationRouter:
         title = "Test notification"
         body = f"This is a test to {channel} from navig."
         try:
-            ok, detail = await self._send_one(channel, "custom", title, body, "normal", {"_test": True})
+            ok, detail = await self._send_one(
+                channel, "custom", title, body, "normal", {"_test": True}
+            )
         except Exception as exc:  # noqa: BLE001 — report, never raise into the route
             logger.debug("notify test to %s failed: %s", channel, exc)
             ok, detail = False, str(exc)
@@ -215,8 +283,16 @@ class NotificationRouter:
         }
 
     async def _send_one(
-        self, channel: str, type_key: str, title: str, body: str, priority: str, data: dict,
-        *, keyboard: list[list[dict[str, str]]] | None = None,
+        self,
+        channel: str,
+        type_key: str,
+        title: str,
+        body: str,
+        priority: str,
+        data: dict,
+        *,
+        keyboard: list[list[dict[str, str]]] | None = None,
+        dedupe_key: str | None = None,
     ) -> tuple[bool, str]:
         if channel == "deck":
             item = feed.append(type_key, title, body, priority=priority, data=data)
@@ -231,7 +307,9 @@ class NotificationRouter:
             from navig.gateway.notifications import get_notification_manager
 
             nm = get_notification_manager()
-            ch_obj = nm.get_channel(channel) if hasattr(nm, "get_channel") else nm._channels.get(channel)
+            ch_obj = (
+                nm.get_channel(channel) if hasattr(nm, "get_channel") else nm._channels.get(channel)
+            )
             if channel == "telegram":
                 from navig.notify import telegram_routes
 
@@ -247,6 +325,22 @@ class NotificationRouter:
                     from navig.telegram import chat_tidy
 
                     text = format_telegram_html(type_key, title, body)
+                    # A body already laid out as sections (the daily brief, a
+                    # multi-fact report) is worth a card: a table, headings, a real
+                    # list. A two-line alert stays one message — forcing it into a
+                    # table is noise, not structure. The plain text is the fallback
+                    # either way, so a Bot API server without rich messages still
+                    # gets the whole notification.
+                    from navig.notify import notify_card
+
+                    card = notify_card.build(type_key, title, body)
+                    ack_key, resolved = _alert_resolution(type_key, title, body)
+                    if resolved:
+                        return True, "resolved"
+                    # The card is a report; its buttons are the way from the report
+                    # to the work it talks about (the task list, the habit week).
+                    if keyboard is None:
+                        keyboard = notify_card.keyboard(type_key, body, key=ack_key)
                     # Day-bound routine (a sale ring, the daily summary, a briefing)
                     # is recorded for tomorrow's chat tidy; an alert never is (and
                     # the tidy only ever records private chats, so a routed channel
@@ -254,11 +348,7 @@ class NotificationRouter:
                     # of this context, so the flag set here is what `chat_tidy.note()`
                     # reads in the thread.
                     tidy_kind = chat_tidy.notify_tidy_kind(type_key, priority, data)
-                    scope = (
-                        chat_tidy.routine(tidy_kind)
-                        if tidy_kind
-                        else contextlib.nullcontext()
-                    )
+                    scope = chat_tidy.routine(tidy_kind) if tidy_kind else contextlib.nullcontext()
                     with scope:
                         return await asyncio.to_thread(
                             telegram_routes.deliver,
@@ -266,6 +356,8 @@ class NotificationRouter:
                             text,
                             fallback_chat_id=telegram_routes.default_chat_id(),
                             keyboard=keyboard,
+                            card=card,
+                            dedupe_key=dedupe_key,
                         )
             if ch_obj is None:
                 return False, f"{channel} not configured"
@@ -285,7 +377,9 @@ class NotificationRouter:
 
             from navig.notify import pushover
 
-            return await asyncio.to_thread(pushover.send_notification, type_key, title, body, priority)
+            return await asyncio.to_thread(
+                pushover.send_notification, type_key, title, body, priority
+            )
 
         if channel == "toast":
             import asyncio

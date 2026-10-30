@@ -499,6 +499,65 @@ def questions_cmd(project: str = typer.Option(None, "--project", "-p"), here: bo
     _view("question", project, here, status, limit, as_json, "Import the session audit: navig recall ingest -s audit")
 
 
+@recall_app.command("resurrect")
+def resurrect_cmd(
+    project: str = typer.Option(None, "--project", "-p", help="Only this project."),
+    here: bool = typer.Option(False, "--here", help="The project you are standing in."),
+    limit: int = typer.Option(10, "--limit", "-n", help="How many ideas to rank (max 50)."),
+    telegram: bool = typer.Option(False, "--telegram",
+                                  help="Also send the digest to the channels enabled for recall_digest."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """The ideas worth reviving — ranked by a deterministic score, each with its reasons."""
+    if not _enabled():
+        ch.error("Recall has not been enabled on this machine.",
+                 "Turn it on: navig recall enable")
+        raise typer.Exit(1)
+    from navig.recall import query  # noqa: PLC0415
+    from navig.recall.query import Scope  # noqa: PLC0415
+
+    limit = max(1, min(50, limit))
+    rows = query.resurrect(limit=limit, scope=Scope.only(_project(project, here)))
+    if telegram and rows:
+        _resurrect_digest(rows)
+    if as_json:
+        ch.emit_json({"ideas": rows, "count": len(rows), "notified": bool(telegram and rows)})
+        return
+    if not rows:
+        ch.info("No ideas to revive in this scope.",
+                "Fill the bank first: navig recall ingest · navig recall extract")
+        return
+    t = _table(("#", {"no_wrap": True, "justify": "right"}), ("ID", {"no_wrap": True, "style": "bold"}),
+               ("Score", {"no_wrap": True, "justify": "right"}), ("Project", {"no_wrap": True, "style": "dim"}),
+               ("Days", {"no_wrap": True, "justify": "right"}), ("Idea", {}))
+    for i, r in enumerate(rows, 1):
+        why = "; ".join(r["reasons"]) or "no signals yet"
+        t.add_row(str(i), r["id"], str(r["score"]), r["project"], str(r["days_stale"]),
+                  f"{_snip(r['title'], 80)}\n[dim]{_snip(why, 120)}[/dim]")
+    ch.console.print(t)
+    ch.dim("open one: navig recall show <id>  ·  evidence: navig recall excerpt <source> <msg>")
+
+
+def _resurrect_digest(rows: list[dict[str, Any]]) -> None:
+    """Send the ranked ideas through the notify router (``recall_digest`` type)."""
+    import asyncio  # noqa: PLC0415
+
+    from navig.notify import dispatch  # noqa: PLC0415
+
+    lines = [f"Recall · {len(rows)} idea{'s' if len(rows) != 1 else ''} worth reviving:"]
+    for i, r in enumerate(rows, 1):
+        why = "; ".join(r["reasons"][:2]) or "no signals"
+        head = f"{i}. {r['title'][:90]} [{r['project']} · {r['days_stale']}d · score {r['score']}] — {why}"
+        lines.append(head)
+        lines.append(f"   navig recall show {r['id']}")
+        if sum(len(l) + 1 for l in lines) > 3400:
+            lines.append(f"… and {len(rows) - i + 1} more — navig recall resurrect")
+            break
+    asyncio.run(dispatch("recall_digest", f"Recall: {len(rows)} idea(s) worth reviving",
+                         "\n".join(lines), priority="low",
+                         data={"source": "recall_resurrect", "count": len(rows)}))
+
+
 # ── sessions ↔ files, plans, commits ──────────────────────────
 
 

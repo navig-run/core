@@ -37,7 +37,14 @@ def _runner(monkeypatch, probe_rows, tiers=(), heads=()):
     # dir would let one test's probe make the next one skip.
     monkeypatch.setenv("NAVIG_CONFIG_DIR", tempfile.mkdtemp(prefix="navig_hb_probe_"))
     gateway = SimpleNamespace(
-        config_manager=SimpleNamespace(global_config={"heartbeat": {"check_llm_modes": True}}),
+        config_manager=SimpleNamespace(
+            global_config={
+                "heartbeat": {"check_llm_modes": True},
+                # AI intent: without a declared provider the no-AI gate skips the
+                # probe entirely (tested below — `test_a_box_with_no_ai_*`).
+                "ai": {"default_provider": "nvidia"},
+            }
+        ),
         event_queue=None,
     )
     runner = HeartbeatRunner(gateway, HeartbeatConfig())
@@ -433,3 +440,117 @@ async def test_a_populated_health_cache_keeps_the_daily_throttle(monkeypatch):
     await runner._maybe_probe_llm_modes(_result())
 
     assert calls["n"] == 0
+
+
+# ── a box that never opted into AI is not a health problem ───────────────────
+#
+# Measured 2026-10-17, fresh Ubuntu server install (`server` profile: no brain,
+# no keys): every canonical mode resolved to the SHIPPED default, ollama, and
+# the daily probe turned that into "Health check: 5 problems" a day — five
+# "unreachable" rows on a machine where unreachable is simply the truth.
+
+
+def _drop_ai_intent(runner) -> None:
+    """Strip the ai-intent key the shared fixture carries, leaving a no-AI box."""
+    runner.gateway.config_manager.global_config.pop("ai", None)
+
+
+def _stub_detection(monkeypatch, provider: str, redetect: str | None = None) -> None:
+    """Pin AIClient provider detection: *provider* now, *redetect* after re-detect."""
+    from types import SimpleNamespace
+
+    import navig.agent.ai_client as ai_client
+
+    client = SimpleNamespace(
+        provider=provider,
+        re_detect_provider=lambda: provider if redetect is None else redetect,
+    )
+    monkeypatch.setattr(ai_client, "get_ai_client", lambda: client)
+
+
+async def test_a_box_with_no_ai_probes_nothing(monkeypatch):
+    """The regression: a no-brain server must not alarm about its own defaults."""
+    runner = _runner(monkeypatch, [_row("research", "unreachable")])
+    _drop_ai_intent(runner)
+    _stub_detection(monkeypatch, "none")
+
+    import navig.llm.liveness as liveness
+
+    def _probed(**_kw):
+        raise AssertionError("probed LLM modes on a box with no AI configured")
+
+    monkeypatch.setattr(liveness, "probe_routes", _probed)
+    result = _result()
+
+    await runner._maybe_probe_llm_modes(result)
+    await runner._maybe_probe_llm_modes(result)  # and every following beat again
+
+    assert not result.issues_found, "a no-AI box raised a health issue"
+    assert result.suppressed, "the beat must stay quiet"
+    from navig.heartbeat import runner as runner_mod
+
+    assert runner_mod._read_probe_day() is None, (
+        "the skip must not burn the day marker — the first beat after AI is "
+        "configured has to probe the same day"
+    )
+
+
+async def test_the_first_beat_after_ai_appears_probes_the_same_day(monkeypatch):
+    runner = _runner(monkeypatch, [])
+    _drop_ai_intent(runner)
+    _stub_detection(monkeypatch, "none")
+
+    import navig.llm.liveness as liveness
+
+    calls = {"n": 0}
+
+    def _counting(**_kw):
+        calls["n"] += 1
+        return []
+
+    monkeypatch.setattr(liveness, "probe_routes", _counting)
+
+    await runner._maybe_probe_llm_modes(_result())
+    assert calls["n"] == 0, "probed before any AI existed"
+
+    # `navig connect` equivalent: detection now finds a provider.
+    _stub_detection(monkeypatch, "none", redetect="openrouter")
+    await runner._maybe_probe_llm_modes(_result())
+    assert calls["n"] == 1, "the first beat after AI appeared must probe"
+
+
+async def test_an_unreadable_ai_check_never_silences_the_probe(monkeypatch):
+    """Fail OPEN: an unreadable config must not become 'no alarms ever'."""
+    runner = _runner(monkeypatch, [_row("research", "dead")])
+    _drop_ai_intent(runner)
+
+    import navig.agent.ai_client as ai_client
+
+    def _boom():
+        raise RuntimeError("credential store unreadable")
+
+    monkeypatch.setattr(ai_client, "get_ai_client", _boom)
+    result = _result()
+
+    await runner._maybe_probe_llm_modes(result)
+
+    assert result.issues_found, "an unreadable AI check silenced a dead-model alarm"
+
+
+async def test_declared_config_intent_skips_detection(monkeypatch):
+    """A configured box must probe even when detection itself would say none
+    (ollama configured but momentarily down is exactly what must be alerted)."""
+    runner = _runner(monkeypatch, [_row("research", "unreachable")])
+    runner.gateway.config_manager.global_config["ai"] = {"default_provider": "ollama"}
+
+    import navig.agent.ai_client as ai_client
+
+    def _must_not_run():
+        raise AssertionError("detection ran despite declared config intent")
+
+    monkeypatch.setattr(ai_client, "get_ai_client", _must_not_run)
+    result = _result()
+
+    await runner._maybe_probe_llm_modes(result)
+
+    assert result.issues_found, "a declared provider's unreachable probe was dropped"

@@ -25,6 +25,7 @@ from navig.core.yaml_io import (
     ConfigReadError,
     atomic_write_text,
     atomic_write_yaml,
+    file_lock,
     load_yaml_for_update,
 )
 from navig.platform.paths import config_dir
@@ -212,10 +213,20 @@ class ConfigSingleton:
         if path == self._global_cache_path and mtime_ns == self._global_cache_mtime_ns:
             return
         if not path.exists():
-            # Never blank an in-memory config because the file went missing; the
-            # next existing read wins, and a save is what would make it permanent.
+            moved = self._global_cache_path is not None and path != self._global_cache_path
             self._global_cache_path = path
             self._global_cache_mtime_ns = mtime_ns
+            if moved:
+                # The config ROOT changed (NAVIG_CONFIG_DIR now names another dir)
+                # and the new one has no config yet. What is held describes the OLD
+                # install: serving it would leak that install's values, and a save
+                # would copy them into the new root. Start from defaults instead.
+                self._global_load_failed = False
+                self._global_data = self._get_default_config()
+                self._reapply_pending_global()
+            # Otherwise the SAME file went missing: never blank an in-memory config
+            # for that; the next existing read wins, and a save would make it
+            # permanent.
             return
 
         try:
@@ -369,12 +380,17 @@ class ConfigSingleton:
         # daemon) ERASED everything written since — `navig config set telegram.y 2`
         # from the CLI was gone the moment the deck toggled a module, because
         # `set_enabled` is a set + save on that stale base. Measured, not assumed.
-        self._refresh_global_data()
-        if self._global_load_failed:
-            self._record_write_refused("global_config", self.global_config_path)
-            return
-        self._ensure_dirs()
-        atomic_write_yaml(self._global_data, self.global_config_path, allow_unicode=True)
+        #
+        # The refresh and the write share one CROSS-PROCESS lock (`self._lock` is per
+        # process): otherwise the CLI and the daemon can both refresh the same base and
+        # the second replace erases the first one's change.
+        with file_lock(self.global_config_path):
+            self._refresh_global_data()
+            if self._global_load_failed:
+                self._record_write_refused("global_config", self.global_config_path)
+                return
+            self._ensure_dirs()
+            atomic_write_yaml(self._global_data, self.global_config_path, allow_unicode=True)
         self._pending_global.clear()
         self._pending_global_path = None
         # What was just written IS the disk state; without this the next get() paid

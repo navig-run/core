@@ -45,6 +45,11 @@ def fake_desktop(monkeypatch, tmp_path):
 
     img = _FakeImage()
     monkeypatch.setattr(shot_mod, "capture_full_screen", lambda: (img, "fake-backend"))
+    # A headless host refuses the OS fallback before capturing anything (honest: there is no
+    # desktop to shoot), so the fallback contract can only be exercised with a display.
+    # This box has none; the probe is what the fixture replaces, and nothing else
+    # (2026-10-30, outpost).
+    monkeypatch.setattr(cdp_actions, "_no_display", lambda: False)
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
     return img
 

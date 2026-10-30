@@ -54,7 +54,17 @@ async def test_status_snapshot_render(monkeypatch):
 
 
 async def test_briefing_names_the_host_and_trims_deck_buttons(monkeypatch):
+    import asyncio
+
     from navig.gateway.channels.telegram import TelegramChannel
+
+    async def _no_systemd(*_a, **_kw):
+        # The Daemon row reports the unit the host actually shows when systemctl
+        # answers, which differs per machine. Pin the other branch: no unit could be
+        # read, so the briefing must fall back to "this process is the proof".
+        raise OSError("systemctl not available in this test")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _no_systemd)
 
     channel = TelegramChannel(bot_token="1:FAKE")
     captured: dict = {}
@@ -70,19 +80,18 @@ async def test_briefing_names_the_host_and_trims_deck_buttons(monkeypatch):
     text = captured["text"]
     labels = " ".join(b["text"] for b in _flat(captured["keyboard"]))
 
-    # The briefing now says which host its telemetry describes.
-    assert "Host:" in text
+    # The briefing says which host its telemetry describes — on the meta line now,
+    # where the card kit puts the "when and where" of every card.
     assert platform.node() in text
     assert "Switch AI" not in labels
     assert "Spaces" not in labels
     assert "Home" not in labels
-    # Daemon status is truthful on non-systemd hosts (Windows/macOS): the briefing
-    # is served BY the daemon, so it must not claim "status unavailable".
-    import shutil
-
-    if shutil.which("systemctl") is None:
-        assert "Daemon: <code>running" in text
-        assert "status unavailable" not in text
+    # Daemon status is truthful: the briefing is served BY the daemon, so it must
+    # not claim "status unavailable", and it must not name a unit as inactive when
+    # this process is the proof that it runs.
+    assert "running (this process" in text
+    assert "status unavailable" not in text
+    assert "🔴 inactive" not in text
 
 
 async def test_status_briefing_and_plans_sends_are_tagged_system(monkeypatch):

@@ -66,6 +66,24 @@ def test_the_old_behaviour_would_have_made_two_rows(isolated: Path) -> None:
     assert registry._norm(returned["path"]) == registry._norm(other)
 
 
+def test_an_alias_of_a_held_id_is_taken_too(isolated: Path) -> None:
+    """`project-space` canonicalises to `project`: discovery files both under one id,
+    so an exact-string check let the alias through and made the lookup ambiguous."""
+    other = _existing(isolated, "project")
+    elsewhere = isolated / "elsewhere"
+    assert registry.id_taken_by_another_path("project-space", elsewhere) == str(other.resolve())
+    assert registry.id_taken_by_another_path("Project", elsewhere) == str(other.resolve())
+    assert registry.id_taken_by_another_path("project-space", other) is None
+
+
+def test_register_refuses_an_alias_of_a_held_id(isolated: Path) -> None:
+    other = _existing(isolated, "project")
+    registry.register(isolated / "second", id="project-space", name="project-space",
+                      source="external")
+    rows = registry.load_registry()["spaces"]
+    assert [registry._norm(e["path"]) for e in rows] == [registry._norm(other)]
+
+
 # ── space init ───────────────────────────────────────────────────────────────
 
 
@@ -104,6 +122,22 @@ def test_re_initialising_the_same_space_is_not_a_collision(isolated: Path) -> No
     other = _existing(isolated, "homelab")
     r = CliRunner().invoke(space_cmd.space_app, ["init", "homelab", "--path", str(other), "--dry-run"])
     assert r.exit_code == 0, r.output
+
+
+@pytest.mark.parametrize("empty", ["", "   "])
+def test_an_explicitly_empty_name_is_refused_not_inferred(
+    isolated: Path, monkeypatch, empty: str
+) -> None:
+    """`navig space init "$SPACE_NAME"` with the variable unset passes "" — that is a bad
+    name, not an omitted one, and must never scaffold the invocation directory."""
+    here = isolated / "proj"
+    here.mkdir()
+    monkeypatch.setenv("NAVIG_INVOCATION_CWD", str(here))
+    monkeypatch.chdir(here)
+    r = CliRunner().invoke(space_cmd.space_app, ["init", empty])
+    assert r.exit_code != 0, r.output
+    assert not (here / ".navig").exists()
+    assert list(here.iterdir()) == []
 
 
 def test_an_unrelated_name_still_registers(isolated: Path) -> None:
@@ -151,6 +185,26 @@ def test_doctor_names_who_holds_the_id(isolated: Path) -> None:
     assert str(other.resolve()) in row["detail"]
 
 
+def test_doctor_names_the_holder_even_when_discovery_lists_the_folder(
+    isolated: Path, monkeypatch
+) -> None:
+    """The cwd project is listed by discovery even when its id is held elsewhere and no row
+    was written for it; that used to read as "registered" and skip the collision check."""
+    from types import SimpleNamespace
+
+    other = _existing(isolated, "homelab")
+    here = isolated / "homelab"
+    (here / ".navig").mkdir(parents=True)
+    monkeypatch.setattr(
+        "navig.spaces.resolver.discover_space_paths",
+        lambda **k: {"homelab": SimpleNamespace(path=here)},
+    )
+    rows = space_cmd._diagnose_space(here, "homelab")["groups"]
+    row = next(c for g in rows if g["name"] == "Registry" for c in g["checks"])
+    assert row["status"] == "warn" and row["action"] == "manual"
+    assert str(other.resolve()) in row["detail"]
+
+
 def test_a_skipped_registry_check_is_never_a_green_tick(isolated: Path, monkeypatch) -> None:
     """`chk(True, "registry", "check skipped")` rendered ✓ over a check that never ran."""
     def boom(**k):
@@ -163,3 +217,22 @@ def test_a_skipped_registry_check_is_never_a_green_tick(isolated: Path, monkeypa
     row = next(c for g in rows if g["name"] == "Registry" for c in g["checks"])
     assert row["status"] != "ok"
     assert "could not verify" in row["detail"]
+
+
+def test_space_register_fails_when_the_registry_is_unreadable(isolated: Path, monkeypatch) -> None:
+    """It printed "Registered" for an entry stored nowhere while spaces.json was locked."""
+    from navig.core.json_io import JsonReadError
+
+    here = isolated / "locked"
+    (here / ".navig" / "plans").mkdir(parents=True)
+    (here / ".navig" / "plans" / "current.md").write_text("# plan\n", encoding="utf-8")
+
+    def _raise_lock(*_a, **_k):
+        raise JsonReadError("simulated transient lock")
+
+    with monkeypatch.context() as m:
+        m.setattr(registry, "load_json_for_update", _raise_lock)
+        r = CliRunner().invoke(space_cmd.space_app, ["register", str(here)])
+    assert r.exit_code == 1, r.output
+    assert "Registered space" not in r.output
+    assert not [e for e in registry.load_registry()["spaces"] if e["id"] == "locked"]

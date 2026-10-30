@@ -11,6 +11,8 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from navig.commands.repo import GATE_MAX_HOLD_S, GATE_SLOW_S, collect_gates
 
 NOW = datetime(2026, 10, 9, 18, 0, tzinfo=timezone.utc).timestamp()
@@ -317,7 +319,16 @@ def _cli(monkeypatch, tmp_path, args, width=120):
     # monkeypatch recorded 80 as the "old" width, and undo restored 80 — every later test in
     # that worker then wrapped at 80 (three red land gates, a different victim each time).
     from navig import console_helper as ch
-    monkeypatch.setattr(ch.console, "width", width, raising=False)
+
+    # Patch the REAL console's width, not the lazy proxy. `monkeypatch.setattr(ch.console,
+    # "width", …)` reads the old value through `_LazyConsole.__getattr__`, which LOADS a
+    # console that had not been created yet, and then its teardown deletes the attribute --
+    # Rich's `width` is a property with no deleter, so every test here ended in
+    # `AttributeError: property 'width' … has no deleter` once the console had not been
+    # created before the patch (2026-10-30, outpost). Creating it first keeps the patch a
+    # plain set-and-restore of an int on a live object.
+    real = object.__getattribute__(ch.console, "_real") or ch.console._load()
+    monkeypatch.setattr(real, "width", width)
     return CliRunner().invoke(R.repo_app, ["gates", *args])
 
 
@@ -417,20 +428,16 @@ def test_the_narrow_view_never_pins_the_shared_console_for_later_tests(tmp_path)
     Rich reads COLUMNS once, at Console creation, and the shared console is lazy — so when
     this view was the FIRST thing in a worker to touch it, a narrowed COLUMNS pinned it and
     the next test in that worker wrapped at 80 (`'holds main' in out` failed on a correct
-    table). Simulated here by starting from an uncreated console, exactly as a fresh worker.
+    table, three red land gates, a different victim each time). The width is now set on the
+    Console object, so the invariant is exact: what the shared console had before a narrow
+    run, it still has after one.
     """
-    import pytest
-
     from navig import console_helper as ch
 
-    saved = object.__getattribute__(ch.console, "_real")
-    object.__setattr__(ch.console, "_real", None)  # a fresh worker: nothing has printed yet
-    try:
-        with pytest.MonkeyPatch.context() as mp:
-            r = _cli(mp, tmp_path, [], width=80)
-            assert r.exit_code == 0, r.output
-        assert ch.console.width >= 160, (
-            f"the narrow view left the shared console at {ch.console.width} columns"
-        )
-    finally:
-        object.__setattr__(ch.console, "_real", saved)
+    before = ch.console.width
+    with pytest.MonkeyPatch.context() as mp:
+        r = _cli(mp, tmp_path, [], width=80)
+        assert r.exit_code == 0, r.output
+    assert ch.console.width == before, (
+        f"the narrow view left the shared console at {ch.console.width} instead of {before}"
+    )

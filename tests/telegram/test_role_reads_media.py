@@ -146,7 +146,7 @@ async def test_a_role_reply_to_a_voice_note_answers_what_was_said(monkeypatch):
     )
     seen = {}
 
-    async def fake_generate(role, lang, ctx, *, target=None):
+    async def fake_generate(role, lang, ctx, *, target=None, **_):
         seen.update(role=role, lang=lang, target=target)
         return "Demain 18h, ça marche."
 

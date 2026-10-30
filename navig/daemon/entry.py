@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 
 from navig._daemon_defaults import _GATEWAY_PORT
@@ -123,6 +124,10 @@ def save_default_config() -> Path:
             # Genuinely corrupt. Writes are atomic (temp + os.replace), so this is never
             # a half-written file we caught mid-flight — repair to defaults is safe.
             should_repair = True
+        except FileNotFoundError:
+            # Removed between exists() and the read: nothing to preserve, and the
+            # contract is that the returned path exists — recreate the default.
+            should_repair = True
         except OSError:
             # A transient read failure (an antivirus/backup agent holding the file, a read
             # landing mid-replace) — NOT corruption. Overwriting with defaults here would
@@ -133,6 +138,29 @@ def save_default_config() -> Path:
     if should_repair:
         _write_config_atomic(DEFAULT_DAEMON_CONFIG.copy())
     return _daemon_config_path()
+
+
+def _rebind_cwd_derived_state() -> None:
+    """Drop what was resolved from the LAUNCH cwd, now that the cwd is the home.
+
+    ``navig service start --foreground`` runs :func:`main` inside the CLI process,
+    whose callback already built the cached ``ConfigManager`` (``base_dir`` found
+    from the cwd — a project ``.navig/``) and may have attached ``navig.log`` under
+    it. Without this the chdir changed nothing for that launch path: the log still
+    split into the project. Best-effort — it must never block a boot.
+    """
+    try:
+        from navig.config import get_config_manager, reset_config_manager
+
+        reset_config_manager()
+        from navig.core import logging as navig_logging
+
+        # Mirror get_logger()'s lazy configuration: re-point the file handler only
+        # when it was attached (never under pytest, where none is).
+        if navig_logging._ROOT_CONFIGURED and "pytest" not in sys.modules:
+            navig_logging._configure_root_logger(get_config_manager().base_dir / "navig.log")
+    except Exception:  # noqa: BLE001
+        logger.debug("rebinding cwd-derived state after chdir failed", exc_info=True)
 
 
 def main() -> None:
@@ -173,10 +201,36 @@ def main() -> None:
     # ACTIVE SPACE — a long-lived process must not bind to a space the operator can switch
     # under it, so its tools resolve the space per call. config_dir() is the daemon's own
     # home, not a space. Best-effort: an unresolvable home must not block a boot.
+    #
+    # Two things must be fixed BEFORE the chdir, while the launch directory is still the
+    # cwd: a relative NAVIG_CONFIG_DIR (`.navig`) would otherwise re-resolve against the
+    # new cwd on every later `config_dir()` call (`<launch>/.navig/.navig` — wrong pid
+    # file, wrong stop flag, wrong config), and the launch directory is the first place a
+    # project `.env` is looked for below.
+    launch_cwd: Path | None
     try:
-        os.chdir(paths.config_dir())
+        launch_cwd = Path.cwd()
+    except OSError:
+        launch_cwd = None
+    configured_home = os.environ.get("NAVIG_CONFIG_DIR")
+    if configured_home and not Path(configured_home).is_absolute():
+        try:
+            os.environ["NAVIG_CONFIG_DIR"] = str(Path(configured_home).resolve())
+        except OSError:
+            pass
+    try:
+        home = paths.config_dir()
+        # A fresh install (or a new NAVIG_CONFIG_DIR) may not have its home yet; the
+        # supervisor creates it later but never retries this chdir, so create it here.
+        try:
+            Path(home).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+        os.chdir(home)
     except Exception:  # noqa: BLE001
         pass
+    else:
+        _rebind_cwd_derived_state()
 
     # Respect stop-intent flag written by `navig service stop`.
     # Any external watcher (tray app, startup script, RestartOnFailure) that
@@ -275,12 +329,22 @@ def main() -> None:
         from navig.daemon.supervisor import NavigDaemon as _Daemon
 
         if _Daemon.is_running():
-            logger.info(
-                "Daemon already running (pid=%s) — this launch is a duplicate, exiting. "
-                "Use `navig service stop` first if you meant to replace it.",
-                _Daemon.read_pid(),
+            running_pid = _Daemon.read_pid()
+            # `is_running` trusts the pid file's number + create time; a file overwritten
+            # with an OLDER unrelated live process still passes it. Ask the command line
+            # too (it answers True when unreadable) — or this early return skips the very
+            # check NavigDaemon.run() would make and every watchdog launch is a no-op.
+            if running_pid is None or _Daemon._verify_daemon_pid(running_pid):
+                logger.info(
+                    "Daemon already running (pid=%s) — this launch is a duplicate, exiting. "
+                    "Use `navig service stop` first if you meant to replace it.",
+                    running_pid,
+                )
+                return
+            logger.warning(
+                "Pid file names pid=%s, which is not a navig daemon — starting anyway.",
+                running_pid,
             )
-            return
     except Exception:  # noqa: BLE001
         # Never let the guard itself stop a legitimate start: an unreadable pid
         # file must fall through to starting, not to refusing.
@@ -290,10 +354,12 @@ def main() -> None:
     try:
         from dotenv import load_dotenv
 
-        # Try multiple locations: cwd, project root (relative to this file), ~/.navig
+        # Try multiple locations: the LAUNCH directory (captured before the chdir to the
+        # home above — `Path.cwd()` is the home by now), project root (relative to this
+        # file), ~/.navig
         project_root = Path(__file__).resolve().parent.parent.parent
         candidates = [
-            Path.cwd() / ".env",
+            *([launch_cwd / ".env"] if launch_cwd is not None else []),
             project_root / ".env",
             paths.config_dir() / ".env",
         ]

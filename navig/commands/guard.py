@@ -419,7 +419,38 @@ def classify_orphans(
             )
             continue
         kill.append(pid)
+    # The sweep kills each pid with kill_tree(), which takes its WHOLE subtree. A per-pid
+    # skip therefore protects nothing when an ancestor is still on the kill list: spare
+    # every root whose subtree holds a spared process (its other branches are still
+    # killed through their own entries).
+    spared = {pid for pid, _name, _why in skipped}
+    if spared:
+        kept: list[int] = []
+        for pid in kill:
+            held = _first_descendant_in(pid, kids, spared)
+            if held is None:
+                kept.append(pid)
+                continue
+            skipped.append(
+                (pid, table[pid][0], f"its subtree holds spared {table[held][0]} ({held})")
+            )
+        kill = kept
     return kill, skipped
+
+
+def _first_descendant_in(pid: int, kids: dict[int, list[int]], wanted: set[int]) -> int | None:
+    """The first descendant of *pid* (in the snapshot) that is in *wanted*, else None."""
+    stack = list(kids.get(pid, ()))
+    seen: set[int] = set()
+    while stack:
+        cur = stack.pop()
+        if cur in seen:
+            continue
+        seen.add(cur)
+        if cur in wanted:
+            return cur
+        stack.extend(kids.get(cur, ()))
+    return None
 
 
 # ─── sweeps 2–5 (ported from homelab scripts/cleanup-procs-and-files.ps1) ───
@@ -618,6 +649,11 @@ def sweep_leaked_browsers(
         if state == "alive":
             report["skipped"].append((pid, "chrome", f"owner is alive ({age_min} min)"))
             continue
+        if state not in ("owner dead", "pid recycled", "no owner.json"):
+            # 'unreadable' proves nothing about the owner — a live run's
+            # owner.json mid-write must never get its browser killed.
+            report["skipped"].append((pid, "chrome", f"owner {state} ({age_min} min)"))
+            continue
         if dry_run:
             report["killed"].append(pid)
             continue
@@ -686,6 +722,15 @@ def chrome_user_data_dirs(chrome_cmds: dict[int, str]) -> set[str]:
     return out
 
 
+def _cdp_tmp_root() -> Path | None:
+    """%LOCALAPPDATA%/Temp, or None — never a relative path (an unset
+    LOCALAPPDATA once made it ./Temp, i.e. the cwd's own cdp-* dirs)."""
+    local = os.environ.get("LOCALAPPDATA", "")
+    if not local or not Path(local).is_absolute():
+        return None
+    return Path(local) / "Temp"
+
+
 def sweep_cdp_dirs(
     *,
     dry_run: bool,
@@ -712,10 +757,10 @@ def sweep_cdp_dirs(
         except Exception as exc:  # noqa: BLE001 - best effort, same as the script
             report.setdefault("notes", []).append(f"navig cdp stop failed: {exc}")
     live = chrome_user_data_dirs(chrome_cmds or {})
-    roots = [tmp_root if tmp_root is not None else Path(os.environ.get("LOCALAPPDATA", "")) / "Temp",
+    roots = [tmp_root if tmp_root is not None else _cdp_tmp_root(),
              sessions_root if sessions_root is not None else paths.config_dir() / "cdp-profiles" / "sessions"]
     candidates: list[Path] = []
-    if roots[0].is_dir():
+    if roots[0] is not None and roots[0].is_dir():
         candidates.extend(sorted(p for p in roots[0].glob("cdp-*") if p.is_dir()))
     if roots[1].is_dir():
         candidates.extend(sorted(p for p in roots[1].iterdir() if p.is_dir()))
@@ -740,6 +785,18 @@ def sweep_cdp_dirs(
     return report
 
 
+def _join_argv(argv: list[str]) -> str:
+    """argv -> one cmdline string, quoting a --user-data-dir value that holds
+    whitespace so `parse_user_data_dir` keeps the whole path (a "John Doe" Windows profile)."""
+    out: list[str] = []
+    for arg in argv:
+        key, sep, value = arg.partition("=")
+        if key == "--user-data-dir" and sep and any(c.isspace() for c in value) and '"' not in value:
+            arg = f'{key}="{value}"'
+        out.append(arg)
+    return " ".join(out)
+
+
 def _chrome_cmdlines() -> tuple[dict[int, str], bool]:
     """pid -> cmdline for every chrome.exe; second value = some unreadable."""
     cmds: dict[int, str] = {}
@@ -750,7 +807,7 @@ def _chrome_cmdlines() -> tuple[dict[int, str], bool]:
         if (p.info.get("name") or "").lower() != "chrome.exe":
             continue
         try:
-            cmds[p.pid] = " ".join(p.cmdline())
+            cmds[p.pid] = _join_argv(p.cmdline())
         except (psutil.AccessDenied, psutil.NoSuchProcess):
             denied = True
     return cmds, denied
@@ -930,7 +987,7 @@ def sweep_once(
         spin_report = sample_spinners(
             measure=lambda: _spinner_measure(spin_sample_sec),
             child_counts=child_counts, table=table, start_of=start_of,
-            protected=set(protected), min_pct=spin_pct, min_age_h=spin_min_age_h,
+            protected=set(protected) | set(lease_why), min_pct=spin_pct, min_age_h=spin_min_age_h,
             min_cpu_h=spin_min_cpu_h, dry_run=dry_run,
         )
         passes["spin"] = {"killed": len(spin_report["killed"]), "skipped": len(spin_report["skipped"]),
@@ -977,7 +1034,7 @@ def guard_verdict(
     """'kill' | 'warn' | 'keep' for one watched process (pure decision)."""
     if protected or never_kill:
         return "keep"
-    if mb >= kill_mb:
+    if kill_mb > 0 and mb >= kill_mb:
         return "kill"
     if mb >= warn_mb and (prev_mb == 0 or mb >= prev_mb * 1.5):
         return "warn"
@@ -1025,8 +1082,8 @@ def deprioritize(names: tuple[str, ...], protected: set[int]) -> int:
         if name not in needles or p.pid in protected:
             continue
         try:
-            if p.priority_class == psutil.NORMAL_PRIORITY_CLASS:  # type: ignore[attr-defined]
-                p.priority_class = psutil.BELOW_NORMAL_PRIORITY_CLASS  # type: ignore[attr-defined]
+            if p.nice() == psutil.NORMAL_PRIORITY_CLASS:  # type: ignore[attr-defined]
+                p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)  # type: ignore[attr-defined]
                 lowered += 1
         except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError, OSError):
             continue

@@ -372,6 +372,23 @@ class ScheduledPostStore(BaseStore):
         )
         return cursor.rowcount > 0
 
+    def claim_publish(self, post_id: int, idempotency_key: str | None = None) -> bool:
+        """Move a post to ``publishing`` in ONE conditional UPDATE. True = this caller owns it.
+
+        Refused when the post is already ``publishing`` (another request or tick holds it)
+        or was already published/partial under the same ``idempotency_key`` (a replay).
+        A read-then-update cannot give this: two concurrent publishes would both pass
+        the read and both send.
+        """
+        cursor = self._write(
+            "UPDATE scheduled_posts SET status = 'publishing', updated_at = ? "
+            "WHERE id = ? AND status != 'publishing' "
+            "AND NOT (? IS NOT NULL AND idempotency_key IS ? "
+            "         AND status IN ('published', 'partial'))",
+            (_utcnow(), post_id, idempotency_key, idempotency_key),
+        )
+        return cursor.rowcount > 0
+
     def delete(self, post_id: int) -> bool:
         cursor = self._write("DELETE FROM scheduled_posts WHERE id = ?", (post_id,))
         return cursor.rowcount > 0

@@ -562,7 +562,9 @@ async def handle_deck_apps_reminders_get(request: "web.Request") -> "web.Respons
     """
     store = _get_runtime_store()
     if store is None:
-        return _ok([])
+        # A missing store is NOT an empty list: saying "no reminders" here hid a
+        # broken install behind the same words a genuinely empty schedule shows.
+        return _err("the reminder store is not available on this Brain", 200)
 
     try:
         # We return all non-completed upcoming reminders across all users for the Deck.
@@ -590,7 +592,7 @@ async def handle_deck_apps_reminders_get(request: "web.Request") -> "web.Respons
         return _ok(items)
     except Exception as exc:
         logger.warning("reminders_get error: %s", exc)
-        return _ok([])
+        return _err(f"could not read reminders: {exc}", 200)
 
 
 async def handle_deck_apps_reminders_add(request: "web.Request") -> "web.Response":
@@ -1009,7 +1011,10 @@ async def handle_deck_apps_calendar(request: "web.Request") -> "web.Response":
     except Exception as exc:
         logger.debug("calendar list subprocess error: %s", exc)
 
-    return _ok([])
+    # Reaching here means the calendar command failed or printed nothing usable.
+    # An empty list would claim "nothing scheduled today"; the honest answer is
+    # that this Brain could not read the calendar at all.
+    return _err("the calendar is not available on this Brain", 200)
 
 
 # ── Life dashboard domain providers ────────────────────────────────────────────

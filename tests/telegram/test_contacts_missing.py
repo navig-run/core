@@ -157,3 +157,30 @@ def test_tag_scopes_the_report(monkeypatch, tmp_path):
 @pytest.mark.parametrize("verdict", ["deleted", "removed", "handle_gone", "handle_reused", "unknown"])
 def test_every_verdict_has_wording(verdict):
     assert tgc.MISSING_VERDICTS[verdict]
+
+
+def test_a_later_write_supplies_the_access_hash_the_first_lacked():
+    """A first, pre-hash write used to win outright, so a hash journalled later was
+    never used and the contact stayed `unknown`."""
+    exp = tgc.expected_contacts([_w(1, at="2026-08-01"),
+                                 _w(1, action="update", at="2026-09-01", access_hash=77)])
+    assert exp[1]["at"] == "2026-08-01"
+    assert exp[1]["access_hash"] == 77
+
+
+def test_an_unrelated_rpc_failure_is_not_a_gone_handle(monkeypatch, tmp_path):
+    """Any non-flood RPCError used to become `handle_gone`, so a transient server
+    error reported a live account as deleted or renamed."""
+    from telethon.errors import RPCError, UsernameNotOccupiedError
+
+    class _Erroring(_Client):
+        async def get_entity(self, handle):
+            self.lookups.append(handle)
+            if handle == "h1":
+                raise RPCError(request=None, message="INTERNAL_SERVER_ERROR", code=500)
+            raise UsernameNotOccupiedError(request=None)
+
+    res = _run(monkeypatch, tmp_path, [_w(1), _w(2)], _Erroring(present=set()), resolve=True)
+    assert _verdicts(res) == {1: "unknown", 2: "handle_gone"}
+    row = next(r for r in res["missing"] if r["user_id"] == 1)
+    assert row["lookup_error"] == "RPCError"

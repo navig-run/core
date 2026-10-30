@@ -10,6 +10,7 @@ Rollback: strips the appended snippet using the saved undo_data.
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -46,7 +47,7 @@ def plan(ctx: InstallerContext) -> list[Action]:
                 id=f"shell_integration.{rc.name}",
                 description=f"Add navig to PATH in ~/{rc.name}",
                 module=name,
-                data={"rc": str(rc), "bin_dir": str(bin_dir)},
+                data={"rc": str(rc), "bin_dir": str(bin_dir), "syntax": _rc_syntax(rc)},
                 reversible=True,
             )
         )
@@ -59,7 +60,7 @@ def plan(ctx: InstallerContext) -> list[Action]:
 def apply(action: Action, ctx: InstallerContext) -> Result:
     rc = Path(action.data["rc"])
     bin_dir = action.data["bin_dir"]
-    snippet = f'\n{_MARKER}\nexport PATH="{bin_dir}:$PATH"\n'
+    snippet = _snippet(bin_dir, action.data.get("syntax") or _rc_syntax(rc))
 
     try:
         with open(rc, "a", encoding="utf-8") as fh:
@@ -97,10 +98,56 @@ def rollback(action: Action, result: Result, ctx: InstallerContext) -> None:
 # ─────────────────────── helpers ──────────────────────────────────────────────
 
 
+def _login_shell_name() -> str:
+    """The user's login shell, from ``$SHELL`` then the passwd entry (POSIX only)."""
+    shell = os.environ.get("SHELL", "").strip()
+    if not shell:
+        try:
+            import pwd  # noqa: PLC0415 — POSIX-only module
+
+            shell = pwd.getpwuid(os.getuid()).pw_shell or ""
+        except Exception:  # noqa: BLE001 — no passwd (Windows) or no entry
+            return ""
+    return Path(shell).name.lower()
+
+
 def _shell_rc_candidates() -> list[Path]:
+    """The rc files the user's LOGIN shell actually reads.
+
+    macOS Terminal.app and iTerm start a LOGIN shell: bash reads ``.bash_profile`` and
+    zsh reads ``.zprofile``, so appending only to ``.bashrc``/``.zshrc`` left a macOS
+    install with ``navig`` on PATH only inside shells started from an already-configured
+    terminal. fish reads ``~/.config/fish/config.fish`` and never sources ``.profile``.
+    """
     home = Path.home()
-    candidates = [home / ".bashrc", home / ".zshrc", home / ".profile"]
-    return [p for p in candidates if p.exists()]
+    shell = _login_shell_name()
+    if shell == "zsh":
+        candidates = [home / ".zprofile", home / ".zshrc"]
+    elif shell in ("bash", "sh", "dash", "ksh", "ash"):
+        candidates = [home / ".bash_profile", home / ".bashrc"]
+    elif shell == "fish":
+        candidates = [home / ".config" / "fish" / "config.fish"]
+    else:
+        candidates = [home / ".profile", home / ".bashrc", home / ".zshrc"]
+
+    existing = [p for p in candidates if p.exists()]
+    if existing:
+        return existing
+    # A shell whose own file does not exist yet still reads the POSIX default.
+    profile = home / ".profile"
+    return [profile] if profile.exists() else []
+
+
+def _rc_syntax(rc: Path) -> str:
+    """``fish`` for fish's config file, ``posix`` for every other rc file."""
+    return "fish" if rc.name == "config.fish" else "posix"
+
+
+def _snippet(bin_dir: str, syntax: str) -> str:
+    """The PATH line for *syntax*; fish has no ``export`` and fails on one."""
+    if syntax == "fish":
+        return f'\n{_MARKER}\nfish_add_path "{bin_dir}"\n'
+    return f'\n{_MARKER}\nexport PATH="{bin_dir}:$PATH"\n'
 
 
 def _navig_bin_dir() -> Path | None:

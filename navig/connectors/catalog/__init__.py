@@ -186,6 +186,11 @@ class CatalogEntry:
 
 def entry_from_dict(raw: dict[str, Any], *, where: str = "") -> CatalogEntry:
     """Build and validate one entry. Every rule here is a promise the UI and CLI rely on."""
+    # A hand-edited row can be any JSON value. The CLI and Deck route only catch
+    # CatalogError, so a wrong shape or field type must surface as one, not as a
+    # TypeError/AttributeError traceback.
+    if not isinstance(raw, dict):
+        raise CatalogError(f"{where}: a row must be a JSON object, got {type(raw).__name__}")
     unknown = set(raw) - set(_KEYS)
     if unknown:
         raise CatalogError(f"{where}: unknown key(s) {sorted(unknown)}")
@@ -199,6 +204,16 @@ def entry_from_dict(raw: dict[str, Any], *, where: str = "") -> CatalogEntry:
         )
     except KeyError as exc:
         raise CatalogError(f"{where}: missing key {exc}") from None
+    except (TypeError, ValueError) as exc:
+        raise CatalogError(f"{where}: malformed field ({exc})") from None
+    for key in ("id", "name", "vendor", "category", "tier", "status"):
+        if not isinstance(getattr(e, key), str):
+            raise CatalogError(f"{where}: {key} must be a string")
+    for key in ("country", "integration", "native", "mcp"):
+        if getattr(e, key) is not None and not isinstance(getattr(e, key), str):
+            raise CatalogError(f"{where}: {key} must be a string or null")
+    if not all(isinstance(f, str) for f in e.flags):
+        raise CatalogError(f"{where}: flags must be a list of strings")
     where = where or e.id
     if not _ID_RE.match(e.id):
         raise CatalogError(f"{where}: id {e.id!r} must be lowercase kebab-case")

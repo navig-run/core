@@ -18,6 +18,7 @@ NOT WIRED block from the docstring, and answer the question in it.
 from __future__ import annotations
 
 import inspect
+import re
 
 import navig.cli.middleware as mw
 
@@ -38,6 +39,28 @@ def test_the_memory_manager_still_lacks_the_method_it_is_asked_for() -> None:
         f"MemoryManager now has {missing} — register_fact_extraction may no longer be "
         "dormant. Decide deliberately whether every CLI command should be written into the "
         "user's profile, then update its NOT WIRED docstring."
+    )
+
+
+def test_a_memory_manager_instance_also_lacks_those_collaborators(tmp_path) -> None:
+    """Reason 1, on the object the worker actually probes.
+
+    The worker asks the INSTANCE `get_memory_manager()` returns, so an attribute assigned in
+    `__init__` (`self.fact_extractor = ...`) would make a live branch run while the class
+    check above stays green. Built against a tmp dir, never the operator's memory store.
+    """
+    from navig.memory.manager import MemoryManager
+
+    mgr = MemoryManager(memory_dir=tmp_path / "memory", use_embeddings=False)
+
+    present = [name for name in ("record_command", "store_facts") if hasattr(mgr, name)]
+    assert not present, (
+        f"a MemoryManager instance now has {present} — register_fact_extraction may no "
+        "longer be dormant; decide deliberately, then update its NOT WIRED docstring."
+    )
+    assert not getattr(mgr, "fact_extractor", None), (
+        "a MemoryManager instance now carries a truthy fact_extractor — the worker's "
+        "extraction branch would run on every CLI exit"
     )
 
 
@@ -62,6 +85,50 @@ def test_the_worker_is_still_a_daemon_thread_started_at_exit() -> None:
     assert "atexit.register" in src, "no longer registered at exit — re-check the dormancy"
     assert "daemon=True" in src, (
         "the worker is no longer a daemon thread; if it is now joined, it may actually run"
+    )
+
+
+def test_the_mismatch_is_still_a_silent_hasattr_skip() -> None:
+    """Reason 2: the wrong-object miss is guarded by `hasattr`, so it skips silently."""
+    src = inspect.getsource(mw.register_fact_extraction)
+
+    assert 'hasattr(mgr, "record_command")' in src, (
+        "the hasattr guard is gone — a missing method would now raise (or the call is "
+        "made unconditionally); re-check the dormancy"
+    )
+
+
+def test_every_exception_is_still_swallowed_to_debug() -> None:
+    """Reason 4: the worker's broad except logs at debug and nothing else."""
+    src = inspect.getsource(mw.register_fact_extraction)
+
+    assert "except Exception" in src and '_log.debug("fact extraction failed' in src, (
+        "the worker no longer swallows its errors to _log.debug — failures may now surface; "
+        "re-check the dormancy"
+    )
+
+
+def test_the_wrong_object_mismatch_is_still_a_silent_hasattr_skip() -> None:
+    """Reason 2: the `hasattr` guard turns the missing method into a silent skip.
+
+    Replace it with a direct call and the miss becomes an AttributeError -- which reason 4
+    still swallows, but the dormancy would then rest on one mechanism, not two.
+    """
+    src = inspect.getsource(mw.register_fact_extraction)
+
+    assert re.search(r'if\s+hasattr\(\s*mgr\s*,\s*"record_command"\s*\)', src), (
+        "the hasattr(mgr, 'record_command') guard is gone — the call may now run or raise; "
+        "re-check the dormancy"
+    )
+
+
+def test_every_worker_exception_is_still_swallowed_to_debug() -> None:
+    """Reason 4: a broad `except Exception` logs the failure at debug and nothing else."""
+    src = inspect.getsource(mw.register_fact_extraction)
+
+    assert re.search(r"except\s+Exception(\s+as\s+\w+)?\s*:\s*\n\s*_log\.debug\(", src), (
+        "the broad except -> _log.debug handler changed — a failure may now surface, or "
+        "the handler narrowed; re-check the dormancy"
     )
 
 

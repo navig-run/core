@@ -231,6 +231,16 @@ def test_export_never_prints_a_unitless_dash_with_a_unit(space):
     assert "no earlier window" in text
 
 
+def test_export_does_not_blame_the_earlier_window_when_the_current_is_empty(space):
+    """Readings only in the PREVIOUS window: the earlier window exists, this one is empty."""
+    earlier = (date.today() - timedelta(days=10)).isoformat()
+    _run(space, "log", "--weight", "88.2", "--date", earlier)
+    assert _run(space, "export", "--days", "7").exit_code == 0
+    text = next((space / "out").glob("body-*.md")).read_text(encoding="utf-8")
+    assert "no earlier window" not in text
+    assert "no readings in this window" in text
+
+
 def test_export_header_and_table_agree_on_formatting(space):
     """123 in the table and 123.0 in the header is one number rendered two ways."""
     _run(space, "log", "--weight", "123")

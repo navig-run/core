@@ -15,6 +15,9 @@ examples:
   - "Disable the new file explorer flag"
   - "Check if feature 35057793 is enabled"
   - "Turn on all the new Explorer features"
+# Written against a planned command surface that is not implemented yet
+# (KNOWN_MISSING in tests/quality/test_content_command_refs_resolve.py).
+activatable: false
 ---
 
 # ViVeTool Windows Feature Flags

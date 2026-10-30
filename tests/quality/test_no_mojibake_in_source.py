@@ -128,9 +128,40 @@ def scan_source(source: str) -> list[tuple[int, str, str]]:
     out: list[tuple[int, str, str]] = []
     for lineno, line in enumerate(source.splitlines(), 1):
         for match in _NON_ASCII_RUN.finditer(line):
-            if fixed := recovered(match.group()):
-                out.append((lineno, match.group(), fixed))
+            run = match.group()
+            if fixed := recovered(run):
+                out.append((lineno, run, fixed))
+                continue
+            # A run that does not recover as a whole may still CONTAIN mangling:
+            # `_NON_ASCII_RUN` merges a valid character that touches the mangled bytes
+            # (`─вЂ”`), and `─` has no cp1251 byte, so the whole run failed to encode
+            # and the adjacent mangling went unreported. A character cp1251 cannot
+            # encode (and that is not a C1 passthrough) can never be part of a mangled
+            # sequence, so split there and try each piece on its own.
+            for piece in _cp1251_segments(run):
+                if piece != run and (fixed := recovered(piece)):
+                    out.append((lineno, piece, fixed))
     return out
+
+
+def _cp1251_segments(run: str) -> list[str]:
+    """*run* split at every character that could not have come out of a cp1251 decode."""
+    pieces: list[str] = []
+    current: list[str] = []
+    for ch in run:
+        try:
+            ch.encode("cp1251")
+            encodable = True
+        except UnicodeEncodeError:
+            encodable = 0x80 <= ord(ch) <= 0x9F  # a C1 byte survives as itself
+        if encodable:
+            current.append(ch)
+        elif current:
+            pieces.append("".join(current))
+            current = []
+    if current:
+        pieces.append("".join(current))
+    return pieces
 
 
 def _offenders() -> list[str]:
@@ -257,3 +288,15 @@ def test_the_SCAN_reaches_three_byte_mangling_not_only_the_round_trip() -> None:
     # Clean sources cost nothing and report nothing.
     assert scan_source("plain ascii only\n") == []
     assert scan_source("# \u2500\u2500 Access Control\n") == []
+
+
+def test_valid_unicode_touching_mangled_text_does_not_mask_it() -> None:
+    """Teeth: a valid non-cp1251 character merged into the same run hid the mangling.
+
+    `─вЂ”` is one `_NON_ASCII_RUN` match; `─` has no cp1251 byte, so `recovered()`
+    of the whole run is None and this used to report nothing at all.
+    """
+    assert scan_source("x = '\u2500вЂ”'\n") == [(1, "вЂ”", "\u2014")]
+    assert scan_source("x = 'вЂ”\u2500в†’'\n") == [(1, "вЂ”", "\u2014"), (1, "в†’", "\u2192")]
+    # still silent on clean text that merely mixes valid characters
+    assert scan_source("x = '\u2500\u2014 Интуиция'\n") == []

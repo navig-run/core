@@ -281,6 +281,54 @@ def test_body_log_weight_clears_and_deletes_the_pending_prompt(space, telegram, 
     assert ("deleteMessage", {"chat_id": CHAT, "message_id": _mid}) in telegram["calls"]
 
 
+def _failing(monkeypatch, *methods: str) -> list[tuple[str, dict]]:
+    """Re-patch the Telegram fake so *methods* raise, as Telegram does for a stale prompt."""
+    import navig.telegram.api as tg_cmd
+
+    calls: list[tuple[str, dict]] = []
+
+    def fake_api_call(token, method, payload):
+        calls.append((method, payload))
+        if method in methods:
+            raise RuntimeError("Bad Request: message can't be deleted")
+        return {"ok": True, "result": {"message_id": 999}}
+
+    monkeypatch.setattr(tg_cmd, "_api_call", fake_api_call)
+    return calls
+
+
+def test_body_log_rewrites_a_prompt_that_cannot_be_deleted(space, telegram, monkeypatch):
+    """Older than 48 h: the delete is refused, so settle it in place like `/weigh` does."""
+    _at(monkeypatch, MORNING)
+    _payload(_send(space))
+    mid = bm.pending_prompt(CHAT)[2]
+    calls = _failing(monkeypatch, "deleteMessage")
+    out = _payload(
+        runner.invoke(
+            body_cmd.body_app, ["log", "--weight", "87.4", "--json", "--space", str(space)]
+        )
+    )
+    edits = [p for m, p in calls if m == "editMessageText"]
+    assert len(edits) == 1 and edits[0]["message_id"] == mid
+    assert out["prompts_cleared"] == 1
+    assert bm.pending_prompt(CHAT) is None
+
+
+def test_body_log_keeps_a_prompt_it_could_not_dismiss(space, telegram, monkeypatch):
+    """Neither delete nor edit landed: the prompt stays pending and is NOT reported cleared."""
+    _at(monkeypatch, MORNING)
+    _payload(_send(space))
+    pending = bm.pending_prompt(CHAT)
+    _failing(monkeypatch, "deleteMessage", "editMessageText")
+    out = _payload(
+        runner.invoke(
+            body_cmd.body_app, ["log", "--weight", "87.4", "--json", "--space", str(space)]
+        )
+    )
+    assert out["prompts_cleared"] == 0
+    assert bm.pending_prompt(CHAT) == pending
+
+
 def test_body_log_for_another_day_leaves_todays_prompt(space, telegram, monkeypatch):
     _at(monkeypatch, MORNING)
     _payload(_send(space))

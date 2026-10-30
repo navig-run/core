@@ -2786,6 +2786,17 @@ function decideOpen(s) {
   return { accept: true };
 }
 __name(decideOpen, "decideOpen");
+function decidePromote(authedOthers) {
+  if (authedOthers >= OS_MAX_AUTHED) return { accept: false, code: CLOSE.LIMIT, reason: "too many sessions" };
+  return { accept: true };
+}
+__name(decidePromote, "decidePromote");
+function inboundTooBig(message) {
+  if (message.length > OS_MAX_INBOUND_BYTES) return true;
+  if (message.length * 3 <= OS_MAX_INBOUND_BYTES) return false;
+  return new TextEncoder().encode(message).byteLength > OS_MAX_INBOUND_BYTES;
+}
+__name(inboundTooBig, "inboundTooBig");
 function sendableCloseCode(code) {
   const n = typeof code === "number" && Number.isInteger(code) ? code : 1e3;
   if (n === 1e3 || n >= 3e3 && n <= 4999) return n;
@@ -2842,9 +2853,14 @@ var BrainSocket = class {
          path TEXT NOT NULL,
          headers TEXT NOT NULL,
          body TEXT NOT NULL,
-         created INTEGER NOT NULL
+         created INTEGER NOT NULL,
+         req_id TEXT
        );`
     );
+    try {
+      this.sql.exec("ALTER TABLE queue ADD COLUMN req_id TEXT");
+    } catch {
+    }
     this.state.setWebSocketAutoResponse(new WebSocketRequestResponsePair(KEEPALIVE, KEEPALIVE));
   }
   // ── HTTP surface (called by the Worker via the DO stub) ────────────────────
@@ -2917,6 +2933,7 @@ var BrainSocket = class {
     }
     switch (frame.t) {
       case "res": {
+        this.sql.exec("DELETE FROM queue WHERE req_id = ?", frame.id);
         const p = this.pending.get(frame.id);
         if (p) {
           clearTimeout(p.timer);
@@ -2960,7 +2977,18 @@ var BrainSocket = class {
       case "os_ok": {
         const sock = this.osSocket(frame.sid);
         const att = sock?.deserializeAttachment();
-        if (sock && att) sock.serializeAttachment({ ...att, authed: true });
+        if (!sock || !att) return;
+        let authedOthers = 0;
+        for (const other of this.state.getWebSockets("os")) {
+          if (other !== sock && other.deserializeAttachment()?.authed) authedOthers++;
+        }
+        const decision = decidePromote(authedOthers);
+        if (!decision.accept) {
+          this.closeQuietly(sock, decision.code, decision.reason);
+          this.tellBrainClosed(sock, decision.code, decision.reason);
+          return;
+        }
+        sock.serializeAttachment({ ...att, authed: true });
         return;
       }
       case "os_close": {
@@ -3054,7 +3082,7 @@ var BrainSocket = class {
     if (typeof message !== "string") {
       return this.closeQuietly(ws, CLOSE.UNSUPPORTED, "text frames only");
     }
-    if (message.length > OS_MAX_INBOUND_BYTES) {
+    if (inboundTooBig(message)) {
       this.closeQuietly(ws, CLOSE.TOO_BIG, "message too big");
       this.tellBrainClosed(ws, CLOSE.TOO_BIG, "message too big");
       return;
@@ -3129,7 +3157,7 @@ var BrainSocket = class {
     const body = request.method === "GET" || request.method === "HEAD" ? "" : await request.text();
     if (!ws) {
       if (kind === "deck") return this.offlineResponse(offlineSnapshotAllowed(url.pathname));
-      this.enqueue(kind, path, headers, body);
+      this.enqueue(kind, path, headers, body, kind === "telegram" ? crypto.randomUUID() : null);
       return new Response(JSON.stringify({ queued: true }), {
         status: 202,
         headers: { "content-type": "application/json" }
@@ -3138,9 +3166,11 @@ var BrainSocket = class {
     const id = crypto.randomUUID();
     const frame = { t: "req", id, kind, method: request.method, path, headers, body };
     if (kind === "telegram") {
+      this.enqueue(kind, path, headers, body, id);
       try {
         ws.send(JSON.stringify(frame));
       } catch {
+        this.sql.exec("DELETE FROM queue WHERE req_id = ?", id);
         return new Response(JSON.stringify({ error: "uplink_send_failed" }), {
           status: 502,
           headers: { "content-type": "application/json" }
@@ -3197,14 +3227,17 @@ var BrainSocket = class {
     );
   }
   // ── Offline queue ────────────────────────────────────────────────────────────
-  enqueue(kind, path, headers, body) {
+  /** `reqId` set = the row is kept until the brain's `res` for that id (replayed until then);
+   *  null = fire-and-forget, dropped once replayed. */
+  enqueue(kind, path, headers, body, reqId) {
     this.sql.exec(
-      "INSERT INTO queue (kind, path, headers, body, created) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO queue (kind, path, headers, body, created, req_id) VALUES (?, ?, ?, ?, ?, ?)",
       kind,
       path,
       JSON.stringify(headers),
       body,
-      Date.now()
+      Date.now(),
+      reqId
     );
     this.sql.exec(
       `DELETE FROM queue WHERE id IN (
@@ -3220,8 +3253,9 @@ var BrainSocket = class {
     for (const row of rows) {
       const frame = {
         t: "req",
-        id: crypto.randomUUID(),
-        // replay is fire-and-forget; the caller is long gone
+        // The caller is long gone; a row with a req_id keeps it so the brain's `res`
+        // clears the row, anything else is fire-and-forget.
+        id: row.req_id ?? crypto.randomUUID(),
         kind: row.kind,
         method: "POST",
         path: row.path,
@@ -3234,7 +3268,7 @@ var BrainSocket = class {
         return;
       }
     }
-    this.sql.exec("DELETE FROM queue");
+    this.sql.exec("DELETE FROM queue WHERE req_id IS NULL");
   }
   // ── SSE fanout ───────────────────────────────────────────────────────────────
   openSse() {
@@ -3836,7 +3870,7 @@ async function sha256Hex(input) {
 __name(sha256Hex, "sha256Hex");
 
 // src/index.ts
-var LIGHTHOUSE_VERSION = "1.8.0";
+var LIGHTHOUSE_VERSION = "1.8.1";
 var app = new Hono3();
 app.use(
   "*",

@@ -45,8 +45,8 @@ def test_cached_copy_is_marked_with_its_age_on_the_first_line_only() -> None:
 
 
 def test_fast_refresh_returns_the_fresh_briefing(tmp_path: Path, monkeypatch) -> None:
-    def spawn(root):
-        S.refresh(root)  # finishes inside the budget
+    def spawn(root, token=None):
+        S.refresh(root, token)  # finishes inside the budget
         return _DoneProc()
 
     monkeypatch.setattr(S, "briefing", lambda root: "[repo-guard] fresh")
@@ -58,7 +58,7 @@ def test_slow_refresh_serves_the_cache_with_its_age(tmp_path: Path, monkeypatch)
     S._write_cache(tmp_path, "[repo-guard] yesterday")
     old = time.time() - 3600
     os.utime(S._cache_path(tmp_path), (old, old))
-    monkeypatch.setattr(S, "_spawn_refresh", lambda root: _HungProc())
+    monkeypatch.setattr(S, "_spawn_refresh", lambda root, token=None: _HungProc())
     started = time.monotonic()
     out = S.bounded_briefing(tmp_path, budget_s=0.1)
     assert time.monotonic() - started < 5
@@ -66,17 +66,43 @@ def test_slow_refresh_serves_the_cache_with_its_age(tmp_path: Path, monkeypatch)
 
 
 def test_first_run_without_cache_points_at_the_full_tool(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(S, "_spawn_refresh", lambda root: _HungProc())
+    monkeypatch.setattr(S, "_spawn_refresh", lambda root, token=None: _HungProc())
     assert "navig repo stale" in S.bounded_briefing(tmp_path, budget_s=0.1)
 
 
 def test_one_refresher_at_a_time_and_a_dead_one_is_reclaimed(tmp_path: Path, monkeypatch) -> None:
-    assert S._claim_refresh(tmp_path) is True
-    assert S._claim_refresh(tmp_path) is False  # ten sessions open together: one refresh
+    assert S._claim_refresh(tmp_path) is not None
+    assert S._claim_refresh(tmp_path) is None  # ten sessions open together: one refresh
     monkeypatch.setattr(S, "REFRESH_LOCK_STALE_S", -1)  # the holder died long ago
-    assert S._claim_refresh(tmp_path) is True
-    S._release_refresh(tmp_path)
-    assert S._claim_refresh(tmp_path) is True
+    token = S._claim_refresh(tmp_path)
+    assert token is not None
+    S._release_refresh(tmp_path, token)
+    assert S._claim_refresh(tmp_path) is not None
+
+
+def test_a_reclaimed_refresher_cannot_release_its_successors_lock(tmp_path: Path, monkeypatch) -> None:
+    """A slow refresher whose lock went stale must not delete the next one's (F2485)."""
+    lock = S._cache_path(tmp_path).with_suffix(".refresh.lock")
+    slow = S._claim_refresh(tmp_path)
+    monkeypatch.setattr(S, "REFRESH_LOCK_STALE_S", -1)
+    successor = S._claim_refresh(tmp_path)  # reclaims the "dead" lock
+    assert slow and successor and slow != successor
+    monkeypatch.setattr(S, "briefing", lambda root: "[repo-guard] late")
+    S.refresh(tmp_path, slow)  # the slow one finishes at last
+    assert lock.read_text(encoding="ascii") == successor
+    S._release_refresh(tmp_path, successor)
+    assert not lock.exists()
+
+
+def test_a_failed_spawn_releases_the_refresh_claim(tmp_path: Path, monkeypatch) -> None:
+    """No child, no release: every later session would wait out the stale window (F2484)."""
+
+    def refuse(*args, **kwargs):
+        raise OSError("interpreter cannot be launched")
+
+    monkeypatch.setattr(S.subprocess, "Popen", refuse)
+    assert "navig repo stale" in S.bounded_briefing(tmp_path, budget_s=0.1)
+    assert not S._cache_path(tmp_path).with_suffix(".refresh.lock").exists()
 
 
 def test_a_busy_refresher_means_cache_now_not_another_spawn(tmp_path: Path, monkeypatch) -> None:

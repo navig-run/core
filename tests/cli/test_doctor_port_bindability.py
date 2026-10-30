@@ -102,7 +102,7 @@ def test_free_but_UNBINDABLE_is_not_green():
 def test_the_unbindable_message_is_actionable_on_windows(monkeypatch):
     """An operator who cannot see WHY a port is unusable will blame NAVIG. Name the
     one command that reveals a reservation."""
-    monkeypatch.setattr(doctor.os, "name", "nt")
+    monkeypatch.setattr(doctor.sys, "platform", "win32")
     err = OSError(13, "forbidden")
     with patch.object(doctor.socket, "socket", return_value=_sock(listening=False, bind_error=err)):
         results = doctor.check_sockets(target_port=8789)
@@ -114,7 +114,7 @@ def test_the_unbindable_message_is_actionable_on_windows(monkeypatch):
 def test_the_hint_is_omitted_off_windows(monkeypatch):
     """Anti-vacuity for the test above: the hint must be conditional, not always present,
     or it is noise on the platforms where reservations do not exist."""
-    monkeypatch.setattr(doctor.os, "name", "posix")
+    monkeypatch.setattr(doctor.sys, "platform", "linux")
     err = OSError(98, "Address already in use")
     with patch.object(doctor.socket, "socket", return_value=_sock(listening=False, bind_error=err)):
         results = doctor.check_sockets(target_port=8789)
@@ -152,3 +152,41 @@ def test_the_daemon_row_is_skipped_when_it_IS_the_target():
     labels = [r[2] for r in results if "Port Occupation" in r[2] or "Daemon Port" in r[2]]
     assert len(labels) == 1, results
     assert "Daemon Port" not in " ".join(labels), "the daemon row must be skipped when it IS the target"
+
+
+def _daemon_row_with_listener(cmdline):
+    """check_sockets with the gateway port free and the daemon port held by *cmdline*."""
+    def _socket(*_a, **_k):
+        return _sock(listening=True)
+
+    with (
+        patch.object(doctor.socket, "socket", side_effect=_socket),
+        patch.object(doctor, "_port_owner_pids", return_value={4242}),
+        patch.object(doctor, "_managed_daemon_pids", return_value={4242}),
+        patch.object(doctor, "_gateway_owner", return_value=cmdline),
+    ):
+        results = doctor.check_sockets(target_port=8789)
+    return _row(results, "Daemon Port")
+
+
+def test_a_foreign_listener_on_the_daemon_port_is_not_a_running_daemon():
+    """Any process on 8765 answered connect_ex and was reported "daemon running" —
+    while that very listener is what keeps the IPC/MCP daemon from binding."""
+    ok, text = _daemon_row_with_listener(r"C:\tools\other-server.exe --port 8765")
+
+    assert ok is False, text
+    assert "other-server.exe" in text, text
+    assert "daemon running" not in text, text
+
+
+def test_a_navig_listener_on_the_daemon_port_stays_green():
+    ok, text = _daemon_row_with_listener("pythonw.exe -m navig.daemon.entry")
+
+    assert ok is True, text
+    assert "daemon running" in text, text
+
+
+def test_an_unidentifiable_daemon_port_listener_is_not_green():
+    ok, text = _daemon_row_with_listener(None)
+
+    assert ok is False, text

@@ -30,12 +30,19 @@ build. Every one of the eleven fixed above was that shape.
 from __future__ import annotations
 
 import re
+import shlex
 import sys
 from pathlib import Path
 
-import click
 import pytest
 from typer.main import get_command
+
+from navig.core.click_compat import click_module, is_group
+
+# The click TYPER runs on, never a bare `import click` — Typer 0.27 vendors click, and a
+# separately installed copy is a different class hierarchy, so `_resolve` would stop at the
+# root of every app and report every documented flag as rejected.
+click = click_module()
 
 # Top-level groups NAVIG does not implement. Each entry is a planned surface, not a typo;
 # removing a skill that documents one is a product decision, so the gap is recorded.
@@ -66,6 +73,19 @@ KNOWN_MISSING_VERBS = {
     ("dev", "gh"): "gh-cli-github — planned wrapper (the shipped GitHub surface is `navig github`)",
 }
 
+# Verb groups that exist on ONE platform only. `navig-ahk` returns early off Windows
+# (`plugins/navig-ahk/navig_ahk/plugin.py:43`), so every `navig ahk …` reference resolves to
+# nothing on Linux while the skill remains correct on the machine that can run it. This is a
+# platform fact, not a recorded gap: the group DOES ship, so it must not go in KNOWN_MISSING.
+PLATFORM_ONLY_VERBS = {"ahk": "win32"}
+
+
+def _platform_scoped_out(words: list[str]) -> bool:
+    """True when the verb group cannot exist on this platform, by design."""
+    platform = PLATFORM_ONLY_VERBS.get(words[0])
+    return platform is not None and sys.platform != platform
+
+
 _NOT_A_VERB = re.compile(r'^(?:<|"|\[|\{|\$)')
 _BACKTICKED = re.compile(r"`navig ([^`\n]+)`")
 _FRONTMATTER_ITEM = re.compile(r"^\s*-\s+navig ([^\n]+)$", re.M)
@@ -86,11 +106,28 @@ def _builtin() -> Path:
     return builtin_store_dir()
 
 
+def _tokens(raw: str) -> list[str]:
+    """Whitespace tokens with a QUOTED argument kept whole, quotes and all.
+
+    `raw.split()` broke `--task "use --foo here"` apart and read `--foo` as one of the
+    command's flags. Non-POSIX shlex keeps the quoted span as ONE token that still
+    starts with `"`, so `_NOT_A_VERB` treats it exactly as before. An odd quote count
+    (a YAML list item's closing `"` captured with its line) drops that trailing quote.
+    """
+    text = raw.strip()
+    if text.count('"') % 2:
+        text = text.rstrip('",: ')
+    try:
+        return shlex.split(text, posix=False)
+    except ValueError:
+        return text.split()
+
+
 def _parse(raw: str) -> tuple[list[str], list[str]]:
     words: list[str] = []
     flags: list[str] = []
     seen_flag = False
-    for token in raw.split():
+    for token in _tokens(raw):
         if token.startswith("-"):
             seen_flag = True
             flags.append(token.split("=", 1)[0])
@@ -106,7 +143,7 @@ def _parse(raw: str) -> tuple[list[str], list[str]]:
 def _resolve(root, words: list[str]):
     cur = root
     for i, word in enumerate(words):
-        if not isinstance(cur, click.Group):
+        if not is_group(cur):
             return cur, []  # leaf command — the rest are arguments
         nxt = cur.get_command(click.Context(cur), word)
         if nxt is None:
@@ -186,6 +223,15 @@ def test_every_block_command_step_resolves(root) -> None:
         if not words:
             continue
         why = _check(root, words, [])
+        rest = argv[1 + len(words):]
+        if why is None and rest and not rest[0].startswith("-"):
+            # The walk stops at the first `{{…}}` token, so a GROUP called with an argument
+            # where its subcommand belongs used to pass: `db-snapshot` ran
+            # `navig download <file> <dir>` — `download` is the TikTok plugin's group, not
+            # a file transfer.
+            node, _ = _resolve(root, words)
+            if is_group(node) and not node.invoke_without_command:
+                why = f"`{' '.join(words)}` is a command group; `{rest[0]}` is not a subcommand"
         if why:
             broken.append(f"{block_id}/{step_id}: `{' '.join(argv[:4])}…` — {why}")
     assert not broken, "Block steps that would fail at apply time:\n  " + "\n  ".join(broken)
@@ -214,13 +260,32 @@ def test_skills_are_present():
 def test_skills_use_real_commands_under_groups_that_exist(root) -> None:
     broken = []
     for skill, raw, words, flags in _skill_refs():
-        if _known_missing(words):
+        if _known_missing(words) or _platform_scoped_out(words):
             continue
         why = _check(root, words, flags)
         if why:
             broken.append(f"{skill}: `navig {raw}` — {why}")
     assert not broken, (
         "skills instruct the agent to run commands that do not exist:\n  " + "\n  ".join(broken)
+    )
+
+
+def test_skills_naming_unimplemented_commands_never_auto_activate() -> None:
+    """KNOWN_MISSING exempts a skill from the resolve check — it must not ALSO be injected
+    into the agent's prompt, or the agent is told to run a command that cannot resolve."""
+    from navig.agent.skills_context import _parse_skill_file
+
+    paths = {p.parent.name: p for p in _builtin().rglob("SKILL.md")}
+    activatable = sorted(
+        {
+            skill
+            for skill, _raw, words, _flags in _skill_refs()
+            if _known_missing(words) and _parse_skill_file(paths[skill], "builtin").activatable
+        }
+    )
+    assert not activatable, (
+        "skills that name an unimplemented command still auto-activate — add "
+        "`activatable: false` to their frontmatter: " + ", ".join(activatable)
     )
 
 
@@ -252,7 +317,41 @@ def test_known_missing_entries_are_still_missing(root) -> None:
 # planned `space agent`/`workflow`/`pack` surfaces — deliberately NOT gated here: a
 # 56-entry baseline is the "place to hide things" the call-arg guard's design rejects.
 
-_SPACE_LINE = re.compile(r'^\s*(?:[-*]\s+|\$\s+|"|- ")?navig ([^\n`"#]+)', re.M)
+# Runs to the end of the line (a backtick or `#` ends it), NOT to the first `"`: stopping
+# at a quote truncated `agent run herald --task "…" --attach script.sh` to
+# `agent run herald --task ` and the unsupported `--attach` was never checked.
+# `_tokens` keeps the quoted argument as one token instead.
+_SPACE_LINE = re.compile(r'^\s*(?:[-*]\s+|\$\s+|"|- ")?navig ([^\n`#]+)', re.M)
+
+
+def _yaml_command_values(rel: str, text: str) -> list[str]:
+    """Every single-line YAML string VALUE that is a `navig …` command, minus `navig `.
+
+    `_SPACE_LINE` only sees a command at the START of a line, so a command-valued key —
+    `command: "navig skill run adb-connect --mode wifi"` — was never scanned at all.
+    Multi-line values are left to `_SPACE_LINE`, which already sees each of their lines.
+    """
+    if not rel.endswith((".yaml", ".yml")):
+        return []
+    import yaml
+
+    try:
+        docs = list(yaml.safe_load_all(text))
+    except yaml.YAMLError:
+        return []
+    found: list[str] = []
+    stack: list[object] = list(docs)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+        elif isinstance(node, str):
+            value = node.strip()
+            if value.startswith("navig ") and "\n" not in value:
+                found.append(value[len("navig "):])
+    return found
 
 
 def _space_plugin_refs():
@@ -277,6 +376,7 @@ def _space_plugin_refs():
         text = (repo / rel).read_text(encoding="utf-8", errors="replace")
         raws = [m.group(1) for m in _BACKTICKED.finditer(text)]
         raws += [m.group(1) for m in _SPACE_LINE.finditer(text)]  # fenced code blocks
+        raws += _yaml_command_values(rel, text)
         for raw in raws:
             words, flags = _parse(raw)
             if words and words[0] in providers:
@@ -338,6 +438,7 @@ def _space_refs():
     for rel, raw_text in _space_texts():
         raws = [m.group(1) for m in _BACKTICKED.finditer(raw_text)]
         raws += [m.group(1) for m in _SPACE_LINE.finditer(raw_text)]
+        raws += _yaml_command_values(rel, raw_text)
         for raw in raws:
             words, flags = _parse(raw)
             if words:
@@ -415,3 +516,32 @@ def test_space_planned_families_are_not_stale(root) -> None:
         f"`{fam}` is referenced by no space any more — drop it" for fam in sorted(every - used)
     ]
     assert not stale, "SPACE_PLANNED is out of date:\n  " + "\n  ".join(stale)
+
+
+def test_space_line_scan_reads_past_a_quoted_argument():
+    """Teeth: the whole line is checked, so a flag AFTER a quoted value is seen.
+
+    `_SPACE_LINE` used to stop at the first `"`, which captured only
+    `agent run herald --task ` and never saw the unsupported `--attach`.
+    """
+    line = 'navig agent run herald --task "Review it --not-a-flag" --attach script.sh\n'
+    raws = [m.group(1) for m in _SPACE_LINE.finditer(line)]
+    assert len(raws) == 1
+    words, flags = _parse(raws[0])
+    assert words == ["agent", "run", "herald"]
+    # the quoted value is one token, so its `--not-a-flag` is not read as a flag
+    assert flags == ["--task", "--attach"]
+
+
+def test_yaml_command_values_are_scanned():
+    """Teeth: a command-valued YAML key is invisible to the line-start regex."""
+    text = (
+        "examples:\n"
+        "  - description: connect\n"
+        '    command: "navig skill run adb-connect --mode wifi"\n'
+    )
+    assert not [m.group(1) for m in _SPACE_LINE.finditer(text)]
+    values = _yaml_command_values("x/skills/adb.yaml", text)
+    assert values == ["skill run adb-connect --mode wifi"]
+    assert _parse(values[0]) == (["skill", "run", "adb-connect"], ["--mode"])
+    assert _yaml_command_values("x/README.md", text) == []

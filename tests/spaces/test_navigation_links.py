@@ -221,8 +221,20 @@ def test_nested_aliases_stay_out_of_discovery(isolated: Path):
     # The alias PATHS must be invisible to discovery: every entry resolves to a
     # canonical folder, never to env/areas/* or env/projects/* (the alias id
     # 'android' is a REAL registered space — its canonical folder, not the link).
-    assert not any("/areas/" in str(cfg.path) or "/projects/" in str(cfg.path)
-                   for cfg in found.values())
+    # Judged RELATIVE to the env, not by searching the absolute path for "/areas/":
+    # a checkout that itself lives under .../projects/... matched on every entry, and on
+    # Windows the same search never matched at all (2026-10-30, outpost).
+    env_root = env.resolve()
+
+    def _alias_container(cfg_path) -> bool:
+        try:
+            rel = Path(cfg_path).resolve().relative_to(env_root)
+        except ValueError:
+            return False  # a canonical space outside the env — that is the point
+        return bool({"areas", "projects"} & set(rel.parts))
+
+    leaked = [str(cfg.path) for cfg in found.values() if _alias_container(cfg.path)]
+    assert not leaked, f"alias paths escaped discovery: {leaked}"
     assert "homelab-dev" in found
     assert str(found["homelab-dev"].path).endswith("dev-space")
 

@@ -38,7 +38,8 @@ ALLOWED = frozenset(
     {
         # Slash commands and the reply keywords — what the operator TYPES.
         "start", "help", "status", "doctor", "os", "ping", "about", "version", "skill", "mode",
-        "extensions", "lang", "auto", "stop",  # /extensions /lang /auto_start /auto_stop
+        "extensions", "lang", "menu", "auto", "stop",  # /extensions /lang /menu /auto_start
+        "cards",  # /cards — the review index, a command the operator types
         "translate", "summarize", "music",
         # Product and vendor names.
         "navig", "docker", "cli",

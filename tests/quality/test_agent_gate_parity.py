@@ -37,17 +37,45 @@ from navig.tools.approval import (
 )
 
 
-@functools.lru_cache(maxsize=1)
-def _mcp_levels() -> tuple[tuple[str, str], ...]:
-    """The MCP classification, as (tool, level) pairs. Cached; registration is ~0.3s."""
-    from navig.mcp.tools import register_all_tools
+def _collect_mcp_levels() -> tuple[tuple[str, str], ...]:
+    """The MCP classification, as (tool, level) pairs, on EVERY platform.
+
+    `register_all_tools` only includes the `desktop` and `windows` bundles on win32, so
+    off Windows their dangerous classifications (`desktop_powershell`, registry writes,
+    process kill) never reached this parity check — a new dangerous Windows tool missing
+    from `DESTRUCTIVE_TOOLS` stayed green on every Linux/macOS run. Both modules import
+    cleanly everywhere (their Windows-only imports are guarded), so register any of them
+    the platform filter skipped.
+    """
+    from navig.mcp.tools import all_bundles, desktop, register_all_tools, windows
 
     server = MagicMock()
     server.tools = {}
     server._tool_handlers = {}
     del server._tool_safety
     register_all_tools(server)
+    included = all_bundles()
+    for bundle in (desktop, windows):
+        if bundle not in included:
+            bundle.register(server)
     return tuple(sorted(server._tool_safety.items()))
+
+
+@functools.lru_cache(maxsize=1)
+def _mcp_levels() -> tuple[tuple[str, str], ...]:
+    """Cached `_collect_mcp_levels`; registration is ~0.3s."""
+    return _collect_mcp_levels()
+
+
+def test_windows_tools_are_classified_on_every_platform(monkeypatch) -> None:
+    """REGRESSION: off Windows the desktop/windows bundles were skipped, so the parity
+    tests never saw their dangerous tools. Simulated here by faking a non-Windows host."""
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    levels = dict(_collect_mcp_levels())
+    assert levels.get("desktop_powershell") == "dangerous"
+    assert levels.get("desktop_ahk") == "dangerous"
 
 
 def _dangerous() -> list[str]:

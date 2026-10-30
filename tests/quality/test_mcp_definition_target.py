@@ -26,7 +26,8 @@ import sys
 import pytest
 
 from navig.mcp.annotations import DESCRIPTION_HINTS, annotate_tools
-from navig.mcp.definition_score import score_catalogue
+from navig.mcp.catalogue_audit import SIBLING_TOOL as AUDIT_SIBLING
+from navig.mcp.definition_score import SIBLING_TOOL, score_catalogue
 from navig.mcp_server import MCPProtocolHandler
 
 TARGET = 4.5
@@ -101,6 +102,27 @@ def test_every_hint_names_a_tool_that_is_advertised(handler: MCPProtocolHandler)
         # their hints still matter on Windows, so they are exempt rather than deleted.
         missing = [name for name in missing if not name.startswith("desktop_")]
     assert missing == [], f"DESCRIPTION_HINTS keys with no tool in the catalogue: {missing}"
+
+
+def test_the_sibling_pattern_covers_every_advertised_family(handler: MCPProtocolHandler) -> None:
+    """A family missing from ``SIBLING_TOOL`` can never earn routing credit.
+
+    The scorer can only see a sibling it recognises, so a family absent from the pattern
+    scores ``names no sibling tool`` however carefully its tools point at each other. That is
+    how the coordination pair sat at 4.2 with a correct description: the tool was fine and the
+    evaluator's vocabulary was not. Every family with more than one tool must be nameable.
+    """
+    families: dict[str, list[str]] = {}
+    for name in handler.tools:
+        families.setdefault(name.split("_", 1)[0], []).append(name)
+
+    unseen = sorted(
+        family
+        for family, names in families.items()
+        if len(names) > 1
+        and not (SIBLING_TOOL.search(f"{family}_probe") and AUDIT_SIBLING.search(f"{family}_probe"))
+    )
+    assert unseen == [], f"families a sibling pattern cannot name: {unseen}"
 
 
 def test_annotation_pass_is_idempotent() -> None:

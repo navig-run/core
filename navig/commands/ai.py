@@ -10,6 +10,7 @@ import logging
 import os
 import platform
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -191,7 +192,7 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
         or server_config.get("host", "") in ("localhost", "127.0.0.1", "::1")
     )
     try:
-        if os.name == "nt" and is_local_host:
+        if sys.platform == "win32" and is_local_host:
             # Windows local: tasklist filtered for common services — no SSH needed.
             # Do NOT pass text=True here — we decode manually so that non-UTF-8
             # bytes in tasklist output (e.g. OEM code page cp850/cp1252 on
@@ -208,7 +209,7 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
                     if any(k in ln.lower() for k in ("python", "nginx", "mysql", "node", "php", "apache"))
                 ]
                 context["processes"] = _relevant[:20] or ["(no web services detected)"]
-        elif os.name != "nt":
+        elif sys.platform != "win32":
             result = remote_ops.execute_command(
                 "ps aux | grep -E 'nginx|php|mysql' | grep -v grep", server_config
             )
@@ -695,7 +696,9 @@ def _report_unpriced(console, rows: list[dict]) -> None:
     that matter. Those are named once instead. Never an exit failure — a missing
     price is wrong accounting, not a broken model.
     """
-    live = [r for r in rows if r["status"] in ("live", "slow", "transient")]
+    # Not "transient": a 429/5xx says nothing about whether the id exists, so it is
+    # not evidence of a live model that needs a price.
+    live = [r for r in rows if r["status"] in ("live", "slow")]
     modelled = {r["provider"] for r in rows if r.get("priced")}
     gaps = [f"{r['provider']}:{r['model']}" for r in live
             if not r.get("priced") and r["provider"] in modelled]
@@ -1338,7 +1341,7 @@ def memory_edit():
 
     # Get editor from environment
     editor = os.environ.get(
-        "EDITOR", os.environ.get("VISUAL", "notepad" if os.name == "nt" else "nano")
+        "EDITOR", os.environ.get("VISUAL", "notepad" if sys.platform == "win32" else "nano")
     )
 
     console.print(f"[dim]Opening {profile_path} in {editor}...[/dim]")

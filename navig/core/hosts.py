@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -270,7 +271,25 @@ class HostManager:
 
         raise FileNotFoundError(f"Host configuration not found: {host_name}")
 
-    def save(self, host_name: str, config: dict[str, Any]) -> None:
+    def source_path(self, host_name: str) -> Path | None:
+        """The file :meth:`load` reads ``host_name`` from, or None when it has none.
+
+        Same search order as :meth:`load` — the first match wins — so a caller that
+        loaded a host, edited it and must write it BACK (rather than shadow it in the
+        app-local config) can pass this to :meth:`save` as ``host_file``.
+        """
+        for config_dir in self._config.get_config_directories():
+            for candidate in (
+                config_dir / "hosts" / f"{host_name}.yaml",
+                config_dir / "apps" / f"{host_name}.yaml",
+            ):
+                if candidate.exists():
+                    return candidate
+        return None
+
+    def save(
+        self, host_name: str, config: dict[str, Any], host_file: Path | None = None
+    ) -> None:
         """
         Save host configuration.
 
@@ -280,16 +299,18 @@ class HostManager:
         Args:
             host_name: Host name
             config: Host configuration dictionary
+            host_file: Write exactly this file instead (see :meth:`source_path`).
         """
         self.invalidate_cache(host_name)
 
         # Determine save location: use the manager's own hosts_dir (base_dir/hosts)
         # which correctly tracks the explicit config_dir in tests or app_config_dir
         # in app context, falling back to global_config_dir in normal use.
-        if self._config.app_config_dir:
-            host_file = self._config.app_config_dir / "hosts" / f"{host_name}.yaml"
-        else:
-            host_file = self._config.hosts_dir / f"{host_name}.yaml"
+        if host_file is None:
+            if self._config.app_config_dir:
+                host_file = self._config.app_config_dir / "hosts" / f"{host_name}.yaml"
+            else:
+                host_file = self._config.hosts_dir / f"{host_name}.yaml"
 
         # Add timestamp to metadata
         if "metadata" not in config:

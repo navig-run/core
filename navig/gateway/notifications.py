@@ -88,6 +88,10 @@ class Notification:
     card: tuple[Any, Any] | None = field(default=None, compare=False, repr=False)
     # When True, ``message`` is already fully formatted — skip the title/emoji wrapper.
     raw_message: bool = False
+    # Rich-message body (``sendRichMessage`` HTML): headings, tables, checkbox
+    # lists, in-bubble buttons. ``message`` stays the classic fallback, so a chat
+    # or bot that cannot render rich messages still receives the whole card.
+    rich_html: str | None = field(default=None)
     # Delivery bookkeeping for the queue drain (see TelegramNotifier._settle).
     # `compare=False` so requeueing never changes how a notification compares —
     # equality is about WHAT is being said, not how many times we have tried.
@@ -603,11 +607,7 @@ class TelegramNotifier(ChannelNotifier):
                         self.chat_id, screen, context, channel=self.channel
                     )
                 else:
-                    sent = await self.channel.send_message(
-                        self.chat_id,
-                        message,
-                        keyboard=notification.keyboard or None,
-                    )
+                    sent = await self._send_carded(notification, message)
             # send_message returns None on a REJECTED send WITHOUT raising (rate-limit,
             # API error, timeout) — the `except` below never sees it, and a card send
             # reports the same rejection as an empty message object. A proactive alert
@@ -624,6 +624,40 @@ class TelegramNotifier(ChannelNotifier):
         except Exception as e:
             logger.error("Failed to send notification: %s", e)
             return False
+
+    async def _send_carded(self, notification: Notification, message: str):
+        """Send one notification, preferring its rich body when the chat takes it.
+
+        ``sendRichMessage`` carries headings, tables, checkbox lists and buttons
+        inside the bubble; a channel without it (another chat adapter, or a bot
+        whose rich messages are refused) gets the classic HTML ``message`` instead,
+        buttons included — so the card degrades in layout, never in actions.
+        """
+        rich = notification.rich_html
+        if rich and hasattr(self.channel, "send_rich_message"):
+            sent = await self.channel.send_rich_message(
+                self.chat_id,
+                html=rich,
+                # The classic body travels WITH the rich one: if the API refuses
+                # sendRichMessage, the channel retries with sendMessage, and rich-only
+                # tags (<h1>, <ul>, <table>) would be rejected there — a lost alert
+                # instead of a plainer one.
+                fallback_html=message,
+                # A card that carries its buttons in the body (Card.rich_html emits
+                # <tg-button-row>) drops this keyboard on the rich send, so the same
+                # rows are not drawn twice; the fallback above still needs them.
+                keyboard=notification.keyboard or None,
+            )
+            if sent:
+                return sent
+            logger.info(
+                "Rich send refused for %r — falling back to HTML", notification.title
+            )
+        return await self.channel.send_message(
+            self.chat_id,
+            message,
+            keyboard=notification.keyboard or None,
+        )
 
     async def _send_batched(self, notifications: list[Notification]) -> bool:
         """Send batched notifications. Returns True when the batch was delivered.
@@ -795,6 +829,7 @@ class TelegramNotifier(ChannelNotifier):
             pass
 
         text, keyboard = briefing_cards.build_morning(datetime.now(), anchor)
+        rich, _ = briefing_cards.build_morning_rich(datetime.now(), anchor)
         return Notification(
             type="routine",
             title="Morning Briefing",
@@ -802,6 +837,7 @@ class TelegramNotifier(ChannelNotifier):
             priority=NotificationPriority.NORMAL,
             keyboard=keyboard,
             raw_message=True,
+            rich_html=rich,
         )
 
     async def _evening_summary(self) -> Notification | None:
@@ -820,6 +856,8 @@ class TelegramNotifier(ChannelNotifier):
 
         title, message, keyboard = briefing_cards.build_evening(
             datetime.now(), shipped=already_shipped, priority=already_priority)
+        _, rich, _ = briefing_cards.build_evening_rich(
+            datetime.now(), shipped=already_shipped, priority=already_priority)
 
         return Notification(
             type="briefing",
@@ -828,6 +866,7 @@ class TelegramNotifier(ChannelNotifier):
             priority=NotificationPriority.LOW,
             keyboard=keyboard,
             raw_message=True,
+            rich_html=rich,
         )
 
     async def _heartbeat_check(self) -> Notification | None:

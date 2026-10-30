@@ -77,26 +77,76 @@ def _bind(fn, /, *args, **kwargs):
     return inspect.signature(fn).bind(*args, **kwargs)
 
 
-def test_the_app_recovery_path_uses_the_host_free_lister():
-    """`list_apps` needs a host; this path has none and wants 'are there any apps?'."""
+def test_the_app_recovery_path_passes_a_host_to_list_apps():
+    """`list_apps` needs a host; the recovery path must pass the one in scope."""
+    import ast
+
     from navig.config import ConfigManager
 
     with pytest.raises(TypeError):
         _bind(ConfigManager.list_apps, object())  # no host_name
-
     _bind(ConfigManager.list_apps_from_files, object())  # navig_dir is optional
 
-    # On the AST, not the text: the fix carries a comment that NAMES the old call, so a
-    # substring scan passes even with the code reverted. (Verified — the first version of
-    # this test did exactly that and survived its own teeth check.)
     called = _method_calls_in("navig/cli/recovery.py", "require_active_app")
-    assert "list_apps_from_files" in called, (
-        f"require_active_app calls {sorted(called)} — it must use list_apps_from_files()"
-    )
-    assert "list_apps" not in called, (
-        "the recovery path calls list_apps() again — it needs a host_name and raises "
-        "TypeError past its hasattr guard, so 'no apps configured' never renders"
-    )
+    assert "list_apps_from_files" in called, "the no-host fallback is gone"
+    for node in ast.walk(_ast_of("navig/cli/recovery.py")):
+        if isinstance(node, ast.Call) and getattr(node.func, "attr", None) == "list_apps":
+            assert node.args or node.keywords, (
+                "require_active_app calls list_apps() with no host_name — it raises "
+                "TypeError past its hasattr guard, so 'no apps configured' never renders"
+            )
+
+
+class _RecoveryCfg:
+    """Two hosts: `web` has a legacy embedded app, `db` owns an individual app file."""
+
+    def __init__(self, active_host):
+        self.active_host = active_host
+
+    def get_active_app(self):
+        return None
+
+    def get_active_host(self):
+        return (self.active_host, "global")
+
+    def list_apps(self, host_name):
+        return {"web": ["legacy-site"], "db": ["pg-admin"]}.get(host_name, [])
+
+    def list_apps_from_files(self):
+        return ["pg-admin"]  # every individual file, whatever its host
+
+    def set_active_app(self, name):
+        self.chosen = name
+
+
+def test_app_recovery_offers_the_selected_hosts_apps(monkeypatch):
+    """Review: https://github.com/navig-run/labs/pull/1061#discussion_r3792532817"""
+    import types
+
+    from navig.cli import recovery
+
+    offered: list[list[str]] = []
+
+    def fake_fzf(entries, prompt=""):
+        offered.append([e.name for e in entries])
+        return entries[0]
+
+    monkeypatch.setattr(recovery, "_is_tty", lambda: True)
+    monkeypatch.setattr(recovery, "ch", types.SimpleNamespace(
+        info=lambda *a, **k: None, success=lambda *a, **k: None,
+        warning=lambda *a, **k: None,
+    ), raising=False)
+    import navig.cli.selector as selector
+
+    monkeypatch.setattr(selector, "fzf_or_fallback", fake_fzf)
+
+    cfg = _RecoveryCfg("web")
+    assert recovery.require_active_app({}, cfg) == "legacy-site"
+    assert offered[-1] == ["legacy-site"]  # legacy app offered, the other host's file not
+
+    cfg = _RecoveryCfg(None)
+    assert recovery.require_active_app({"host": "db"}, cfg) == "pg-admin"
+    assert offered[-1] == ["pg-admin"]
 
 
 def test_the_menu_wrapper_can_call_agent_config():

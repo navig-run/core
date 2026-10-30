@@ -204,7 +204,7 @@ def collect_daemon() -> dict[str, Any]:
             continue
         info["children"][name] = {
             "pid": child.get("pid"),
-            "live": _child_is_live(child.get("pid")),
+            "live": _child_is_live(child.get("pid"), child.get("create_time")),
             "enabled": child.get("enabled", True),
             "restarts": child.get("restart_count", 0),
         }

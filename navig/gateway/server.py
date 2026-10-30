@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from navig.telegram.config import require_auth_enabled
+
 try:
     # Guard against aiohttp 3.13+ which has a circular-import deadlock on Python 3.14.
     # Check the installed version via metadata (fast, no import) before importing.
@@ -169,9 +171,9 @@ def _is_proactor_reset(context: dict) -> bool:
 def install_loop_noise_filter(loop: asyncio.AbstractEventLoop) -> None:
     """Drop exactly the known-benign unhandled-exception reports; delegate everything else.
 
-    Installed from ``NavigGateway.start()`` so every entry point gets it — it used to
-    live only in ``run_gateway()``, which neither ``navig gateway start`` nor the
-    telegram worker calls. Any previously installed handler is chained, not replaced.
+    Installed from ``NavigGateway.start()`` (``navig gateway start``, ``run_gateway()``)
+    and from the telegram worker's ``_run()``, which serves the gateway HTTP without
+    ever calling ``start()``. Any previously installed handler is chained, not replaced.
     """
     previous = loop.get_exception_handler()
     if getattr(previous, "_navig_noise_filter", False):
@@ -1266,11 +1268,12 @@ class NavigGateway:
             # the bot token, which may be empty here. This lets a fresh install
             # drive setup from the OS UI before any Telegram token exists.
             if _section_enabled(deck_cfg, True):
+
                 register_deck_routes(
                     self._app,
                     bot_token=bot_token,
                     allowed_users=tg_cfg.get("allowed_users", []),
-                    require_auth=tg_cfg.get("require_auth", True),
+                    require_auth=require_auth_enabled(tg_cfg.get("require_auth", True)),
                     deck_cfg=deck_cfg,
                 )
                 if not bot_token:
@@ -2418,6 +2421,8 @@ class NavigGateway:
             logger.info("Browser controller initialized (not started)")
         except ImportError as e:
             logger.warning("Browser module not available: %s", e)
+        except OSError as e:  # e.g. an unwritable screenshot dir — never block startup on this
+            logger.warning("Browser controller not available: %s", e)
 
         try:
             # Initialize MCP client manager
@@ -2655,7 +2660,8 @@ class NavigGateway:
             allowed_groups: list[int] = [
                 int(g) for g in tg_cfg.get("allowed_groups", []) if g
             ]
-            require_auth: bool = tg_cfg.get("require_auth", True)
+
+            require_auth: bool = require_auth_enabled(tg_cfg.get("require_auth", True))
             enable_notifications: bool = tg_cfg.get("enable_notifications", True)
             webhook_url: str | None = tg_cfg.get("webhook_url") or None
             webhook_secret: str | None = tg_cfg.get("webhook_secret") or None

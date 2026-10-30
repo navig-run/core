@@ -33,6 +33,20 @@ def _gw():
     )
 
 
+@pytest.fixture(autouse=True)
+def _fixed_lan_ip():
+    """Pin `_lan_ip` so URL assertions are machine-independent.
+
+    `_gw()` binds to `127.0.0.1`, and a loopback bind now advertises the LAN IP
+    (the join page must hand other machines a URL they can open) — the real
+    `_lan_ip()` would make every assertion depend on this machine's network.
+    """
+    from unittest.mock import patch
+
+    with patch("navig.gateway.routes.install._lan_ip", return_value="192.0.2.77"):
+        yield
+
+
 @pytest.fixture()
 def app():
     pytest.importorskip("aiohttp")
@@ -80,7 +94,7 @@ async def test_config_returns_url_token_and_hint(app):
     status, body = await _get(app, "/install/config")
     assert status == 200
     data = json.loads(body)
-    assert data["gateway_url"].startswith("http://127.0.0.1:")
+    assert data["gateway_url"].startswith("http://192.0.2.77:")
     assert data["mesh_token"] == "fleet-tok"
     assert data["install_hint"].endswith("/install/unix.sh | bash")
     assert data["install_hint_windows"].endswith("/install/windows.ps1 | iex")
@@ -104,8 +118,8 @@ async def test_page_shows_short_commands_and_never_the_token(app):
     status, body = await _get(app, "/install")
     assert status == 200
     assert "fleet-tok" not in body
-    assert "irm http://127.0.0.1:8789/install/windows.ps1 | iex" in body
-    assert "curl -fsSL http://127.0.0.1:8789/install/unix.sh | bash" in body
+    assert "irm http://192.0.2.77:8789/install/windows.ps1 | iex" in body
+    assert "curl -fsSL http://192.0.2.77:8789/install/unix.sh | bash" in body
 
 
 async def test_page_makes_no_external_requests(app):
@@ -315,3 +329,35 @@ def test_registry_never_files_its_own_record_as_a_peer(tmp_path, monkeypatch) ->
     other = replace(reg._self, node_id="navig-windows-laptop-0001")
     reg.upsert_peer(other)  # a real peer still registers
     assert [p.node_id for p in reg.get_peers()] == ["navig-windows-laptop-0001"]
+
+
+# ---------------------------------------------------------------------------
+# The URL the join page hands other machines. _gw() binds 127.0.0.1 — measured
+# on the brain (2026-10-27): the page advertised http://127.0.0.1:8789, i.e. a
+# joining laptop was told to fetch its command from ITSELF. The autouse
+# _fixed_lan_ip pins _lan_ip at 192.0.2.77 (RFC 5737 documentation address).
+# ---------------------------------------------------------------------------
+
+
+def test_loopback_bound_gateway_advertises_a_reachable_url():
+    from navig.gateway.routes import install as install_routes
+
+    assert install_routes._get_my_url(_gw()) == "http://192.0.2.77:8789"
+
+
+def test_a_routable_gateway_host_is_advertised_unchanged():
+    from navig.gateway.routes import install as install_routes
+    from navig.gateway.server import GatewayConfig
+
+    gw = _gw()
+    gw.config = GatewayConfig({"gateway": {"host": "192.0.2.10", "port": 8790}})
+    assert install_routes._get_my_url(gw) == "http://192.0.2.10:8790"
+
+
+def test_localhost_string_is_advertised_as_the_lan_ip():
+    from navig.gateway.routes import install as install_routes
+    from navig.gateway.server import GatewayConfig
+
+    gw = _gw()
+    gw.config = GatewayConfig({"gateway": {"host": "localhost", "port": 8789}})
+    assert install_routes._get_my_url(gw) == "http://192.0.2.77:8789"

@@ -361,7 +361,7 @@ def test_reminder_card_for_a_long_pasted_message():
 
     html = render(HEADER, BLOB)
     assert_telegram_html(html)
-    title_line = html.split("\n")[1]
+    title_line = html.split("\n")[0]
     assert title_line == "<b>RDV Dr ALBANE GIREL AUJOURD HUI 11h40</b>"
     assert "<b>Fiche:</b> ops/rdv-2026-10-07-dr-girel.md" in html  # nothing is lost
     assert html.count("⏰") == 1
@@ -373,10 +373,10 @@ def test_reminder_card_for_a_todo_ping_new_and_old_rows():
     new = render(HEADER, "Dentist — 1 hour before (due today 11:40)")
     old = render(HEADER, "⏰ Dentist — 1 hour before (due today 11:40)")
     assert new == old == (
-        "⏰ <b>Rappel</b>\n<b>Dentist</b>\n<i>1 hour before · due today 11:40</i>"
+        "<b>Dentist</b>\n<i>⏰ Rappel · 1 hour before · due today 11:40</i>"
     )
     assert render(HEADER, "⏰ Dentist — due now (today 11:40)").endswith(
-        "<i>due now · today 11:40</i>"
+        "<i>⏰ Rappel · due now · today 11:40</i>"
     )
 
 
@@ -516,8 +516,11 @@ def test_reminder_card_parses_every_locale(msg, title, when):
     html = render(HEADER, msg)
     assert_telegram_html(html)
     lines = html.split("\n")
-    assert lines[1] == f"<b>{title}</b>"
-    assert lines[2] == f"<i>{when}</i>"
+    # The caption no longer takes a stanza of its own above the headline: it rides
+    # the "when" line, because "⏰ Rappel" over "Dentist" said what the notification
+    # already said.
+    assert lines[0] == f"<b>{title}</b>"
+    assert lines[1] == f"<i>⏰ Rappel · {when}</i>"
     assert html.count("⏰") == 1
 
 

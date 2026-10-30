@@ -748,7 +748,7 @@ async def test_natural_language_money_plan_starts_finance_intake(monkeypatch, tm
         "please work for 1 day and make me a money plan",
     )
     assert handled is True
-    assert any("Auto-starting in 3s" in m[1] for m in bot.messages)
+    assert any("Auto-starts" in m[1] for m in bot.messages)
     assert any(
         any(btn.get("callback_data") == "nl_yes" for btn in row)
         for msg in bot.messages
@@ -773,7 +773,7 @@ async def test_natural_language_health_improvement_starts_health_intake(monkeypa
         "i want that you told me how to improve my health currently",
     )
     assert handled is True
-    assert any("Auto-starting in 3s" in m[1] for m in bot.messages)
+    assert any("Auto-starts" in m[1] for m in bot.messages)
 
     confirmed = await bot._handle_nl_pending_reply(123, 456, "yes")
     assert confirmed is True
@@ -838,7 +838,8 @@ async def test_natural_language_command_missing_args_shows_usage(monkeypatch, tm
 
     handled = await bot._handle_natural_language_request(123, 456, "can you search")
     assert handled is True
-    assert any("Usage:" in m[1] for m in bot.messages)
+    assert any("Missing arguments" in m[1] for m in bot.messages)
+    assert any("Usage" in m[1] for m in bot.messages)
 
 
 async def test_natural_language_unmapped_command_falls_through_to_llm(monkeypatch, tmp_path):
@@ -886,7 +887,7 @@ async def test_natural_language_ambiguous_command_shows_choices(monkeypatch, tmp
 
     handled = await bot._handle_natural_language_request(123, 456, "show model")
     assert handled is True
-    assert any("multiple matching commands" in m[1].lower() for m in bot.messages)
+    assert any("Which command?" in m[1] for m in bot.messages)
 
 
 async def test_nl_callback_yes_and_cancel(monkeypatch, tmp_path):
@@ -1104,8 +1105,11 @@ async def test_providers_online_bridge_does_not_override_router_current_provider
     await bot._handle_providers(123, 456)
 
     text = bot.messages[-1][1]
-    assert "✅ Current: <b>🤖 OpenAI</b>" in text
-    assert "✅ Current: <b>⚡ Bridge</b>" not in text
+    # The card states the active provider on its subtitle, and the providers sheet
+    # marks the same row active — the bridge must not steal either of them.
+    assert "Current: 🤖 OpenAI" in text
+    assert "Current: ⚡ Bridge" not in text
+    assert "✅ active" in text
 
 
 async def test_providers_does_not_mark_step_when_no_ready_provider(monkeypatch):
@@ -1228,8 +1232,9 @@ async def test_provider_model_picker_is_tier_first_and_edit_in_place(monkeypatch
     await bot._show_provider_model_picker(123, "nvidia", page=0, selected_tier="s", message_id=99, show_models=True)
     assert len(bot.edits) == 1
     edit = bot.edits[-1]
-    assert "assign model to tier" in edit[2]
+    assert "Assign a model to a tier" in edit[2]
     assert "page" not in edit[2].lower()
+    assert "<i>Tiers</i>" in edit[2], "the tier assignment is a table now, not loose lines"
     first_row = edit[4][0]
     assert first_row[0]["callback_data"].startswith("pmv_nvidia_s")
     assert first_row[1]["callback_data"].startswith("pmv_nvidia_b")
@@ -1262,15 +1267,19 @@ async def test_providers_unconfigured_cloud_shows_provider_row_with_icon_only_ke
 
     await bot._handle_providers(123, 456)
     keyboard = bot.messages[-1][3].get("keyboard") or []
-    # Unconfigured cloud providers produce a single-button stub row that
-    # combines the provider name and the 🔑 configure-action in one button.
-    rows = [row for row in keyboard if len(row) == 1]
-    openai_row = next(
-        (row for row in rows if any("OpenAI" in btn.get("text", "") for btn in row)), None
+    # Providers are paired now, so the locked one is found by its text, not by
+    # living alone in a row; it still carries the 🔒 marker and its config callback.
+    locked = next(
+        (
+            btn
+            for row in keyboard
+            for btn in row
+            if "OpenAI" in btn.get("text", "") and "🔒" in btn.get("text", "")
+        ),
+        None,
     )
-    assert openai_row is not None
-    assert "OpenAI" in openai_row[0]["text"]
-    assert "🔒" in openai_row[0]["text"]
+    assert locked is not None
+    assert locked["callback_data"] == "prov_cfg_openai"
 
 
 async def test_providers_cloud_button_shown_when_vault_present_but_not_yet_validated():

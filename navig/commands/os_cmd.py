@@ -456,7 +456,15 @@ def open_cmd(
         outcome = "Opened NAVIG OS" + (" (kiosk)" if kiosk else "")
     except launch.LaunchError as exc:
         if not probe(server_port).get("reachable"):
-            ch.error("Could not open NAVIG OS.", str(exc))
+            # The launch reason is about a socket; what actually blocked the operator is that
+            # the server itself is not answering — observed 2026-10-21: Windows printed
+            # "Launch codes need a unix socket" while the real fact was "your web server is
+            # down". Lead with the actionable one, keep the launch reason so nothing hides.
+            ch.error(
+                "Could not open NAVIG OS.",
+                f"The NAVIG OS web server is not answering on port {server_port} — "
+                f"start it with: navig os serve   (no launch code: {exc})",
+            )
             raise typer.Exit(1) from exc
         # The server answered: the app is reachable, only the passwordless shortcut is not.
         open_url = f"http://127.0.0.1:{server_port}/login"

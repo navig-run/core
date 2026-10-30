@@ -416,8 +416,15 @@ class TestKeyscanAndTrust:
         async def _fake_exec2(*args, **kwargs):
             return proc_mock
 
+        async def _noop_kill(_proc):
+            return None
+
         monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec2)
         monkeypatch.setattr(asyncio, "wait_for", _mock_wait_for)
+        # The timeout path kills the child tree first; that walks /proc off the real pid on
+        # POSIX, and an AsyncMock pid raised `'<' not supported between 'AsyncMock' and 'int'`
+        # instead of surfacing the timeout (2026-10-30, outpost).
+        monkeypatch.setattr("navig.core.aio_subprocess.kill_process_tree", _noop_kill)
         result = asyncio.run(healer.keyscan_and_trust("remotehost"))
         assert result.status == "failed"
         assert "timed out" in result.message

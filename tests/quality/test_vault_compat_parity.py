@@ -175,7 +175,7 @@ def test_the_fallback_actually_retries_a_transient_lock(monkeypatch, tmp_path) -
 
 
 def test_the_fallback_gives_up_rather_than_looping_forever(monkeypatch, tmp_path) -> None:
-    """A permanently locked destination must raise, not spin."""
+    """A permanently locked destination must raise, not spin -- after core's nine replaces."""
     compat = _load_compat()
     monkeypatch.setattr(compat.sys, "platform", "win32", raising=False)
     monkeypatch.setattr(compat.time, "sleep", lambda _s: None)
@@ -189,22 +189,64 @@ def test_the_fallback_gives_up_rather_than_looping_forever(monkeypatch, tmp_path
 
     with pytest.raises(PermissionError):
         compat._atomic_write_fallback(tmp_path / "f.txt", "x")
-    assert calls["n"] == compat._ATOMIC_REPLACE_RETRIES
+    assert calls["n"] == compat._ATOMIC_REPLACE_RETRIES ** 2
     assert list(tmp_path.iterdir()) == [], "temp files left behind after exhausting retries"
 
 
-def test_posix_does_not_retry_a_real_permission_error(monkeypatch, tmp_path) -> None:
-    """On POSIX a PermissionError means what it says -- retrying just delays the error."""
-    compat = _load_compat()
-    monkeypatch.setattr(compat.sys, "platform", "linux", raising=False)
+def _run_under_locks(write, monkeypatch, tmp_path: Path, failures: int) -> tuple[int, bool]:
+    """(os.replace calls, succeeded) for one writer when the first *failures* replaces fail."""
+    import os
+
+    real_replace = os.replace
     calls = {"n": 0}
 
-    def denied(src, dst):
+    def flaky(src, dst):
         calls["n"] += 1
-        raise PermissionError(13, "denied")
+        if calls["n"] <= failures:
+            raise PermissionError(13, "locked by another process")
+        return real_replace(src, dst)
 
-    monkeypatch.setattr(compat.os, "replace", denied)
+    monkeypatch.setattr(os, "replace", flaky)
+    target = tmp_path / "vault.salt"
+    try:
+        write(target, "secret-material")
+        ok = True
+    except PermissionError:
+        ok = False
+    finally:
+        monkeypatch.setattr(os, "replace", real_replace)
+    leftovers = [q.name for q in tmp_path.iterdir() if q.name != "vault.salt"]
+    assert leftovers == [], f"temp files left behind: {leftovers}"
+    return calls["n"], ok
 
-    with pytest.raises(PermissionError):
-        compat._atomic_write_fallback(tmp_path / "f.txt", "x")
-    assert calls["n"] == 1, f"POSIX should not retry; made {calls['n']} attempts"
+
+@pytest.mark.parametrize("platform", ["win32", "linux"])
+@pytest.mark.parametrize("failures", [0, 1, 2, 3, 4, 8, 9, 12])
+def test_the_fallback_matches_core_under_the_same_lock_sequence(
+    monkeypatch, tmp_path, platform: str, failures: int
+) -> None:
+    """Same failure sequence, same number of replaces, same outcome as navig's writer.
+
+    Comparing constants let the loop SHAPE drift: core nests a Windows replace retry
+    inside an all-platform write retry (up to 9 replaces on Windows, 3 on POSIX), and a
+    flat fallback stopped at 3 and 1.
+    """
+    import sys
+    import time
+
+    from navig.core import yaml_io
+
+    compat = _load_compat()
+    monkeypatch.setattr(sys, "platform", platform, raising=False)
+    monkeypatch.setattr(time, "sleep", lambda _s: None)
+
+    core_dir = tmp_path / "core"
+    compat_dir = tmp_path / "compat"
+    core_dir.mkdir()
+    compat_dir.mkdir()
+    expected = _run_under_locks(yaml_io.atomic_write_text, monkeypatch, core_dir, failures)
+    got = _run_under_locks(compat._atomic_write_fallback, monkeypatch, compat_dir, failures)
+    assert got == expected, (
+        f"{platform}, {failures} locked replace(s): core made {expected[0]} replace(s) "
+        f"(ok={expected[1]}), the standalone fallback made {got[0]} (ok={got[1]})"
+    )

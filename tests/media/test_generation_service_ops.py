@@ -56,7 +56,8 @@ def wired(tmp_path, monkeypatch):
     monkeypatch.setattr(svc, "get_generated_media", lambda: store)
 
     async def fake_run(modality, enriched_prompt, *, provider, size, kind,
-                       duration_s, n, seed, out_dir, preset_system=None):
+                       duration_s, n, seed, out_dir, preset_system=None, quality=None,
+                       model=None):
         objs = []
         for i in range(max(1, n) if modality == "image" else 1):
             p = Path(out_dir) / f"fake_{i}.png"
@@ -125,6 +126,26 @@ async def test_derivative_ops_follow_kept_and_rejected_files(wired):
     assert Path(edited["path"]).exists()
     redone = svc.process(rej_src["id"], [{"op": "quantize", "colors": 2}])
     assert Path(redone["path"]).exists()
+
+
+async def test_ops_find_variants_after_the_library_moves_to_refs_dir(wired):
+    """Rows store an absolute path; moving .navig/refs under a refs_dir override must not
+    make every existing variant look missing to process / contact_sheet."""
+    import json
+    import shutil
+
+    space, store = wired
+    src = await _source(space)
+    old_path = Path(src["path"])
+    shutil.move(str(space / ".navig" / "refs"), str(space / ".media" / "refs"))
+    (space / ".navig" / "space.config.json").write_text(
+        json.dumps({"refs_dir": ".media/refs"}), encoding="utf-8")
+    assert not old_path.exists()
+
+    out = svc.process(src["id"], [{"op": "downscale", "size": 8}])
+    assert Path(out["path"]).exists()
+    healed = Path(store.get(src["id"])["path"])
+    assert healed.exists() and (space / ".media" / "refs") in healed.parents
 
 
 async def test_process_rejects_non_image_rows(wired, tmp_path):

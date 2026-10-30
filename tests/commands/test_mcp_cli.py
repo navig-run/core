@@ -130,6 +130,30 @@ def test_install_dry_run_touches_nothing(mcp_config):
     assert _servers(mcp_config) == {}, "a dry run must not write config"
 
 
+def test_global_dry_run_is_honoured(mcp_config, monkeypatch):
+    """Review #163: `navig --dry-run mcp install x` dropped the root callback's flag
+    (ctx.obj["dry_run"]) and ran npm install -g. The obj is what the root sets."""
+    import navig.mcp_manager as mm
+
+    monkeypatch.setattr(mm.MCPManager, "install_server", lambda *a, **k: pytest.fail("installed"))
+    result = runner.invoke(mcp_app, ["install", "filesystem"], obj={"dry_run": True})
+    assert result.exit_code == 0, result.output
+    assert "Would install" in result.output
+    assert _servers(mcp_config) == {}
+
+    _seed(mcp_config, enabled=False)
+    result = runner.invoke(mcp_app, ["enable", "filesystem"], obj={"dry_run": True})
+    assert result.exit_code == 0, result.output
+    assert _servers(mcp_config)["filesystem"]["enabled"] is False
+
+
+def test_global_yes_is_honoured_by_remove(mcp_config):
+    _seed(mcp_config, enabled=True)
+    result = runner.invoke(mcp_app, ["remove", "filesystem"], obj={"yes": True})
+    assert result.exit_code == 0, result.output
+    assert _servers(mcp_config) == {}
+
+
 def test_info_shows_one_servers_detail(mcp_config):
     """`navig mcp info <name>` renders the per-server drill-down (type / command /
     state). The renderer existed but was reachable only from the legacy shell —
@@ -242,8 +266,9 @@ def _tools_output(capsys, *, json_out: bool = False) -> str:
 
 def test_tools_marks_a_dangerous_tool_as_gated(capsys):
     out = _tools_output(capsys)
-    line = next((ln for ln in out.splitlines() if "desktop_powershell" in ln), None)
-    assert line is not None, "desktop_powershell should be listed"
+    # navig_run_command ships on every platform; desktop_powershell is win32-only.
+    line = next((ln for ln in out.splitlines() if "navig_run_command" in ln), None)
+    assert line is not None, "navig_run_command should be listed"
     assert "gated" in line
 
 
@@ -264,7 +289,7 @@ def test_tools_json_carries_the_safety_level(capsys):
     payload = json.loads(_tools_output(capsys, json_out=True))
     by_name = {t["name"]: t for t in payload}
 
-    assert by_name["desktop_powershell"]["safety"] == "dangerous"
+    assert by_name["navig_run_command"]["safety"] == "dangerous"
     assert by_name["navig_list_hosts"]["safety"] == "safe"
     # every entry carries one — a missing key would make the field unusable to a script
     assert all("safety" in t for t in payload)

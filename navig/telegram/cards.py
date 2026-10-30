@@ -59,6 +59,8 @@ CARD_DAILY_WINDOW_S: float = 20 * 3600
 def _local_day() -> str:
     """The operator's local calendar day — the unit a digest card belongs to."""
     return time.strftime("%Y-%m-%d")
+
+
 TEXT_LIMIT = 4000
 
 #: ``.. `` is what a closed card reads as. One line, no keyboard.
@@ -98,6 +100,11 @@ class Screen:
     rows: tuple[tuple[Any, ...], ...] = ()
     open_label: str = "Open"
     open_action: str = "open"
+    #: The rich projection of ``body``: headings, lists, tables, folds, timestamps
+    #: and bare links the classic ``parse_mode=HTML`` cannot carry. ``body`` stays
+    #: the plain twin, so a chat without rich messages still receives the card.
+    #: ``None`` means "not rich": the card travels down the classic path only.
+    rich_body: str | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in _KINDS:
@@ -109,6 +116,20 @@ class Screen:
         if len(text) > TEXT_LIMIT:
             text = text[: TEXT_LIMIT - 20].rstrip() + "\n\n… (truncated)"
         return text
+
+    def rich(self) -> str | None:
+        """The rich rendering, or ``None`` when this card did not author one.
+
+        The title becomes a heading here rather than a bold first line: a rich
+        message has real outline levels, and the heading is what makes a long
+        card scannable on a phone.
+        """
+        if self.rich_body is None:
+            return None
+        from navig.telegram.card_doc import esc  # noqa: PLC0415 — kit is optional
+
+        head = f"<h2>{esc(str(self.title))}</h2>"
+        return f"{head}\n{self.rich_body}".strip()
 
 
 @dataclass(frozen=True)
@@ -208,7 +229,7 @@ def parse(callback_data: str) -> tuple[str, str, str] | None:
     """``"cd:dist:approve:draft-1"`` → ``("dist", "approve", "draft-1")``."""
     if not isinstance(callback_data, str) or not callback_data.startswith(CALLBACK_PREFIX):
         return None
-    rest = callback_data[len(CALLBACK_PREFIX):]
+    rest = callback_data[len(CALLBACK_PREFIX) :]
     prefix, sep, tail = rest.partition(":")
     if not sep or not prefix:
         return None
@@ -294,6 +315,95 @@ def _keyboard(rows: Sequence[Sequence[Mapping[str, str]]]) -> dict[str, list]:
     return {"inline_keyboard": [list(row) for row in rows]}
 
 
+def _sent(result: Any) -> dict[str, Any]:
+    """The Bot API message object out of whichever envelope came back.
+
+    ``api_call`` returns ``{"ok": true, "result": {...}}`` while the channel
+    returns the message itself, so a caller reading ``message_id`` off the raw
+    return only worked on one of the two paths — the CLI reported every card as
+    sent with no id it could later edit or delete.
+    """
+    if not isinstance(result, Mapping):
+        return {}
+    inner = result.get("result")
+    if "ok" in result and isinstance(inner, Mapping):
+        return dict(inner)
+    return dict(result)
+
+
+async def _send_rich(
+    channel: Any,
+    chat_id: int | str,
+    html: str,
+    *,
+    fallback: str,
+    rows: Sequence[Sequence[Mapping[str, str]]],
+) -> Any:
+    """Send *html* as a rich message; ``None`` means "let the caller send classic".
+
+    The fallback body always travels with the rich one. ``sendRichMessage`` is
+    new enough that a Bot API server can answer "unknown method"; the channel then
+    retries with ``sendMessage``, and reusing the rich HTML there would fail with a
+    parse error (``<h2>``/``<table>`` are not classic entities) — a lost card
+    instead of a layout downgrade.
+    """
+    list_rows = [list(row) for row in rows]
+    send_rich = getattr(channel, "send_rich_message", None) if channel is not None else None
+    if send_rich is not None:
+        try:
+            return await send_rich(chat_id, html=html, fallback_html=fallback, keyboard=list_rows)
+        except Exception:  # noqa: BLE001 — the classic send below is the answer
+            logger.debug("rich send refused; falling back to the classic body", exc_info=True)
+            return None
+    payload: dict[str, Any] = {
+        "chat_id": chat_id,
+        "rich_message": {"html": html},
+        "reply_markup": _keyboard(rows),
+    }
+    try:
+        return await _api(channel, "sendRichMessage", payload)
+    except Exception as exc:  # noqa: BLE001 — an older server, or a body it rejects
+        logger.info("sendRichMessage unavailable (%s) — sending the classic body", str(exc)[:120])
+        return None
+
+
+async def _edit_rich(
+    channel: Any,
+    chat_id: int | str,
+    message_id: int,
+    html: str,
+    *,
+    fallback: str,
+    rows: Sequence[Sequence[Mapping[str, str]]],
+) -> bool | None:
+    """Edit in place keeping the rich body. ``None`` = the caller edits classic."""
+    list_rows = [list(row) for row in rows]
+    edit_rich = getattr(channel, "edit_rich_message", None) if channel is not None else None
+    if edit_rich is not None:
+        try:
+            result = await edit_rich(
+                chat_id, message_id, html=html, fallback_html=fallback, keyboard=list_rows
+            )
+        except Exception:  # noqa: BLE001 — "not modified" and refusals both land here
+            logger.debug("rich edit refused; trying the classic body", exc_info=True)
+            return None
+        if result is not None:
+            return True
+        return None
+    payload: dict[str, Any] = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "rich_message": {"html": html},
+        "reply_markup": _keyboard(rows),
+    }
+    try:
+        result = await _api(channel, "editMessageText", payload)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("rich edit unavailable (%s) — editing the classic body", str(exc)[:120])
+        return None
+    return bool(result)
+
+
 async def answer(channel: Any, callback_query: dict[str, Any], text: str = "") -> None:
     """``answerCallbackQuery`` — always best effort; a stale id is not an error."""
     callback_id = (callback_query or {}).get("id")
@@ -361,8 +471,13 @@ async def send_card(
         "reply_markup": _keyboard(rows),
         "disable_web_page_preview": True,
     }
+    rich = screen.rich()
+    if rich is not None:
+        sent = await _send_rich(channel, chat_id, rich, fallback=text, rows=rows)
+        if sent:
+            return _sent(sent)
     result = await _api(channel, "sendMessage", payload)
-    return dict(result) if isinstance(result, Mapping) else {}
+    return _sent(result)
 
 
 async def update_card(
@@ -375,6 +490,11 @@ async def update_card(
 ) -> bool:
     """Edit the card in place. False when Telegram had nothing to change (or refused)."""
     text, rows = render(screen, context)
+    rich = screen.rich()
+    if rich is not None:
+        edited = await _edit_rich(channel, chat_id, message_id, rich, fallback=text, rows=rows)
+        if edited is not None:
+            return edited
     payload: dict[str, Any] = {
         "chat_id": chat_id,
         "message_id": message_id,
@@ -615,8 +735,11 @@ async def consume_reply(channel: Any, message: dict[str, Any]) -> bool:
         screen = result_screen("That did not work", "See the NAVIG log for the detail.")
     if screen is not None and pending.message_id is not None:
         await _update_safely(
-            int(chat_id), pending.message_id, screen,
-            Context(pending.prefix, pending.key), channel=channel,
+            int(chat_id),
+            pending.message_id,
+            screen,
+            Context(pending.prefix, pending.key),
+            channel=channel,
         )
     return True
 

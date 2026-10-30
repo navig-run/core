@@ -1,6 +1,7 @@
 """Tests for navig.tools.skill_runner — SkillRunTool."""
 from __future__ import annotations
 
+import pathlib
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -201,12 +202,23 @@ class TestFindNavigBin:
             result = _find_navig_bin()
         assert result == ["/usr/local/bin/navig"]
 
-    def test_when_navig_not_in_path_uses_python(self):
+    def test_when_navig_not_in_path_still_re_enters_this_install(self):
+        """No PATH entry: the module form, or the install's own launcher sibling.
+
+        ``[sys.executable, "-m", "navig"]`` is the floor. A console script sitting next to
+        the interpreter (``<venv>/bin/navig``) belongs to the SAME install and is therefore
+        preferred — asserting ``sys.executable in result`` baked in the operator's Windows
+        layout, where no ``navig.exe`` sits beside python (2026-10-30, outpost).
+        """
         with patch("shutil.which", return_value=None):
             result = _find_navig_bin()
-        assert sys.executable in result
-        assert "-m" in result
-        assert "navig" in result
+        assert result, "something must be launchable"
+        if "-m" in result:
+            assert result[:3] == [sys.executable, "-m", "navig"]
+        else:
+            sibling = pathlib.Path(sys.executable).parent / "navig"
+            assert pathlib.Path(result[0]).resolve() == sibling.resolve()
+            assert pathlib.Path(result[0]).is_file(), "the prefix must be a real program"
 
     def test_never_returns_a_cmd_shim(self):
         """CreateProcess cannot execute `.cmd`; the Windows shim must be refused."""

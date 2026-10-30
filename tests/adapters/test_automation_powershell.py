@@ -11,13 +11,20 @@ import pytest
 
 
 def test_powershell_executor_raises_on_non_windows():
+    """The GUARD lives on `execute_command`, not on construction.
+
+    `PowerShellExecutor()` is a plain object holding static methods — constructing it has
+    never been the Windows-only part, so this test asserted a contract the class does not
+    have and failed on every non-Windows box from the day the class was flattened
+    (measured 2026-10-28: `DID NOT RAISE RuntimeError`). Calling it is the contract.
+    """
     if sys.platform == "win32":
         pytest.skip("Windows-only test gate skipped on Windows")
 
-    with pytest.raises(RuntimeError, match="Windows"):
-        from navig.adapters.automation.powershell import PowerShellExecutor
+    from navig.adapters.automation.powershell import PowerShellExecutor
 
-        PowerShellExecutor()
+    with pytest.raises(RuntimeError, match="Windows"):
+        PowerShellExecutor.execute_command("Get-Date")
 
 
 import pytest

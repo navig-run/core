@@ -26,9 +26,14 @@ import importlib
 import re
 from pathlib import Path
 
-import click
 import pytest
 import typer
+
+from navig.core.click_compat import click_module, is_group
+
+# The click TYPER runs on; a separately installed copy is a different class hierarchy, so
+# `isinstance(cmd, click.Group)` is False for every group and this scan finds no surface.
+click = click_module()
 
 CORE = Path(__file__).resolve().parents[2] / "navig"
 REPO = CORE.parents[1]
@@ -52,6 +57,26 @@ INSTRUCTION = re.compile(
     re.IGNORECASE,
 )
 COMMAND = re.compile(r"navig\s+([a-z][a-z0-9-]*)\s+([a-z][a-z0-9-]*)")
+# The FULL token run after `navig`, so `navig host monitor typo` is walked to the third
+# level instead of being accepted as the resolvable prefix `navig host monitor`.
+COMMAND_PATH = re.compile(r"navig((?:\s+[a-z][a-z0-9-]*){2,})")
+
+
+def _unresolved_nested(group: click.Group, tokens: list[str]) -> str | None:
+    """Walk *tokens* (sub, then deeper) through *group*; the first token that does not
+    resolve while still inside a Group, or None. Walking stops at a leaf command, so
+    trailing prose after it (`navig host list to see them`) is never read as a path.
+    The first level is the caller's existing check; this reports the deeper ones only.
+    """
+    cmd: click.Command = group
+    for depth, tok in enumerate(tokens):
+        if not is_group(cmd):
+            return None
+        nxt = cmd.commands.get(tok)
+        if nxt is None:
+            return tok if depth > 0 else None
+        cmd = nxt
+    return None
 
 # ── Known dead ends, kept VISIBLE instead of silently passing ────────────────
 #
@@ -78,6 +103,21 @@ COMMAND = re.compile(r"navig\s+([a-z][a-z0-9-]*)\s+([a-z][a-z0-9-]*)")
 KNOWN_ORPHANED: set[str] = set()
 
 
+def _external_groups() -> dict[str, click.Group]:
+    """{group: its click Group} for every external command map entry that loads."""
+    from navig.cli import registration as reg
+
+    groups: dict[str, click.Group] = {}
+    for name, (mod_path, attr) in reg._EXTERNAL_CMD_MAP.items():
+        try:
+            group = typer.main.get_command(getattr(importlib.import_module(mod_path), attr))
+        except Exception:  # pragma: no cover — an uninstalled optional dep
+            continue
+        if is_group(group):
+            groups[name] = group
+    return groups
+
+
 def _cli_surface() -> tuple[set[str], dict[str, set[str]]]:
     """(top-level commands, {group: subcommands}) — the CLI as a user sees it.
 
@@ -95,14 +135,7 @@ def _cli_surface() -> tuple[set[str], dict[str, set[str]]]:
     except Exception:  # pragma: no cover — plugins are optional
         pass
 
-    subs: dict[str, set[str]] = {}
-    for name, (mod_path, attr) in reg._EXTERNAL_CMD_MAP.items():
-        try:
-            group = typer.main.get_command(getattr(importlib.import_module(mod_path), attr))
-        except Exception:  # pragma: no cover — an uninstalled optional dep
-            continue
-        if isinstance(group, click.Group):
-            subs[name] = set(group.commands)
+    subs = {name: set(group.commands) for name, group in _external_groups().items()}
     return top, subs
 
 
@@ -151,6 +184,7 @@ def test_printed_hints_name_commands_that_exist():
     top, subs = _cli_surface()
     assert len(top) > 50, "CLI surface introspection is broken — the guard would pass vacuously"
     plugin_groups = _plugin_names()
+    groups = _external_groups()
 
     phantom: list[str] = []
     for path, line, text in _printed_strings():
@@ -166,6 +200,17 @@ def test_printed_hints_name_commands_that_exist():
                 phantom.append(
                     f"{path.name}:{line}  '{hint}' — `{group}` has no `{sub}` "
                     f"(it has: {', '.join(sorted(subs[group]))})"
+                )
+        for run in COMMAND_PATH.findall(text):
+            tokens = run.split()
+            group = groups.get(tokens[0])
+            if group is None or tokens[0] in plugin_groups:
+                continue
+            bad = _unresolved_nested(group, tokens[1:])
+            if bad is not None:
+                phantom.append(
+                    f"{path.name}:{line}  'navig {' '.join(tokens)}' — no `{bad}` under "
+                    f"`navig {' '.join(tokens[:tokens.index(bad)])}`"
                 )
 
     assert not phantom, (
@@ -229,3 +274,40 @@ def test_known_orphans_are_still_orphans(hint: str):
         f"'{hint}' resolves now — the feature was wired up. "
         "Remove it from KNOWN_ORPHANED so the guard covers it."
     )
+
+
+def _synthetic_group(tree: dict) -> object:
+    """A real Typer-built command tree, so the walker walks what production produces.
+
+    ``click.Group(...)`` cannot build one: Typer 0.27's vendored click has no ``Group``
+    class at all (the shipped tree is ``typer.core.TyperGroup``), so a fixture built from
+    click's own classes would exercise a shape the CLI never mounts.
+    """
+    import typer
+    from typer.main import get_command
+
+    def _noop() -> None: ...
+
+    app = typer.Typer()
+    for name, sub in tree.items():
+        if sub is None:
+            app.command(name)(_noop)
+            continue
+        sub_app = typer.Typer()
+        for leaf in sub:
+            sub_app.command(leaf)(_noop)
+        app.add_typer(sub_app, name=name)
+    return get_command(app)
+
+
+def test_nested_hint_walk_flags_a_bad_third_level_token():
+    """Anti-vacuity: `navig host monitor nosuch` must not pass as the prefix `host monitor`."""
+    host = _synthetic_group({"list": None, "monitor": {"report": None}})
+
+    assert _unresolved_nested(host, ["monitor", "nosuch"]) == "nosuch"
+    assert _unresolved_nested(host, ["monitor", "report"]) is None
+    # A leaf ends the walk, so trailing prose is never read as a command path.
+    assert _unresolved_nested(host, ["list", "to", "see"]) is None
+    # The first level belongs to the existing (group, sub) check.
+    assert _unresolved_nested(host, ["typo"]) is None
+    assert COMMAND_PATH.findall("Run navig host monitor nosuch") == [" host monitor nosuch"]

@@ -103,6 +103,23 @@ def _bad_literals(tree: ast.AST) -> list[tuple[int, str]]:
             if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
                 yield sub.value
 
+    # A tag stored in a variable first (``label = "[dry-run] "`` then
+    # ``ch.header(f"{label}…")``) is swallowed just the same — the installer shipped it.
+    tagged: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for text in strings_of(node.value):
+                if "[dry-run]" in text.lower():
+                    for target in targets:
+                        if isinstance(target, ast.Name):
+                            tagged.setdefault(target.id, text)
+
+    def tagged_names_of(node: ast.AST):
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Name) and sub.id in tagged:
+                yield tagged[sub.id]
+
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -117,6 +134,8 @@ def _bad_literals(tree: ast.AST) -> list[tuple[int, str]]:
             for text in strings_of(value):
                 if "[dry-run]" in text.lower():
                     hits.append((node.lineno, text[:70]))
+            for text in tagged_names_of(value):
+                hits.append((node.lineno, text[:70]))
         for kw in node.keywords:
             if kw.arg in ("title", "subtitle"):
                 for text in strings_of(kw.value):
@@ -157,6 +176,15 @@ def test_guard_detects_a_planted_violation() -> None:
     """Teeth: the exact shape that shipped in commands/history.py."""
     tree = ast.parse('ch.dim("[dry-run] Would execute the command above")\n')
     assert _bad_literals(tree) == [(1, "[dry-run] Would execute the command above")]
+
+
+def test_guard_detects_a_tag_stored_in_a_variable() -> None:
+    """Teeth: the installer's shape — the tag assigned first, interpolated later."""
+    tree = ast.parse(
+        'label = "[dry-run] " if dry_run else ""\n'
+        'ch.header(f"{label}NAVIG Installer")\n'
+    )
+    assert _bad_literals(tree) == [(2, "[dry-run] ")]
 
 
 def test_guard_ignores_plain_output() -> None:

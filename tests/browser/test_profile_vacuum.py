@@ -36,6 +36,8 @@ _LOGIN_STATE = (
     "Default/History",
     "Default/Bookmarks",
     "Local State",
+    # Origin-managed offline storage (PWAs): may hold the only local copy of content.
+    "Default/Service Worker/CacheStorage/x/blob",
 )
 
 
@@ -47,8 +49,6 @@ def _mkprofile(tmp_path, name: str, *, model_mb: int = 4, cache_kb: int = 64):
     (d / "OptGuideOnDeviceModel" / "2025.8.8.1141" / "weights.bin").write_bytes(b"m" * (model_mb * 1024 * 1024))
     (d / "Default" / "Cache" / "Cache_Data").mkdir(parents=True)
     (d / "Default" / "Cache" / "Cache_Data" / "f_000001").write_bytes(b"c" * (cache_kb * 1024))
-    (d / "Default" / "Service Worker" / "CacheStorage" / "x").mkdir(parents=True)
-    (d / "Default" / "Service Worker" / "CacheStorage" / "x" / "blob").write_bytes(b"s" * 1024)
     for rel in _LOGIN_STATE:
         f = d / rel
         f.parent.mkdir(parents=True, exist_ok=True)
@@ -92,18 +92,19 @@ def test_the_model_and_caches_are_gone_and_the_bytes_are_counted(usage, tmp_path
     r = A.profile_vacuum(["cybesis"], dry_run=False)
     assert not (d / "OptGuideOnDeviceModel").exists(), "the 4 GB model dir must go"
     assert not (d / "Default" / "Cache").exists()
-    assert not (d / "Default" / "Service Worker" / "CacheStorage").exists()
-    assert r["freed_bytes"] == 4 * 1024 * 1024 + 64 * 1024 + 1024
+    assert (d / "Default" / "Service Worker" / "CacheStorage").exists(), "offline data is kept"
+    assert r["freed_bytes"] == 4 * 1024 * 1024 + 64 * 1024
     assert r["per_profile"] == {"cybesis": r["freed_bytes"]}
-    assert set(r["deleted"]) == {str(d / "OptGuideOnDeviceModel"), str(d / "Default" / "Cache"),
-                                 str(d / "Default" / "Service Worker" / "CacheStorage")}
+    assert set(r["deleted"]) == {str(d / "OptGuideOnDeviceModel"), str(d / "Default" / "Cache")}
 
 
 def test_the_allowlist_never_names_login_state():
     """The list is what gets deleted. It must never grow a login path — pin the shape."""
     forbidden = ("Cookies", "Network", "Login Data", "Web Data", "Preferences", "Local Storage",
                  "Session Storage", "IndexedDB", "Extensions", "History", "Bookmarks",
-                 "Local State", "Local Extension Settings", "Sync Data")
+                 "Local State", "Local Extension Settings", "Sync Data",
+                 # Cache Storage is origin-managed and can hold a PWA's only offline copy.
+                 "CacheStorage")
     # By path SEGMENT, not substring: `extensions_crx_cache` is the CRX download cache and
     # regenerable; `Default/Extensions` is installed extension code and is not.
     for rel in A._REGENERABLE_DIRS:
@@ -163,8 +164,8 @@ def test_dry_run_plans_but_deletes_nothing(usage, tmp_path):
     usage["named"].append(_named("cybesis", d))
     r = A.profile_vacuum(["cybesis"], dry_run=True)
     assert r["dry_run"] is True
-    assert {x["rel"] for x in r["planned"]} == {"OptGuideOnDeviceModel", "Default/Cache",
-                                                 "Default/Service Worker/CacheStorage"}
+    # Service Worker CacheStorage exists in the profile but is never planned.
+    assert {x["rel"] for x in r["planned"]} == {"OptGuideOnDeviceModel", "Default/Cache"}
     assert r["deleted"] == [] and r["freed_bytes"] == 0
     assert (d / "OptGuideOnDeviceModel").exists()
 
@@ -196,7 +197,7 @@ def test_a_failed_delete_is_reported_not_swallowed(usage, monkeypatch, tmp_path)
 def test_regenerable_bytes_measures_only_the_allowlist(tmp_path):
     d = _mkprofile(tmp_path, "m", model_mb=2, cache_kb=8)
     got = A.regenerable_bytes(str(d))
-    assert got == 2 * 1024 * 1024 + 8 * 1024 + 1024
+    assert got == 2 * 1024 * 1024 + 8 * 1024
     # the login files are not in it
     assert got < A._dir_size_bytes(str(d))
     assert os.path.isfile(d / "Default" / "Cookies")

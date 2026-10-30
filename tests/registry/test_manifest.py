@@ -681,10 +681,20 @@ def test_runnable_top_level_verbs_are_in_the_manifest() -> None:
     from navig.registry.manifest import _build_manifest
 
     cli_mod._register_external_commands(register_all=True)
+
+    def _runnable(cmd) -> bool:
+        """A verb a user can actually run bare.
+
+        A platform stub is not one: off Windows `navig desktop` carries a refuse-only
+        callback (`navig/commands/desktop.py` marks it `__navig_platform_stub__`), so the
+        manifest walk skips it — the shipped file is generated on Windows, where no such
+        callback exists, and a row for it would be a command that cannot run.
+        """
+        cb = getattr(cmd, "callback", None)
+        return cb is not None and not getattr(cb, "__navig_platform_stub__", False)
+
     runtime = {
-        name
-        for name, cmd in get_command(cli_mod.app).commands.items()
-        if cmd.callback is not None
+        name for name, cmd in get_command(cli_mod.app).commands.items() if _runnable(cmd)
     }
     fresh = {c["path"] for c in _build_manifest(include_hidden=True)["commands"]}
     missing = sorted(f"navig {n}" for n in runtime if f"navig {n}" not in fresh)

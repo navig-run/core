@@ -11,7 +11,7 @@ from pathlib import Path
 from navig.config import get_config_manager
 from navig.core.coerce import coerce_bool
 from navig.gateway.channels.matrix import MatrixChannelAdapter
-from navig.gateway.server import NavigGateway
+from navig.gateway.server import NavigGateway, install_loop_noise_filter
 from navig.messaging.registry import (
     create_channel_for_provider,
     get_active_provider_name,
@@ -21,6 +21,7 @@ from navig.messaging.registry import (
 from navig.messaging.secrets import resolve_telegram_bot_token, resolve_telegram_uid
 from navig.platform import paths as _nav_paths
 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
+from navig.telegram.config import require_auth_enabled
 
 
 def _load_env() -> None:
@@ -52,7 +53,7 @@ def _telegram_config() -> dict:
         "owner_uid": owner_uid,
         "allowed_users": telegram_cfg.get("allowed_users", []),
         "allowed_groups": telegram_cfg.get("allowed_groups", []),
-        "require_auth": telegram_cfg.get("require_auth", True),
+        "require_auth": require_auth_enabled(telegram_cfg.get("require_auth", True)),
     }
 
 
@@ -192,7 +193,7 @@ async def _start_gateway_http(gateway: NavigGateway, tg_config: dict, deck_cfg: 
                 gateway._app,
                 bot_token=tg_config.get("bot_token", ""),
                 allowed_users=tg_config.get("allowed_users", []),
-                require_auth=tg_config.get("require_auth", True),
+                require_auth=require_auth_enabled(tg_config.get("require_auth", True)),
                 deck_cfg=deck_cfg,
             )
             logger.info("Deck Mini App activated (tightly coupled to Telegram bot)")
@@ -288,6 +289,11 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
     import logging
 
     logger = logging.getLogger(__name__)
+
+    # This worker serves the gateway HTTP itself (_start_gateway_http), never through
+    # NavigGateway.start(), so the benign-loop-noise filter must be installed here too —
+    # with or without --no-gateway, the Proactor reset reaches this loop either way.
+    install_loop_noise_filter(asyncio.get_running_loop())
 
     _load_env()
     raw_cfg = get_config_manager().global_config or {}

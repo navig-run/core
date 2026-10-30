@@ -116,6 +116,7 @@ def _get_install_path(repo_path: Path) -> Path:
 
 @contribute_app.command("scan")
 def scan_cmd(
+    ctx: typer.Context,
     path: Path | None = typer.Option(
         None,
         "--path",
@@ -139,6 +140,8 @@ def scan_cmd(
     4. Apply patch, commit, push
     5. Open Pull Request on navig-run/core
     """
+    # The root ``navig --dry-run`` lands in ctx.obj, not in this local option.
+    dry_run = dry_run or coerce_bool((ctx.obj or {}).get("dry_run"), default=False)
     cfg = _get_config()
     _assert_enabled(cfg)
     cfg_typed = _get_contribute_config(cfg)
@@ -154,26 +157,25 @@ def scan_cmd(
     from navig.selfheal.scanner import scan_files  # noqa: PLC0415
 
     # ------------------------------------------------------------------
-    # Resolve GitHub token + username
-    # ------------------------------------------------------------------
-    try:
-        from navig.selfheal.pr_builder import _resolve_token  # noqa: PLC0415
-
-        token = _resolve_token(cfg_typed.to_dict())
-        username = get_github_username(token)
-    except ValueError as exc:
-        _console.print(f"[red]GitHub token error:[/red] {exc}")
-        _console.print(
-            "Set up your token with:\n"
-            "  [cyan]navig vault set github_contribute <token>[/cyan]\n"
-            "  or export NAVIG_GITHUB_TOKEN=<your-pat>"
-        )
-        raise typer.Exit(1) from exc
-
-    # ------------------------------------------------------------------
-    # Fork + clone/sync
+    # Resolve GitHub token + username, then fork + clone/sync. A dry run
+    # neither forks nor submits, so it needs no PAT at all.
     # ------------------------------------------------------------------
     if not dry_run:
+        try:
+            from navig.selfheal.pr_builder import _resolve_token  # noqa: PLC0415
+
+            token = _resolve_token(cfg_typed.to_dict())
+            username = get_github_username(token)
+        except ValueError as exc:
+            _console.print(f"[red]GitHub token error:[/red] {exc}")
+            _console.print(
+                "Set up your token with:\n"
+                "  [cyan]navig vault set github_contribute <token>[/cyan]\n"
+                "  or export NAVIG_GITHUB_TOKEN=<your-pat>"
+            )
+            raise typer.Exit(1) from exc
+
+
         with _console.status("Forking navig-run/core…"):
             try:
                 fork_repo(token, username)
@@ -252,7 +254,7 @@ def scan_cmd(
             f"\n[bold green]✅ PR submitted:[/bold green] [link={pr_url}]{pr_url}[/link]"
         )
     else:
-        _console.print("[dim]No PR submitted (Telegram flow pending or cancelled).[/dim]")
+        _console.print("[dim]No PR submitted (cancelled).[/dim]")
 
 
 # ---------------------------------------------------------------------------

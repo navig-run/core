@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import sys
 from pathlib import Path
 
 import pytest
@@ -63,6 +64,14 @@ ALLOWED: dict[tuple[str, str], str] = {
         "tests/cli/test_cli_wizard.py",
         "os.geteuid",
     ): "POSIX-only; genuinely absent on Windows, so the Linux branch can only be simulated by creating it",
+}
+
+# The `sys.platform` values on which each ALLOWED symbol is genuinely absent. Elsewhere
+# the symbol exists, `create=True` is a harmless no-op, and the staleness check below
+# has nothing to prove — without this it called `pytest.fail` on every Linux and macOS
+# run, because `os.geteuid` resolves there.
+ABSENT_ON: dict[tuple[str, str], frozenset[str]] = {
+    ("tests/cli/test_cli_wizard.py", "os.geteuid"): frozenset({"win32"}),
 }
 
 _PATCH_FUNCS = {"patch", "object", "dict"}
@@ -154,7 +163,14 @@ def test_allowlisted_targets_are_still_genuinely_absent(where: str, dotted: str)
     If a platform-only symbol becomes importable here (say the suite starts running on
     Linux, where ``os.geteuid`` exists), ``create=True`` is once again a lie and the
     entry must go — this fails to say so, instead of quietly rotting.
+
+    Checked only on the platforms the entry names in ``ABSENT_ON``: on a POSIX host
+    ``os.geteuid`` is SUPPOSED to exist, and that says nothing about the entry.
     """
+    absent_on = ABSENT_ON.get((where, dotted))
+    assert absent_on, f"ALLOWED entry {(where, dotted)} has no ABSENT_ON platforms"
+    if sys.platform not in absent_on:
+        pytest.skip(f"{dotted} exists on {sys.platform}; absent only on {sorted(absent_on)}")
     parts = dotted.split(".")
     for i in range(len(parts) - 1, 0, -1):
         try:

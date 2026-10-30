@@ -318,11 +318,18 @@ def require_active_app(
         return app_name
 
     apps: list[str] = []
-    # `list_apps(host_name)` REQUIRES a host, and there is none in scope here — the
-    # question this asks is "does the operator have any apps at all?", which
-    # `list_apps_from_files()` answers (it returns a list of names, the same shape the
-    # selector below consumes). The old call raised TypeError past its `hasattr` guard.
-    if hasattr(cfg, "list_apps_from_files"):
+    # Offer the apps of the host the caller already resolved: `list_apps(host_name)`
+    # merges legacy embedded apps with individual app files and filters by host, so a
+    # pick is loadable by `load_app_config(host_name, app)`. Only with no host in scope
+    # fall back to `list_apps_from_files()` ("are there any apps at all?"). The host
+    # is passed explicitly — a bare `list_apps()` raises TypeError past a hasattr guard.
+    raw_host = options.get("host")
+    if not raw_host and hasattr(cfg, "get_active_host"):
+        raw_host = cfg.get_active_host()
+    host_name: str | None = raw_host[0] if isinstance(raw_host, tuple) else raw_host
+    if host_name and hasattr(cfg, "list_apps"):
+        apps = cfg.list_apps(host_name)
+    elif hasattr(cfg, "list_apps_from_files"):
         apps = cfg.list_apps_from_files()
 
     if not apps:

@@ -37,17 +37,19 @@ def _is_click_abort(exc: BaseException) -> bool:
     """Return True when *exc* is the Abort Typer raises on Ctrl+C at a prompt.
 
     ``typer.Abort`` IS click's Abort on every Typer version — the separate ``click``
-    distribution before 0.27, the vendored ``typer._click`` after. A bare
-    ``from click.exceptions import Abort`` returned False for every abort on a fresh
-    install (no ``click`` package), so a Ctrl+C at a wizard prompt was handled as a
-    generic failure instead of a cancel. See navig.core.click_compat.
+    distribution before 0.27, the vendored ``typer._click`` after — so this one check covers
+    both, and it needs no ``click`` import: a fresh install has no ``click`` package at all
+    (``tests/quality/test_no_direct_click_import.py`` enforces that, because a direct import
+    raised ImportError there and every Ctrl+C became a generic failure instead of a cancel).
+
+    A *different* click distribution installed alongside Typer raises its own Abort class,
+    which NAVIG's prompts never raise; catching it would mean importing click directly again.
     """
     try:
         from typer import Abort
-
-        return isinstance(exc, Abort)
     except ImportError:  # pragma: no cover - typer is a hard dependency
         return False
+    return isinstance(exc, Abort)
 
 
 @dataclass

@@ -116,10 +116,19 @@ def _lan_only(request: web.Request) -> web.Response | None:
 
 
 def _get_my_url(gw: NavigGateway) -> str:
-    """Best guess at this machine's reachable gateway URL from other LAN machines."""
+    """Best guess at this machine's reachable gateway URL from other LAN machines.
+
+    A loopback bind (`127.0.0.1`, `::1`, `localhost`) is exactly as unreachable
+    from another machine as `0.0.0.0` is reachable — so it advertises the LAN IP
+    too. Measured 2026-10-27: a brain defaulting to `host: 127.0.0.1` handed a
+    joining laptop `irm http://127.0.0.1:8789/…`, i.e. the laptop's own loopback;
+    the command could never reach the gateway it came from.
+    """
     try:
         host = str(getattr(gw.config, "host", "") or "")
-        if host in ("", "0.0.0.0", "::", "[::]"):
+        if host in ("", "0.0.0.0", "::", "[::]") or host.lower() == "localhost" or host.startswith(
+            "127."
+        ):
             host = _lan_ip()
         port = int(getattr(gw.config, "port", None) or _GATEWAY_PORT)
         return f"http://{host}:{port}"

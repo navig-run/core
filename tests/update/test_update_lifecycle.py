@@ -57,6 +57,18 @@ class TestPlan:
             plan = engine.plan()
         assert len(plan.to_update) == 1
 
+    def test_local_git_checkout_behind_upstream_is_scheduled(self):
+        # Same version string, but upstream has untagged commits: the git pull must run
+        # without --force (review F0447).
+        vi = VersionInfo(
+            "local", current="2.5.0", latest="2.5.0", install_type="git", commits_behind=4
+        )
+        with patch("navig.update.checker.VersionChecker.check_local", return_value=vi):
+            engine = UpdateEngine([_local_target()], source=_make_source("2.5.0"))
+            plan = engine.plan()
+        assert len(plan.to_update) == 1
+        assert len(plan.up_to_date) == 0
+
     def test_unreachable_ssh(self):
         vi = VersionInfo("myhost", error="SSH refused")
         with patch("navig.update.checker.VersionChecker.check_ssh", return_value=vi):
@@ -184,6 +196,38 @@ class TestRunSuccess:
             engine = UpdateEngine([_local_target()], source=_make_source())
             engine.run(force=False, restart=False)
         assert reloaded == []
+
+    def test_failed_reload_is_not_reported_as_success(self):
+        """A daemon that could not be reloaded (e.g. elevated under a non-interactive
+        run) still runs the OLD code: the install stays ok, but the update is not live,
+        so the result must not read as fully successful."""
+        from navig.commands import update as update_cmd
+
+        vi = VersionInfo("local", current="2.4.0", latest="2.5.0")
+        note = "daemon runs elevated — run:  navig service restart --admin"
+        with (
+            patch("navig.update.checker.VersionChecker.check_local", return_value=vi),
+            patch.object(UpdateEngine, "_install_local", return_value=None),
+            patch.object(
+                UpdateEngine,
+                "_verify_version",
+                side_effect=lambda t, nr: setattr(nr, "new_version", "2.5.0"),
+            ),
+            patch.object(
+                update_cmd,
+                "_step_reload_daemon",
+                return_value=update_cmd._Result("Reload daemon (live code)", ok=False, note=note),
+            ),
+        ):
+            engine = UpdateEngine([_local_target()], source=_make_source())
+            result = engine.run(force=False)
+
+        nr = result.node("local")
+        assert nr is not None and nr.ok and not nr.rolled_back  # bits are on disk
+        assert nr.restart_pending and nr.restart_note == note
+        assert result.success is False
+        assert result.to_dict()["success"] is False
+        assert result.restart_pending_nodes == [nr]
 
 
 # ---------------------------------------------------------------------------

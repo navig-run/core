@@ -206,3 +206,79 @@ def test_a_per_chat_override_shadowing_a_correct_default_is_not_green(monkeypatc
     assert warn is False  # a real defect, not a could-not-verify
     assert "per-chat" in detail and "chat 111" in detail
     assert "key=" not in detail  # the raw key never reaches a doctor row
+
+
+@pytest.fixture(autouse=True)
+def _owns_its_deck(monkeypatch):
+    """Every case here judges the deck THIS install deploys.
+
+    `_deck_deployed_elsewhere` reads the real `~/.navig-os/brain-link.json`, so on a
+    workstation that is a client of a Brain the stale-signature cases would silently turn
+    into "cannot verify" and pass for the wrong reason, while a CI machine with no link
+    would disagree with the developer's. Pin the answer; the client cases opt in.
+    """
+    monkeypatch.setattr(m, "_deck_deployed_elsewhere", lambda: "")
+
+
+def test_a_client_brain_makes_the_signature_comparison_unknown(monkeypatch):
+    """A client does not deploy the deck, so its recorded signature is a leftover.
+
+    Live shape: NEURON's config still held eae613048f7d from when it owned the deck while
+    the Brain deployed 7bac67651c7e. Reporting that as ✗ "Telegram clients are on an older
+    deck — run `navig miniapp register`" is both unprovable here and harmful: `register`
+    on a client rewrites the button with a cache-bust no deploy ever produced.
+    """
+    _config(monkeypatch, sig="eae613048f7d")
+    _button(monkeypatch, "https://deck.example.dev/connect?key=K&v=7bac67651c7e")
+    monkeypatch.setattr(m, "_deck_deployed_elsewhere", lambda: "outpost-server")
+
+    ok, detail, warn = m.miniapp_button_health()
+    assert ok is False
+    assert warn is True  # could not verify from here — not a defect
+    assert "CLIENT of outpost-server" in detail
+    assert "navig miniapp status" in detail
+    assert "navig miniapp register" not in detail
+
+
+def test_a_client_with_no_recorded_signature_blames_the_brain_not_a_missing_deploy(monkeypatch):
+    _config(monkeypatch, sig="")
+    _button(monkeypatch, "https://deck.example.dev/connect?key=K&v=abc123")
+    monkeypatch.setattr(m, "_deck_deployed_elsewhere", lambda: "outpost-server")
+
+    ok, detail, warn = m.miniapp_button_health()
+    assert ok is False
+    assert warn is True
+    assert "CLIENT of outpost-server" in detail
+    assert "redeploy with `navig miniapp deploy`" not in detail
+
+
+def test_a_failed_per_chat_inspection_is_could_not_verify_not_green(monkeypatch):
+    """Telegram's `ok: false` for one chat is an unknown, not "no override".
+
+    Review: https://github.com/navig-run/labs/pull/1572#discussion_r4115229078
+    """
+    values = {
+        "deck.public_url": "https://deck.example.dev",
+        "deck.bundle_sig": "abc123",
+        "deck.api_key": "K",
+        "telegram.allowed_users": [111],
+    }
+
+    class _CM:
+        def get(self, key, default=None):
+            return values.get(key, default)
+
+    monkeypatch.setattr("navig.config.ConfigManager", lambda *a, **k: _CM())
+    monkeypatch.setattr(m, "_bot_token", lambda: "TOKEN")
+
+    def _call(token, method, body=None, *, timeout=10.0):
+        assert method == "getChatMenuButton"
+        if (body or {}).get("chat_id") == 111:
+            return {"ok": False, "description": "Too Many Requests"}
+        return {"ok": True, "result": {"type": "web_app", "web_app": {
+            "url": "https://deck.example.dev/connect?key=K&v=abc123"}}}
+
+    monkeypatch.setattr(m, "_tg_call", _call)
+    ok, detail, warn = m.miniapp_button_health()
+    assert (ok, warn) == (False, True)
+    assert "COULD NOT BE VERIFIED" in detail

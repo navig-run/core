@@ -214,6 +214,11 @@ def test_worker_carries_the_rules_and_a_missing_file_is_not_fatal(tmp_path):
     assert rules[0][1]["X-Frame-Options"] == "SAMEORIGIN"
     assert rules[-1][1]["Referrer-Policy"] == "no-referrer"
 
+    # The regexes are compiled once at module init, never per request (review F1376).
+    hot_path = script.split("function headersFor(", 1)[1].split("export default", 1)[0]
+    assert "new RegExp(" not in hot_path
+    assert "new RegExp(" in script.split("function headersFor(", 1)[0]
+
     # No _headers at all: still a valid Worker, just with no rules.
     empty = build_assets_worker(tmp_path / "nope")
     assert b"const HEADER_RULES = []" in empty

@@ -104,6 +104,50 @@ def test_cdp_bundle_classifies_dangerous_tools():
     # unaudited. Naming them is the stronger statement, so the check is now positive.
     assert srv._tool_safety["cdp_snapshot"] == "safe"
     assert srv._tool_safety["cdp_targets"] == "safe"
+    # The one cdp tool that WRITES: a remote page chooses the filename (a
+    # Content-Disposition of "..\..\x.exe" is observable against the local fixture) and
+    # the agent never sees the bytes it would be vouching for.
+    assert srv._tool_safety["cdp_download"] == "dangerous"
+
+
+def test_cdp_download_is_gated_on_both_paths_and_cannot_choose_where_it_writes():
+    """The two registries must agree (parity), and the surface must refuse a destination.
+
+    A caller-chosen path turns "a file arrived from this page" into "write bytes anywhere
+    this process can reach" — the class `desktop_filesystem` is gated for. It also has to
+    survive the definition budget, whose ceiling for tools lacking routing guidance or a
+    stated result is ZERO.
+    """
+    from unittest.mock import MagicMock
+
+    from navig.mcp.annotations import annotate_tools
+    from navig.mcp.catalogue_audit import signals
+    from navig.mcp.tools import register_all_tools
+    from navig.tools.approval import is_destructive_tool
+
+    srv = MagicMock()
+    srv.tools = {}
+    srv._tool_handlers = {}
+    del srv._tool_safety
+    register_all_tools(srv)
+    annotate_tools(srv.tools, srv._tool_safety)
+
+    assert "cdp_download" in srv.tools, "not advertised"
+    assert srv._tool_safety["cdp_download"] == "dangerous"  # the MCP gate
+    assert is_destructive_tool("cdp_download")  # the agent gate
+
+    tool = srv.tools["cdp_download"]
+    assert tool["annotations"]["readOnlyHint"] is False
+    assert tool["annotations"]["destructiveHint"] is True
+
+    sig = signals(tool)
+    assert sig["mentions_sibling_tool"], "name the tool that continues the workflow"
+    assert sig["states_result"], "say what comes back"
+    assert sig["all_params_documented"], "every parameter needs a description"
+    assert sig["strict_schema"], "additionalProperties must be false"
+
+    props = set(tool["inputSchema"]["properties"])
+    assert not ({"path", "out_dir", "out", "file", "dir", "directory"} & props), sorted(props)
 
 
 # ---------------------------------------------------------------------------

@@ -46,12 +46,23 @@ def set_active_working_dir(path: str | Path) -> None:
     atomic_write_text(f, str(path))
 
 
+# Unreadable-file episodes already recorded, keyed by (path, errno). This resolver runs
+# per turn and per file/skill operation, so a lock lasting minutes would otherwise append
+# thousands of identical incidents. A successful read ends the episode.
+_unreadable_episodes: set[tuple[str, int | None]] = set()
+
+
 def _record_unreadable(path: Path, exc: OSError) -> None:
     """Note that we could not tell which space is active. Never raises.
 
     An observation must not break the thing it observes — and this sits on the per-turn
-    path, so a failure here would cost a turn rather than a log line.
+    path, so a failure here would cost a turn rather than a log line. Recorded once per
+    failure episode (see ``_unreadable_episodes``).
     """
+    key = (str(path), exc.errno)
+    if key in _unreadable_episodes:
+        return
+    _unreadable_episodes.add(key)
     try:
         from navig.core import incidents  # noqa: PLC0415
 
@@ -89,6 +100,9 @@ def get_active_working_dir(cwd: Path | None = None) -> Path:
             from navig.core.yaml_io import read_text_retrying  # noqa: PLC0415
 
             d = Path(read_text_retrying(f).strip())
+            _unreadable_episodes.difference_update(
+                {k for k in _unreadable_episodes if k[0] == str(f)}
+            )
             if d.is_dir():
                 return d
         except OSError as exc:

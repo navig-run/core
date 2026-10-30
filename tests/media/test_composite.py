@@ -44,6 +44,10 @@ class TestValidation:
         with pytest.raises(ValueError, match="opacity"):
             composite(tmp_path / "a.mp4", tmp_path / "b.mp4", tmp_path / "o.mp4", opacity=1.4)
 
+    def test_a_negative_start_is_refused_not_treated_as_zero(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="start"):
+            composite(tmp_path / "a.mp4", tmp_path / "b.mp4", tmp_path / "o.mp4", start=-1.0)
+
     def test_a_missing_base_is_named(self, tmp_path: Path):
         with pytest.raises(VideoEditError, match="base clip not found"):
             composite(tmp_path / "nope.mp4", tmp_path / "b.mp4", tmp_path / "o.mp4")
@@ -149,6 +153,18 @@ class TestWindow:
             composite(tmp_path / "a.mp4", tmp_path / "b.mp4", tmp_path / "o.mp4",
                       window=(8.0, 3.0))
 
+    def test_a_window_starting_before_zero_is_refused(self, tmp_path: Path):
+        with pytest.raises(VideoEditError, match="before 0s"):
+            composite(tmp_path / "a.mp4", tmp_path / "b.mp4", tmp_path / "o.mp4",
+                      window=(-1.0, 3.0))
+
+    def test_a_window_starting_before_zero_is_refused_under_a_non_screen_mode(
+        self, tmp_path: Path
+    ):
+        with pytest.raises(VideoEditError, match="before 0s"):
+            composite(tmp_path / "a.mp4", tmp_path / "b.mp4", tmp_path / "o.mp4",
+                      mode="multiply", window=(-0.5, 2.0))
+
     @requires_ffmpeg
     def test_a_windowed_overlay_still_yields_a_full_length_clip(self, tmp_path: Path):
         # The gate fades the overlay to black, it does not shorten anything.
@@ -172,3 +188,26 @@ class TestWindow:
         ov = _clip(tmp_path / "ov.mp4", 2.0)
         out = composite(base, ov, tmp_path / "out.mp4", window=(1.0, 1.5))
         assert out.duration_s == pytest.approx(4.0, abs=0.2)
+
+    @requires_ffmpeg
+    @pytest.mark.parametrize("mode", ["multiply", "overlay", "softlight", "hardlight"])
+    def test_a_non_black_neutral_mode_leaves_the_base_alone_outside_the_window(
+        self, tmp_path: Path, mode: str
+    ):
+        # A fade-to-black gate under `multiply` blacks the base out before and after the
+        # window; the base must come through untouched there.
+        base = _clip(tmp_path / "base.mp4", 4.0, colour="gray", size="64x64")
+        ov = _clip(tmp_path / "ov.mp4", 4.0, colour="white", size="64x64")
+        out = composite(base, ov, tmp_path / "out.mp4", mode=mode, opacity=1.0,
+                        window=(2.5, 3.5))
+        assert _mean_luma(out.path, 0.5) == pytest.approx(_mean_luma(base, 0.5), abs=6)
+
+
+def _mean_luma(path: Path, at: float) -> float:
+    raw = subprocess.run(
+        [shutil.which("ffmpeg"), "-nostdin", "-v", "error", "-ss", f"{at:g}", "-i", str(path),
+         "-frames:v", "1", "-vf", "format=gray", "-f", "rawvideo", "-"],
+        capture_output=True, check=True,
+    ).stdout
+    assert raw, f"no frame decoded from {path} at {at}s"
+    return sum(raw) / len(raw)

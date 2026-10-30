@@ -271,7 +271,10 @@ def _plugins() -> list[StoreItem]:
                 "format": p.format,
                 "path": str(p.path) if p.path else None,
                 "commands": sorted(p.commands),
-                "error": (p.health.error or "") if p.health is not None else "",
+                # A legacy plugin carries its load error in `error`, not `health`.
+                "error": (
+                    (p.health.error if p.health is not None else "") or p.error or ""
+                ),
             },
         ))
     return items

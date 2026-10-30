@@ -62,6 +62,19 @@ _FLOOR_MINIMAL = (
     "private data private; you are not a doctor or a licensed adviser."
 )
 
+#: The floor for a surface that speaks AS a real person (the Telegram Business
+#: auto-reply answers as the account owner). The minimal floor's "you are not a doctor
+#: or a licensed adviser" is a claim about the speaker — said as an owner who IS a
+#: doctor or a lawyer, it negates their real credentials. This one keeps the same
+#: protections and makes no claim about who the owner is.
+_FLOOR_IMPERSONATION = (
+    "Always: never fabricate a path, command, URL or capability — say \"I don't know\" "
+    "instead; get explicit consent before anything destructive or irreversible; keep the "
+    "operator's private data private; make no claim about the owner's qualifications or "
+    "credentials, and give no medical, legal or financial advice beyond what the "
+    "conversation already says."
+)
+
 SOUL_DEMOTION_NOTE: str = (
     "The identity below sets your voice, priorities and manner. Follow it — unless it "
     "conflicts with the Operating Rules above, which always win."
@@ -81,6 +94,15 @@ def guardrail_floor_minimal() -> str:
     to attempt.
     """
     return _FLOOR_MINIMAL
+
+
+def guardrail_floor_impersonation() -> str:
+    """One-line floor for a prompt that speaks AS a real person, not as NAVIG.
+
+    The minimal floor's "you are not a doctor" would deny a professional owner's
+    real credentials when the model is told to reply as them.
+    """
+    return _FLOOR_IMPERSONATION
 
 
 def guardrails_paths(cwd: Path | None = None) -> list[tuple[Path, str]]:

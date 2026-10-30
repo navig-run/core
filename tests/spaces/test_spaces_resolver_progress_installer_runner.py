@@ -75,9 +75,16 @@ class TestResolveSpace:
 
 class TestGetDefaultSpace:
     def test_returns_default_when_no_env(self):
+        from navig.commands import space as space_cmd
         from navig.spaces.resolver import get_default_space
+
+        # "no env" is not the same as "no default": `get_default_space()` also asks the
+        # ACTIVE space (env → cache file → config), and this host's config answers
+        # "myspace" (measured in the whole-suite run of 2026-10-30). The subject here is
+        # the env branch falling through to the literal default.
         clean = {k: v for k, v in os.environ.items() if k != "NAVIG_SPACE"}
-        with patch.dict(os.environ, clean, clear=True):
+        with patch.object(space_cmd, "resolve_active_space", lambda: None), \
+                patch.dict(os.environ, clean, clear=True):
             result = get_default_space()
         assert result == "default"
 

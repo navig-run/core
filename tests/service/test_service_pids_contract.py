@@ -136,6 +136,22 @@ def test_a_dead_root_contributes_nothing(roots):
     assert sup.NavigDaemon.owned_process_trees() == []
 
 
+def test_an_elevated_supervisor_with_an_unreadable_cmdline_is_still_listed(roots, monkeypatch):
+    """A normal account reads an elevated daemon's create_time but not its cmdline.
+    The root used to drop out of the exclusion list, so the sweeper killed the daemon."""
+    import psutil
+
+    def _denied(self):
+        raise psutil.AccessDenied(self.pid)
+
+    monkeypatch.setattr(psutil.Process, "cmdline", _denied)
+    (roots / "supervisor.pid").write_text(str(os.getpid()), encoding="utf-8")
+
+    trees = sup.NavigDaemon.owned_process_trees()
+
+    assert [t["root"] for t in trees] == [os.getpid()], trees
+
+
 def test_no_pid_files_means_no_trees(roots):
     assert sup.NavigDaemon.owned_process_trees() == []
 

@@ -185,10 +185,8 @@ def _records(monkeypatch) -> list[tuple[str, dict]]:
 
 
 def test_prior_key_signals_are_strictly_downstream_of_the_key():
-    # webhook_url is sha256(deck.api_key); lighthouse mode/url require the key.
+    # webhook_url is sha256(deck.api_key) — it cannot exist without a prior key.
     assert deck_key._config_shows_prior_key(_getter(**{"telegram.webhook_url": "https://e/tg/h"}))
-    assert deck_key._config_shows_prior_key(_getter(**{"cloud.mode": "lighthouse"}))
-    assert deck_key._config_shows_prior_key(_getter(**{"cloud.lighthouse_url": "https://e"}))
 
 
 def test_first_run_signals_are_NOT_treated_as_a_prior_key():
@@ -197,6 +195,9 @@ def test_first_run_signals_are_NOT_treated_as_a_prior_key():
     assert not deck_key._config_shows_prior_key(_getter())
     assert not deck_key._config_shows_prior_key(_getter(**{"telegram.allowed_users": [123]}))
     assert not deck_key._config_shows_prior_key(_getter(**{"telegram.bot_token": "x"}))
+    # `navig lighthouse deploy` saves these BEFORE its webhook step mints the first key.
+    assert not deck_key._config_shows_prior_key(_getter(**{"cloud.mode": "lighthouse"}))
+    assert not deck_key._config_shows_prior_key(_getter(**{"cloud.lighthouse_url": "https://e"}))
 
 
 def test_generate_over_a_USED_config_records_reidentification(monkeypatch):
@@ -237,6 +238,22 @@ def test_ensure_in_config_first_run_is_silent(monkeypatch, mirror):
 
     seen = _records(monkeypatch)
     deck_key.ensure_in_config(FakeConfig())  # nothing anywhere = real first run
+    assert incidents.DECK_KEY_REIDENTIFIED not in [ev for ev, _ in seen]
+
+
+def test_first_lighthouse_deploy_is_not_a_reidentification(monkeypatch, mirror):
+    """The first deploy writes cloud.mode/lighthouse_url, THEN mints the first key.
+
+    Review: https://github.com/navig-run/labs/pull/273#discussion_r3590805006
+    """
+    from navig.core import incidents
+
+    seen = _records(monkeypatch)
+    cfg = FakeConfig(**{"cloud.mode": "lighthouse", "cloud.lighthouse_url": "https://e"})
+
+    key = deck_key.ensure_in_config(cfg)
+
+    assert key.startswith("navig_")
     assert incidents.DECK_KEY_REIDENTIFIED not in [ev for ev, _ in seen]
 
 

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
+import socket
 import subprocess
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -37,7 +40,46 @@ def _cli_env(tmp_path: Path) -> dict[str, str]:
     # UnicodeDecodeError when the system locale is non-UTF-8 (e.g. cp1251).
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
+    # The child runs from tmp_path (see `_cli_cwd`), so `-m navig` must still import THIS
+    # checkout's package rather than whatever the interpreter's editable install points at.
+    env["PYTHONPATH"] = os.pathsep.join(
+        p for p in (str(ROOT), env.get("PYTHONPATH", "")) if p
+    )
     return env
+
+
+def _cli_cwd(tmp_path: Path) -> Path:
+    """The working directory every `python -m navig` child in this file runs from.
+
+    conftest suppresses source-checkout app-root detection by patching
+    `find_app_root` IN THIS PROCESS only — a fresh interpreter calls the real walker.
+    Run from `cwd=ROOT` (core/), that walker finds the tracked `core/.navig` and the
+    child reads and writes shared source-tree state, racing under xdist. Running from
+    tmp_path, whose `.navig` IS the child's NAVIG_CONFIG_DIR, ends the walk at the
+    global dir (`find_app_root` returns None) before it can climb into the checkout —
+    tmp_path itself lives under `core/.dev/tmp`, so the `.navig` must exist.
+    """
+    (tmp_path / ".navig").mkdir(parents=True, exist_ok=True)
+    return tmp_path
+
+
+@contextlib.contextmanager
+def _unused_port() -> Iterator[int]:
+    """Yield a loopback port that nothing can answer on for the life of the block.
+
+    Isolating NAVIG_CONFIG_DIR isolates the config, not the network: a fixed port such as
+    58789 is reached the moment any local process happens to listen on it. The socket is
+    BOUND but never listens, so a connect is refused, and holding it keeps another process
+    from taking the port while the child runs.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):  # Windows: refuse SO_REUSEADDR hijacks
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+    try:
+        sock.bind(("127.0.0.1", 0))
+        yield sock.getsockname()[1]
+    finally:
+        sock.close()
 
 
 def _run_cli(
@@ -45,7 +87,7 @@ def _run_cli(
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "navig", *args],
-        cwd=ROOT,
+        cwd=_cli_cwd(tmp_path),
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -55,11 +97,37 @@ def _run_cli(
     )
 
 
+
+def test_cli_children_do_not_resolve_the_source_checkout_as_app_root(tmp_path: Path):
+    """A `python -m navig` child must not find `core/.navig` as its project root.
+
+    conftest's `find_app_root` patch lives in this process only. The child is a fresh
+    interpreter, so the isolation has to come from where it runs — this probes the
+    child's own `find_app_root` with exactly the cwd and env `_run_cli` uses.
+    """
+    probe = (
+        "from navig.platform.paths import find_app_root; "
+        "print(repr(find_app_root()))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=_cli_cwd(tmp_path),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=_cli_env(tmp_path),
+        stdin=subprocess.DEVNULL,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "None", result.stdout
+
 def test_gateway_session_handles_missing_gateway_without_invalid_url(tmp_path: Path):
     navig_dir = tmp_path / ".navig"
     navig_dir.mkdir()
-    (navig_dir / "config.yaml").write_text("gateway:\n  port: 58789\n")
-    result = _run_cli(["gateway", "session", "list"], tmp_path=tmp_path)
+    with _unused_port() as port:
+        (navig_dir / "config.yaml").write_text(f"gateway:\n  port: {port}\n")
+        result = _run_cli(["gateway", "session", "list"], tmp_path=tmp_path)
     combined = result.stdout + result.stderr
 
     # The regression this test exists for is the "Invalid URL" CRASH (asserted just
@@ -92,8 +160,9 @@ def test_gateway_session_handles_missing_gateway_without_invalid_url(tmp_path: P
 def test_heartbeat_status_handles_missing_gateway_without_invalid_url(tmp_path: Path):
     navig_dir = tmp_path / ".navig"
     navig_dir.mkdir(exist_ok=True)
-    (navig_dir / "config.yaml").write_text("gateway:\n  port: 58789\n")
-    result = _run_cli(["heartbeat", "status"], tmp_path=tmp_path)
+    with _unused_port() as port:
+        (navig_dir / "config.yaml").write_text(f"gateway:\n  port: {port}\n")
+        result = _run_cli(["heartbeat", "status"], tmp_path=tmp_path)
     combined = result.stdout + result.stderr
 
     assert result.returncode == 0
@@ -166,7 +235,7 @@ def test_domain_launcher_non_tty_exits_cleanly_with_hint(tmp_path: Path, domain:
     """
     result = subprocess.run(
         [sys.executable, "-m", "navig", domain],
-        cwd=ROOT,
+        cwd=_cli_cwd(tmp_path),
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -192,7 +261,7 @@ def test_task_non_tty_exits_cleanly_without_launcher_hint(tmp_path: Path):
     """
     result = subprocess.run(
         [sys.executable, "-m", "navig", "task"],
-        cwd=ROOT,
+        cwd=_cli_cwd(tmp_path),
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -277,7 +346,10 @@ def test_gateway_start_uses_cli_defaults_when_unspecified(monkeypatch):
     # `gateway start` installs a logging StreamHandler on the ROOT logger. Left behind,
     # every later test in this xdist worker gets duplicated log output through it -- and a
     # test asserting on captured output then sees each line twice. Restore the handler list.
-    _root_handlers = list(logging.getLogger().handlers)
+    # Through monkeypatch, so the original list comes back even when startup raises or an
+    # assertion below fails -- a trailing manual restore ran only on the success path.
+    _root = logging.getLogger()
+    monkeypatch.setattr(_root, "handlers", list(_root.handlers))
     # The code under test sets NAVIG_NO_NARRATOR directly, so hand the key to monkeypatch or
     # it survives teardown into every later test in this xdist worker.
     monkeypatch.setenv("NAVIG_NO_NARRATOR", "")
@@ -356,8 +428,6 @@ def test_gateway_start_uses_cli_defaults_when_unspecified(monkeypatch):
     # Startup still claims single-instance ownership — and on the resolved port,
     # not the None it was given.
     assert swept == ["free_port:9911", "supersede"]
-
-    logging.getLogger().handlers[:] = _root_handlers
 
 
 def test_gitignore_is_text_and_covers_rust_targets():

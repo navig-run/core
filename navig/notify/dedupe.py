@@ -14,12 +14,34 @@ and ``changes()`` says whether this caller wrote it.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 
 logger = logging.getLogger("navig.notify.dedupe")
 
 _PREFIX = "dedupe:"
+
+#: An identical notification inside this window is one event reported twice.
+#: Five minutes is longer than any retry burst (the operator's five "💰 Sale —
+#: $19.99" cards all landed inside one minute) and shorter than a genuine repeat —
+#: a second sale, a re-fired reminder or a monitor that alerts again all differ in
+#: a word or a number, and the same words twice inside five minutes is a bug.
+COLLAPSE_WINDOW_S = 300.0
+
+
+def payload_key(namespace: str, *parts: str) -> str:
+    """A claim key for one rendered message, in *namespace* (a channel or route).
+
+    Keying on the payload rather than on a provider event id is what makes this a
+    wall behind every other dedupe: five deliveries that each carry a fresh event
+    id — a retry loop outside our control, two senders with the same token, a
+    producer with a loop, an operator tapping a test button five times — still
+    render the same words, so the fifth copy is stopped even when the first four
+    were not.
+    """
+    digest = hashlib.sha1("\n".join((namespace, *parts)).encode()).hexdigest()[:16]
+    return f"payload:{namespace}:{digest}"
 
 
 def claim(key: str, cooldown_s: float, *, now: float | None = None) -> bool:

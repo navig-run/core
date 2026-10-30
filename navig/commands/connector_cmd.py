@@ -338,12 +338,15 @@ def _prompt_api_key_fields(connector, *, force: bool = False) -> None:
                 or ""
             ).strip()
         else:
-            value = (
-                typer.prompt(
-                    f"{field.label}", default=current or field.placeholder or None
-                )
-                or ""
-            ).strip()
+            # The placeholder is an illustration (`https://xyz.supabase.co`), never a
+            # default: accepting it on Enter stored a fake URL that connect() then
+            # reported as a working connection. It is shown in the prompt text only.
+            prompt = (
+                f"{field.label} ({field.placeholder})"
+                if field.placeholder and not current
+                else f"{field.label}"
+            )
+            value = (typer.prompt(prompt, default=current or "") or "").strip()
         if not value and not field.optional and not (force and current):
             ch.error(f"{field.label} is required to connect this connector.")
             raise typer.Exit(1)

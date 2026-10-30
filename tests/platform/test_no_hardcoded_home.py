@@ -22,6 +22,7 @@ entry also fails, so the list cannot rot into a rubber stamp.
 from __future__ import annotations
 
 import ast
+import textwrap
 from pathlib import Path
 
 import navig
@@ -195,9 +196,34 @@ def _offenders() -> dict[str, list[int]]:
     return found
 
 
+# How many hits each ALLOWED module is reviewed for. The allowlist is per MODULE, so
+# without a count a second `Path.home() / ".navig"` added to an already-exempt file (the
+# large commands/doctor.py or commands/repo.py) would ride in on the first one's reason.
+ALLOWED_HITS: dict[str, int] = {
+    "cli/providers.py": 1,
+    "commands/doctor.py": 2,
+    "commands/quickstart.py": 1,
+    "commands/update.py": 1,
+    "commands/repo.py": 1,
+    "debug_logger.py": 1,
+    "scheduler/habit_store.py": 1,
+    "gateway/channels/telegram_commands.py": 1,
+}
+
+
+def _unexpected_hits(
+    found: dict[str, list[int]], allowed: dict[str, str], budget: dict[str, int]
+) -> dict[str, list[int]]:
+    """Modules not allowed at all, or with more hits than their reviewed count."""
+    return {
+        m: h for m, h in found.items()
+        if m not in allowed or len(h) > budget.get(m, 0)
+    }
+
+
 def test_no_new_hardcoded_home_path() -> None:
     found = _offenders()
-    unexpected = {m: h for m, h in found.items() if m not in ALLOWED}
+    unexpected = _unexpected_hits(found, ALLOWED, ALLOWED_HITS)
     assert not unexpected, (
         "These modules hardcode `Path.home() / \".navig\"`, bypassing NAVIG_CONFIG_DIR.\n"
         "Use navig.platform.paths (config_dir / store_dir / log_dir / …) — it resolves to\n"
@@ -218,6 +244,28 @@ def test_allowlist_has_no_stale_entries() -> None:
     )
 
 
+def test_allowed_hit_counts_are_pinned_and_current() -> None:
+    """Every exemption carries a count, and a fixed hit lowers it (no slack to reuse)."""
+    assert set(ALLOWED_HITS) == set(ALLOWED), (
+        "ALLOWED and ALLOWED_HITS must name the same modules: "
+        f"{sorted(set(ALLOWED) ^ set(ALLOWED_HITS))}"
+    )
+    found = _offenders()
+    slack = sorted(
+        f"{m}: pinned {n}, found {len(found.get(m, []))}"
+        for m, n in ALLOWED_HITS.items()
+        if len(found.get(m, [])) < n
+    )
+    assert not slack, "Lower these ALLOWED_HITS counts:\n" + "\n".join(f"  {s}" for s in slack)
+
+
+def test_a_new_hit_inside_an_allowed_module_is_reported() -> None:
+    """The per-module allowlist must not swallow a second hit in an exempt file."""
+    found = {"commands/doctor.py": [10, 20, 30], "debug_logger.py": [89]}
+    assert _unexpected_hits(found, ALLOWED, ALLOWED_HITS) == {"commands/doctor.py": [10, 20, 30]}
+    assert _unexpected_hits({"debug_logger.py": [89]}, ALLOWED, ALLOWED_HITS) == {}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # The SAME hazard, in the test tree. The `_offenders()` scan above covers only the
 # shipped package; a TEST that reaches for `Path.home() / ".navig"` writes to the
@@ -232,14 +280,15 @@ def test_allowlist_has_no_stale_entries() -> None:
 #
 # The correct pattern for a test that needs the home path is to be HERMETIC: patch
 # `pathlib.Path.home` so it resolves inside the tmp sandbox (see
-# test_autonomous_agent_hermetic). Such files are auto-exempt below. A test that only
+# test_autonomous_agent_hermetic). Such hits are exempt below, scoped to the patching
+# test, class or fixture — never the whole file. A test that only
 # READS the real path (an assertion or a skip-guard, never a write) is benign and is
 # pinned in ALLOWED_TESTS with its reason.
 
 TESTS_ROOT = Path(__file__).resolve().parents[1]  # core/tests
 
-# The string a hermetic test patches to sandbox Path.home for its whole run. Its mere
-# presence in a file means every `Path.home()` there resolves into the tmp dir.
+# The string a hermetic test patches to sandbox Path.home. Its presence in the scope that
+# encloses a `Path.home()` (or a fixture that scope requests) means it resolves into tmp.
 _HOME_PATCH_TARGET = "pathlib.Path.home"
 
 # Test files that reference `Path.home() / ".navig"` but only READ it (== assertions,
@@ -264,14 +313,65 @@ ALLOWED_TESTS: dict[str, str] = {
 
 
 def _patches_home(tree: ast.AST) -> bool:
-    """True if the file patches ``pathlib.Path.home`` — i.e. Path.home() is sandboxed for
-    the whole run, so any ``Path.home()/".navig"`` in it lands in the tmp dir, not the
-    operator's real home. Detected on the AST (a Constant string), so a comment or
-    docstring mentioning the target does not count."""
+    """True if *tree* (a module, function or class node) patches ``pathlib.Path.home``.
+    Detected on the AST (a Constant string), so a comment or docstring mentioning the
+    target does not count."""
     return any(
         isinstance(n, ast.Constant) and n.value == _HOME_PATCH_TARGET
         for n in ast.walk(tree)
     )
+
+
+_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+
+
+def _is_autouse_fixture(node: ast.AST) -> bool:
+    """``@pytest.fixture(autouse=True)`` (any spelling of the decorator name)."""
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return False
+    for dec in node.decorator_list:
+        if isinstance(dec, ast.Call) and any(
+            kw.arg == "autouse" and isinstance(kw.value, ast.Constant) and kw.value.value is True
+            for kw in dec.keywords
+        ):
+            return True
+    return False
+
+
+def _unpatched_home_hits(tree: ast.Module) -> list[int]:
+    """Lines of ``Path.home() / ".navig"`` NOT covered by a ``pathlib.Path.home`` patch.
+
+    The exemption is SCOPED: a hit is hermetic only when an enclosing function/class
+    patches the target, a same-module fixture the enclosing test requests patches it, or a
+    module-level autouse fixture does. One patched test must not exempt an unpatched
+    neighbour in the same file — that would let the neighbour write the real ~/.navig.
+    """
+    fixtures = {
+        n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    if any(_is_autouse_fixture(n) and _patches_home(n) for n in fixtures.values()):
+        return []
+    hits: set[int] = set()
+
+    def visit(node: ast.AST, scopes: tuple[ast.AST, ...]) -> None:
+        if _is_home_navig(node):
+            requested = {
+                a.arg
+                for s in scopes
+                if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))
+                for a in s.args.args + s.args.kwonlyargs
+            }
+            covered = any(_patches_home(s) for s in scopes) or any(
+                name in fixtures and _patches_home(fixtures[name]) for name in requested
+            )
+            if not covered:
+                hits.add(getattr(node, "lineno", 0))
+        inner = (*scopes, node) if isinstance(node, _SCOPES) else scopes
+        for child in ast.iter_child_nodes(node):
+            visit(child, inner)
+
+    visit(tree, ())
+    return sorted(hits)
 
 
 def _test_offenders() -> dict[str, list[int]]:
@@ -283,14 +383,43 @@ def _test_offenders() -> dict[str, list[int]]:
             tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
         except (OSError, UnicodeDecodeError, SyntaxError):  # pragma: no cover
             continue
-        if _patches_home(tree):
-            continue  # hermetic — Path.home() is sandboxed for this file
-        hits = sorted({
-            getattr(n, "lineno", 0) for n in ast.walk(tree) if _is_home_navig(n)
-        })
+        hits = _unpatched_home_hits(tree)
         if hits:
             found[py.relative_to(TESTS_ROOT).as_posix()] = hits
     return found
+
+
+def test_one_patched_test_does_not_exempt_its_unpatched_neighbour() -> None:
+    """REGRESSION: the exemption used to cover the whole FILE once any test patched
+    ``pathlib.Path.home``, so an unpatched sibling could write the real ~/.navig unseen."""
+    src = textwrap.dedent("""\
+        from pathlib import Path
+        from unittest.mock import patch
+        def test_patched(tmp_path):
+            with patch('pathlib.Path.home', return_value=tmp_path):
+                a = Path.home() / '.navig'
+        def test_unpatched():
+            b = Path.home() / '.navig'
+    """)
+    assert _unpatched_home_hits(ast.parse(src)) == [7]
+
+
+def test_a_patching_fixture_covers_the_tests_that_request_it() -> None:
+    """Precision: a requested or autouse fixture that patches the home sandboxes the test."""
+    requested = textwrap.dedent("""\
+        import pytest
+        from pathlib import Path
+        @pytest.fixture
+        def fake_home(monkeypatch, tmp_path):
+            monkeypatch.setattr('pathlib.Path.home', lambda: tmp_path)
+        def test_x(fake_home):
+            Path.home() / '.navig'
+        def test_y():
+            Path.home() / '.navig'
+    """)
+    assert _unpatched_home_hits(ast.parse(requested)) == [9]
+    autouse = requested.replace("@pytest.fixture", "@pytest.fixture(autouse=True)")
+    assert _unpatched_home_hits(ast.parse(autouse)) == []
 
 
 def test_no_new_hardcoded_home_in_tests() -> None:

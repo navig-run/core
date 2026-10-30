@@ -76,3 +76,21 @@ def test_resolve_json_str_falls_back_to_vault(monkeypatch) -> None:
         resolve_json_str(["GOOGLE_APPLICATION_CREDENTIALS"], ["google/vision-service-account"])
         == '{"type":"service_account"}'
     )
+
+
+def test_resolve_json_str_unwraps_a_secretstr_from_the_get_secret_fallback(monkeypatch) -> None:
+    from navig.vault.secret_str import SecretStr
+
+    class _SecretOnlyVault(_FakeVault):
+        def get_secret(self, label: str) -> SecretStr:  # type: ignore[override]
+            return SecretStr(super().get_secret(label))
+
+    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+    monkeypatch.setattr(
+        "navig.vault.core.get_vault",
+        lambda: _SecretOnlyVault(secrets={"google/vision-service-account": '{"a":1}'}),
+    )
+
+    value = resolve_json_str(["GOOGLE_APPLICATION_CREDENTIALS"], ["google/vision-service-account"])
+    assert value == '{"a":1}'
+    assert isinstance(value, str)

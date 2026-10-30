@@ -629,6 +629,7 @@ navig design check
 navig design edit
 navig design tokens save
 navig design tokens show
+navig desktop
 navig desktop ahk
 navig desktop click
 navig desktop crash-chrome
@@ -684,12 +685,6 @@ navig discord status
 navig dispatch send
 navig dispatch status
 navig dispatch threads
-navig display
-navig display bright
-navig display dim
-navig display list
-navig display restore
-navig display set
 navig distribution adapters
 navig distribution analytics
 navig distribution campaign delete
@@ -752,6 +747,7 @@ navig docs
 navig doctor
 navig doctor clean-path
 navig doctor migrate-packs
+navig doctor remote-dev
 navig download analyse
 navig download batch
 navig download comments
@@ -794,9 +790,15 @@ navig email edge send
 navig email edge stats
 navig email edge status
 navig email followup
+navig email graph connect
+navig email graph disconnect
+navig email graph setup
+navig email graph status
+navig email identities
 navig email imap connect
 navig email imap disconnect
 navig email imap status
+navig email imap use
 navig email labels ensure
 navig email labels list
 navig email list
@@ -805,6 +807,21 @@ navig email organize audit
 navig email organize preview
 navig email organize retire
 navig email organize rollback
+navig email otp accept
+navig email otp code
+navig email otp corpus harvest
+navig email otp corpus label
+navig email otp corpus review
+navig email otp corpus score
+navig email otp corpus stats
+navig email otp fill
+navig email otp flows
+navig email otp learn
+navig email otp open
+navig email otp reject
+navig email otp sms
+navig email otp status
+navig email otp templates
 navig email outbox approve
 navig email outbox cancel
 navig email outbox confirm-sent
@@ -1342,6 +1359,11 @@ navig log show
 navig logs
 navig logs run
 navig logs show
+navig mailroom deploy
+navig mailroom init
+navig mailroom rules
+navig mailroom secrets
+navig mailroom status
 navig matrix
 navig matrix accounts
 navig matrix bridge deploy
@@ -1454,6 +1476,7 @@ navig miniapp register
 navig miniapp status
 navig miniapp unregister
 navig miniapp version
+navig missions work
 navig mobile android connect
 navig mobile android fastboot
 navig mobile android logcat
@@ -1871,6 +1894,7 @@ navig recall migrate
 navig recall plans
 navig recall questions
 navig recall reindex
+navig recall resurrect
 navig recall review
 navig recall search
 navig recall sessions
@@ -1958,11 +1982,6 @@ navig signals presets
 navig signals remove
 navig signals rotate
 navig signals test
-navig signing guide
-navig signing readiness
-navig signing sign
-navig signing status
-navig signing verify
 navig skill
 navig skill auto
 navig skill benchmark
@@ -2386,6 +2405,14 @@ navig web recommend
 navig web reload
 navig web test
 navig web vhosts
+navig webflow delete
+navig webflow export
+navig webflow import
+navig webflow list
+navig webflow rollback
+navig webflow run
+navig webflow runs
+navig webflow show
 navig whoami
 navig wiki
 navig wiki add

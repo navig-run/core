@@ -52,8 +52,8 @@ from __future__ import annotations
 
 import codecs
 import functools
-import os
 import subprocess
+import sys
 
 __all__ = ["console_encoding", "decode_console_output", "decode_console_result", "oem_encoding"]
 
@@ -62,7 +62,6 @@ __all__ = ["console_encoding", "decode_console_output", "decode_console_result",
 _WINDOWS_FALLBACK = "oem"
 
 
-@functools.lru_cache(maxsize=1)
 def console_encoding() -> str:
     """The codec a Windows console tool's output is actually written in.
 
@@ -73,12 +72,20 @@ def console_encoding() -> str:
     process has no console at all (``pythonw``, a service) — there is no console code page
     to inherit, the child falls back to the OEM one, and so do we.
 
-    Cached: the code page is a property of the process, and this is called per subprocess.
-
     Non-Windows returns ``"utf-8"``: POSIX console tools honour the locale, which is UTF-8
     on every platform navig supports, and ``"oem"`` does not exist as a codec there.
+
+    The derived answer is cached per platform, not once for the process: a process-wide
+    single slot meant the first caller's answer stuck forever, so one call made while
+    ``sys.platform`` was stood in for Windows left a POSIX process decoding with ``"oem"``
+    (``LookupError: unknown encoding: oem``, measured in the whole-suite run of 2026-10-30).
     """
-    if os.name != "nt":
+    return _console_encoding_for(sys.platform)
+
+
+@functools.lru_cache(maxsize=4)
+def _console_encoding_for(platform: str) -> str:
+    if platform != "win32":
         return "utf-8"
 
     code_page = 0
@@ -145,7 +152,7 @@ def decode_console_output(raw: bytes | str | None) -> str:
 def oem_encoding() -> str:
     """The OEM code page as a codec name (``cp866``…) — what a console tool that ignores the
     console page writes. ``utf-8`` off Windows; the ``oem`` alias when it cannot be read."""
-    if os.name != "nt":
+    if sys.platform != "win32":
         return "utf-8"
     try:
         import ctypes  # noqa: PLC0415

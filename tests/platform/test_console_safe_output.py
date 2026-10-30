@@ -17,10 +17,21 @@ unstyled.
 from __future__ import annotations
 
 import io
+import sys
 
+import pytest
 from rich.console import Console
 
 from navig.console_helper import _make_safe_console
+
+# rich ships the legacy Win32 terminal and renderer as Windows-only modules; importing
+# them elsewhere raises ImportError at import time, and on POSIX rich never selects that
+# renderer at all. The containment they exercise is the same code path the POSIX tests in
+# this file already drive through `_ExplodingStream` (2026-10-30, outpost).
+_windows_only = pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="rich's legacy Windows terminal/renderer only exists on win32",
+)
 
 
 class _ExplodingStream:
@@ -116,6 +127,7 @@ def _force_legacy_render(monkeypatch):
     return calls
 
 
+@_windows_only
 def test_legacy_windows_renderer_failure_is_contained(monkeypatch) -> None:
     """The exact frame from the crash dumps: legacy_windows_render raises OSError 22."""
     calls = _force_legacy_render(monkeypatch)
@@ -133,6 +145,7 @@ def test_legacy_windows_renderer_failure_is_contained(monkeypatch) -> None:
     )
 
 
+@_windows_only
 def test_class_guard_covers_foreign_consoles(monkeypatch) -> None:
     """typer builds its OWN Console for --help; the class-level guard must cover it.
 

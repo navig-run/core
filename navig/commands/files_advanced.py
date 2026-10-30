@@ -28,9 +28,11 @@ def delete_file_cmd(remote: str, options: dict[str, Any]):
     server_name = require_active_server(options, config_manager)
 
     # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
-    from navig.core import host_lock  # noqa: PLC0415
+    # A --dry-run preview mutates nothing, so it must not hold the host lock either.
+    if not options.get("dry_run"):
+        from navig.core import host_lock  # noqa: PLC0415
 
-    host_lock.guard_remote(config_manager, server_name, f"navig file remove: {remote}")
+        host_lock.guard_remote(config_manager, server_name, f"navig file remove: {remote}")
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -129,9 +131,11 @@ def mkdir_cmd(remote: str, options: dict[str, Any]):
     server_name = require_active_server(options, config_manager)
 
     # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
-    from navig.core import host_lock  # noqa: PLC0415
+    # A --dry-run preview mutates nothing, so it must not hold the host lock either.
+    if not options.get("dry_run"):
+        from navig.core import host_lock  # noqa: PLC0415
 
-    host_lock.guard_remote(config_manager, server_name, f"navig file mkdir: {remote}")
+        host_lock.guard_remote(config_manager, server_name, f"navig file mkdir: {remote}")
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -199,9 +203,11 @@ def chmod_cmd(remote: str, mode: str, options: dict[str, Any]):
     server_name = require_active_server(options, config_manager)
 
     # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
-    from navig.core import host_lock  # noqa: PLC0415
+    # A --dry-run preview mutates nothing, so it must not hold the host lock either.
+    if not options.get("dry_run"):
+        from navig.core import host_lock  # noqa: PLC0415
 
-    host_lock.guard_remote(config_manager, server_name, f"navig file edit --mode: {remote}")
+        host_lock.guard_remote(config_manager, server_name, f"navig file edit --mode: {remote}")
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -272,9 +278,11 @@ def chown_cmd(remote: str, owner: str, options: dict[str, Any]):
     server_name = require_active_server(options, config_manager)
 
     # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
-    from navig.core import host_lock  # noqa: PLC0415
+    # A --dry-run preview mutates nothing, so it must not hold the host lock either.
+    if not options.get("dry_run"):
+        from navig.core import host_lock  # noqa: PLC0415
 
-    host_lock.guard_remote(config_manager, server_name, f"navig file edit --owner: {remote}")
+        host_lock.guard_remote(config_manager, server_name, f"navig file edit --owner: {remote}")
 
     server_config = config_manager.load_server_config(server_name)
 

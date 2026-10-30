@@ -27,6 +27,19 @@ def controller(monkeypatch):
     return c
 
 
+class _LauncherCorpse:
+    """The handle of a launcher that already exited — what ``self._proc`` usually is."""
+
+    def terminate(self):
+        pass
+
+    def wait(self, timeout=None):
+        return 0
+
+    def kill(self):
+        pass
+
+
 def test_it_kills_the_real_browser_not_only_the_handle(controller, monkeypatch):
     resolved: list[tuple] = []
     killed: list[int] = []
@@ -34,6 +47,7 @@ def test_it_kills_the_real_browser_not_only_the_handle(controller, monkeypatch):
                         lambda port, udd, **kw: resolved.append((port, udd)) or [4242])
     monkeypatch.setattr(t, "_terminate_pid", lambda pid: killed.append(pid) or True)
 
+    controller._proc = _LauncherCorpse()
     controller._terminate_proc()
 
     assert resolved == [(9333, r"C:\Users\x\.navig\hardened\userdata")]
@@ -47,6 +61,7 @@ def test_it_refuses_to_sweep_when_it_cannot_attribute(controller, monkeypatch):
     monkeypatch.setattr(t, "_debug_browser_pids",
                         lambda port, udd, **kw: resolved.append((port, udd)) or [])
     controller._user_data_dir = ""  # nothing to attribute with
+    controller._proc = _LauncherCorpse()
     controller._terminate_proc()
     assert resolved == []
 
@@ -100,3 +115,13 @@ def test_terminate_is_a_noop_when_nothing_was_launched(controller, monkeypatch):
     monkeypatch.setattr(t, "_debug_browser_pids", lambda *a, **k: [])
     controller._terminate_proc()  # must not raise
     assert controller._proc is None
+
+
+def test_stop_on_a_never_started_controller_kills_nothing(controller, monkeypatch):
+    """Review F1897: with no launch, the default port + profile scan found — and killed — a
+    hardened browser another controller owns (e.g. cleanup after ensure_hardened() failed)."""
+    killed: list[int] = []
+    monkeypatch.setattr(t, "_debug_browser_pids", lambda *a, **k: [4242])
+    monkeypatch.setattr(t, "_terminate_pid", lambda pid: killed.append(pid) or True)
+    controller._terminate_proc()
+    assert killed == []

@@ -656,6 +656,7 @@ def habit_checkin(
     # one has scrolled out of reach by lunch, and the marks made since belong on it.
     morning = morning or midday
     text, keyboard = habit_actions.build_card(path, day, morning=morning)
+    rich, _ = habit_actions.build_card_rich(path, day, morning=morning)
 
     if not send:
         plain = text.replace("<b>", "").replace("</b>", "")
@@ -680,16 +681,30 @@ def habit_checkin(
         return
 
     try:
-        result = _api_call(
-            _load_telegram_token(),
-            "sendMessage",
-            {
-                "chat_id": target,
-                "text": text,
-                "parse_mode": "HTML",
-                "reply_markup": keyboard,
-            },
-        )
+        # Rich first: the card carries a real task list and headings there. A Bot
+        # API server that does not know sendRichMessage answers "unknown method",
+        # so the plain body — the one that always parses — is the fallback.
+        try:
+            result = _api_call(
+                _load_telegram_token(),
+                "sendRichMessage",
+                {
+                    "chat_id": target,
+                    "rich_message": {"html": rich},
+                    "reply_markup": keyboard,
+                },
+            )
+        except Exception:  # noqa: BLE001 — any refusal falls back to plain
+            result = _api_call(
+                _load_telegram_token(),
+                "sendMessage",
+                {
+                    "chat_id": target,
+                    "text": text,
+                    "parse_mode": "HTML",
+                    "reply_markup": keyboard,
+                },
+            )
     except Exception as exc:  # noqa: BLE001
         ch.error("Could not send the check-in card.", str(exc))
         raise typer.Exit(1) from exc
@@ -707,10 +722,37 @@ def habit_checkin(
         if midday:
             _delete_morning_card(int(target), _api_call, _load_telegram_token())
         habit_tracker.remember_morning(int(target), int(new_id), day)
+        # One card per day: yesterday's verdict has been read by now, and the new
+        # morning card takes its place. Skipped for the midday repost (same day).
+        if not midday:
+            _delete_closing_card(int(target), _api_call, _load_telegram_token(), keep_day=day)
 
     label = "Midday" if midday else ("Morning" if morning else "Check-in")
     ch.success(f"{label} card sent to {target}.")
     ch.dim(f"{path}")
+
+
+def _delete_closing_card(
+    target: int, api_call: Any, token: str, *, keep_day: str | None = None
+) -> bool:
+    """Delete the recorded closing card unless it belongs to *keep_day*.
+
+    Closing edits the check-in card in place, so tonight the chat holds one
+    message: today's verdict. The next morning that message is yesterday's news and
+    the fresh card replaces it. A card the bot cannot delete (already gone, past
+    the 48-hour limit) loses its pointer anyway so it is never retried."""
+    message_id, day = habit_tracker.closing_card(target)
+    if message_id is None:
+        return False
+    if keep_day is not None and day == keep_day:
+        return False
+    ok = False
+    try:
+        ok = bool(api_call(token, "deleteMessage", {"chat_id": target, "message_id": message_id}))
+    except Exception as exc:  # noqa: BLE001
+        ch.dim(f"Could not delete the closing card {message_id} ({exc}).")
+    habit_tracker.forget_closing(target)
+    return ok
 
 
 def _delete_morning_card(target: int, api_call: Any, token: str) -> bool:
@@ -770,13 +812,18 @@ def _close_day(path: Path, day: str, chat_id: int | None) -> None:
         return
 
     text = habit_actions.build_closing_text(path, day)
+    rich = habit_actions.build_closing_rich(path, day)
     message_id, card_day = habit_tracker.last_card(target)
 
     from navig.telegram.api import _api_call, _load_telegram_token
 
     token = _load_telegram_token()
-    edited = False
+    closed_id: int | None = None
     if message_id and card_day == day:
+        # Rich first: the verdict carries a task list and a pull quote in a rich
+        # chat, and editMessageText takes rich_message since Bot API 10.1. The
+        # plain body is the fallback — rich-only block tags make a classic
+        # sendMessage fail to parse, so they are never mixed.
         try:
             _api_call(
                 token,
@@ -784,24 +831,55 @@ def _close_day(path: Path, day: str, chat_id: int | None) -> None:
                 {
                     "chat_id": target,
                     "message_id": message_id,
-                    "text": text,
-                    "parse_mode": "HTML",
+                    "rich_message": {"html": rich},
                     "reply_markup": {"inline_keyboard": []},
                 },
             )
-            edited = True
+            closed_id = int(message_id)
         except Exception as exc:  # noqa: BLE001
-            # Editing fails when the card was deleted or is too old to edit. That is
-            # not a reason to leave the day unsettled — fall through and post it.
-            ch.dim(f"Could not edit the card ({exc}); sending the verdict instead.")
+            ch.dim(f"Could not edit the card richly ({exc}); trying the plain body.")
+            try:
+                _api_call(
+                    token,
+                    "editMessageText",
+                    {
+                        "chat_id": target,
+                        "message_id": message_id,
+                        "text": text,
+                        "parse_mode": "HTML",
+                        "reply_markup": {"inline_keyboard": []},
+                    },
+                )
+                closed_id = int(message_id)
+            except Exception as plain_exc:  # noqa: BLE001
+                # Editing fails when the card was deleted or is too old to edit. That
+                # is not a reason to leave the day unsettled — post the verdict.
+                ch.dim(f"Could not edit the card ({plain_exc}); sending the verdict instead.")
 
-    if not edited:
+    if closed_id is None:
         try:
-            _api_call(token, "sendMessage", {"chat_id": target, "text": text, "parse_mode": "HTML"})
-        except Exception as exc:  # noqa: BLE001
-            ch.error("Could not close the day.", str(exc))
-            raise typer.Exit(1) from exc
+            posted = _api_call(
+                token,
+                "sendRichMessage",
+                {"chat_id": target, "rich_message": {"html": rich}},
+            )
+            closed_id = (posted.get("result") or {}).get("message_id")
+        except Exception:  # noqa: BLE001 — a server without rich messages
+            try:
+                posted = _api_call(
+                    token,
+                    "sendMessage",
+                    {"chat_id": target, "text": text, "parse_mode": "HTML"},
+                )
+                closed_id = (posted.get("result") or {}).get("message_id")
+            except Exception as exc:  # noqa: BLE001
+                ch.error("Could not close the day.", str(exc))
+                raise typer.Exit(1) from exc
 
+    # Remember which message now holds the verdict so the morning can delete it.
+    # The chat keeps one card per day: tonight's verdict, tomorrow's fresh card.
+    if closed_id is not None:
+        habit_tracker.remember_closing(target, int(closed_id), day)
     habit_tracker.mark_day_closed(target, day)
     ch.success(f"{day} closed.")
 
@@ -881,6 +959,18 @@ def habit_spark(
     if not send:
         ch.console.print(f"\n[dim]{chosen or 'ambient'}[/dim]\n{line}\n")
         ch.dim("Send it with: navig habit spark --send")
+        return
+
+    # Same gate as `habit checkin`: the cron-driven --send writes to Telegram
+    # directly, so "Habits off" has to be honoured here too.
+    from navig.gateway.channels.telegram_extensions import is_enabled
+
+    if not is_enabled("habits"):
+        ch.warning(
+            "Nothing sent — the Habits extension is off.",
+            "Turn it on with /extensions in Telegram, or: "
+            "navig telegram extensions enable habits",
+        )
         return
 
     if not target:

@@ -37,8 +37,9 @@ def _find_project_navig_root(cwd: Path) -> Path | None:
 logger = logging.getLogger(__name__)
 
 
-def _registered_path(canonical: str) -> Path | None:
-    """The registry's CANONICAL path for a canonical id, when it still exists on disk.
+def _registered_path(canonical: str) -> tuple[Path, str] | None:
+    """The registry's CANONICAL path for a canonical id, when it still exists on disk,
+    with the scope discovery would give that row (``"root"`` rows are ``"global"``).
 
     A cheap file read instead of a discovery walk — worth ~0.33s per miss. Legacy
     duplicates (worktree rows) resolve through ``canonical_row_for_id``, so the answer
@@ -53,10 +54,43 @@ def _registered_path(canonical: str) -> Path | None:
             return None
         candidate = Path(str(row.get("path", "")))
         if candidate.is_dir():
-            return candidate
+            source = str(row.get("source") or "external")
+            return candidate, ("global" if source == "root" else source)
     except Exception:  # noqa: BLE001 — an unreadable registry must not break resolution
         logger.debug("registry lookup failed for %r", canonical)
     return None
+
+
+def _project_claims_id(project_navig: Path, canonical: str) -> bool:
+    """True when a PROJECT-scope folder's manifest claims *canonical*.
+
+    The registry fast path below returns whichever row ``canonical_row_for_id`` picks,
+    and discovery registers global spaces first — so a project space sharing a manifest
+    id with a global one (folder names differing from the id) would always resolve to
+    the global folder. Discovery is what applies project precedence, so a project claim
+    sends resolution there instead. Cheap: one directory listing plus manifest reads.
+    """
+    from navig.spaces.space_manifest import load_space_manifest  # noqa: PLC0415
+
+    candidates: list[Path] = []
+    container = project_navig / "spaces"
+    try:
+        if container.is_dir():
+            candidates.extend(
+                c for c in container.iterdir() if c.is_dir() and not c.name.startswith(".")
+            )
+    except OSError:
+        pass
+    if _project_has_content(project_navig.parent):
+        candidates.append(project_navig.parent)
+    for entry in candidates:
+        try:
+            man = load_space_manifest(entry)
+        except Exception:  # noqa: BLE001 — an unreadable manifest is not a claim
+            continue
+        if normalize_space_name(man.resolved_id or entry.name) == canonical:
+            return True
+    return False
 
 
 def resolve_space(name: str, cwd: Path | None = None) -> SpaceConfig:
@@ -66,7 +100,7 @@ def resolve_space(name: str, cwd: Path | None = None) -> SpaceConfig:
     project_navig = _find_project_navig_root(current_dir)
     if project_navig is not None:
         project_space = project_navig / "spaces" / canonical
-        if project_space.exists():
+        if project_space.is_dir():
             return SpaceConfig(
                 requested_name=name,
                 canonical_name=canonical,
@@ -75,7 +109,7 @@ def resolve_space(name: str, cwd: Path | None = None) -> SpaceConfig:
             )
 
     global_space = paths.spaces_dir() / canonical
-    if global_space.exists():
+    if global_space.is_dir():
         return SpaceConfig(
             requested_name=name,
             canonical_name=canonical,
@@ -89,13 +123,17 @@ def resolve_space(name: str, cwd: Path | None = None) -> SpaceConfig:
     # below is returned for a directory that does not exist — measured at 18 of 19 on a
     # real install, which made `space next`, progress and kickoff answer "nothing here"
     # for all of them. Only reached when neither exact path is on disk.
-    registered = _registered_path(canonical)
+    registered = None
+    if project_navig is None or not _project_claims_id(project_navig, canonical):
+        registered = _registered_path(canonical)
     if registered is not None:
+        # The row's own source, as discovery labels it: an external, plugin or
+        # project space resolved here used to be reported as "global".
         return SpaceConfig(
             requested_name=name,
             canonical_name=canonical,
-            path=registered,
-            scope="global",
+            path=registered[0],
+            scope=registered[1],
         )
 
     try:

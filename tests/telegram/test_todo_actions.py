@@ -420,3 +420,92 @@ def test_the_list_links_to_the_agenda_and_reminders(store: BoardStore) -> None:
     _, keyboard = todo_actions.build_view("all", now=NOW)
     datas = [b["callback_data"] for row in keyboard["inline_keyboard"] for b in row]
     assert "ag:v" in datas and "rv:v" in datas
+
+
+# ── the pager and the way out ────────────────────────────────────────────────
+
+def test_the_detail_card_pages_through_the_open_tasks(store: BoardStore) -> None:
+    first = todo_actions.capture("Renew the domain", now=NOW)
+    todo_actions.capture("Call the accountant", now=NOW)
+    assert first is not None
+    ids = todo_actions.open_ids(store)
+    assert ids[0] == first["id"]
+
+    _card, keyboard = todo_actions.detail_view(first["id"], now=NOW)  # type: ignore[misc]
+    rows = keyboard["inline_keyboard"]
+    assert [cell["text"] for cell in rows[0]] == ["◀", f"1 / {len(ids)}", "▶"]
+    # The first task cannot step back, and the greyed cell answers its own press.
+    assert rows[0][0]["disabled"] == {}
+    assert rows[0][2]["callback_data"] == f"td:n:{first['id']}"
+
+
+def test_the_pager_carries_the_card_it_was_drawn_for(store: BoardStore) -> None:
+    first = todo_actions.capture("First", now=NOW)
+    second = todo_actions.capture("Second", now=NOW)
+    assert first and second
+    _card, keyboard = todo_actions.detail_view(second["id"], now=NOW)  # type: ignore[misc]
+    pager = keyboard["inline_keyboard"][0]
+    assert pager[0]["callback_data"] == f"td:b:{second['id']}"
+    assert pager[2]["disabled"] == {}
+
+
+def test_one_task_needs_no_pager(store: BoardStore) -> None:
+    only = todo_actions.capture("Only one", now=NOW)
+    assert only is not None
+    _card, keyboard = todo_actions.detail_view(only["id"], now=NOW)  # type: ignore[misc]
+    assert keyboard["inline_keyboard"][0][0]["text"] != "◀"
+
+
+def test_close_is_the_last_row_and_carries_the_prefix(store: BoardStore) -> None:
+    only = todo_actions.capture("Only one", now=NOW)
+    assert only is not None
+    _card, keyboard = todo_actions.detail_view(only["id"], now=NOW)  # type: ignore[misc]
+    assert keyboard["inline_keyboard"][-1] == [{"text": "✕ Close", "callback_data": "td:close"}]
+
+
+async def test_the_next_press_opens_the_next_task(store: BoardStore) -> None:
+    first = todo_actions.capture("First", now=NOW)
+    second = todo_actions.capture("Second", now=NOW)
+    assert first and second
+    channel = _Channel()
+
+    await tap(channel, f"td:n:{first['id']}")
+
+    method, payload = channel.calls[-1]
+    assert method == "editMessageText"
+    assert "Second" in payload["text"]
+    assert payload["reply_markup"]["inline_keyboard"][0][1]["text"].endswith("2")
+
+
+async def test_the_previous_press_opens_the_previous_task(store: BoardStore) -> None:
+    first = todo_actions.capture("First", now=NOW)
+    second = todo_actions.capture("Second", now=NOW)
+    assert first and second
+    channel = _Channel()
+
+    await tap(channel, f"td:b:{second['id']}")
+
+    assert "First" in channel.last_text
+
+
+async def test_stepping_past_the_end_changes_nothing(store: BoardStore) -> None:
+    first = todo_actions.capture("First", now=NOW)
+    second = todo_actions.capture("Second", now=NOW)
+    assert first and second
+    channel = _Channel()
+
+    assert await tap(channel, f"td:n:{second['id']}") == ""
+    assert channel.calls == []
+
+
+async def test_close_settles_the_card_instead_of_leaving_buttons_live(store: BoardStore) -> None:
+    todo = todo_actions.capture("Call the accountant", now=NOW)
+    assert todo is not None
+    channel = _Channel()
+
+    assert await tap(channel, f"td:z:{todo['id']}") == ""
+
+    method, payload = channel.calls[-1]
+    assert method == "editMessageText"
+    assert payload["text"] == "<i>✕ Call the accountant</i>"
+    assert payload["reply_markup"] == {"inline_keyboard": []}

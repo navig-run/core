@@ -114,6 +114,9 @@ _ADAPTER_STR_KEYS: dict[str, frozenset[str]] = {
 }
 
 
+from navig.telegram.config import require_auth_enabled
+
+
 def _extension_of(entry) -> str | None:
     """Extension id owning a slash-command registry entry (None if unresolved)."""
     try:
@@ -296,6 +299,11 @@ async def handle_deck_social_telegram_get(request: "web.Request") -> "web.Respon
     payload.setdefault("mode", "polling")
     payload.setdefault("typing_mode", "instant")
     payload.setdefault("require_auth", True)
+    # Read side of the same rule the bot enforces: the raw value can be the
+    # string "false" (off) or "" (unset = on), and NAVIG OS renders it
+    # straight into its Require-auth switch, so coerce here or the switch
+    # disagrees with the bot.
+    payload["require_auth"] = require_auth_enabled(payload.get("require_auth"))
     payload.setdefault("reactions_enabled", True)
     payload.setdefault("inline_mode_enabled", True)
     payload.setdefault("checklist_enabled", False)   # opt-in; see telegram_checklist.py

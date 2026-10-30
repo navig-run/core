@@ -271,6 +271,16 @@ async def test_business_link_also_wraps_music_offer_links(cfg, monkeypatch):
 # ── seam 3: the button tap ───────────────────────────────────────────────────
 
 
+async def _drain_taps():
+    """The tap runs off the update loop; wait for it before asserting."""
+    import asyncio
+
+    from navig.core import background
+
+    tasks = [t for t in background._bg_tasks if t.get_name() == "tiktok-callback"]
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+
 async def test_button_tap_carries_the_connection_id(monkeypatch):
     from navig.gateway.channels.telegram_keyboards import CallbackHandler
 
@@ -295,6 +305,7 @@ async def test_button_tap_carries_the_connection_id(monkeypatch):
         },
         "from": {"id": 159901607},
     })
+    await _drain_taps()
 
     assert isinstance(captured.get("channel"), b.BusinessSender), (
         "a tk: tap on a business-chat card reached handle_callback without the "
@@ -330,5 +341,65 @@ async def test_button_tap_in_a_normal_chat_stays_the_raw_channel(monkeypatch):
         },
         "from": {"id": 42},
     })
+    await _drain_taps()
 
     assert captured.get("channel") is raw
+
+
+async def test_a_second_tap_is_refused_while_the_first_worker_runs(monkeypatch):
+    """Long polling awaits each update in turn. With the worker awaited inline, the
+    second tap was only processed after the first had released its in-flight slot
+    — so it started the duplicate download the slot exists to stop."""
+    import asyncio
+
+    from navig.gateway.channels.telegram_keyboards import CallbackHandler
+
+    started: list[int] = []
+    gate = asyncio.Event()
+
+    async def slow(channel, chat_id, url):
+        started.append(chat_id)
+        await gate.wait()
+
+    monkeypatch.setattr(tiktok_actions.permissions, "can_use", lambda *a, **kw: True)
+    monkeypatch.setattr(tiktok_actions, "_worker_for", lambda action: slow)
+    monkeypatch.setattr(tiktok_actions.engine, "extract_url", lambda t: _LINK)
+    tiktok_actions._IN_FLIGHT.clear()
+    raw = AsyncMock()
+    handler = CallbackHandler(raw)
+    update = {"id": "cb3", "data": "tk:dl:100:5",
+              "message": {"chat": {"id": 100}, "message_id": 5,
+                          "reply_to_message": {"text": _LINK}},
+              "from": {"id": 42}}
+    try:
+        # Each handle() returns at once, as the update loop needs it to.
+        await asyncio.wait_for(handler.handle(update), timeout=2)
+        await asyncio.sleep(0)
+        await asyncio.wait_for(handler.handle({**update, "id": "cb4"}), timeout=2)
+        await asyncio.sleep(0)
+        gate.set()
+        await _drain_taps()
+    finally:
+        tiktok_actions._IN_FLIGHT.clear()
+    assert started == [100], "the second tap started the worker again"
+    busy = [c for c in raw.send_message.call_args_list if tiktok_actions._t("tiktok.busy") in c.args]
+    assert busy, raw.send_message.call_args_list
+
+
+async def test_an_album_in_a_business_chat_carries_the_connection_id():
+    """`send_media_group` fell through `__getattr__` to the raw channel, so a
+    business-chat slideshow album went out without the bcid, was rejected and
+    fell back to single photos (PR #2009 review)."""
+    base = AsyncMock()
+    sender = b.BusinessSender(base, "bc7")
+    await sender.send_media_group(5, [b"a", b"b"], caption="slides")
+    base.send_media_group.assert_awaited_once_with(
+        5, [b"a", b"b"], caption="slides", business_connection_id="bc7")
+
+    ch = _wire_channel()
+    sess = _Session()
+    ch._session = sess
+    await ch.send_media_group(429106811, [b"\x00", b"\x01"], business_connection_id="bc1")
+    assert sess.url.endswith("/sendMediaGroup")
+    assert _form_value(sess.form, "chat_id") == "429106811"
+    assert _form_value(sess.form, "business_connection_id") == "bc1"

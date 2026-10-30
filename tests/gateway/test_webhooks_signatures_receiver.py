@@ -348,6 +348,37 @@ class TestWebhookReceiver:
         finally:
             del os.environ["TEST_WEBHOOK_SECRET"]
 
+    def test_source_level_secret_is_used(self):
+        # `webhooks.sources.<name>.secret` is a supported shape (review F0472): dropping it
+        # made every signed callback a 500 "Source misconfigured: no secret".
+        from navig.webhooks.receiver import WebhookReceiver
+        r = WebhookReceiver({
+            "webhooks": {
+                "sources": {
+                    "github": {
+                        "enabled": True,
+                        "secret": "src-secret",
+                        "signature_header": "X-Hub-Signature-256",
+                    }
+                }
+            }
+        })
+        cfg = r._sources["github"]
+        assert cfg.secret == "src-secret"
+        body = b'{"zen": "ok"}'
+        sig = "sha256=" + hmac.new(b"src-secret", body, hashlib.sha256).hexdigest()
+        assert r._verify_signature("github", body, {"X-Hub-Signature-256": sig}, cfg) is True
+
+    def test_secrets_dict_wins_over_source_level_secret(self):
+        from navig.webhooks.receiver import WebhookReceiver
+        r = WebhookReceiver({
+            "webhooks": {
+                "secrets": {"github": "top"},
+                "sources": {"github": {"secret": "local"}},
+            }
+        })
+        assert r._sources["github"].secret == "top"
+
     def test_recent_events_starts_empty(self):
         from navig.webhooks.receiver import WebhookReceiver
         r = WebhookReceiver()

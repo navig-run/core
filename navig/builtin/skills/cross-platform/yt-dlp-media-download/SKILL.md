@@ -18,6 +18,9 @@ examples:
   - "What formats are available for this video?"
   - "Download a playlist"
   - "Get video metadata without downloading"
+# Written against a planned command surface that is not implemented yet
+# (KNOWN_MISSING in tests/quality/test_content_command_refs_resolve.py).
+activatable: false
 ---
 
 # yt-dlp Media Downloader

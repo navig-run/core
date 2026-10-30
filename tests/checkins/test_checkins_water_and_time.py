@@ -213,3 +213,12 @@ def test_project_indexer_never_ingests_the_checkins_record():
 
     assert not pi._is_indexable("health/checkins.jsonl")
     assert "checkins.jsonl" in pi.DEFAULT_EXCLUDES
+
+
+def test_water_total_floors_each_adjustment_so_a_big_undo_cannot_eat_the_next_glass():
+    """`checkin log water --glasses -5` over a total of 1 must not hide the next +1."""
+    from navig.checkins import records
+
+    day = "2026-10-25"
+    rows = [{"item": "water", "date": day, "status": records.ADD, "value": v} for v in (1, -5, 1)]
+    assert records.count_total(rows, "water", day) == 1

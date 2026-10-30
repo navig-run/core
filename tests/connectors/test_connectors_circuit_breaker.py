@@ -323,3 +323,38 @@ class TestProbeDiagnostics:
         assert cb.to_dict()["probe_in_flight"] is True
         cb.record_success()
         assert cb.to_dict()["probe_in_flight"] is False
+
+    def test_to_dict_expires_an_abandoned_probe(self):
+        # An unreported probe past its lease is treated as abandoned by
+        # allow_request(); the diagnostic must agree instead of reading
+        # "in flight" forever after a cancelled task.
+        cb = _cb(threshold=1, recovery=30.0)
+        cb.record_failure()
+        cb._last_failure_time -= 31.0
+        assert cb.allow_request() is True
+        assert cb.to_dict()["probe_in_flight"] is True
+        cb._probe_started_at -= 31.0
+        assert cb.to_dict()["probe_in_flight"] is False
+
+
+class TestZeroRecoveryTimeout:
+    def test_zero_timeout_still_admits_one_probe_at_a_time(self):
+        # recovery_timeout=0 promotes OPEN -> HALF_OPEN immediately; the probe
+        # reservation must still be exclusive, or every caller is admitted.
+        cb = _cb(threshold=1, recovery=0.0)
+        cb.record_failure()
+        assert cb.state is CircuitState.HALF_OPEN
+        assert cb.allow_request() is True
+        assert cb.allow_request() is False
+        assert cb.to_dict()["probe_in_flight"] is True
+        cb.record_failure()
+        assert cb.allow_request() is True  # fresh probe after the report
+        cb.record_success()
+        assert cb.state is CircuitState.CLOSED
+
+    def test_zero_timeout_abandoned_probe_still_expires(self):
+        cb = _cb(threshold=1, recovery=0.0)
+        cb.record_failure()
+        assert cb.allow_request() is True
+        cb._probe_started_at -= 2.0  # past the lease floor
+        assert cb.allow_request() is True

@@ -56,6 +56,18 @@ def test_the_review_written_into_a_day_is_not_read_as_that_days_entry(tracker):
     assert all("MODEL OUTPUT" not in b for b in bodies)
 
 
+def test_a_markdown_subheading_inside_an_entry_is_part_of_the_entry(tracker):
+    """Entries are free-form and written verbatim; an operator's own `## Work` used to
+    end the section, dropping itself and everything after it from the reflection."""
+    text = "Good day overall.\n\n## Work\nShipped the release.\n\n## Home\nCooked."
+    journal.append_entry(tracker, "2026-09-13", text)
+    journal.append_block(
+        tracker, "2026-09-13", "## Review — 7–13 September\n\nMODEL OUTPUT MUST NOT LEAK\n"
+    )
+
+    assert journal.entry_bodies(tracker, "2026-09-13") == [text]
+
+
 def test_two_entries_on_one_day_read_as_one_piece(tracker):
     journal.append_entry(tracker, "2026-09-08", "Long morning.")
     journal.append_entry(tracker, "2026-09-08", "Forgot: called mum.")
@@ -398,3 +410,31 @@ async def test_a_failing_weekly_read_back_costs_nothing_already_sent(tracker, mo
     )  # must not raise
 
     assert len(ch.sent) == 1 and "<reflect>" in ch.sent[0]
+
+
+# ── the switches are read live ───────────────────────────────────────────────
+
+
+class _StaleSnapshotCM:
+    """`get` serves the daemon's startup snapshot; `get_live` what config.yaml says now."""
+
+    def __init__(self, snapshot: dict, on_disk: dict):
+        self.snapshot, self.on_disk = snapshot, on_disk
+
+    def get(self, key, default=None):
+        return self.snapshot.get(key, default)
+
+    def get_live(self, key, default=None):
+        return self.on_disk.get(key, default)
+
+
+def test_turning_reflection_off_takes_effect_without_a_restart(monkeypatch):
+    cm = _StaleSnapshotCM({"journal.reflect": True}, {"journal.reflect": "false"})
+    monkeypatch.setattr("navig.config.get_config_manager", lambda: cm)
+    assert journal_reflection.is_enabled() is False
+
+
+def test_a_new_journal_model_takes_effect_without_a_restart(monkeypatch):
+    cm = _StaleSnapshotCM({}, {"journal.model": "ollama:llama3"})
+    monkeypatch.setattr("navig.config.get_config_manager", lambda: cm)
+    assert journal_reflection.model_override() == "ollama:llama3"

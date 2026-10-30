@@ -28,6 +28,9 @@ import csv
 import io
 import os
 import re
+import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -180,8 +183,9 @@ def write_metrics(
       we are about to write, the write is refused unless *allow_shrink* is set.
       Every normal operation here is an upsert, which can only keep the row count
       the same or add one; a shrink means a read returned less than the truth and
-      we are one ``os.replace`` away from destroying the record. ``navig body
-      log --undo`` is the one legitimate shrink and passes the flag.
+      we are one ``os.replace`` away from destroying the record. No command
+      shrinks the record today; the flag is for an explicit removal path, which
+      must pass it deliberately.
     """
     if not allow_shrink and path.exists():
         try:
@@ -211,6 +215,63 @@ def write_metrics(
     atomic_write_text(path, buf.getvalue(), encoding="utf-8")
 
 
+@contextmanager
+def _metrics_lock(path: Path) -> Iterator[None]:
+    """Serialise one read-modify-write of *path* across processes.
+
+    The CLI, the gateway and the deck all upsert the same file. Without a lock
+    two writers read the same snapshot, each change one cell, and the later
+    ``os.replace`` silently drops the earlier change — the row count is equal,
+    so the shrink guard in :func:`write_metrics` cannot see it. Same pattern as
+    the spaces registry lock; a lock that cannot be taken degrades to the old
+    unlocked write rather than failing the measurement.
+
+    The lock file lives in the NAVIG data dir, keyed by the resolved path, not
+    beside the CSV: a space folder is often a git repo, and a stray
+    ``metrics.csv.lock`` there would be one more file to commit or ignore.
+    """
+    handle = None
+    try:
+        import hashlib  # noqa: PLC0415
+
+        from navig.platform import paths  # noqa: PLC0415
+
+        key = hashlib.sha256(os.path.normcase(str(path.resolve())).encode("utf-8"))
+        lock_path = paths.data_dir() / "locks" / f"metrics-{key.hexdigest()[:16]}.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(lock_path, "a+b")  # noqa: SIM115 — held for the critical section
+        if sys.platform == "win32":
+            import msvcrt  # noqa: PLC0415
+
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)  # retries ~10 s, then OSError
+        else:
+            import fcntl  # noqa: PLC0415
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    except OSError:
+        if handle is not None:
+            handle.close()
+            handle = None
+    try:
+        yield
+    finally:
+        if handle is not None:
+            try:
+                if sys.platform == "win32":
+                    import msvcrt  # noqa: PLC0415
+
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl  # noqa: PLC0415
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass  # closing the handle releases it anyway
+            handle.close()
+
+
 def upsert(path: Path, day: str, values: dict[str, str]) -> dict[str, str]:
     """Merge *values* into the row for *day*, returning the previous values.
 
@@ -220,7 +281,16 @@ def upsert(path: Path, day: str, values: dict[str, str]) -> dict[str, str]:
 
     A key that is not yet a column is APPENDED to the header rather than dropped,
     so the file grows to fit rather than silently discarding a measurement.
+
+    The whole read-modify-write runs under :func:`_metrics_lock`, so a
+    concurrent upsert from another process lands on top of this one instead of
+    being overwritten by it.
     """
+    with _metrics_lock(path):
+        return _upsert_unlocked(path, day, values)
+
+
+def _upsert_unlocked(path: Path, day: str, values: dict[str, str]) -> dict[str, str]:
     fieldnames, rows = read_metrics(path)
 
     for key in values:
@@ -308,9 +378,15 @@ def _as_date(value: str) -> date | None:
 def series(
     path: Path, field: str = "weight_kg", *, since: date | None = None
 ) -> list[tuple[date, float]]:
-    """``[(day, value)]`` for *field*, oldest first, skipping blanks and junk."""
+    """``[(day, value)]`` for *field*, oldest first, skipping blanks and junk.
+
+    One point per day: files from the old append-based writer can hold several rows
+    for one date, and keeping them all weighted that day several times in the averages
+    while :func:`logged_ratio` counted it once. The first row with a value wins — the
+    row :func:`upsert` edits for that date, so a re-logged value is the one read back.
+    """
     _, rows = read_metrics(path)
-    out: list[tuple[date, float]] = []
+    by_day: dict[date, float] = {}
     for row in rows:
         day = _as_date(row.get("date", ""))
         value = _as_float(row.get(field, ""))
@@ -318,9 +394,8 @@ def series(
             continue
         if since is not None and day < since:
             continue
-        out.append((day, value))
-    out.sort(key=lambda pair: pair[0])
-    return out
+        by_day.setdefault(day, value)
+    return sorted(by_day.items(), key=lambda pair: pair[0])
 
 
 def latest(path: Path, field: str = "weight_kg") -> tuple[date, float] | None:
@@ -670,6 +745,21 @@ def claim_weekly_done(chat_id: int, day: str) -> bool:
     data[str(chat_id)] = entry
     _write_state(data)
     return True
+
+
+def unclaim_weekly_done(chat_id: int, day: str) -> None:
+    """Give back a :func:`claim_weekly_done` whose message was never delivered.
+
+    The claim is taken before the send so two processes cannot both announce; a
+    send that then fails must release it, or the week's notice is lost for good.
+    """
+    data = _read_state()
+    entry = _chat_state(data, chat_id)
+    if entry.get("weekly_done") != day:
+        return
+    entry.pop("weekly_done", None)
+    data[str(chat_id)] = entry
+    _write_state(data)
 
 
 def confirm_value(chat_id: int, value: float) -> bool:

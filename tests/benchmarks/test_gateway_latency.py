@@ -20,6 +20,7 @@ printed — the bearer token is read, sent, and dropped.
 """
 
 import json
+import os
 import statistics
 import time
 from pathlib import Path
@@ -28,10 +29,19 @@ import pytest
 
 pytestmark = pytest.mark.live
 
+#: The live install to probe, captured at IMPORT (collection) time — before the session
+#: autouse fixture repoints NAVIG_CONFIG_DIR at a temp dir. ``NAVIG_LIVE_CONFIG_DIR`` names
+#: it explicitly; otherwise the caller's own NAVIG_CONFIG_DIR, then the default home.
+_LIVE_CONFIG_DIR = Path(
+    os.environ.get("NAVIG_LIVE_CONFIG_DIR")
+    or os.environ.get("NAVIG_CONFIG_DIR")
+    or Path.home() / ".navig"
+)
+
 
 def _gateway_port() -> int | None:
-    """Port from ~/.navig/gateway.json discovery (self-healed binds land here)."""
-    p = Path.home() / ".navig" / "gateway.json"
+    """Port from <live config dir>/gateway.json discovery (self-healed binds land here)."""
+    p = _LIVE_CONFIG_DIR / "gateway.json"
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
         port = int(data.get("port") or 0)
@@ -46,7 +56,7 @@ def _deck_bearer() -> str:
         import yaml
 
         cfg = (
-            yaml.safe_load((Path.home() / ".navig" / "config.yaml").read_text(encoding="utf-8"))
+            yaml.safe_load((_LIVE_CONFIG_DIR / "config.yaml").read_text(encoding="utf-8"))
             or {}
         )
         return str((cfg.get("deck") or {}).get("api_key") or "")
@@ -73,7 +83,7 @@ def _get(port: int, path: str, token: str = "", timeout: float = 20.0) -> tuple[
 def _require_gateway() -> tuple[int, str]:
     port = _gateway_port()
     if not port:
-        pytest.skip("no ~/.navig/gateway.json discovery file — gateway not bound")
+        pytest.skip(f"no {_LIVE_CONFIG_DIR / 'gateway.json'} discovery file — gateway not bound")
     try:
         status, _, _ = _get(port, "/health", timeout=2.0)
     except OSError as exc:
@@ -117,24 +127,51 @@ def test_live_deck_status_loopback_budget():
 
 def test_live_monitor_cpu_route_and_cache():
     """The psutil-heavy route a process manager would ride (/monitor/cpu ships
-    top_processes): cold budget 15 s (documented 6–11 s in-daemon wart in
-    monitor.py's own comment), then the 8 s TTL cache must answer a warm
-    repeat in under 1 s."""
+    top_processes): a repeat inside the 8 s TTL must be answered from the cache in
+    under 1 s.
+
+    The first request here is NOT a cold measurement: on a live daemon the Monitor UI
+    or an earlier probe has usually filled the cache, and the route serves a reading up
+    to 300 s old at once while it refreshes behind. The cold path is timed in-process by
+    ``test_monitor_cpu_cold_collection_budget`` below, against an emptied cache.
+    """
     port, token = _require_gateway()
     assert token, "deck.api_key missing from config"
 
-    status, cold_ms, _ = _get(port, "/api/deck/monitor/cpu", token=token, timeout=30.0)
+    status, first_ms, _ = _get(port, "/api/deck/monitor/cpu", token=token, timeout=30.0)
     assert status == 200, f"/api/deck/monitor/cpu returned {status}"
 
     status, warm_ms, _ = _get(port, "/api/deck/monitor/cpu", token=token, timeout=30.0)
     assert status == 200, f"warm /api/deck/monitor/cpu returned {status}"
 
+    assert warm_ms < 1000, (
+        f"warm (within 8 s TTL) /monitor/cpu {warm_ms:.0f} ms — cache not "
+        f"serving? first request was {first_ms:.0f} ms"
+    )
+
+
+async def test_monitor_cpu_cold_collection_budget(monkeypatch: pytest.MonkeyPatch):
+    """Cold /monitor/cpu, forced: the route's cache is emptied, so the handler must run
+    ``monitor.get_cpu_info()`` itself. Budget 15 s (documented 6–11 s in-daemon wart in
+    monitor.py's own comment; 15 s is where decks started crossing the proxy timeout).
+
+    In-process, not over loopback: a live request cannot force a miss, because the
+    route serves any reading younger than 300 s while refreshing in the background.
+    """
+    import json as _json
+
+    from navig.gateway.deck.routes import monitor as mon
+
+    monkeypatch.setattr(mon, "_cache", {})
+    t0 = time.perf_counter()
+    resp = await mon.handle_deck_monitor_cpu(None)
+    cold_ms = (time.perf_counter() - t0) * 1000
+
+    assert resp.status == 200, f"cold /monitor/cpu returned {resp.status}"
+    assert _json.loads(resp.body.decode())["ok"] is True
+    assert "cpu" in mon._cache, "the handler answered without collecting — not a cold run"
     assert cold_ms < 15_000, (
         f"cold /monitor/cpu {cold_ms:.0f} ms exceeds 15000 ms (documented "
         f"6–11 s psutil-in-daemon baseline; 15 s is where decks started "
         f"crossing the proxy timeout)"
-    )
-    assert warm_ms < 1000, (
-        f"warm (within 8 s TTL) /monitor/cpu {warm_ms:.0f} ms — cache not "
-        f"serving? cold was {cold_ms:.0f} ms"
     )

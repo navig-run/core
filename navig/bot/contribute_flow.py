@@ -443,15 +443,13 @@ def run_approval_flow(
     alias: str = "",
     version: str | None = None,
 ) -> str | None:
-    """Route to Telegram or CLI approval flow based on bot configuration.
+    """Run the approval flow for a scan's findings.
 
-    Checks ``TELEGRAM_BOT_TOKEN`` environment variable.  If set, logs a
-    message indicating the flow must be driven via the Telegram worker;
-    otherwise falls back to the interactive CLI flow.
-
-    In the Telegram case, this function returns ``None`` immediately — the
-    actual PR submission happens asynchronously via :class:`ContributeFlow`
-    callback handling in the bot worker.
+    The Telegram-side :class:`ContributeFlow` has no bot consumer yet: nothing
+    instantiates it, persists the findings or sends them to a chat. Returning
+    ``None`` whenever ``TELEGRAM_BOT_TOKEN`` was set therefore dropped a finished
+    scan and its branch with no way to approve them, so the interactive CLI flow
+    runs in both cases until a bot-side consumer exists.
 
     Args:
         findings: All scan findings from the scanner.
@@ -461,21 +459,15 @@ def run_approval_flow(
         version: NAVIG version string.
 
     Returns:
-        PR URL string (CLI path) or ``None`` (Telegram path / user cancel).
+        PR URL string, or ``None`` when the user cancels.
     """
-    tg_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    if tg_token:
-        # Telegram bot is configured — the approval flow runs asynchronously
-        # through the bot worker.  Callers should instantiate ContributeFlow
-        # and wire its messages into the active Telegram session.
+    if os.environ.get("TELEGRAM_BOT_TOKEN", "").strip():
         logger.info(
-            "Telegram bot detected — contribute flow will run in bot session. "
-            "Use ContributeFlow class to drive the conversation."
+            "Telegram bot detected, but the bot-side contribute flow is not wired; "
+            "using the CLI approval flow"
         )
-        return None
-
-    # No Telegram configured → interactive CLI fallback.
-    logger.info("No Telegram bot configured; falling back to CLI approval flow")
+    else:
+        logger.info("No Telegram bot configured; using the CLI approval flow")
     return cli_review_and_approve(
         findings=findings,
         branch=branch,

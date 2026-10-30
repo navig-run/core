@@ -67,9 +67,11 @@ async def test_status_is_the_shared_document(client_factory) -> None:
     assert data["owner"] is None
     assert data["can_claim"] is True
     assert data["telegram"]["mode"] == "off"
-    # The UI shows a warning, it does not invent one.
-    assert data["host_dependency"]
-    assert "workstation" in data["host_dependency"]
+    # The UI shows a warning, it does not invent one. WHETHER there is one depends on the
+    # host (a server Brain is always-on, a workstation Brain is not), so this checks the
+    # document's shape; the wording is pinned by tests/brain/test_brain_installer_roles.py
+    # with `always_on` supplied.
+    assert data["host_dependency"] is None or isinstance(data["host_dependency"], str)
 
 
 async def test_status_reports_another_machines_live_lease(client_factory) -> None:

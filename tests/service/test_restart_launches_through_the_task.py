@@ -17,6 +17,7 @@ refused, or IgnoreNew swallowed it).
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -74,9 +75,6 @@ class _WindowsOs:
 
 
 
-class _PosixOs(_WindowsOs):
-    name = "posix"
-
 def _pretend_windows(monkeypatch) -> None:
     monkeypatch.setattr(svc, "os", _WindowsOs())
     monkeypatch.setattr(svc.sys, "platform", "win32")  # the task path is gated on both
@@ -120,7 +118,15 @@ def test_no_task_installed_falls_back_to_the_direct_spawn(monkeypatch, fast):
 
 
 def test_posix_never_touches_task_scheduler(monkeypatch, fast):
-    monkeypatch.setattr(svc, "os", _PosixOs())
+    """Off Windows the scheduled task is never consulted.
+
+    The fixture used to swap the whole `os` module for a `_PosixOs` stub, which is
+    how the code chose its platform back then. It reads `sys.platform` now, so the
+    stub had no effect and the running host's systemd unit answered first —
+    `_wait_for_daemon` never ran (2026-10-30, outpost).
+    """
+    monkeypatch.setattr(svc.sys, "platform", "linux")
+    monkeypatch.setattr(sm, "supervising_systemd_unit", lambda: None)
 
     def boom():
         raise AssertionError("task_scheduler_run must not be called off Windows")
@@ -232,3 +238,56 @@ def test_task_scheduler_run_is_windows_only(monkeypatch):
     ok, msg = sm.task_scheduler_run()
 
     assert ok is False and "Windows" in msg
+
+
+
+# ── the task runs the config home it was installed for ───────────────────────
+
+
+def test_a_task_installed_for_another_config_home_is_not_run(monkeypatch, tmp_path):
+    """`schtasks /run` would start the install-time brain; `_launch_daemon` then times out
+    on THIS home's pid file and direct-spawns a second one. The run is refused instead."""
+    monkeypatch.setenv("NAVIG_ALLOW_TASK_MUTATION", "1")
+    monkeypatch.setattr(sm.sys, "platform", "win32")
+    monkeypatch.setattr(sm, "_navig_home", lambda: tmp_path / "portable")
+    monkeypatch.setattr(sm, "task_scheduler_config_dir", lambda: tmp_path / "installed")
+
+    def boom(*_a, **_kw):
+        raise AssertionError("a task baked for another config home must not be run")
+
+    monkeypatch.setattr(sm.subprocess, "run", boom)
+
+    ok, detail = sm.task_scheduler_run()
+
+    assert ok is False and "installed" in detail
+
+
+def test_a_task_installed_for_this_config_home_is_run(monkeypatch, tmp_path):
+    import subprocess as _sp
+
+    monkeypatch.setenv("NAVIG_ALLOW_TASK_MUTATION", "1")
+    monkeypatch.setattr(sm.sys, "platform", "win32")
+    monkeypatch.setattr(sm, "_navig_home", lambda: tmp_path / "home")
+    monkeypatch.setattr(sm, "task_scheduler_config_dir", lambda: tmp_path / "home")
+    calls = []
+    monkeypatch.setattr(
+        sm.subprocess, "run", lambda args, **kw: (calls.append(args), _sp.CompletedProcess(args, 0, b"", b""))[1]
+    )
+
+    assert sm.task_scheduler_run()[0] is True
+    assert calls and calls[0][:2] == ["schtasks", "/run"]
+
+
+def test_the_task_config_dir_is_read_back_from_the_installed_definition(monkeypatch, tmp_path):
+    """Round trip: the home `_schtasks_xml` bakes is the home the reader returns."""
+    import subprocess as _sp
+
+    home = tmp_path / "custom-home"
+    monkeypatch.setattr(sm, "_navig_home", lambda: home)
+    xml = sm._schtasks_xml()
+    monkeypatch.setattr(sm.sys, "platform", "win32")
+    monkeypatch.setattr(
+        sm.subprocess, "run", lambda *a, **kw: _sp.CompletedProcess(a, 0, xml, "")
+    )
+
+    assert sm.task_scheduler_config_dir() == Path(str(home).replace("\\", "/"))

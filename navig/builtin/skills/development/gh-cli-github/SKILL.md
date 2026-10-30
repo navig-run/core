@@ -20,6 +20,9 @@ examples:
   - "List open issues assigned to me"
   - "What releases exist for this repo?"
   - "Show my GitHub status"
+# Written against a planned command surface that is not implemented yet
+# (KNOWN_MISSING in tests/quality/test_content_command_refs_resolve.py).
+activatable: false
 ---
 
 # GitHub CLI

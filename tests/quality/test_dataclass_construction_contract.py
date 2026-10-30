@@ -101,6 +101,7 @@ def _collect_dataclasses() -> dict[str, tuple[set[str], set[str]]]:
     specs: dict[str, list[tuple[set[str], set[str]]]] = defaultdict(list)
     declared: dict[str, int] = defaultdict(int)
     inherited: set[str] = set()
+    origin: dict[str, str] = {}
     for path in _sources():
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -110,28 +111,62 @@ def _collect_dataclasses() -> dict[str, tuple[set[str], set[str]]]:
             if not isinstance(node, ast.ClassDef):
                 continue
             declared[node.name] += 1  # every class, dataclass or not — shadowing is ambiguity
+            origin.setdefault(node.name, _module_of(path))
             if _is_dataclass_def(node):
                 if node.bases:
                     inherited.add(node.name)
                 specs[node.name].append(_field_spec(node))
-    return {
-        name: found[0]
-        for name, found in specs.items()
-        if len(found) == 1 and declared[name] == 1 and name not in inherited
+    found = {
+        name: spec[0]
+        for name, spec in specs.items()
+        if len(spec) == 1 and declared[name] == 1 and name not in inherited
     }
+    _ORIGINS.clear()
+    _ORIGINS.update({name: origin[name] for name in found})
+    return found
 
 
-def _visible_names(tree: ast.AST) -> set[str]:
-    """Names imported or defined in this file — so we only judge a construction we can resolve."""
-    names: set[str] = set()
+#: name -> dotted module that defines it, filled by `_collect_dataclasses`.
+_ORIGINS: dict[str, str] = {}
+
+
+def _module_of(path: Path) -> str:
+    """The dotted module a core source file provides (`core/navig/x/y.py` -> `navig.x.y`)."""
+    rel = path.relative_to(CORE).with_suffix("")
+    parts = list(rel.parts)
+    if parts and parts[-1] == "__init__":
+        parts.pop()
+    return ".".join(["navig", *parts])
+
+
+def _visible_names(tree: ast.AST) -> tuple[set[str], dict[str, set[str]]]:
+    """(names defined in this file, name -> the modules this file imports it from).
+
+    A construction is judged only when we can prove WHICH class it means. Two names
+    collide tree-wide today that nothing is wrong with: `navig.telegram.card_doc`
+    defines a `Table`, and a hundred command modules construct rich's
+    `console_helper.Table` — same name, different class. Importing a name from a
+    module that does not define it is exactly the case this guard cannot judge.
+    """
+    local: set[str] = set()
+    imported: dict[str, set[str]] = defaultdict(set)
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
-            names |= {(a.asname or a.name) for a in node.names}
+            module = node.module or ""
+            for alias in node.names:
+                imported[alias.asname or alias.name].add(module)
         elif isinstance(node, ast.Import):
-            names |= {(a.asname or a.name.split(".")[0]) for a in node.names}
+            for alias in node.names:
+                imported[alias.asname or alias.name.split(".")[0]].add(alias.name)
         elif isinstance(node, ast.ClassDef):
-            names.add(node.name)
-    return names
+            local.add(node.name)
+    return local, imported
+
+
+def _imports_from(modules: set[str], defining: str) -> bool:
+    """Whether one of the import sources IS the defining module (the `from x import y` case)."""
+    return any(mod == defining or mod.endswith("." + defining) or defining.endswith("." + mod)
+               for mod in modules if mod)
 
 
 def _scan() -> list[str]:
@@ -142,14 +177,18 @@ def _scan() -> list[str]:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError:  # pragma: no cover
             continue
-        visible = _visible_names(tree)
+        local, imported = _visible_names(tree)
         rel = path.relative_to(CORE.parent).as_posix()
         for node in ast.walk(tree):
             if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
                 continue
             spec = models.get(node.func.id)
-            if spec is None or node.func.id not in visible:
+            if spec is None:
                 continue
+            if node.func.id not in local:
+                defining = _ORIGINS.get(node.func.id, "")
+                if node.func.id not in imported or not _imports_from(imported[node.func.id], defining):
+                    continue
             allowed, required = spec
             kwargs = {k.arg for k in node.keywords if k.arg}
             unknown = kwargs - allowed
@@ -192,13 +231,15 @@ def test_guard_detects_planted_violations(tmp_path):
         "w = WindowInfo(id='1', title='t', x=0, y=0, width=1, height=1, pid=0, bogus=2)\n"
     )
     models = _collect_dataclasses()
-    visible = _visible_names(planted)
+    local, imported = _visible_names(planted)
     allowed, required = models["WindowInfo"]
     call = next(
         n for n in ast.walk(planted)
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "WindowInfo"
     )
     kwargs = {k.arg for k in call.keywords if k.arg}
-    assert "WindowInfo" in visible
+    # Imported from the module that defines it — the case the guard is allowed to judge.
+    assert "WindowInfo" not in local
+    assert _imports_from(imported["WindowInfo"], _ORIGINS["WindowInfo"])
     assert kwargs - allowed == {"bogus"}  # unknown kwarg caught
     assert "class_name" in required - kwargs  # missing required caught

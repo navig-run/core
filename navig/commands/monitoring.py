@@ -60,6 +60,13 @@ except ImportError:
         return False
 
 
+def _want_json(options: dict) -> bool:
+    """JSON requested? The root callback stores the global ``--json`` as ``options["json"]``;
+    ``json_output`` is the older internal key. Reading only the latter made
+    ``navig --json host monitor show --disk`` print prose."""
+    return bool(options.get("json_output") or options.get("json"))
+
+
 def _monitor_disk_local_windows(app_name: str, threshold: int, options: dict) -> None:
     """Disk monitoring for the local Windows machine.
 
@@ -88,7 +95,7 @@ def _monitor_disk_local_windows(app_name: str, threshold: int, options: dict) ->
         if pct > threshold:
             alerts.append(f"{d['mountpoint']} is {pct}% full (threshold: {threshold}%)")
 
-    if options.get("json_output"):
+    if _want_json(options):
         console.print(
             json.dumps(
                 {
@@ -183,7 +190,7 @@ def _monitor_resources_local_windows(app_name: str, options: dict) -> None:
         except Exception:
             metrics["uptime"] = "N/A"
 
-    if options.get("json_output"):
+    if _want_json(options):
         console.print(
             json.dumps(
                 {
@@ -285,9 +292,10 @@ def monitor_resources(options: dict[str, Any]) -> None:
         console.print("[yellow]DRY RUN:[/yellow] Would monitor resources on", app_name)
         return
 
-    console.print(
-        f"\n[cyan]{_safe_symbol(chr(0x1F4CA), '>>')} Monitoring Resources:[/cyan] {app_name}\n"
-    )
+    if not _want_json(options):  # a header before the document breaks its parse
+        console.print(
+            f"\n[cyan]{_safe_symbol(chr(0x1F4CA), '>>')} Monitoring Resources:[/cyan] {app_name}\n"
+        )
 
     # -- Local Windows fast-path (psutil, no SSH, no Linux commands) --
     if is_local_host(server_config) and platform.system() == "Windows":
@@ -312,7 +320,7 @@ def monitor_resources(options: dict[str, Any]) -> None:
     metrics, alerts = parse_resources(batch_result.stdout, batch_result.returncode)
 
     # Display results
-    if options.get("json_output"):
+    if _want_json(options):
         output = {
             "timestamp": datetime.now().isoformat(),
             "server": app_name,
@@ -395,9 +403,10 @@ def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
         )
         return
 
-    console.print(
-        f"\n[cyan]{_safe_symbol(chr(0x1F4BE), '>>')} Disk Space Monitoring:[/cyan] {app_name}\n"
-    )
+    if not _want_json(options):  # a header before the document breaks its parse
+        console.print(
+            f"\n[cyan]{_safe_symbol(chr(0x1F4BE), '>>')} Disk Space Monitoring:[/cyan] {app_name}\n"
+        )
 
     # -- Local Windows fast-path (psutil, no SSH, no Linux commands) --
     if is_local_host(server_config) and platform.system() == "Windows":
@@ -419,7 +428,7 @@ def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
     ]
 
     # Display results
-    if options.get("json_output"):
+    if _want_json(options):
         output = {
             "timestamp": datetime.now().isoformat(),
             "server": app_name,
@@ -488,9 +497,10 @@ def monitor_services(options: dict[str, Any]) -> None:
         console.print(f"[yellow]DRY RUN:[/yellow] Would check services on {app_name}")
         return
 
-    console.print(
-        f"\n[cyan]{_safe_symbol(chr(0x1F527), '>>')} Service Health Check:[/cyan] {app_name}\n"
-    )
+    if not _want_json(options):  # a header before the document breaks its parse
+        console.print(
+            f"\n[cyan]{_safe_symbol(chr(0x1F527), '>>')} Service Health Check:[/cyan] {app_name}\n"
+        )
 
     # -- QUANTUM VELOCITY E2: all service checks in ONE SSH round-trip --
     # Previously: 1 SSH call per service x 16 services = 16 round-trips.
@@ -511,7 +521,7 @@ def monitor_services(options: dict[str, Any]) -> None:
     )
 
     # Display results
-    if options.get("json_output"):
+    if _want_json(options):
         output = {
             "timestamp": datetime.now().isoformat(),
             "server": app_name,
@@ -581,9 +591,10 @@ def monitor_network(options: dict[str, Any]) -> None:
         console.print(f"[yellow]DRY RUN:[/yellow] Would check network stats on {app_name}")
         return
 
-    console.print(
-        f"\n[cyan]{_safe_symbol(chr(0x1F310), '>>')} Network Statistics:[/cyan] {app_name}\n"
-    )
+    if not _want_json(options):  # a header before the document breaks its parse
+        console.print(
+            f"\n[cyan]{_safe_symbol(chr(0x1F310), '>>')} Network Statistics:[/cyan] {app_name}\n"
+        )
 
     # -- QUANTUM VELOCITY E3: all network metrics in ONE SSH round-trip --
     # Recipe + parser live in navig.monitoring.checks (shared with collect).
@@ -600,7 +611,7 @@ def monitor_network(options: dict[str, Any]) -> None:
     metrics = parse_network(net_batch.stdout, net_batch.returncode)
 
     # Display results
-    if options.get("json_output"):
+    if _want_json(options):
         output = {
             "timestamp": datetime.now().isoformat(),
             "server": app_name,
@@ -674,8 +685,57 @@ def run_health_check(options: dict[str, Any]) -> None:
     health_check(options)
 
 
+def service_log_command(
+    service: str, lines: int, *, follow: bool, platform: str
+) -> str | None:
+    """The command that reads one service's log on *platform*, or ``None`` if unknown.
+
+    ``journalctl`` exists only where systemd does. A macOS host answers ``log show``
+    (launchd labels double as process names on NAVIG hosts), and a Windows host answers
+    the event log through PowerShell. The caller validates *service* against
+    ``[A-Za-z0-9@_.-]+`` before it reaches here, so interpolation is safe.
+
+    Returning ``None`` is deliberate: it lets the caller say "I cannot tell what OS this
+    host runs" instead of running a systemd command and printing "command not found".
+    """
+    if platform == "linux":
+        tail_flag = " -f" if follow else ""
+        return f"journalctl -u {service} -n {lines}{tail_flag} --no-pager"
+    if platform == "macos":
+        # --last bounds the scan: `log show` over an unbounded window can take minutes.
+        return (
+            f"""log show --last 1h --style compact """
+            f"""--predicate 'process == "{service}"' | tail -n {lines}"""
+        )
+    if platform == "windows":
+        return (
+            'powershell -NoProfile -Command "Get-WinEvent -LogName System -MaxEvents 200 '
+            f"| Where-Object {{ $_.ProviderName -like '*{service}*' }} "
+            f'| Select-Object -First {lines} | Format-Table -AutoSize"'
+        )
+    return None
+
+
+def service_restart_command(service: str, *, platform: str) -> str | None:
+    """The command that restarts one service on *platform*, or ``None`` if unknown.
+
+    On macOS *service* is the launchd label; ``kickstart -k`` is what a loaded job
+    honours (a plain ``kill`` is not a restart, and launchd would keep the old code).
+    """
+    if platform == "linux":
+        return f"sudo systemctl restart {service}"
+    if platform == "macos":
+        return f"launchctl kickstart -k gui/$(id -u)/{service}"
+    if platform == "windows":
+        return (
+            'powershell -NoProfile -Command "Restart-Service -Name '
+            f"'{service}' -Force\""
+        )
+    return None
+
+
 def view_service_logs(service: str, tail: bool, lines: int, options: dict[str, Any]) -> None:
-    """Legacy compatibility wrapper to show service logs via systemd journal."""
+    """Show one service's logs, in the dialect the target host actually speaks."""
     config = get_config_manager()
     app_name = require_active_server(options, config)
 
@@ -686,9 +746,20 @@ def view_service_logs(service: str, tail: bool, lines: int, options: dict[str, A
     server_config = config.load_server_config(app_name)
     remote = RemoteOperations(config)
 
-    follow_flag = " -f" if tail else ""
     line_count = max(1, int(lines or 100))
-    cmd = f"journalctl -u {service} -n {line_count}{follow_flag} --no-pager"
+    platform_name = remote.target_platform(server_config)
+    cmd = service_log_command(service, line_count, follow=tail, platform=platform_name)
+    if cmd is None:
+        console.print(
+            f"[yellow]Cannot read {service} logs on {app_name}:[/yellow] did not recognize "
+            "the host's OS, so no log command was assumed."
+        )
+        console.print(
+            "[dim]A NAVIG host answers one of: journalctl -u <unit> (systemd), "
+            "log show (macOS), Get-WinEvent (Windows).[/dim]"
+        )
+        return
+
     result = remote.execute_command(cmd, server_config)
 
     if result.returncode == 0:
@@ -717,7 +788,15 @@ def restart_remote_service(service: str, options: dict[str, Any]) -> None:
     server_config = config.load_server_config(app_name)
     remote = RemoteOperations(config)
 
-    cmd = f"sudo systemctl restart {service}"
+    platform_name = remote.target_platform(server_config)
+    cmd = service_restart_command(service, platform=platform_name)
+    if cmd is None:
+        console.print(
+            f"[yellow]Cannot restart {service} on {app_name}:[/yellow] did not recognize "
+            "the host's OS, so no init command was assumed."
+        )
+        return
+
     result = remote.execute_command(cmd, server_config)
 
     if result.returncode == 0:

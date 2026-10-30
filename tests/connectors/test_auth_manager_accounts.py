@@ -164,3 +164,23 @@ def test_authenticate_refuses_a_browser_that_picked_the_wrong_account(monkeypatc
     )
     assert asyncio.run(m.authenticate("gmail", interactive=True, account="me@gmail.com")) == "NEW"
     assert m.list_accounts("gmail") == ["studio@gmail.com", "me@gmail.com"]
+
+
+def test_authenticate_refuses_an_unverified_identity_for_a_requested_account(monkeypatch):
+    """Userinfo failed (no email): the token must not land over the default account."""
+    import navig.connectors.auth_manager as am
+
+    m = _mgr()
+    m._save_to_vault("gmail", _creds("studio@gmail.com"))
+    nameless = _creds("studio@gmail.com", "NEW")
+    nameless.email = None
+    monkeypatch.setattr(
+        am,
+        "run_oauth_flow_interactive",
+        lambda name: SimpleNamespace(success=True, credentials=nameless, error=None),
+    )
+    with pytest.raises(ConnectorAuthError):
+        asyncio.run(m.authenticate("gmail", interactive=True, account="b@gmail.com"))
+    kept = m._load_from_vault("gmail")
+    assert kept is not None and kept.access != "NEW"  # the default account is untouched
+

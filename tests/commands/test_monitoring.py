@@ -140,6 +140,25 @@ def test_disk_flags_a_filesystem_over_the_threshold(capsys, remote) -> None:
     assert "Alert" in out  # /data at 95% is over 80
 
 
+def test_global_json_flag_reaches_host_monitor_show_disk(capsys, remote) -> None:
+    """Review #726: the root callback stores the global ``--json`` as ``obj["json"]`` and
+    ``host monitor show`` forwards it unchanged; reading only ``json_output`` printed prose.
+    Drive the public command with the key the root actually sets."""
+    import json as _json
+
+    from typer.testing import CliRunner
+
+    from navig.commands.host import host_monitor_app
+
+    remote.execute_command.return_value = _completed(_DF)
+    result = CliRunner().invoke(host_monitor_app, ["show", "--disk"], obj={"json": True})
+    assert result.exit_code == 0, result.output
+    text = result.output or capsys.readouterr().out
+    payload = _json.loads(text)  # the whole stdout parses: no header before the document
+    assert payload["server"] == "web-1"
+    assert payload["alerts"]
+
+
 def test_disk_reports_all_clear_under_the_threshold(capsys, remote) -> None:
     remote.execute_command.return_value = _completed("/dev/sda1 40G 20G 18G 55% /\n")
     mon.monitor_disk(80, {})

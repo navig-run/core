@@ -504,7 +504,7 @@ class TestConfigureRootLogger:
         finally:
             nlog._ROOT_CONFIGURED = old
 
-    def test_configure_with_log_file(self, tmp_path):
+    def test_configure_with_log_file(self, tmp_path, monkeypatch):
         """An explicit log_file must actually attach a file handler, writing to THAT path.
 
         This assertion used to end in `or True` ("just ensure no exception"), so it passed
@@ -514,6 +514,14 @@ class TestConfigureRootLogger:
         mean the suppression had removed the last real coverage without anyone noticing.
         """
         from navig.core import logging as nlog
+
+        # Run as an isolated test would: an empty logger cache, so `get_logger()` below
+        # reaches the lazy-setup branch. The explicit configure call never sets
+        # `_ROOT_CONFIGURED`, so mark it here -- otherwise the lazy branch reconfigures
+        # under pytest and strips the file handler before the record is emitted, and the
+        # test passes only when an earlier test happened to warm the cache.
+        monkeypatch.setattr(nlog, "_LOGGERS", {})
+        monkeypatch.setattr(nlog, "_ROOT_CONFIGURED", True)
 
         log_file = tmp_path / "test.log"
         nlog._configure_root_logger(log_file=log_file, level=logging.DEBUG)

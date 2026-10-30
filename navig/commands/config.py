@@ -1,6 +1,7 @@
 """Configuration management commands for NAVIG."""
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,7 @@ from navig.core.coerce import coerce_bool
 from navig.core.yaml_io import load_yaml_with_lines
 from navig.migration import migrate_all_configs
 from navig.platform import paths
+from navig.telegram.config import require_auth_enabled
 
 
 def _default_config_roots(scope: str | None) -> list[tuple[str, Path]]:
@@ -488,6 +490,32 @@ def validate(
     raise typer.Exit(0)
 
 
+def _is_jsonc_only(path: Path) -> bool:
+    """True when ``path`` parses as JSONC (comments / trailing commas) but NOT as JSON."""
+    import re
+
+    try:
+        text = path.read_text(encoding="utf-8")
+        json.loads(text)
+        return False
+    except OSError:
+        return False  # unreadable: load_json_for_update decides (it raises on a lock)
+    except ValueError:
+        pass
+    # String-aware: a "//" inside a quoted value (a URL) is not a comment.
+    stripped = re.sub(
+        r'"(?:\\.|[^"\\])*"|//[^\n]*|/\*[\s\S]*?\*/',
+        lambda m: m.group(0) if m.group(0).startswith('"') else "",
+        text,
+    )
+    stripped = re.sub(r",(\s*[}\]])", r"\1", stripped)
+    try:
+        json.loads(stripped)
+    except ValueError:
+        return False  # genuinely corrupt: the quarantine path handles it
+    return True
+
+
 def install_schemas(
     scope: str,
     write_vscode_settings: bool,
@@ -535,13 +563,27 @@ def install_schemas(
         # user has. load_json_for_update raises JsonReadError on a persistent transient lock
         # (we skip the update, never overwrite) and quarantines a genuinely-corrupt file as
         # settings.json.corrupt rather than discarding it. Missing/empty → fresh {}.
+        #
+        # VS Code settings are JSONC: comments / trailing commas are legal there but not in
+        # strict JSON, so load_json_for_update would call such a file "corrupt", park it as
+        # settings.json.corrupt and we would REPLACE the live file with only our schema
+        # block. Rewriting it as JSON would also drop the user's comments — leave it alone.
+        jsonc = _is_jsonc_only(settings_path)
         try:
+            if jsonc:
+                raise JsonReadError(f"{settings_path} is JSONC")
             settings: dict[str, Any] = load_json_for_update(settings_path, default={})
         except JsonReadError:
-            ch.warning(
-                f"Could not read {settings_path} (is it open or locked?) — skipping the "
-                "VS Code YAML-schema update so the file isn't overwritten. Re-run once it's free."
-            )
+            if jsonc:
+                ch.warning(
+                    f"{settings_path} uses comments or trailing commas (JSONC) — leaving it "
+                    f'untouched. Add a "yaml.schemas" entry for {host_dst} and {app_dst} by hand.'
+                )
+            else:
+                ch.warning(
+                    f"Could not read {settings_path} (is it open or locked?) — skipping the "
+                    "VS Code YAML-schema update so the file isn't overwritten. Re-run once it's free."
+                )
         else:
             yaml_schemas = settings.get("yaml.schemas")
             if not isinstance(yaml_schemas, dict):
@@ -841,7 +883,7 @@ def show_settings():
             ("Bot token",            _mask_secret(tg_token),                                       "telegram.bot_token"),
             ("Owner UID",            tg_uid or "[dim]not set[/]",                                 "telegram.user_id"),
             ("Allowed users",        str(tg.get("allowed_users") or []),                           "telegram.allowed_users"),
-            ("Require auth",         _bool_icon(tg.get("require_auth", True)),                    "telegram.require_auth"),
+            ("Require auth",         _bool_icon(require_auth_enabled(tg.get("require_auth", True))),                    "telegram.require_auth"),
             ("Session isolation",    _bool_icon(tg.get("session_isolation", True)),               "telegram.session_isolation"),
             ("Group activation",     tg.get("group_activation_mode", "mention"),                  "telegram.group_activation_mode"),
             ("Deck URL",             tg.get("deck_url") or "[dim]not set[/]",                     "telegram.deck_url"),
@@ -890,7 +932,7 @@ def show_settings():
         _section_table([
             ("Enabled",      _bool_icon(gw.get("enabled", False)),             "gateway.enabled"),
             ("Listen",       f"{gw.get('host', '127.0.0.1')}:{gw.get('port', _GATEWAY_PORT)}", "gateway.port"),
-            ("Require auth", _bool_icon(gw.get("require_auth", True)),         "gateway.require_auth"),
+            ("Require auth", _bool_icon(require_auth_enabled(gw.get("require_auth", True))),         "gateway.require_auth"),
         ], gc, defaults),
         title="[bold]🌐  Gateway[/]", border_style="white", expand=False,
     ))
@@ -1106,7 +1148,14 @@ def set_config(key: str, value: str):
             )
             raise typer.Exit(1)
 
-        previous_host = config_manager.global_config.get("active_host")
+        # `navig host use` writes only cache/active_host.txt, never global_config, so
+        # read the cache first — that pointer is what this write replaces and what
+        # `navig undo` restores (set_active_host(local=False) + the legacy key).
+        try:
+            cached_host = config_manager.active_host_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            cached_host = ""
+        previous_host = cached_host or config_manager.global_config.get("active_host")
         config_manager.set_active_host(value, local=False)
         config_manager.update_global_config({"active_host": value})
         ch.success(f"Set {key} = {value}")
@@ -1121,10 +1170,24 @@ def set_config(key: str, value: str):
         parts = key.split(".")
         config = config_manager.global_config
 
-        # Navigate to parent
-        for part in parts[:-1]:
-            if part not in config:
+        # Navigate to parent. A scalar in the way cannot take a child key: the one
+        # documented case is the short trust form `mcp.trust.servers.<id>: vetted`,
+        # which is promoted to its long form `{tier: vetted}` so `.tools` can be added
+        # (the refusal in navig/mcp/registry.py tells operators to run exactly that).
+        # Any other scalar is refused rather than crashing with a TypeError.
+        for depth, part in enumerate(parts[:-1]):
+            if part not in config or config[part] is None:
                 config[part] = {}
+            elif not isinstance(config[part], dict):
+                if [p.lower() for p in parts[:depth]] == ["mcp", "trust", "servers"]:
+                    config[part] = {"tier": config[part]}
+                else:
+                    ch.error(
+                        f"Cannot set {key}: '{'.'.join(parts[: depth + 1])}' holds a "
+                        f"value ({config[part]!r}), not a section",
+                        "Set the parent key itself, or unset it first",
+                    )
+                    raise typer.Exit(1)
             config = config[part]
 
         # Set value
@@ -1147,6 +1210,14 @@ def set_config(key: str, value: str):
             existing = _vault.get(vault_provider, caller="config.set")
             if existing is not None:
                 _vault.update(existing.id, data={vault_cred_type: value})
+            elif _vault_cred_unreadable(_vault, vault_provider):
+                # get() also answers None for an UNREADABLE credential (a transient
+                # lock); add() would replace it under the same label and drop its
+                # other fields. Leave the vault alone — the config write stands.
+                ch.warning(
+                    f"Vault credential \\[{vault_provider}] exists but is unreadable "
+                    "right now — not updated."
+                )
             else:
                 _vault.add(
                     provider=vault_provider,
@@ -1158,6 +1229,23 @@ def set_config(key: str, value: str):
             ch.dim(f"  Also stored in vault under \\[{vault_provider}/{vault_cred_type}]")
         except Exception:  # noqa: BLE001
             pass  # vault unavailable — config write is sufficient
+
+
+def _vault_cred_unreadable(vault, provider: str) -> bool:
+    """True when ``vault.get()`` returned None for a stored, ENABLED default-profile
+    credential — unreadable (a transient lock, a foreign DEK), not absent."""
+    label = provider.lower().strip()
+    try:
+        version = vault.version_of(label)
+    except Exception:  # noqa: BLE001 — an engine without version_of cannot tell
+        return False
+    if not isinstance(version, int) or version <= 0:
+        return False
+    try:
+        item = vault.store().get(label)
+    except Exception:  # noqa: BLE001
+        return True
+    return item is not None and bool(item.metadata.get("enabled", True))
 
 
 def get_config(key: str):
@@ -1198,10 +1286,6 @@ def edit_config(options: dict = None):
 
     Opens the ~/.navig/config.yaml file in the system's default editor.
     """
-    import os
-    import platform
-    import subprocess
-
     config_manager = get_config_manager()
     config_path = config_manager.global_config_dir / "config.yaml"
 
@@ -1211,21 +1295,25 @@ def edit_config(options: dict = None):
 
     ch.info(f"Opening config file: {config_path}")
 
-    try:
-        if platform.system() == "Windows":
-            os.startfile(str(config_path))
-        elif platform.system() == "Darwin":  # macOS
-            subprocess.run(["open", str(config_path)])
-        else:  # Linux and others
-            # Try common editors
-            editor = os.environ.get("EDITOR", "nano")
-            subprocess.run([editor, str(config_path)])
+    # One handler for all three OSes: os.startfile is Windows-only, `open` is macOS-only
+    # (on Linux it is not a file opener) and xdg-open is the Linux one. `EDITOR` wins when
+    # the operator set it, because a YAML file belongs in an editor, not a browser.
+    from navig.platform import opener  # noqa: PLC0415
 
+    editor = os.environ.get("EDITOR", "").strip()
+    if editor:
+        import shlex  # noqa: PLC0415
+        import subprocess  # noqa: PLC0415
+
+        subprocess.Popen([*shlex.split(editor), str(config_path)])
         ch.success("Configuration file opened in editor.")
-    except Exception as e:
-        ch.error(f"Failed to open editor: {e}")
-        ch.info(f"You can manually edit: {config_path}")
-        raise typer.Exit(1) from e
+        return
+    if opener.open_path(config_path):
+        ch.success("Configuration file opened in editor.")
+        return
+    ch.error("Failed to open editor: no EDITOR is set and the OS has no opener")
+    ch.info(f"You can manually edit: {config_path}")
+    raise typer.Exit(1)
 
 
 config_app = typer.Typer(

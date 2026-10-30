@@ -157,3 +157,147 @@ def test_empty_app_list_is_not_a_failure(monkeypatch):
         "navig.cli.recovery.empty_list_recovery", lambda *a, **k: None
     )
     app_mod.list_apps({"host": "prod"})  # must NOT raise
+
+
+def test_show_app_missing_app_exits_2(monkeypatch, captured_errors):
+    """`AppManager.load` raises FileNotFoundError for an unknown app: that is not-found
+    (2), not a broken configuration (1)."""
+
+    def _missing(*_a, **_k):
+        raise FileNotFoundError("App 'ghost' not found on host 'prod'")
+
+    _fake_cm(monkeypatch, load_app_config=_missing)
+    _no_recovery(monkeypatch)
+    with pytest.raises(typer.Exit) as exc:
+        app_mod.show_app({"host": "prod", "app_name": "ghost"})
+    assert exc.value.exit_code == 2
+    assert any("not found" in e for e in captured_errors)
+
+
+# ── remove keeps an unrelated cached active app ───────────────────────────────
+
+def _remove_with_cache(monkeypatch, tmp_path, cached: str, resolved: str):
+    cache = tmp_path / "active_app.txt"
+    cache.write_text(cached, encoding="utf-8")
+    deleted: list[str] = []
+    _fake_cm(
+        monkeypatch,
+        app_exists=lambda _h, _a: True,
+        get_active_app=lambda: resolved,
+        delete_app_config=lambda _h, a: deleted.append(a),
+        active_app_file=cache,
+    )
+    monkeypatch.setattr(app_mod.ch, "success", lambda *a, **k: None)
+    app_mod.remove_app({"host": "prod", "app_name": "a", "force": True})
+    assert deleted == ["a"]
+    return cache
+
+
+def test_remove_app_keeps_a_different_cached_app(monkeypatch, tmp_path):
+    """NAVIG_ACTIVE_APP / project config resolve to `a`, the user cache holds `b`:
+    removing `a` must not forget the user's global active app `b`."""
+    cache = _remove_with_cache(monkeypatch, tmp_path, cached="b", resolved="a")
+    assert cache.read_text(encoding="utf-8") == "b"
+
+
+def test_remove_app_clears_its_own_cached_pointer(monkeypatch, tmp_path):
+    cache = _remove_with_cache(monkeypatch, tmp_path, cached="a", resolved="other")
+    assert not cache.exists()
+
+
+# ── failures caught in an `except` that used to fall off the end (exit 0) ────────
+#
+# These five handlers printed the failure from an `except` block and then simply ended,
+# which is `return None` — exit 0. The exit-honesty source guard did not see them: it
+# exempts the tail scan for any function that raises ANYWHERE, and each of these raises
+# on an earlier validation branch.
+
+
+def _raising(exc: BaseException):
+    def _raise(*_a, **_k):
+        raise exc
+
+    return _raise
+
+
+@pytest.mark.parametrize("exc", [FileNotFoundError("no .navig"), RuntimeError("io")])
+def test_use_app_clear_local_failure_exits_1(monkeypatch, captured_errors, exc):
+    _fake_cm(monkeypatch, clear_active_app_local=_raising(exc))
+    with pytest.raises(typer.Exit) as exc_info:
+        app_mod.use_app({"clear_local": True})
+    assert exc_info.value.exit_code == 1
+    assert exc_info.value.__cause__ is exc
+    assert captured_errors
+
+
+@pytest.mark.parametrize(
+    ("exc", "code"),
+    [(FileNotFoundError("no .navig"), 1), (ValueError("bad app"), 2), (RuntimeError("io"), 1)],
+)
+def test_use_app_set_failure_exits_non_zero(monkeypatch, captured_errors, exc, code):
+    _fake_cm(
+        monkeypatch, app_exists=lambda _h, _a: True, set_active_app=_raising(exc)
+    )
+    _no_recovery(monkeypatch)
+    with pytest.raises(typer.Exit) as exc_info:
+        app_mod.use_app({"app_name": "web"})
+    assert exc_info.value.exit_code == code
+    assert exc_info.value.__cause__ is exc
+    assert captured_errors
+
+
+def test_add_app_save_failure_exits_1(monkeypatch, captured_errors):
+    boom = OSError("read-only")
+    _fake_cm(
+        monkeypatch,
+        host_exists=lambda _n: True,
+        app_exists=lambda _h, _a: False,
+        load_host_config=lambda _h: {"services": {"web": "nginx"}},
+        save_app_config=_raising(boom),
+    )
+    _no_recovery(monkeypatch)
+    # Accept the detected webserver, skip the optional database and paths prompts.
+    answers = iter([True, False, False])
+    monkeypatch.setattr(app_mod.ch, "confirm_action", lambda *a, **k: next(answers))
+    with pytest.raises(typer.Exit) as exc_info:
+        app_mod.add_app({"host": "prod", "app_name": "web"})
+    assert exc_info.value.exit_code == 1
+    assert exc_info.value.__cause__ is boom
+    assert any("saving app" in e for e in captured_errors)
+
+
+def test_clone_app_save_failure_exits_1(monkeypatch, captured_errors):
+    boom = OSError("read-only")
+    _fake_cm(
+        monkeypatch,
+        app_exists=lambda _h, name: name == "src",
+        load_app_config=lambda _h, _a: {"webserver": {"type": "nginx"}},
+        save_app_config=_raising(boom),
+    )
+    _no_recovery(monkeypatch)
+    with pytest.raises(typer.Exit) as exc_info:
+        app_mod.clone_app({"host": "prod", "source_name": "src", "new_name": "dst"})
+    assert exc_info.value.exit_code == 1
+    assert exc_info.value.__cause__ is boom
+    assert any("cloned app" in e for e in captured_errors)
+
+
+@pytest.mark.parametrize(
+    "exc", [app_mod.subprocess.CalledProcessError(1, "nano"), RuntimeError("no editor")]
+)
+def test_edit_app_editor_failure_exits_1(monkeypatch, captured_errors, tmp_path, exc):
+    (tmp_path / "web.yaml").write_text("webserver: {type: nginx}\n", encoding="utf-8")
+    _fake_cm(
+        monkeypatch,
+        app_exists=lambda _h, _a: True,
+        apps_dir=tmp_path,
+        hosts_dir=tmp_path,
+    )
+    _no_recovery(monkeypatch)
+    monkeypatch.setenv("EDITOR", "nano")
+    monkeypatch.setattr(app_mod.subprocess, "run", _raising(exc))
+    with pytest.raises(typer.Exit) as exc_info:
+        app_mod.edit_app({"host": "prod", "app_name": "web"})
+    assert exc_info.value.exit_code == 1
+    assert exc_info.value.__cause__ is exc
+    assert captured_errors

@@ -541,7 +541,8 @@ class LensStore:
         """Fetch each Lens's install link and STAGE anything new. Applies nothing.
 
         One result per Lens with a link: ``staged`` · ``current`` · ``pending`` (that exact
-        version is already waiting) · ``rejected`` (a person said no to it) · ``older`` (a
+        version is already waiting, or an agent's edit is — ``pending_kind: "agent"``; a
+        fetched update never overwrites a proposal a person has not decided on) · ``rejected`` (a person said no to it) · ``older`` (a
         lower ``@version`` — never offered) · ``error``.
         """
         from navig.lenses import review
@@ -561,6 +562,8 @@ class LensStore:
                     row["status"] = "current"
                 elif rec.pending and rec.pending.get("sha256") == digest:
                     row["status"] = "pending"
+                elif rec.pending and rec.pending.get("kind") == "agent":
+                    row["status"], row["pending_kind"] = "pending", "agent"
                 elif digest in (entry.get("rejected") or []):
                     row["status"] = "rejected"
                 else:

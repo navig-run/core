@@ -272,8 +272,8 @@ def resolve_category(token: str) -> str:
 # ── lists ────────────────────────────────────────────────────────────────────
 
 
-def lists() -> list[dict[str, Any]]:
-    return _store().list_lists()
+def lists(*, include_archived: bool = False) -> list[dict[str, Any]]:
+    return _store().list_lists(include_archived=include_archived)
 
 
 def biz_list_id(chat_id: int) -> str:
@@ -517,17 +517,19 @@ def reopen(item_id: str) -> dict[str, Any]:
     return item
 
 
-def delete(item_id: str, *, actor_is_owner: bool = True) -> None:
+def delete(item_id: str, *, actor_is_owner: bool = True, dismiss: bool = True) -> None:
     """Remove a task or appointment and every reminder it scheduled.
 
     In a shared list only the owner may delete — the contact can add and tick, which
     is everything they need, and nothing they do can lose the owner's data.
+    ``dismiss=False`` rolls back a suggestion that never reached the operator, so
+    its source may propose it again.
     """
     item = get(item_id)
     if not actor_is_owner:
         raise Forbidden("only the owner can delete")
     _cancel_all(item)  # BEFORE the delete: the links cascade away with the row
-    _store().delete_todo(item_id)
+    _store().delete_todo(item_id, dismiss=dismiss)
     _emit("delete", item_id, item.get("list_id"))
 
 

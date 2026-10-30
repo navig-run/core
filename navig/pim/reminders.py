@@ -346,6 +346,35 @@ def is_advance_warning(reminder_id: int) -> bool:
     except Exception:  # noqa: BLE001
         logger.debug("todo reminders: could not read the lead of %s", reminder_id, exc_info=True)
         return False
+def reminders_extension_holds(reminder_id: int) -> bool:
+    """Should this due chat reminder be held back because the Reminders extension is off?
+
+    The Reminders extension promises "reminders already due are not delivered while it
+    is off" — and until this existed the delivery loop never asked, so switching it off
+    only removed the commands while every `/remindme` still arrived.
+
+    A TODO's reminder is NOT this extension's: it follows the Todo switch
+    (:func:`delivery_suppressed`), so the two switches each stop exactly their own pings.
+    Held, not discarded — the row stays due, exactly like the todo rule. Fails OPEN.
+    """
+    try:
+        from navig.gateway.channels.telegram_extensions import is_enabled  # noqa: PLC0415
+
+        if is_enabled("reminders"):
+            return False
+    except Exception:  # noqa: BLE001
+        logger.debug("reminders: extension gate unreadable — delivering", exc_info=True)
+        return False
+    if not reminder_id:
+        return True
+    try:
+        from navig.store.board import get_board_store  # noqa: PLC0415
+
+        return not bool(get_board_store().reminder_is_todo(int(reminder_id)))
+    except Exception:  # noqa: BLE001
+        # Provenance unreadable: it is overwhelmingly a /remindme row (todo rows are the
+        # linked minority), and the operator asked for these to stop.
+        return True
 
 
 def _extension_is_off() -> bool:

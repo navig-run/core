@@ -283,6 +283,29 @@ class TestDelete:
         host_cfg = cfg.load_host_config("prod")
         assert "apps" not in host_cfg or "old_app" not in host_cfg.get("apps", {})
 
+    def test_delete_keeps_default_while_a_shadowed_embedded_app_remains(self, tmp_path):
+        """Review #363: deleting an individual file that shadowed an embedded app of the
+        same name must not clear default_app — the app still exists via the host YAML."""
+        mgr, cfg = make_manager(tmp_path)
+        cfg.add_host(
+            "prod", {"default_app": "myapp", "apps": {"myapp": {"webserver": {"type": "nginx"}}}}
+        )
+        cfg.create_app_file("myapp", {"name": "myapp", "host": "prod"})
+
+        assert mgr.delete("prod", "myapp") is True
+
+        assert mgr.exists("prod", "myapp")
+        assert cfg.load_host_config("prod").get("default_app") == "myapp"
+
+    def test_delete_clears_default_once_the_app_is_gone(self, tmp_path):
+        mgr, cfg = make_manager(tmp_path)
+        cfg.add_host("prod", {"default_app": "myapp"})
+        cfg.create_app_file("myapp", {"name": "myapp", "host": "prod"})
+
+        assert mgr.delete("prod", "myapp") is True
+
+        assert "default_app" not in cfg.load_host_config("prod")
+
     def test_delete_wrong_host_returns_false(self, tmp_path):
         mgr, cfg = make_manager(tmp_path)
         cfg.create_app_file("myapp", {"name": "myapp", "host": "staging"})

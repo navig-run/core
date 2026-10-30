@@ -41,12 +41,27 @@ class TestIsClickAbort:
     def test_returns_false_for_runtime_error(self):
         assert _is_click_abort(RuntimeError("err")) is False
 
-    def test_returns_true_for_click_abort(self):
+    def test_a_foreign_click_abort_is_not_a_navig_prompt_abort(self):
+        """Only the Abort Typer raises counts.
+
+        NAVIG's own prompts run on Typer's click, and `typer.Abort` covers both the separate
+        `click` distribution (Typer before 0.27) and the vendored one (after). A DIFFERENT
+        click installed alongside Typer raises its own Abort class, which no NAVIG prompt
+        raises — and recognising it would need a direct `click` import, which core forbids
+        because a fresh install has no click (2026-10-30, outpost: the direct import made
+        every Ctrl+C a generic failure on such an install).
+        """
         try:
             from click.exceptions import Abort
-            assert _is_click_abort(Abort()) is True
         except ImportError:
-            pytest.skip("click not installed")
+            pytest.skip("click not installed alongside typer")
+        assert _is_click_abort(Abort()) is False
+
+    def test_returns_true_for_typer_abort(self):
+        """What the wizard itself raises on Ctrl+C at a Typer prompt."""
+        import typer
+
+        assert _is_click_abort(typer.Abort()) is True
 
     def test_returns_false_when_import_error(self):
         with patch.dict("sys.modules", {"click": None, "click.exceptions": None}):

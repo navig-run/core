@@ -1382,3 +1382,104 @@ def test_misfire_grace_round_trips_and_defaults_for_old_files():
     legacy = job.to_dict()
     legacy.pop("misfire_grace_seconds")
     assert CronJob.from_dict(legacy).misfire_grace_seconds == DEFAULT_MISFIRE_GRACE_SECONDS
+
+
+# ─── Failed-run diagnostics ───────────────────────────────────────────────────
+#
+# 2026-10-25: `navig tasks tick` died with SIGSEGV six times on outpost and the
+# cause could not be named, because the scheduler raised a bare "exit code -11"
+# and dropped the child's captured stderr. These tests pin the evidence trail.
+
+
+def test_job_command_error_names_the_signal_and_the_crash_line():
+    from navig.scheduler.cron_service import JobCommandError
+
+    err = JobCommandError(
+        argv=["/home/tester/.navig/runtime/venv/bin/python3.12", "-m", "navig", "tasks", "tick"],
+        returncode=-11,
+        output=(
+            "Fatal Python error: Segmentation fault\n"
+            "\n"
+            "Current thread 0x00007f4c (most recent call first):\n"
+            '  File "navig/tasks/cli.py", line 42 in tick\n'
+        ),
+    )
+    # "-11" names nothing; the signal name is what a reader can act on.
+    assert err.signal_name == "SIGSEGV"
+    assert str(err) == (
+        "python3.12 was killed by SIGSEGV (exit code -11): "
+        "Fatal Python error: Segmentation fault"
+    )
+    record = err.record_output()
+    assert record.startswith(str(err))
+    assert 'line 42 in tick' in record
+    # The summary already names the crash; the body must not repeat it.
+    assert record.count("Fatal Python error: Segmentation fault") == 1
+
+
+def test_child_env_enables_faulthandler_without_overriding_the_operator(monkeypatch):
+    import os
+
+    from navig.scheduler import cron_service
+
+    monkeypatch.delenv("PYTHONFAULTHANDLER", raising=False)
+    assert cron_service._child_env()["PYTHONFAULTHANDLER"] == "1"
+    # A child's env is a copy — never the scheduler's own process env.
+    assert "PYTHONFAULTHANDLER" not in os.environ
+
+    monkeypatch.setenv("PYTHONFAULTHANDLER", "0")
+    assert cron_service._child_env()["PYTHONFAULTHANDLER"] == "0"
+
+
+def test_failed_exec_job_carries_the_childs_stderr(tmp_path):
+    from navig.scheduler.cron_service import EXEC_PREFIX, JobCommandError
+
+    svc = CronService(gateway=_NoAI(), storage_path=tmp_path)
+    line = (
+        f'"{sys.executable}" -c "'
+        "import sys; sys.stderr.write('traceback-line-42'); sys.exit(7)"
+        '"'
+    )
+    with pytest.raises(JobCommandError) as caught:
+        asyncio.run(svc._execute_job_command(_exec_job(EXEC_PREFIX + line)))
+
+    err = caught.value
+    assert err.returncode == 7
+    assert err.signal_name is None
+    assert "failed with exit code 7" in str(err)
+    assert "traceback-line-42" in str(err)  # the summary names the cause
+    assert "traceback-line-42" in err.output  # the record keeps the raw text
+
+
+def test_failed_run_history_keeps_a_long_traceback(tmp_path):
+    """The run history kept 500 characters, cutting a traceback off mid-frame."""
+    from navig.scheduler.cron_service import EXEC_PREFIX
+
+    payload = "E" * 900
+    svc = CronService(gateway=None, storage_path=tmp_path)
+    job = _make_job(
+        id="crash",
+        name="crash",
+        schedule="hourly",
+        command=EXEC_PREFIX
+        + (
+            f'"{sys.executable}" -c "'
+            f"import sys; sys.stderr.write('{payload}'); sys.exit(1)"
+            '"'
+        ),
+    )
+    svc.jobs = {job.id: job}
+
+    asyncio.run(svc._run_job_locked(job))
+
+    assert job.last_status is JobStatus.FAILED
+    assert payload in (job.last_output or "")
+    runs = [
+        json.loads(line)
+        for line in (tmp_path / "cron_runs.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert runs, "a failed run must still be recorded"
+    output = runs[-1]["output"]
+    assert "failed with exit code 1" in output
+    assert payload in output

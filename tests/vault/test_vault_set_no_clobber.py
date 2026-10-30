@@ -76,3 +76,14 @@ def test_get_reads_a_custom_sub_key_even_when_the_provider_exists():
         res = runner.invoke(vault_app, ["get", "schema/architect_seal_key", "--raw"])
     assert res.exit_code == 0, res.output
     assert res.output.strip() == "NEW"
+
+
+def test_a_refused_update_is_reported_as_a_failure():
+    """update() returns False when the existing secret is unreadable: the new value was
+    discarded, so `vault set` must not print "Updated credential" and exit 0."""
+    v = _vault_with_existing_provider()
+    v.update.return_value = False
+    with patch("navig.commands.vault._vault_mod.get_vault", return_value=v):
+        res = runner.invoke(vault_app, ["set", "schema/api_key", "ROTATED"])
+    assert res.exit_code == 1, res.output
+    assert "Updated credential" not in res.output

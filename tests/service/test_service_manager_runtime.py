@@ -467,6 +467,49 @@ def test_status_normalizes_backend_detail_lines(monkeypatch: pytest.MonkeyPatch)
     # "Inactive" was also what a task printed whose last run had FAILED and which
     # would never fire again, which is how a dead daemon looked fine for two days.
     assert "Task Scheduler: Not installed" in detail
+    assert "Fix: navig service install" in detail  # NSSM is inactive: still offered
+
+
+@pytest.mark.parametrize(
+    ("method", "nssm_running", "fix_expected"),
+    [(None, True, False), (None, False, True), ("task", True, True)],
+)
+def test_status_does_not_ask_for_a_task_when_nssm_is_active(
+    monkeypatch: pytest.MonkeyPatch, method, nssm_running, fix_expected
+) -> None:
+    """A healthy NSSM install with no scheduled task printed "Task Scheduler: Not
+    installed / Fix: navig service install" — advice that reinstalls NSSM or adds a
+    redundant second backend. Only an explicit `method="task"` request asks for it."""
+    import navig.daemon.supervisor as supervisor
+
+    monkeypatch.setattr(sm.sys, "platform", "win32")
+    monkeypatch.setattr(sm, "has_nssm", lambda: True)
+    monkeypatch.setattr(sm, "nssm_status", lambda: (nssm_running, "SERVICE_RUNNING"))
+    monkeypatch.setattr(sm, "task_scheduler_status", lambda: (False, ""))
+    monkeypatch.setattr(
+        sm,
+        "task_scheduler_health",
+        lambda: {"installed": False, "problems": ["not installed"]},
+    )
+
+    class FakeDaemon:
+        @staticmethod
+        def is_running() -> bool:
+            return False
+
+        @staticmethod
+        def read_pid() -> int | None:
+            return None
+
+        @staticmethod
+        def read_state() -> dict:
+            return {}
+
+    monkeypatch.setattr(supervisor, "NavigDaemon", FakeDaemon)
+
+    _running, detail = sm.status(method)
+    assert "Task Scheduler: Not installed" in detail
+    assert ("Fix: navig service install" in detail) is fix_expected, detail
 
 
 # ── the service must export the CANONICAL config-dir var, not just legacy NAVIG_HOME ──
@@ -539,8 +582,7 @@ def test_task_bootstrap_puts_config_and_memory_on_one_home(monkeypatch: pytest.M
     # The exec writes os.environ DIRECTLY, bypassing monkeypatch, so hand it the keys
     # first. `setenv` records the pre-existing state (here: absent) and its undo deletes
     # whatever the value became; `delenv` immediately after keeps the var absent for the
-    # duration, which `_task_env_setup`'s `setdefault('NAVIG_HOME', …)` needs in order to
-    # take effect at all. Both halves are load-bearing.
+    # duration. Both halves are load-bearing.
     #
     # `delenv` alone was not enough and is why this leaked: on a var that was ABSENT it
     # records nothing to restore, so the exec's write survived teardown. NAVIG_SERVICE was
@@ -552,6 +594,25 @@ def test_task_bootstrap_puts_config_and_memory_on_one_home(monkeypatch: pytest.M
         monkeypatch.setenv(_key, "")
         monkeypatch.delenv(_key, raising=False)
     exec("import os; " + env_setup)  # noqa: S102 — only the os.environ[...] assignments
+    assert plat_paths.config_dir() == mem_paths.navig_home() == custom
+
+
+def test_task_bootstrap_overrides_an_ambient_navig_home(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A persistent user-level NAVIG_HOME must not survive the bootstrap: memory/paths
+    prefers it, so `setdefault` kept memory on the ambient home while config followed the
+    install home — the split brain the bootstrap exists to close."""
+    from navig.memory import paths as mem_paths
+    from navig.platform import paths as plat_paths
+
+    custom = tmp_path / "svc-home"
+    ambient = tmp_path / "ambient-home"
+    for _key in ("NAVIG_SERVICE", "NAVIG_CONFIG_DIR"):
+        monkeypatch.setenv(_key, "")
+        monkeypatch.delenv(_key, raising=False)
+    monkeypatch.setenv("NAVIG_HOME", str(ambient))  # restored on teardown
+    exec("import os; " + sm._task_env_setup(custom))  # noqa: S102
     assert plat_paths.config_dir() == mem_paths.navig_home() == custom
 
 
@@ -569,6 +630,52 @@ def test_task_bootstrap_gives_a_silent_boot_somewhere_to_speak(tmp_path: Path) -
     # Redirection must be in place BEFORE the daemon is handed control, or a boot-time
     # traceback still goes to the void it came from.
     assert args.index("sys.stdout=sys.stderr=") < args.index("runpy.run_module")
+
+
+@pytest.mark.parametrize("builder", [sm._task_bootstrap_args, sm._task_restart_args])
+def test_task_bootstrap_survives_a_quote_in_the_home(builder, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`C:/Users/O'Connor/.navig` ended the `'...'` literal early: the task's `-c` code
+    was a SyntaxError and the daemon never started. The code must also hold no `"`,
+    which would end the outer `-c "..."` argument."""
+    home = Path("C:/Users/O'Connor/.navig")
+    args = builder(home)
+    assert args.startswith('-c "') and args.endswith('"')
+    code = args[len('-c "') : -1]
+    assert '"' not in code
+    compile(code, "<task>", "exec")
+
+    for _key in ("NAVIG_SERVICE", "NAVIG_CONFIG_DIR", "NAVIG_HOME"):
+        monkeypatch.setenv(_key, "")
+        monkeypatch.delenv(_key, raising=False)
+    import os
+
+    exec("import os; " + sm._task_env_setup(home))  # noqa: S102
+    assert os.environ["NAVIG_CONFIG_DIR"] == os.environ["NAVIG_HOME"] == "C:/Users/O'Connor/.navig"
+
+
+def test_task_boot_log_failure_does_not_stop_the_boot(tmp_path: Path) -> None:
+    """A boot.log that cannot be opened (here: a directory in its place) raised before
+    runpy ran, turning a diagnostics failure into an autostart outage."""
+    import os
+
+    home = tmp_path / "home"
+    (home / "daemon" / "boot.log").mkdir(parents=True)
+    fake_sys = SimpleNamespace(stdout="console", stderr="console")
+    exec(sm._task_log_redirect(home, "boot.log"), {"os": os, "sys": fake_sys})  # noqa: S102
+    assert fake_sys.stdout == fake_sys.stderr == "console"
+
+
+def test_task_boot_log_redirect_still_opens_the_log(tmp_path: Path) -> None:
+    import os
+
+    home = tmp_path / "home"
+    fake_sys = SimpleNamespace(stdout=None, stderr=None)
+    exec(sm._task_log_redirect(home, "boot.log"), {"os": os, "sys": fake_sys})  # noqa: S102
+    try:
+        assert fake_sys.stdout is fake_sys.stderr
+        assert Path(fake_sys.stdout.name) == home / "daemon" / "boot.log"
+    finally:
+        fake_sys.stdout.close()
 
 
 # ── Ubuntu VM findings (2026-10-15) ─────────────────────────────────────────

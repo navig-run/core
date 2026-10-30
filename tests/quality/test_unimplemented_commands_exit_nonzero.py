@@ -24,6 +24,11 @@ import ast
 import re
 from pathlib import Path
 
+from navig.core.click_compat import click_module, is_group
+
+# The click TYPER runs on; a separately installed copy is a different class hierarchy.
+click = click_module()
+
 #: The project's own stub marker, plus the phrasings a stub reaches for when someone
 #: writes one by hand. Scoped to *announcement* wording so an ordinary warning is untouched.
 _MARKERS = (
@@ -185,7 +190,6 @@ def _redirect_targets():
 
 
 def test_stub_redirects_name_commands_that_exist() -> None:
-    import click
     from typer.main import get_command
 
     from navig.cli import app
@@ -197,7 +201,7 @@ def test_stub_redirects_name_commands_that_exist() -> None:
     def resolve(words):
         cur = root
         for i, word in enumerate(words):
-            if not isinstance(cur, click.Group):
+            if not is_group(cur):
                 return cur, []  # leaf command — the rest are arguments
             nxt = cur.get_command(click.Context(cur), word)
             if nxt is None:

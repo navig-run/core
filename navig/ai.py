@@ -465,6 +465,13 @@ class AIAssistant:
         if "disk" in context:
             lines.append(f"\nDisk Usage: {context['disk']}")
 
+        # Prior turns of an interactive session (`navig chat`), oldest first, so a
+        # follow-up like "what about the second option?" has something to refer to.
+        if context.get("conversation"):
+            lines.append("\nConversation so far:")
+            for role, text in context["conversation"]:
+                lines.append(f"{role}: {text}")
+
         # Add recent error context for AI awareness
         try:
             ai_context_mgr = get_ai_context_manager()
@@ -602,6 +609,7 @@ def ask_ai_with_context(
     history: list[dict[str, str]] = None,
     model: str | None = None,
     effort: str | None = None,
+    timeout: float | None = None,
 ) -> str:
     """
     Simple function to ask AI with context - used by gateway server.
@@ -612,6 +620,7 @@ def ask_ai_with_context(
         history: Previous conversation messages
         model: Model to use (optional)
         effort: Reasoning depth (low/medium/high/max/ultra). None = auto.
+        timeout: HTTP timeout in seconds. None = the llm_generate default.
 
     Returns:
         AI response text
@@ -626,4 +635,5 @@ def ask_ai_with_context(
         messages.extend(history)
     messages.append({"role": "user", "content": prompt})
 
-    return llm_generate(messages=messages, model_override=model, effort=effort)
+    extra: dict[str, float] = {} if timeout is None else {"timeout": timeout}
+    return llm_generate(messages=messages, model_override=model, effort=effort, **extra)

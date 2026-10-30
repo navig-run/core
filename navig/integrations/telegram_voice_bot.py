@@ -32,6 +32,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import tempfile
 from dataclasses import dataclass, field
@@ -49,15 +50,17 @@ def _action_message(action_id: str, info: dict) -> str:
     has ever held ``description``. Rendering is driven by ``type`` so a new entry shape
     degrades to naming the action rather than raising inside a callback handler.
     """
+    # The caller sends this with parse_mode="HTML": prompts carry placeholders such as
+    # `<hostname>`, which Telegram rejects as unsupported tags, so every part is escaped.
     prompt = info.get("prompt")
     if prompt:
-        return prompt
+        return html.escape(prompt)
     cmd = info.get("cmd")
     if cmd:
         kind = info.get("type")
         shown = cmd if kind == "slash" else f"navig {cmd}"
-        return f"<code>{shown}</code>"
-    return f"⚙️ Action: <code>{action_id}</code>"
+        return f"<code>{html.escape(shown)}</code>"
+    return f"⚙️ Action: <code>{html.escape(action_id)}</code>"
 
 
 # ---------------------------------------------------------------------------
@@ -524,9 +527,13 @@ class TelegramVoiceBot:
         await query.answer()  # Acknowledge immediately (removes loading spinner)
 
         data = query.data or ""
+        # Start-menu buttons send ``act:<id>`` while ACTION_COMMANDS is keyed by the bare
+        # id — strip the prefix, and keep these payloads away from the bridge's
+        # ``correlation:value`` routing, which would otherwise swallow every one of them.
+        action_id = data[len("act:") :] if data.startswith("act:") else data
 
         # TelegramBridge callback pattern (correlation:value)
-        if ":" in data:
+        if ":" in data and not data.startswith("act:"):
             from navig.integrations.telegram_bridge import _bridge_instance
 
             if _bridge_instance is not None:
@@ -542,16 +549,16 @@ class TelegramVoiceBot:
         try:
             from navig.bot.start_menu import get_action_info
 
-            info = get_action_info(data)
+            info = get_action_info(action_id)
         except Exception:  # noqa: BLE001
             logger.warning("menu action %s could not be resolved", data, exc_info=True)
             info = None
         if info:
-            text = _action_message(data, info)
+            text = _action_message(action_id, info)
             await query.edit_message_text(text, parse_mode="HTML")
             return
 
-        await query.edit_message_text(f"⚙️ Action: <code>{data}</code>", parse_mode="HTML")
+        await query.edit_message_text(_action_message(data, {}), parse_mode="HTML")
 
     # ------------------------------------------------------------------ #
     # STT, LLM, TTS helpers (delegate to pipeline components)

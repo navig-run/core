@@ -231,3 +231,24 @@ def test_the_recorder_passes_session_id_at_the_call_site():
         "the audit write dropped session_id= — every CLI row is anonymous again"
     )
     assert "host_lock import session_id" in src
+
+
+def test_a_free_form_payload_never_reaches_the_incident(monkeypatch):
+    """`navig run 'API_KEY=secret deploy'` is audited as the joined argv, so a fixed
+    three-token slice published `navig run API_KEY=secret` to the log and Telegram."""
+    now = datetime.now(timezone.utc)
+    audit = _Audit(
+        [
+            _row(now - timedelta(minutes=3), "navig run API_KEY=secret deploy"),
+            _row(now - timedelta(minutes=2), "navig ask what is hunter2"),
+            _row(now - timedelta(minutes=1), "navig config set gateway.auth.token X"),
+            _row(now - timedelta(seconds=30), "navig --host prod db dump"),
+        ]
+    )
+    monkeypatch.setattr("navig.store.audit.get_audit_store", lambda: audit)
+
+    out = sup.NavigDaemon._commands_before_now(_iso(now - timedelta(minutes=10)))
+
+    assert [c["command"] for c in out] == ["navig run", "navig ask", "navig config set", "navig"]
+    blob = json.dumps(out)
+    assert "secret" not in blob and "hunter2" not in blob and "prod" not in blob

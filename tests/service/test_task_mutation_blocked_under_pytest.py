@@ -113,7 +113,21 @@ def test_production_is_not_affected(monkeypatch: pytest.MonkeyPatch) -> None:
     A protection that also blocks the real daemon would be worse than the hazard.
     """
     monkeypatch.delitem(__import__("sys").modules, "pytest", raising=False)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     assert sm._refuse_task_mutation("disable") is None
+
+
+def test_a_cli_subprocess_started_by_a_test_is_still_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A test that drives the CLI through `subprocess` hands the child a fresh
+    `sys.modules` with no pytest in it — but the child inherits the environment,
+    and pytest sets PYTEST_CURRENT_TEST in it for every running test."""
+    monkeypatch.delitem(__import__("sys").modules, "pytest", raising=False)
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "tests/x.py::test_y (call)")
+    monkeypatch.delenv("NAVIG_ALLOW_TASK_MUTATION", raising=False)
+    refusal = sm._refuse_task_mutation("disable")
+    assert refusal is not None and refusal[0] is False
 
 
 @pytest.mark.parametrize("name", READERS)

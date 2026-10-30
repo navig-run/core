@@ -9,6 +9,7 @@ Public surface:
     safe_load_yaml      — read a YAML file without raising
     load_yaml_with_lines — read YAML and capture key → line-number mapping
     log_shadow_anomaly  — append a JSONL event for performance/divergence tracking
+    file_lock           — cross-process lock around a read-modify-write of a file
 """
 
 from __future__ import annotations
@@ -16,8 +17,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import tempfile
+import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -40,6 +45,74 @@ ATOMIC_REPLACE_BACKOFF_BASE_SECONDS = _ATOMIC_REPLACE_BACKOFF_BASE
 # ─────────────────────────────────────────────────────────────────────────────
 # Shadow Execution Logging
 # ─────────────────────────────────────────────────────────────────────────────
+
+_LOCK_HELD = threading.local()
+
+
+@contextmanager
+def file_lock(path: Path | str) -> Iterator[None]:
+    """Hold a cross-process advisory lock on ``<path>.lock`` around a read-modify-write.
+
+    A thread lock serialises one process only, but the files rewritten here
+    (``config.yaml``, the append-only JSONL logs) are written by the daemon AND by
+    every CLI run: two writers that each read the same base and replace the file lose
+    whichever write landed first. Every writer that rewrites such a file holds this
+    lock around both the read and the write.
+
+    Re-entrant per thread and per path. Best-effort: when the lock file cannot be
+    opened or locked (a read-only dir, ~10 s of contention on Windows) the caller
+    proceeds unlocked, which is the old behaviour rather than a new failure.
+    """
+    key = str(Path(path))
+    held: dict[str, int] = getattr(_LOCK_HELD, "paths", None) or {}
+    _LOCK_HELD.paths = held
+    if held.get(key):
+        held[key] += 1
+        try:
+            yield
+        finally:
+            held[key] -= 1
+        return
+
+    lock_path = Path(key + ".lock")
+    handle = None
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(lock_path, "a+b")  # noqa: SIM115 - held across the with-block
+        if sys.platform == "win32":
+            import msvcrt  # noqa: PLC0415
+
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)  # retries ~10 s, then OSError
+        else:
+            import fcntl  # noqa: PLC0415
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    except OSError as exc:
+        logger.debug("file lock %s unavailable, continuing unlocked: %s", lock_path, exc)
+        if handle is not None:
+            handle.close()
+            handle = None
+    held[key] = 1
+    try:
+        yield
+    finally:
+        held[key] = 0
+        if handle is not None:
+            try:
+                if sys.platform == "win32":
+                    import msvcrt  # noqa: PLC0415
+
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl  # noqa: PLC0415
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass  # closing the handle releases it anyway
+            handle.close()
+
 
 def _perf_dir() -> Path:
     """Return the perf-log directory, resolved lazily so env overrides apply."""
@@ -65,9 +138,12 @@ def log_shadow_anomaly(log_name: str, event: str, data: dict[str, Any]) -> None:
         perf_dir.mkdir(parents=True, exist_ok=True)
         log_file = perf_dir / f"{log_name}.jsonl"
         entry = {"ts": time.time(), "event": event, "data": data}
-        with log_file.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(entry) + "\n")
-        _cap_jsonl(log_file)
+        # The append and the trim share one lock: a trim rewrites the file from a
+        # snapshot, so an append landing between its read and its replace was lost.
+        with file_lock(log_file):
+            with log_file.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(entry) + "\n")
+            _cap_jsonl(log_file)
     except Exception:  # noqa: BLE001
         pass  # Logging failures must never propagate
 
@@ -99,6 +175,14 @@ def _cap_jsonl(log_file: Path) -> None:
             tail = tail[nl + 1:]  # drop the partial first line
         tmp = log_file.with_suffix(log_file.suffix + ".tmp")
         tmp.write_bytes(tail)
+        # Python writers hold `file_lock`, but the Rust desktop apps append to the
+        # incident log without it: carry anything that arrived after the snapshot.
+        with log_file.open("rb") as src:
+            src.seek(len(data))
+            late = src.read()
+        if late:
+            with tmp.open("ab") as fh:
+                fh.write(late)
         tmp.replace(log_file)
     except Exception:  # noqa: BLE001
         pass  # a failed trim is the old behaviour, not a new failure
@@ -203,6 +287,8 @@ def load_yaml_for_update(
         text = read_text_retrying(fp)
     except OSError as exc:  # survived the retries — unreadable, not empty
         raise ConfigReadError(f"{fp} exists but could not be read: {exc}") from exc
+    except UnicodeDecodeError as exc:  # has content, but not UTF-8 text — never overwrite it
+        raise ConfigReadError(f"{fp} exists but is not UTF-8 text: {exc}") from exc
     try:
         data = yaml.safe_load(text)
     except yaml.YAMLError as exc:  # has content, but not parseable — never overwrite it

@@ -205,6 +205,11 @@ def test_record_launched_omits_headless_when_unknown(registry):
     # "named" as a bare component elsewhere must not count — the check is on path parts
     # under cdp-profiles, not a substring search.
     (r"C:\projects\named\thing", False),
+    # A user (or parent folder) called "named" must not turn a disposable session profile
+    # into a protected one — `named` has to sit directly under `cdp-profiles`.
+    (r"C:\Users\named\.navig\cdp-profiles\sessions\s1", False),
+    ("/home/named/.navig/cdp-profiles/sessions/s1", False),
+    ("/home/named/.navig/cdp-profiles/named/research", True),
     (None, False),
     ("", False),
 ])
@@ -255,7 +260,9 @@ def test_stop_launched_note_says_closed_when_it_actually_closed(registry, monkey
     monkeypatch.setattr(t, "probe_port", lambda _p, timeout=1.0: object() if live["v"] else None)
     monkeypatch.setattr(t, "request_browser_close", lambda *_a, **_k: live.update(v=False) or True)
     monkeypatch.setattr(t, "_pid_is_still_the_recorded_process", lambda *_a, **_k: False)
-    monkeypatch.setattr(t, "_debug_browser_pids", lambda *_a, **_k: [], raising=False)
+    # Attributable while it runs (the ask is gated on that), gone once it complied.
+    monkeypatch.setattr(t, "_debug_browser_pids", lambda *_a, **_k: [4242] if live["v"] else [],
+                        raising=False)
 
     res = t.stop_launched(9304)
 

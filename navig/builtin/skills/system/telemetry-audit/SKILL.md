@@ -24,6 +24,9 @@ examples:
   - "Generate a full privacy audit report"
   - "Show me the copy-paste commands to audit telemetry manually"
   - "What data does Windows send to Microsoft at the Required level?"
+# Written against a planned command surface that is not implemented yet
+# (KNOWN_MISSING in tests/quality/test_content_command_refs_resolve.py).
+activatable: false
 ---
 
 # Telemetry Audit Skill

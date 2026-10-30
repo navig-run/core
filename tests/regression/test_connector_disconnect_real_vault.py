@@ -91,3 +91,48 @@ def test_linking_a_second_account_from_the_app_keeps_the_first(mgr, monkeypatch)
         asyncio.run(mgr.exchange_auth_code(state, "code"))
     # The third link is the first account again: refreshed in place, not duplicated.
     assert mgr.list_accounts("gmail") == ["work@example.com", "me@example.com"]
+
+
+def _seed_legacy_default_row(mgr, email: str) -> None:
+    """A gmail OAuth row under the vault's own ``default`` profile (wizard / old install)."""
+    mgr._vault.add(
+        provider="gmail",
+        credential_type="oauth",
+        data=_creds(email).to_dict(),
+        profile_id="default",
+        label="gmail legacy",
+        metadata={"email": email},
+    )
+
+
+def test_a_legacy_fallback_credential_is_migrated_and_disconnect_sticks(mgr):
+    _seed_legacy_default_row(mgr, "legacy@example.com")
+    loaded = mgr._load_from_vault("gmail")
+    assert loaded is not None and loaded.email == "legacy@example.com"  # via the fallback
+
+    mgr._save_to_vault("gmail", loaded)  # a refresh writes the connector slot
+    assert asyncio.run(mgr.revoke("gmail")) is True
+    assert mgr._load_from_vault("gmail") is None
+    assert mgr.is_connected("gmail") is False
+
+
+def test_disconnect_also_drops_a_fallback_row_left_beside_the_connector_row(mgr):
+    _seed_legacy_default_row(mgr, "legacy@example.com")
+    mgr._vault.add(  # the duplicate an older save left behind
+        provider="gmail",
+        credential_type="oauth",
+        data=_creds("legacy@example.com").to_dict(),
+        profile_id="connector",
+        label="gmail connector OAuth",
+        metadata={"email": "legacy@example.com"},
+    )
+    assert asyncio.run(mgr.revoke("gmail")) is True
+    assert mgr.is_connected("gmail") is False
+
+
+def test_a_named_account_lookup_never_returns_the_fallback_row(mgr):
+    _seed_legacy_default_row(mgr, "legacy@example.com")
+    assert mgr._load_from_vault("gmail", "new@example.com") is None
+    with pytest.raises(ConnectorAuthError):
+        mgr.resolve_account("gmail", "new@example.com")
+

@@ -95,3 +95,27 @@ def test_an_empty_config_still_prints_an_object(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(config_cmd.ch, "print_json", captured.append)
     config_cmd.config_show_cmd("global")
     assert captured == [{}]
+
+
+def test_a_yaml_native_date_prints_instead_of_crashing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unquoted `deployed_at: 2026-09-04` loads as `datetime.date`.
+
+    `print_json` used plain `json.dumps`, so the raw view this command now shows
+    raised `TypeError` on exactly the undeclared keys it exists to reveal.
+    """
+    import datetime
+
+    import yaml
+
+    raw = yaml.safe_load("deployed_at: 2026-09-04\n")
+    assert isinstance(raw["deployed_at"], datetime.date)
+    monkeypatch.setattr(
+        config_cmd, "get_config_manager",
+        lambda: SimpleNamespace(get_global_config=lambda: raw),
+    )
+    printed: list[str] = []
+    monkeypatch.setattr(config_cmd.ch, "print_code", lambda code, **_k: printed.append(code))
+    config_cmd.config_show_cmd("global")
+    assert printed and "2026-09-04" in printed[0]

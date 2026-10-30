@@ -93,3 +93,17 @@ def _isolate_deletion_state_files(tmp_path, monkeypatch):
         return
     monkeypatch.setattr(deletions, "_own_deletions_path", lambda: tmp_path / "own_deletions.json")
     monkeypatch.setattr(deletions, "_reveals_path", lambda: tmp_path / "deletion_reveals.json")
+
+
+@pytest.fixture(autouse=True)
+def _isolated_card_anchors(tmp_path, monkeypatch):
+    """Every test gets its own card-anchor ledger.
+
+    ``publish_card`` remembers the message a surface sent in
+    ``~/.navig/cache/card-anchors.json``. Without this fixture the telegram suite reads and
+    writes the developer's real ledger, so one test's publish makes the next test's
+    identical card "unchanged" — it skips the send and the test fails on a missing message
+    that only exists because a previous test put it there.
+    """
+    monkeypatch.setenv("NAVIG_CARD_ANCHOR_PATH", str(tmp_path / "card-anchors.json"))
+    yield

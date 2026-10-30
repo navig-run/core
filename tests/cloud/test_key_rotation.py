@@ -78,15 +78,33 @@ def test_one_broken_repoint_does_not_abort_the_other(monkeypatch):
     assert any("Mini App" in f for f in failed), "the failure must be REPORTED, not swallowed"
 
 
-def test_repoint_is_a_noop_outside_lighthouse(monkeypatch):
+def test_outside_lighthouse_only_the_menu_button_is_repointed(monkeypatch):
+    """No edge tenant → no webhook to move; but the Mini App button embeds the raw key
+    in direct/cloudflared/Tailscale installs too, so it must still be re-pointed.
+
+    Review: https://github.com/navig-run/labs/pull/145#discussion_r3567469433
+    """
     from navig.commands import lighthouse
 
     called: list[str] = []
     monkeypatch.setattr(lighthouse, "configure_telegram_webhook", lambda e: called.append(e))
+    monkeypatch.setattr(rotation, "repoint_menu_button", lambda cfg=None: True)
 
     fixed, failed = rotation.repoint_owned(_cfg(**{"cloud.mode": "direct"}))
 
-    assert (fixed, failed, called) == ([], [], []), "no edge tenant → nothing is tenant-bound"
+    assert called == [], "no edge tenant → the webhook is not tenant-bound"
+    assert (fixed, failed) == (["Mini App menu button"], [])
+
+
+def test_direct_mode_rotation_calls_set_chat_menu_button(monkeypatch):
+    calls = _chat_buttons(monkeypatch, {})
+    cfg = _cfg(**{"cloud.mode": "direct", "deck.public_url": "https://d.example"})
+
+    fixed, failed = rotation.repoint_owned(cfg)
+
+    assert "Mini App menu button" in fixed and failed == []
+    sets = [b for m, b in calls if m == "setChatMenuButton"]
+    assert sets and f"key={KEY}" in sets[0]["menu_button"]["web_app"]["url"]
 
 
 # ── what we do NOT own: surfaced, never silently left broken ─────────────────
@@ -232,7 +250,29 @@ def test_healthy_overrides_and_non_webapp_buttons_are_left_alone(monkeypatch):
     assert rotation.clear_stale_chat_menu_buttons(cfg) == []
     assert not [m for m, _ in calls if m == "setChatMenuButton"]
     # all three chats were actually inspected — the "nothing stale" is not vacuous
-    assert sorted({b["chat_id"] for m, b in calls if m == "getChatMenuButton"}) == [111, 222, 333]
+    assert sorted(
+        {b["chat_id"] for m, b in calls if m == "getChatMenuButton" and "chat_id" in b}
+    ) == [111, 222, 333]
+
+
+def test_keyed_override_off_the_current_default_is_stale(monkeypatch):
+    """A keyed per-chat button on an old origin or bundle still shadows the new default."""
+    current = f"https://d.example/connect?key={KEY}&v=NEW"
+    _chat_buttons(
+        monkeypatch,
+        {
+            None: _webapp(current),                                       # the bot default
+            111: _webapp(f"https://old.example/connect?key={KEY}&v=NEW"),  # old origin
+            222: _webapp(f"https://d.example/connect?key={KEY}&v=OLD"),    # stale bundle
+            333: _webapp(current),                                        # matches: healthy
+        },
+    )
+    cfg = _cfg(**{"telegram.allowed_users": [111, 222, 333]})
+    assert rotation.stale_chat_menu_buttons(cfg) == [
+        (111, "https://old.example"),
+        (222, "https://d.example"),
+    ]
+    assert rotation.clear_stale_chat_menu_buttons(cfg) == [111, 222]
 
 
 def test_groups_are_skipped_and_the_key_never_leaks_into_the_report(monkeypatch):
@@ -252,6 +292,25 @@ def test_repoint_menu_button_also_sweeps_per_chat_overrides(monkeypatch):
     sets = [b for m, b in calls if m == "setChatMenuButton"]
     assert "chat_id" not in sets[0]                     # the default, first
     assert {"chat_id": 111, "menu_button": {"type": "default"}} in sets
+
+
+def test_a_rejected_menu_button_repoint_is_reported_as_failed(monkeypatch):
+    """Telegram's `ok: false` must not collapse into the silent "not applicable" False.
+
+    Review: https://github.com/navig-run/labs/pull/145#discussion_r3567469435
+    """
+    from navig.commands import lighthouse, miniapp
+
+    monkeypatch.setattr(lighthouse, "configure_telegram_webhook", lambda edge: f"{edge}/tg/x")
+    monkeypatch.setattr(miniapp, "_bot_token", lambda: "TOKEN")
+    monkeypatch.setattr(
+        miniapp, "_tg_call", lambda *a, **k: {"ok": False, "description": "x"}
+    )
+
+    fixed, failed = rotation.repoint_owned(_cfg(**{"deck.public_url": "https://d.example"}))
+
+    assert "Mini App menu button (x)" in failed
+    assert "Mini App menu button" not in fixed
 
 
 # ── remote NAVIG OS: devices hold the OLD tenant as their relay address ───────

@@ -110,6 +110,13 @@ def test_user_data_dir_still_scopes_when_present(monkeypatch) -> None:
     assert pids == [303]
 
 
+def test_known_id_hint_finds_a_differently_named_executable(monkeypatch) -> None:
+    # The registry stores the short id "vscode"; the real process is Code.exe.
+    code = _Proc(505, [r"C:\VSCode\Code.exe", "--remote-debugging-port=9333"])
+    _fake_psutil(monkeypatch, [code])
+    assert t._debug_browser_pids(9333, None, exe_hint="vscode") == [505]
+
+
 def test_renderer_children_are_never_returned(monkeypatch) -> None:
     child = _Proc(
         404, [r"C:\Apps\Discord\Discord.exe", "--remote-debugging-port=9333", "--type=renderer"]
@@ -127,6 +134,13 @@ def test_renderer_children_are_never_returned(monkeypatch) -> None:
         (r"C:\Chrome\chrome.exe", "discord", False),
         ("", "discord", False),
         (r"C:\Apps\Discord\Discord.exe", "", False),
+        # known ids whose executable has another name
+        (r"C:\VSCode\Code.exe", "vscode", True),
+        ("/usr/bin/code", "vscode", True),
+        ("/Applications/Visual Studio Code.app/Contents/MacOS/Electron", "vscode", True),
+        ("/usr/bin/notion-app", "notion", True),
+        (r"C:\Edge\msedge.exe", "edge", True),
+        (r"C:\VSCode\Code.exe", "discord", False),
     ],
 )
 def test_exe_matching_rules(argv0: str, hint: str, expected: bool) -> None:
@@ -385,3 +399,21 @@ def test_terminate_pid_still_reports_true_when_the_process_really_vanished(monke
     """Anti-vacuity for the two above: NoSuchProcess must stay a success."""
     _psutil_stub(monkeypatch, None, no_such=True)
     assert t._terminate_pid(1234) is True
+
+
+@pytest.mark.parametrize(
+    ("argv0", "hint"),
+    [
+        (r"C:\Apps\Discord\Discord.exe", "discord"),
+        (r"C:\Apps\Discord\Discord.exe", r"C:\Apps\Discord\Discord.exe"),
+        ("/usr/bin/discord", "discord"),
+    ],
+)
+def test_exe_matching_splits_both_separators_on_a_posix_host(monkeypatch, argv0, hint):
+    """Review F0563: on Linux/macOS ``os.path.basename`` kept a Windows path whole,
+    so the Windows-shaped fixtures in this file failed off Windows. Simulate a POSIX host."""
+    import posixpath
+    import types
+
+    monkeypatch.setattr(t, "os", types.SimpleNamespace(path=posixpath, sep="/"))
+    assert t._exe_matches(argv0, hint)

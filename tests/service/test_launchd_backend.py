@@ -87,3 +87,51 @@ def test_launchd_refused_off_macos(monkeypatch) -> None:
     monkeypatch.setattr(sm.sys, "platform", "linux")
     ok, msg = sm.install("launchd")
     assert not ok and "macOS" in msg
+
+
+class _Daemon:
+    @staticmethod
+    def is_running() -> bool:
+        return True
+
+
+def _start_through_service(monkeypatch, mac):
+    from navig.commands import service as svc
+
+    monkeypatch.setattr(sm, "task_scheduler_run", lambda *a, **k: (False, "not windows"))
+    monkeypatch.setattr("time.sleep", lambda *_a, **_k: None)
+    spawned: list[bool] = []
+    monkeypatch.setattr(svc, "_spawn_daemon_direct", lambda: spawned.append(True))
+    return svc._launch_daemon(_Daemon()), spawned
+
+
+def test_service_start_goes_back_through_launchd_after_a_stop(monkeypatch, mac) -> None:
+    """After `service stop` the agent is loaded but stopped; `service start` must kickstart
+    it, not spawn a daemon launchd neither owns nor restarts."""
+    sm.install("launchd")
+    mac.calls.clear()
+    (started, how), spawned = _start_through_service(monkeypatch, mac)
+    assert started is True and how == "launchd"
+    assert spawned == []
+    assert ["launchctl", "kickstart", f"gui/501/{sm.LAUNCHD_LABEL}"] in mac.calls
+
+
+def test_service_start_bootstraps_an_unloaded_agent_first(monkeypatch, mac) -> None:
+    sm.install("launchd", start_now=False)
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kw):
+        calls.append(list(cmd))
+        rc = 113 if cmd[:2] == ["launchctl", "print"] else 0
+        return SimpleNamespace(returncode=rc, stdout="", stderr="")
+
+    monkeypatch.setattr(sm.subprocess, "run", fake_run)
+    (started, how), spawned = _start_through_service(monkeypatch, mac)
+    assert how == "launchd" and spawned == []
+    verbs = [c[1] for c in calls]
+    assert verbs.index("bootstrap") < verbs.index("kickstart")
+
+
+def test_service_start_without_an_agent_spawns_directly(monkeypatch, mac) -> None:
+    (started, how), spawned = _start_through_service(monkeypatch, mac)
+    assert how == "direct spawn" and spawned == [True]

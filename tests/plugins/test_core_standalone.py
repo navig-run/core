@@ -22,13 +22,50 @@ import pytest
 
 from tests.fixtures.module_eviction import evicted_modules, matches
 
-# Every first-party plugin distribution's import package. NOT the hard core dependencies
-# (navig_sdk, navig_vault, navig_contacts, navig_generate): pip installs those with navig.
-PLUGIN_PACKAGES = (
+# Import packages of first-party plugins that do NOT live under plugins/ (private homes and
+# app-shipped packages), plus the floor used where plugins/ is absent (the public core
+# mirror). Everything under plugins/navig-*/ is DERIVED below, so a new plugin is blocked
+# the day it lands instead of the day someone remembers to list it.
+_LISTED_PLUGIN_PACKAGES = (
     "navig_audio", "navig_calendar", "navig_devhost", "navig_download", "navig_email",
     "navig_explore", "navig_games", "navig_github", "navig_mobile",
     "navig_msstore", "navig_pipeline", "navig_social", "navig_text",
     "navig_harbor", "navig_bot", "navig_deck",
+)
+
+_PLUGINS_DIR = Path(__file__).resolve().parents[3] / "plugins"
+
+
+def _core_hard_dependencies() -> frozenset[str]:
+    """Import names of the `navig-*` distributions core/pyproject.toml declares as HARD
+    dependencies — pip installs those with navig, so they are never simulated away."""
+    import re
+
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # pragma: no cover - Python 3.10
+        import tomli as tomllib
+
+    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    out = set()
+    for req in data["project"]["dependencies"]:
+        name = re.split(r"[\s<>=!~;\[]", req, maxsplit=1)[0].strip().lower()
+        if name.startswith("navig-"):
+            out.add(name.replace("-", "_"))
+    return frozenset(out)
+
+
+def _first_party_plugin_packages() -> frozenset[str]:
+    """Every `plugins/navig-*/navig_*/` import package in this checkout."""
+    if not _PLUGINS_DIR.is_dir():
+        return frozenset()
+    return frozenset(p.parent.name for p in _PLUGINS_DIR.glob("navig-*/navig_*/__init__.py"))
+
+
+# Every first-party plugin's import package, minus the hard core dependencies.
+PLUGIN_PACKAGES = tuple(
+    sorted((set(_LISTED_PLUGIN_PACKAGES) | _first_party_plugin_packages()) - _core_hard_dependencies())
 )
 
 # Core modules that are FORWARDING SHIMS: a thin re-export of a plugin's
@@ -41,7 +78,27 @@ EXPECTED_SHIMS = (
     "navig.voice",
     "navig.telegram.tiktok_actions",
     "navig.telegram.music_actions",
+    # The compat shims behind PLUGIN_BACKED_CORE_COMMANDS: each ALIASES its plugin's
+    # module object into sys.modules, so a shim imported by an earlier test (plugins
+    # present) leaves that object under the core key, and eviction that misses the key
+    # hands the blocked world a REGISTERED telegram/matrix —
+    # test_cli_registers_every_command_without_plugins then failed with stale=[...] only
+    # when xdist put an importer before it. Listed HERE (raising shims, same contract)
+    # so the fixture's prefix set evicts them and the blocked world re-imports fresh.
+    "navig.commands.telegram",
+    "navig.commands.matrix",
 )
+
+
+# Core command names whose module is a FORWARDING SHIM onto a plugin's Typer app and raises
+# an ImportError naming the plugin when it is absent — the documented degradation. Every
+# OTHER command in navig.cli.registration._EXTERNAL_CMD_MAP must register with no plugins.
+PLUGIN_BACKED_CORE_COMMANDS = {
+    "telegram": "navig-telegram",
+    "tg": "navig-telegram",
+    "matrix": "navig-matrix",
+    "mx": "navig-matrix",
+}
 
 
 class _PluginBlocker:
@@ -276,10 +333,25 @@ def test_cli_registers_every_command_without_plugins(no_plugins) -> None:
     import typer
 
     cli = importlib.import_module("navig.cli")
+    from navig.cli import registration
+
     # Register onto a FRESH app, not the global `navig.cli.app`: under the blocker the
     # plugin sub-apps fail to load, and mutating the process-wide app would leak that
     # half-registered state into every test that runs after this one.
-    cli._register_external_commands(register_all=True, target_app=typer.Typer())
+    target_app = typer.Typer()
+    cli._register_external_commands(register_all=True, target_app=target_app)
+
+    # Registration swallows every failure into a log warning, so calling it proves nothing
+    # by itself: a core command module that grew a hard plugin import would be skipped and
+    # this test would stay green. Assert WHICH core commands actually registered.
+    registered = registration._registered_app_cmds.get(target_app, set())
+    skipped = set(registration._EXTERNAL_CMD_MAP) - registered
+    assert skipped == set(PLUGIN_BACKED_CORE_COMMANDS), (
+        "core commands that failed to register without plugins (a skipped one is a new hard "
+        f"plugin dependency; a missing one is a stale PLUGIN_BACKED_CORE_COMMANDS entry): "
+        f"unexpected={sorted(skipped - set(PLUGIN_BACKED_CORE_COMMANDS))} "
+        f"stale={sorted(set(PLUGIN_BACKED_CORE_COMMANDS) - skipped)}"
+    )
 
 
 def test_gateway_server_imports_without_plugins(no_plugins) -> None:
@@ -378,34 +450,38 @@ def _hard_dependency_packages() -> frozenset[str]:
     runs). Read from core/pyproject.toml, so a package demoted back to an extra is policed
     again the day it is.
     """
-    import re
-
-    import tomllib
-
-    data = tomllib.loads((_navig_package_dir().parent / "pyproject.toml").read_text(encoding="utf-8"))
-    out = set()
-    for req in data["project"]["dependencies"]:
-        name = re.split(r"[\s<>=!~;\[]", req, maxsplit=1)[0].strip().lower()
-        if name.startswith("navig-"):
-            out.add(name.replace("-", "_"))
-    return frozenset(out)
+    return _core_hard_dependencies()
 
 
 def test_hard_dependencies_are_known_and_never_simulated_as_plugins() -> None:
     hard = _hard_dependency_packages()
     # Anti-vacuity: navig-vault and navig-sdk are hard dependencies today.
     assert {"navig_vault", "navig_sdk"} <= hard, f"could not read core's dependencies: {sorted(hard)}"
-    overlap = hard & set(PLUGIN_PACKAGES)
+    overlap = hard & set(_LISTED_PLUGIN_PACKAGES)
     assert not overlap, (
         f"{sorted(overlap)} is a HARD core dependency — it cannot be uninstalled, so blocking it "
-        "in the no-plugins simulation tests a world no user can be in. Remove it from PLUGIN_PACKAGES."
+        "in the no-plugins simulation tests a world no user can be in. Remove it from _LISTED_PLUGIN_PACKAGES."
     )
+
+
+def test_every_first_party_plugin_package_is_blocked() -> None:
+    """REGRESSION: the blocker listed 16 packages by hand while plugins/ shipped ~50, so a
+    core import of e.g. navig_mini or navig_antivirus sailed through the simulation."""
+    derived = _first_party_plugin_packages()
+    if not derived:
+        pytest.skip("no plugins/ tree here (the public core mirror) — nothing to derive")
+    assert {"navig_mini", "navig_antivirus"} <= derived, f"derivation found {sorted(derived)}"
+    unblocked = sorted(derived - set(PLUGIN_PACKAGES) - _core_hard_dependencies())
+    assert not unblocked, f"first-party plugin packages the no-plugins world can import: {unblocked}"
 
 
 def _module_level_plugin_imports(py: Path) -> list[tuple[int, str]]:
     """Top-level (never nested) imports of a `navig_*` plugin package in one file.
 
     A hard dependency (see `_hard_dependency_packages`) is not a plugin and is not reported.
+    A forwarding shim (EXPECTED_SHIMS, or beneath one) IS reported: it raises ImportError
+    without its plugin by design, so importing it at module scope from any other core file
+    makes that file unimportable in a plugin-free install, exactly like `import navig_x`.
     """
     import ast
 
@@ -418,14 +494,34 @@ def _module_level_plugin_imports(py: Path) -> list[tuple[int, str]]:
     for node in tree.body:  # tree.body == module scope only; nested imports are ignored
         names: list[str] = []
         if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
-            names = [node.module]
+            # `from navig.telegram import music_actions` imports the shim as a NAME.
+            names = [node.module, *(f"{node.module}.{a.name}" for a in node.names)]
         elif isinstance(node, ast.Import):
             names = [alias.name for alias in node.names]
         for name in names:
             top = name.split(".")[0]
-            if top.startswith("navig_") and top not in hard:
+            if (top.startswith("navig_") and top not in hard) or matches(name, EXPECTED_SHIMS):
                 hits.append((node.lineno, name))
+                break
     return hits
+
+
+def test_a_module_level_shim_import_is_reported(tmp_path) -> None:
+    """REGRESSION: only `navig_*` roots were reported, so a top-level import of a shim that
+    raises without its plugin slipped past the gate."""
+    cases = {
+        "from navig.voice.stt import STT\n": "navig.voice.stt",
+        "from navig.telegram import music_actions\n": "navig.telegram.music_actions",
+        "import navig.telegram.tiktok_actions\n": "navig.telegram.tiktok_actions",
+    }
+    f = tmp_path / "mod.py"
+    for src, expected in cases.items():
+        f.write_text(src, encoding="utf-8")
+        assert [name for _, name in _module_level_plugin_imports(f)] == [expected], src
+    # Precision: a non-shim sibling and a NESTED (lazy) shim import are not reported.
+    f.write_text("from navig.telegram import other\ndef g():\n    import navig.voice\n",
+                 encoding="utf-8")
+    assert _module_level_plugin_imports(f) == []
 
 
 def test_no_unguarded_core_to_plugin_imports() -> None:

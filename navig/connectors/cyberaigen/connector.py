@@ -269,10 +269,11 @@ class CyberAigenConnector(BaseConnector):
                 )
         except httpx.HTTPError as exc:
             # Transport exceptions embed the request URL — scrub before the
-            # message can reach state, logs or a notification.
+            # message can reach state, logs or a notification. ``from None``: a
+            # chained cause would print the raw URL in any logger.exception traceback.
             raise ConnectorAPIError(
                 "cyberaigen", 0, f"CyberAIGen unreachable: {scrub_endpoint(exc)}"
-            ) from exc
+            ) from None
 
         if resp.status_code in (401, 403):
             raise ConnectorAuthError(

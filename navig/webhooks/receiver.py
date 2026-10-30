@@ -144,8 +144,9 @@ class WebhookReceiver:
             }
 
         for name, cfg in sources.items():
-            # Resolve secret from secrets dict or environment
-            secret = secrets.get(name)
+            # Resolve secret from the secrets dict, else the source's own `secret` key
+            # (`webhooks.sources.<name>.secret`), then expand ${ENV}.
+            secret = secrets.get(name) or cfg.get("secret")
             if secret and isinstance(secret, str):
                 if secret.startswith("${") and secret.endswith("}"):
                     env_var = secret[2:-1]

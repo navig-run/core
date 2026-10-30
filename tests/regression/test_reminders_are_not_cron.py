@@ -223,10 +223,10 @@ def test_menu_add_sends_a_plain_job_not_an_exec_one(monkeypatch, cron_cli):
 
 
 def test_menu_add_is_held_to_the_date_pin_guard(monkeypatch, cron_cli):
-    import click
+    import typer
 
     _, calls = cron_cli
-    with pytest.raises(click.exceptions.Exit):
+    with pytest.raises(typer.Exit):
         _menu_add(monkeypatch, cron_cli, "0 11 9 10 *")
     assert calls == []
 

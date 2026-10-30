@@ -85,8 +85,34 @@ def _now() -> datetime:
 
 
 def _iso(dt: datetime) -> str:
-    # Matches BaseStore._utcnow(): "%Y-%m-%dT%H:%M:%S.%fZ" truncated to ms.
-    return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
+    """The window edge, in the SAME shape a row is stamped with.
+
+    It used to truncate to milliseconds and the comment claimed that matched the store.
+    It did not: ``navig.store.base.utcnow()`` writes six fractional digits, and the
+    windows are compared as strings, so an edge of ``…:00.123Z`` sorted AFTER every row
+    stamped ``…:00.123456Z`` — a deletion recorded in the boundary millisecond was
+    outside the window that ended there and behind the one that started there, i.e.
+    never reported. Six digits make the comparison agree with the data.
+    """
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _canonical_window(value: str) -> str:
+    """Pad a millisecond-precision watermark written by an older build to microseconds.
+
+    Watermarks stored before 2026-10-30 end in ``.123Z``. Padding to ``.123000Z`` keeps
+    every later row (``.123456Z``) inside the next window instead of behind it; the one
+    row that could re-report is the microunique stamp ``.123000000`` itself.
+    """
+    text = str(value)
+    if not text.endswith("Z"):
+        return text
+    head, _, frac = text[:-1].rpartition(".")
+    if not head or not frac.isdigit():
+        return text
+    if len(frac) >= 6:
+        return text
+    return f"{head}.{frac.ljust(6, '0')}Z"
 
 
 # ── Policy ───────────────────────────────────────────────────────────────────
@@ -353,8 +379,22 @@ def _watermark() -> str:
     except Exception:  # noqa: BLE001
         raw = None
     if raw:
-        return str(raw)
+        return _canonical_window(str(raw))
     return _iso(_now() - timedelta(seconds=window_sec()))
+
+
+def _seed_watermark() -> None:
+    """Persist the window start when none is stored yet.
+
+    Called when a deletion arms the timer. Deriving the default at FLUSH time put
+    it a full window after the deletion that armed it, so a first, isolated
+    deletion fell before its own window and was reported as nothing pending."""
+    try:
+        raw = _cfg().get(CFG_WATERMARK, None)
+    except Exception:  # noqa: BLE001
+        raw = None
+    if not raw:
+        _set_watermark(_watermark())
 
 
 def _set_watermark(value: str) -> None:
@@ -369,6 +409,9 @@ def _set_watermark(value: str) -> None:
 
 
 # ── Digest scheduling ────────────────────────────────────────────────────────
+
+#: How often a digest held by quiet hours is re-checked until it can go out.
+QUIET_RECHECK_SEC = 900
 
 #: One pending flush per process. The flush reads the catalog, so two processes
 #: arming a timer would send the same digest twice — see `_flush_lock`.
@@ -403,18 +446,39 @@ def arm_digest(channel: Any, *, delay: int | None = None) -> None:
     ``delay`` overrides the window — resume uses a short one, because the
     deletions it finds already waited out (part of) a window before the restart."""
     global _flush_task
+    _seed_watermark()
     if _flush_task is not None and not _flush_task.done():
         return
     delay = window_sec() if delay is None else max(0, int(delay))
 
     async def _later() -> None:
+        global _flush_task
         try:
             await asyncio.sleep(delay)
-            await flush_digest(channel)
+            res = await flush_digest(channel)
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
             logger.warning("deletion digest flush failed", exc_info=True)
+            return
+        if not res.get("sent"):
+            if res.get("reason") == "quiet hours":
+                # Quiet hours lift on their own; nothing else re-arms this window
+                # until the next deletion, so check again later rather than hold
+                # the promised digest indefinitely.
+                _flush_task = None
+                arm_digest(channel, delay=QUIET_RECHECK_SEC)
+            return
+        # A deletion recorded while this card was sending found this task still
+        # running and armed nothing; it is past the card's bound, so give it its own.
+        try:
+            pending = _store().count_deleted_since(_watermark(), **_digest_scope())["messages"]
+        except Exception:  # noqa: BLE001
+            logger.debug("deletion digest: re-arm check failed", exc_info=True)
+            return
+        if pending:
+            _flush_task = None
+            arm_digest(channel)
 
     from navig.core.background import spawn
 
@@ -480,6 +544,17 @@ def _claim_path(since: str):
     return paths.cache_dir() / "deletion_digest" / f"{_token_for(since)}.claim"
 
 
+def _claim_key(since: str, latest: str | None) -> str:
+    """The window identity two processes agree on — see :func:`flush_digest`."""
+    try:
+        stored = _cfg().get(CFG_WATERMARK, None)
+    except Exception:  # noqa: BLE001
+        stored = None
+    if stored and str(stored) == since:
+        return since
+    return latest or since
+
+
 def _claim_window(since: str, *, now: float | None = None) -> bool:
     """True if this process owns the card for the window starting at *since*.
 
@@ -488,6 +563,7 @@ def _claim_window(since: str, *, now: float | None = None) -> bool:
     card too many beats a digest that is never sent."""
     import os
     import time
+    import uuid
 
     ts = time.time() if now is None else now
     path = _claim_path(since)
@@ -504,9 +580,32 @@ def _claim_window(since: str, *, now: float | None = None) -> bool:
                 age = float("inf")
             if age < CLAIM_TTL_SEC:
                 return False
-            tmp = path.with_suffix(".claim.tmp")
-            tmp.write_text(str(ts), encoding="utf-8")
-            os.replace(tmp, path)
+            # Take over atomically. Two processes can both read the same stale
+            # claim; a read-then-replace let both win. A rename to a name only
+            # this caller uses succeeds for exactly one of them.
+            grave = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.stale")
+            try:
+                os.rename(path, grave)
+            except FileNotFoundError:
+                return False                   # a sibling took it over first
+            try:
+                moved_age = ts - float(grave.read_text(encoding="utf-8").strip() or 0)
+            except (OSError, ValueError):
+                moved_age = float("inf")
+            if moved_age < CLAIM_TTL_SEC:
+                # What we moved was a sibling's FRESH takeover, written after our
+                # read: hand it back and stand down.
+                try:
+                    os.rename(grave, path)
+                except OSError:
+                    grave.unlink(missing_ok=True)
+                return False
+            grave.unlink(missing_ok=True)
+            try:
+                with open(path, "x", encoding="utf-8") as fh:
+                    fh.write(str(ts))
+            except FileExistsError:
+                return False
             return True
     except OSError:
         logger.debug("deletion digest claim not recorded; sending anyway", exc_info=True)
@@ -547,6 +646,24 @@ def _prune_claims(*, older_than_sec: int = 86_400, now: float | None = None) -> 
     return removed
 
 
+def _consume_unannounced(since: str, until: str) -> None:
+    """Advance past a window holding only rows the digest never announces.
+
+    A window of muted-chat (or quiet-reason) deletions counts zero, and leaving the
+    watermark behind it kept those rows pending: unmuting the chat later announced
+    deletions that happened while it was muted — the opposite of what mute
+    promised, and of instant mode."""
+    try:
+        if not _store().count_deleted_since(since, until=until)["messages"]:
+            return
+    except Exception:  # noqa: BLE001
+        logger.debug("deletion digest: unscoped count failed", exc_info=True)
+        return
+    # Never move the watermark backwards over a card a sibling just sent.
+    if until > _watermark():
+        _set_watermark(until)
+
+
 async def flush_digest(channel: Any, *, force: bool = False) -> dict[str, Any]:
     """Send one digest card for everything deleted since the watermark.
 
@@ -555,12 +672,17 @@ async def flush_digest(channel: Any, *, force: bool = False) -> dict[str, Any]:
     offers "show me now"."""
     async with _flush_lock:
         since = _watermark()
+        # The window's upper bound, fixed BEFORE counting. A deletion recorded while
+        # the card is being sent is not in it, so the watermark must stop here —
+        # advancing to the time the send finished would skip that deletion for good.
+        until = _iso(_now())
         try:
-            counts = _store().count_deleted_since(since, **_digest_scope())
+            counts = _store().count_deleted_since(since, until=until, **_digest_scope())
         except Exception:  # noqa: BLE001
             logger.warning("deletion digest count failed", exc_info=True)
             return {"sent": False, "reason": "count_failed"}
         if not counts["messages"]:
+            _consume_unannounced(since, until)
             return {"sent": False, "reason": "nothing_pending", "since": since}
         if not force and mode() != "digest":
             return {"sent": False, "reason": f"mode={mode()}", "since": since}
@@ -575,12 +697,13 @@ async def flush_digest(channel: Any, *, force: bool = False) -> dict[str, Any]:
         # Honoured even under `force` — a duplicate card is never what anyone
         # asked for, and the TTL keeps a crashed sender from stranding it.
         #
-        # Keyed on the BATCH (its newest deleted_at), never on `since`. With no
-        # watermark stored, each process computes since = now - window itself, a
-        # few ms apart, so a since-keyed claim gave the two processes different
-        # keys and BOTH sent — caught by the race test, on exactly the first-run
-        # path. The rows are the one thing both processes see identically.
-        batch_key = counts.get("latest") or since
+        # Keyed on the STORED watermark when there is one: both processes read the
+        # same persisted window start, while the newest row each one counts can
+        # differ when a deletion lands between their two counts — which gave them
+        # different keys and two cards. Only with no watermark stored (each
+        # process then computes since = now - window itself, ms apart) is the
+        # batch's newest deleted_at the better shared identity.
+        batch_key = _claim_key(since, counts.get("latest"))
         if not _claim_window(batch_key):
             return {"sent": False, "reason": "claimed_by_sibling", "since": since}
 
@@ -597,9 +720,11 @@ async def flush_digest(channel: Any, *, force: bool = False) -> dict[str, Any]:
 
         when = format_when(since) or f"{since[:16].replace('T', ' ')} UTC"
         since_line = _t("deletions.digest.since", when=when) or f"since {when}"
-        who = _who_lines(since)
+        who = _who_lines(since, until=until)
         body = f"🗑 {head}\n" + (f"{who}\n" if who else "") + f"{since_line} · {tail}."
-        token = _token_for(since)
+        # Start AND end of the window: an older card's Show must reveal what that
+        # card counted, not every row since its start (~27 bytes, well under 64).
+        token = f"{_token_for(since)}-{_token_for(until)}"
         show = _t("deletions.button.show", n=n) or f"Show {n}"
         delete = _t("deletions.button.delete") or "Delete"
         quiet = _t("deletions.button.quiet") or "Stop these alerts"
@@ -620,7 +745,7 @@ async def flush_digest(channel: Any, *, force: bool = False) -> dict[str, Any]:
         if ok:
             # Advance ONLY on a delivered card. A failed send that moved the
             # watermark would silently drop the window it was reporting.
-            _set_watermark(_iso(_now()))
+            _set_watermark(until)
             _prune_claims()
         else:
             # Hand the batch back so the next attempt — ours or the sibling's —
@@ -634,7 +759,7 @@ async def flush_digest(channel: Any, *, force: bool = False) -> dict[str, Any]:
 WHO_MAX_CHATS = 5
 
 
-def _who_lines(since: str) -> str:
+def _who_lines(since: str, *, until: str | None = None) -> str:
     """One line per chat: who the deletions were in, and whose messages they were.
 
     The card used to say only "удалено: 2 в 2 чатах" — the operator had to tap Show
@@ -652,7 +777,8 @@ def _who_lines(since: str) -> str:
     except Exception:  # noqa: BLE001
         owner_id = None
     try:
-        rows = _store().deleted_by_chat_since(since, owner_id=owner_id, **_digest_scope())
+        rows = _store().deleted_by_chat_since(since, owner_id=owner_id, until=until,
+                                              **_digest_scope())
     except Exception:  # noqa: BLE001
         # The preview is a courtesy on top of a card that already has its count and
         # its Show button; failing to build it must never cost the card.
@@ -677,24 +803,40 @@ def _who_lines(since: str) -> str:
 def _token_for(since: str) -> str:
     """Compact, self-contained callback token for a window start.
 
-    Epoch milliseconds, because ``callback_data`` is capped at 64 bytes and an ISO
+    Epoch MICROSECONDS, because ``callback_data`` is capped at 64 bytes and an ISO
     timestamp plus the prefix leaves little room. Self-contained on purpose: the
-    button keeps working after the process that sent it is gone."""
+    button keeps working after the process that sent it is gone.
+
+    It used to encode milliseconds while the window edge carried six fractional
+    digits, so a Show decoded its ``until`` 1 ms EARLY: a card counted a row in that
+    millisecond and then answered "Nothing left to show" for it (measured 2026-10-30
+    in `test_deletion_policy` / `test_deletion_digest_scope`)."""
     try:
-        dt = datetime.strptime(since[:23], "%Y-%m-%dT%H:%M:%S.%f").replace(tzinfo=timezone.utc)
+        dt = datetime.strptime(since[:26], "%Y-%m-%dT%H:%M:%S.%f").replace(tzinfo=timezone.utc)
     except ValueError:
         try:
             dt = datetime.strptime(since[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
         except ValueError:
             dt = _now() - timedelta(seconds=window_sec())
-    return str(int(dt.timestamp() * 1000))
+    return str(int(dt.timestamp() * 1_000_000))
 
 
 def since_from_token(token: str) -> str:
-    """Inverse of :func:`_token_for`; falls back to one window ago on junk."""
+    """Inverse of :func:`_token_for`; falls back to one window ago on junk.
+
+    Read by magnitude: a 16-digit number cannot be epoch milliseconds until the year
+    33658, so a shorter token is one an older card minted in milliseconds. Cards
+    already sitting in a chat keep their window instead of pointing at 1970."""
+    text = str(token).strip()
     try:
-        dt = datetime.fromtimestamp(int(token) / 1000, tz=timezone.utc)
-    except (TypeError, ValueError, OSError, OverflowError):
+        stamp = int(text)
+    except (TypeError, ValueError):
+        dt = _now() - timedelta(seconds=window_sec())
+        return _iso(dt)
+    scale = 1_000_000 if len(text) >= 16 else 1_000
+    try:
+        dt = datetime.fromtimestamp(stamp / scale, tz=timezone.utc)
+    except (OSError, OverflowError, ValueError):
         dt = _now() - timedelta(seconds=window_sec())
     return _iso(dt)
 
@@ -848,11 +990,14 @@ def _own_deletions_path():
     return paths.cache_dir() / "own_business_deletions.json"
 
 
-def _own_key(bcid: Any, message_id: Any) -> str:
-    return f"{bcid}:{message_id}"
+def _own_key(bcid: Any, chat_id: Any, message_id: Any) -> str:
+    # Scoped by chat: a message id is unique only within one chat, and one business
+    # connection spans many — the reveal registry below keys by chat for the same reason.
+    return f"{bcid}:{chat_id}:{message_id}"
 
 
-def note_own_deletion(bcid: Any, message_ids: list[Any], *, now: float | None = None) -> None:
+def note_own_deletion(bcid: Any, message_ids: list[Any], *, chat_id: Any = None,
+                      now: float | None = None) -> None:
     """Record that NAVIG is about to delete these business messages. Never raises."""
     import json  # noqa: PLC0415
     import time  # noqa: PLC0415
@@ -868,7 +1013,7 @@ def note_own_deletion(bcid: Any, message_ids: list[Any], *, now: float | None = 
             data = {}
         data = {k: v for k, v in data.items() if ts - float(v) < OWN_DELETION_TTL_SEC}
         for mid in message_ids:
-            data[_own_key(bcid, mid)] = ts
+            data[_own_key(bcid, chat_id, mid)] = ts
         from navig.core.yaml_io import atomic_write_text  # noqa: PLC0415
 
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -877,7 +1022,8 @@ def note_own_deletion(bcid: Any, message_ids: list[Any], *, now: float | None = 
         logger.debug("could not note an own deletion", exc_info=True)
 
 
-def is_own_deletion(bcid: Any, message_id: Any, *, now: float | None = None) -> bool:
+def is_own_deletion(bcid: Any, message_id: Any, *, chat_id: Any = None,
+                    now: float | None = None) -> bool:
     """Was this deletion made by NAVIG in the last few minutes? Consumes the note."""
     import json  # noqa: PLC0415
     import time  # noqa: PLC0415
@@ -890,7 +1036,7 @@ def is_own_deletion(bcid: Any, message_id: Any, *, now: float | None = None) -> 
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
-    key = _own_key(bcid, message_id)
+    key = _own_key(bcid, chat_id, message_id)
     noted = data.pop(key, None)
     if noted is None:
         return False
@@ -955,17 +1101,32 @@ def _remember_reveal(chat_id: Any, key: str, ids: list[int], *, now: float | Non
     _write_reveals(data)
 
 
-def _take_reveal(chat_id: Any, key: str) -> list[int] | None:
-    """Pop the ids a Show posted in this chat, or None when already cleared.
+def _peek_reveal(chat_id: Any, key: str) -> list[int] | None:
+    """The ids a Show posted in this chat, or None when already cleared.
 
     Scoped by chat: a key is only a message id, and the same id can exist in
-    another chat."""
-    data = _read_reveals()
-    entry = data.pop(f"{chat_id}:{key}", None)
+    another chat. Read, not popped: the entry is settled only after the deletes
+    ran (:func:`_settle_reveal`), so a delete that failed stays retryable."""
+    entry = _read_reveals().get(f"{chat_id}:{key}")
     if not isinstance(entry, dict):
         return None
-    _write_reveals(data)
     return [int(i) for i in entry.get("ids") or []]
+
+
+def _settle_reveal(chat_id: Any, key: str, failed: list[int]) -> None:
+    """Drop the entry when every delete succeeded; otherwise keep only the ids
+    that failed, so another tap retries exactly those. The original timestamp is
+    kept, so the 48-hour expiry still applies."""
+    data = _read_reveals()
+    entry = data.get(f"{chat_id}:{key}")
+    if not isinstance(entry, dict):
+        return  # a concurrent tap already settled it
+    still = [int(i) for i in entry.get("ids") or [] if int(i) in set(failed)]
+    if still:
+        data[f"{chat_id}:{key}"] = {**entry, "ids": still}
+    else:
+        data.pop(f"{chat_id}:{key}", None)
+    _write_reveals(data)
 
 
 async def _offer_clear(channel: Any, chat_id: Any, ids: list[int]) -> bool:
@@ -986,32 +1147,37 @@ async def _offer_clear(channel: Any, chat_id: Any, ids: list[int]) -> bool:
 
 
 async def _clear_reveal(channel: Any, chat_id: Any, key: str, control_id: Any) -> str:
-    ids = _take_reveal(chat_id, key)
+    ids = _peek_reveal(chat_id, key)
     if ids is None:
         return _t("deletions.toast.clear_gone") or "Already cleared"
-    removed = 0
+    failed: list[int] = []
     for mid in ids:
         try:
             ok = await channel._api_call("deleteMessage", {"chat_id": chat_id, "message_id": mid})
         except Exception:  # noqa: BLE001
             ok = None
-        if ok:
-            removed += 1
-    # The button's own message goes last, so a failure above still leaves the
-    # operator a visible place where the clear was attempted.
-    if control_id is not None:
-        try:
-            await channel._api_call("deleteMessage", {"chat_id": chat_id, "message_id": control_id})
-        except Exception:  # noqa: BLE001
-            logger.debug("could not remove the clear button message", exc_info=True)
-    if removed == len(ids):
+        if not ok:
+            failed.append(mid)
+    _settle_reveal(chat_id, key, failed)
+    removed = len(ids) - len(failed)
+    if not failed:
+        # The button's own message goes last, and only once everything above is
+        # gone: while anything failed it stays, so another tap can retry.
+        if control_id is not None:
+            try:
+                await channel._api_call(
+                    "deleteMessage", {"chat_id": chat_id, "message_id": control_id}
+                )
+            except Exception:  # noqa: BLE001
+                logger.debug("could not remove the clear button message", exc_info=True)
         return _t("deletions.toast.cleared", n=removed) or f"Cleared {removed}"
     logger.warning(
-        "deletion reveal clear: removed %d of %d in chat %s (older than 48 h cannot be deleted by a bot)",
+        "deletion reveal clear: removed %d of %d in chat %s; the rest stay retryable "
+        "(older than 48 h cannot be deleted by a bot)",
         removed, len(ids), chat_id,
     )
     return _t("deletions.toast.cleared_partial", n=removed, total=len(ids)) or (
-        f"Cleared {removed} of {len(ids)} — older than 48 h stay"
+        f"Cleared {removed} of {len(ids)} — tap again to retry"
     )
 
 
@@ -1037,8 +1203,12 @@ async def handle_callback(channel: Any, cb_data: str, chat_id: Any, message_id: 
             ok = None
         if ok:
             return _t("deletions.toast.deleted") or "Deleted"
-        # A bot may only delete its own messages for 48 hours.
-        return _t("deletions.toast.delete_failed") or "Couldn't delete — older than 48 h"
+        # `_api_call` answers None for every refusal — a timeout, a rate limit, a
+        # permission, or the 48-hour limit on a bot deleting its own messages — so
+        # the toast must not claim the card is too old: that reads as permanent.
+        return _t("deletions.toast.delete_failed") or (
+            "Couldn't delete — try again (cards older than 48 h can't be removed)"
+        )
 
     if payload == "off":
         try:
@@ -1053,9 +1223,13 @@ async def handle_callback(channel: Any, cb_data: str, chat_id: Any, message_id: 
         return _t("deletions.toast.off") or "Deletion alerts off"
 
     if payload.startswith("show:"):
-        since = since_from_token(payload[len("show:"):])
+        start, _, end = payload[len("show:"):].partition("-")
+        since = since_from_token(start)
+        # A card sent before the end bound existed carries only the start.
+        until = since_from_token(end) if end else None
         try:
-            rows = _store().list_deleted(since=since, limit=200, **_digest_scope())
+            rows = _store().list_deleted(since=since, until=until, limit=200,
+                                         **_digest_scope())
         except Exception:  # noqa: BLE001
             logger.warning("deletion digest detail read failed", exc_info=True)
             return "⚠️ Could not read the deletions"

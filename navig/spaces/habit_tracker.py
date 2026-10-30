@@ -40,11 +40,18 @@ def tracker_path(space: str | None = None) -> Path:
 
     ``NAVIG_INVOCATION_CWD`` rather than ``Path.cwd()``: main.py chdir's to the
     active space before any command runs, so by now cwd is the pin, not the shell's
-    directory. That env var is the pre-chdir launch dir (main.py:746).
+    directory. That env var is the pre-chdir launch dir (main.py:746). A relative
+    ``space`` is anchored there too, for the same reason.
+
+    A space directory that declares ``habits.log_file`` in its ``.navig/config.yaml``
+    (the bundled human-space keeps it at ``spaces/growth/habits.csv``) is honoured;
+    the root-level ``habits.csv`` is only the fallback for spaces that declare none.
     """
     if space:
-        p = Path(space).expanduser()
-        return p if p.suffix.lower() == ".csv" else p / TRACKER_FILE
+        from navig.platform.paths import resolve_user_path  # noqa: PLC0415
+
+        p = resolve_user_path(space)
+        return p if p.suffix.lower() == ".csv" else _space_tracker(p)
 
     launched_from = os.environ.get("NAVIG_INVOCATION_CWD") or ""
     here = (Path(launched_from) if launched_from else Path.cwd()) / TRACKER_FILE
@@ -53,7 +60,27 @@ def tracker_path(space: str | None = None) -> Path:
 
     from navig.spaces.active import get_active_working_dir  # noqa: PLC0415
 
-    return get_active_working_dir() / TRACKER_FILE
+    return _space_tracker(get_active_working_dir())
+
+
+def _space_tracker(root: Path) -> Path:
+    """The habits.csv a space directory declares, else ``<root>/habits.csv``.
+
+    A root-level tracker that already holds history keeps winning while the
+    declared file does not exist yet, so nothing logged before this rule
+    appears lost.
+    """
+    from navig.core.yaml_io import safe_load_yaml  # noqa: PLC0415
+
+    fallback = root / TRACKER_FILE
+    config = safe_load_yaml(root / ".navig" / "config.yaml")
+    habits = config.get("habits") if isinstance(config, dict) else None
+    log_file = habits.get("log_file") if isinstance(habits, dict) else None
+    if isinstance(log_file, str) and log_file.strip():
+        declared = root / Path(log_file.strip()).expanduser()
+        if declared.exists() or not fallback.exists():
+            return declared
+    return fallback
 
 
 def read_tracker(path: Path) -> list[dict]:
@@ -129,6 +156,11 @@ def day_map(path: Path, day: str) -> dict[str, str]:
 # to identifies the tracker it belongs to.
 
 
+#: How many card → tracker entries one chat keeps. Cards older than this resolve
+#: through the chat's latest tracker, which is what every card did before.
+_MAX_CARDS = 32
+
+
 def _targets_file() -> Path:
     from navig.platform import paths  # noqa: PLC0415
 
@@ -172,21 +204,41 @@ def remember_target(
     The message id and day are kept too so the day can be closed later — by the
     owner tapping, or automatically at the end of the day — by editing that exact
     card rather than posting a second one nobody asked for.
+
+    The path is stored ABSOLUTE: the gateway that resolves it runs from a different
+    working directory than the CLI that recorded it. And it is stored per message
+    as well as per chat, so two live cards for two spaces in one chat each keep
+    writing into their own tracker (see :func:`resolve_target`).
     """
     data = _read_state()
     entry = _chat_state(data, chat_id)
-    entry["path"] = str(path)
+    absolute = str(Path(path).expanduser().resolve())
+    entry["path"] = absolute
     if message_id is not None:
         entry["message_id"] = message_id
+        cards = entry.get("cards")
+        cards = dict(cards) if isinstance(cards, dict) else {}
+        cards.pop(str(message_id), None)
+        cards[str(message_id)] = absolute
+        entry["cards"] = dict(list(cards.items())[-_MAX_CARDS:])
     if day is not None:
         entry["day"] = day
     data[str(chat_id)] = entry
     _write_state(data)
 
 
-def resolve_target(chat_id: int) -> Path:
-    """The tracker a tap from *chat_id* belongs to; falls back to normal resolution."""
-    recorded = _chat_state(_read_state(), chat_id).get("path")
+def resolve_target(chat_id: int, message_id: int | None = None) -> Path:
+    """The tracker a tap from *chat_id* belongs to; falls back to normal resolution.
+
+    With *message_id*, the card that was tapped wins over the chat's latest card —
+    a newer card for a different space must not redirect taps on an older one.
+    """
+    entry = _chat_state(_read_state(), chat_id)
+    if message_id is not None:
+        cards = entry.get("cards")
+        if isinstance(cards, dict) and isinstance(cards.get(str(message_id)), str):
+            return Path(cards[str(message_id)])
+    recorded = entry.get("path")
     return Path(recorded) if recorded else tracker_path()
 
 
@@ -222,6 +274,37 @@ def forget_morning(chat_id: int) -> None:
     data = _read_state()
     entry = _chat_state(data, chat_id)
     if entry.pop("morning", None) is not None:
+        data[str(chat_id)] = entry
+        _write_state(data)
+
+
+def remember_closing(chat_id: int, message_id: int, day: str) -> None:
+    """Record the card that now says the day is closed.
+
+    Closing edits the check-in card in place when its id is still known, so the
+    closing card IS the last card. When the edit fails (deleted, too old to edit)
+    a fresh message is posted instead, and only this pointer remembers which
+    message the verdict landed in. The morning after, exactly one card must
+    survive — the new one — so this is what gets deleted."""
+    data = _read_state()
+    entry = _chat_state(data, chat_id)
+    entry["closed_card"] = {"message_id": int(message_id), "day": day}
+    data[str(chat_id)] = entry
+    _write_state(data)
+
+
+def closing_card(chat_id: int) -> tuple[int | None, str | None]:
+    """``(message_id, day)`` of the card that closed a day, if it was recorded."""
+    slot = _chat_state(_read_state(), chat_id).get("closed_card")
+    if not isinstance(slot, dict) or slot.get("message_id") is None:
+        return None, None
+    return int(slot["message_id"]), slot.get("day")
+
+
+def forget_closing(chat_id: int) -> None:
+    data = _read_state()
+    entry = _chat_state(data, chat_id)
+    if entry.pop("closed_card", None) is not None:
         data[str(chat_id)] = entry
         _write_state(data)
 
@@ -337,7 +420,11 @@ def summarize(rows: list[dict], today: date) -> dict:
     are cheap to count and tell you nothing; knowing that every complete day was a
     weekday tells you what to change.
     """
-    days = sorted({r["date"] for r in rows if _parses(r["date"])})
+    # A future-dated row (`habit log --date` accepts one) is not part of the period yet:
+    # counting it made the span zero or negative and inflated `done` against it.
+    days = sorted(
+        {r["date"] for r in rows if _parses(r["date"]) and date.fromisoformat(r["date"]) <= today}
+    )
     if not days:
         return {"days": 0, "start": None, "end": None, "habits": {}, "complete": 0, "by_weekday": {}}
 

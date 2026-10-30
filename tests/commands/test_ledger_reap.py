@@ -38,9 +38,7 @@ def recorder(tmp_path, monkeypatch) -> OperationRecorder:
     rec = OperationRecorder(history_dir=tmp_path)
     # Both the ledger command and the doctor check resolve the recorder lazily
     # via get_operation_recorder(); point both at our isolated temp recorder.
-    monkeypatch.setattr(
-        "navig.operation_recorder.get_operation_recorder", lambda: rec
-    )
+    monkeypatch.setattr("navig.operation_recorder.get_operation_recorder", lambda: rec)
     return rec
 
 
@@ -91,6 +89,59 @@ def test_ledger_reap_leaves_running_op_alone(recorder, capsys):
     out = json.loads(capsys.readouterr().out)
     assert out["count"] == 0
     assert not recorder.history_file.exists()
+
+
+# ---------------------------------------------------------------------------
+# The count itself — one rule, shared by `ledger show`, `navig doctor` and `reap`
+# ---------------------------------------------------------------------------
+
+
+def _completed_with_lingering_marker(recorder: OperationRecorder) -> None:
+    """An operation that DID write its line, plus a marker the completion left behind."""
+    rec = recorder.start_operation("navig repo lock check", OperationType.LOCAL_COMMAND)
+    recorder.complete_operation(rec, success=True)
+    inflight.write_marker(
+        recorder.history_dir,
+        op_id=rec.id,
+        command=rec.command,
+        host=None,
+        operation_type=rec.operation_type.value,
+        working_dir="/tmp",
+        pid=_DEAD_PID,
+    )
+
+
+def test_in_flight_summary_counts_only_operations_with_no_line(recorder):
+    """A dead marker whose line already exists is stale bookkeeping, not a missing op.
+
+    This is the NEURON 2026-10-26 discrepancy: `ledger show` said "12 never
+    completed", `reap` reaped one. Eleven markers belonged to operations that had
+    already recorded their line.
+    """
+    _completed_with_lingering_marker(recorder)
+    _mark(recorder, "navig db drop --host prod", pid=_DEAD_PID)  # genuinely interrupted
+
+    assert recorder.in_flight_summary() == (0, 1)
+
+
+def test_in_flight_summary_counts_a_running_operation_once(recorder):
+    _completed_with_lingering_marker(recorder)
+    _mark(recorder, "navig backup run", pid=os.getpid())
+
+    assert recorder.in_flight_summary() == (1, 0)
+
+
+def test_doctor_reports_the_same_interrupted_count_in_flight_summary_does(recorder):
+    from navig.commands.doctor import check_ledger
+
+    _completed_with_lingering_marker(recorder)
+    _mark(recorder, "navig db drop --host prod", pid=_DEAD_PID)
+
+    rows = {row.label: row for row in check_ledger()}
+
+    assert set(rows) == {"Interrupted ops"}, "the stale marker must not invent a row"
+    assert rows["Interrupted ops"][1] is False  # a real, non-green finding
+    assert "1 operation(s) never completed" in rows["Interrupted ops"].detail
 
 
 # ---------------------------------------------------------------------------

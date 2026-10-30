@@ -205,3 +205,20 @@ class TestBundle:
     def test_sealed_defaults_false(self):
         b = self._make_bundle()
         assert b.sealed is False
+
+
+def test_a_bare_package_import_still_exposes_the_submodules():
+    """`import navig.blackbox` then `navig.blackbox.recorder.…` worked before the engine
+    moved to navig_blackbox. Run in a fresh interpreter: in this process another test has
+    usually imported the submodule already, which sets the attribute and hides the bug."""
+    import subprocess
+    import sys
+
+    code = (
+        "import navig.blackbox as b, navig_blackbox.recorder as r;"
+        "assert b.recorder.get_recorder is r.get_recorder;"
+        "assert b.bundle is not None and b.types is not None;"
+        "assert not hasattr(b, 'nope')"
+    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stderr

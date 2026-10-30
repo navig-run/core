@@ -64,6 +64,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from navig.core.coerce import coerce_bool
 from navig.platform.paths import skills_dir
 
 logger = logging.getLogger(__name__)
@@ -184,6 +185,11 @@ class ContextSkill:
         localized_keywords:  Per-language packs (``{"ru": [...], "fr": [...]}``) from
                              ``activation_keywords_<lang>`` — see the module docstring
                              for how they differ from ``activation_keywords``.
+        activatable:         ``False`` (frontmatter ``activatable: false``) keeps the skill
+                             out of automatic activation — for skills written against a
+                             command surface that is not implemented yet, whose
+                             instructions the agent could not carry out. Force-activation
+                             still works.
     """
 
     name: str
@@ -195,6 +201,7 @@ class ContextSkill:
     source: str = "project"  # "project" | "global"
     file_path: str = ""
     localized_keywords: dict[str, list[str]] = field(default_factory=dict)
+    activatable: bool = True
 
     # -- helpers --------------------------------------------------------------
 
@@ -283,6 +290,7 @@ def _parse_skill_file(path: Path, source: str) -> ContextSkill | None:
         source=source,
         file_path=str(path),
         localized_keywords=localized,
+        activatable=coerce_bool(fm.get("activatable"), default=True),
     )
 
 
@@ -419,6 +427,9 @@ class SkillsContext:
             # Force-activation guarantees inclusion
             if skill.name in self._force_activated:
                 scored.append((skill, 10_000))
+                continue
+
+            if not skill.activatable:
                 continue
 
             score = _compute_activation_score(

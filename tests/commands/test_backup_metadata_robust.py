@@ -29,6 +29,12 @@ def test_read_metadata_corrupt_returns_none(tmp_path):
     assert _read_backup_metadata(f) is None
 
 
+def test_read_metadata_invalid_utf8_returns_none(tmp_path):
+    f = tmp_path / "metadata.json"
+    f.write_bytes(b'{"type": "db", "timestamp": "\xff"}')  # byte-level corruption
+    assert _read_backup_metadata(f) is None
+
+
 def test_read_metadata_missing_returns_none(tmp_path):
     assert _read_backup_metadata(tmp_path / "nope.json") is None
 

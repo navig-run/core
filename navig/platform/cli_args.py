@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from glob import glob
 
 # Windows' MAX_PATH is 260 and long paths top out at 32,767; nobody types a glob longer
@@ -62,8 +63,7 @@ def expand_windows_args(argv: list[str]) -> list[str]:
 
 def cli_args() -> list[str] | None:
     """The argv to hand Typer: expanded safely on Windows, ``None`` (= sys.argv) elsewhere."""
-    import sys
 
-    if os.name != "nt":
+    if sys.platform != "win32":
         return None
     return expand_windows_args(sys.argv[1:])

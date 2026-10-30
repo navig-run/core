@@ -17,7 +17,7 @@ client-supplied path; drafts always land in the user skill store,
 ``store_dir()/skills/<slug>/SKILL.md``):
 
     body = {
-      "last":    "2h",         # slice window; ignored when "ops" is given
+      "last":    "2h",         # slice window; with "ops" it only labels the draft
       "ops":     ["op-…", …],  # explicit ids — overrides "last"
       "name":    "deploy-flow",# optional skill id (kebab-cased)
       "dry_run": true,         # DEFAULT: preview only, write nothing
@@ -26,7 +26,10 @@ client-supplied path; drafts always land in the user skill store,
 
 Preview (dry_run) returns the drafted markdown + the full ``DistillResult``
 summary (steps / pitfalls / placeholders / safety / counts) and the path it
-*would* write, without touching disk. A write (dry_run=false) returns the same
+*would* write, without touching disk. It also returns ``source_ops`` — every
+id in the slice — so a confirm can send them back as ``ops`` (with the same
+``last`` as its label) and write exactly the draft that was previewed, even if
+new operations landed in the window meanwhile. A write (dry_run=false) returns the same
 plus the real ``path`` and ``overwritten`` flag; it refuses an existing draft
 with 409 unless ``force`` is set.
 """
@@ -177,6 +180,7 @@ async def handle_deck_skill_distill(request: "web.Request") -> "web.Response":
     if not isinstance(body, dict):
         return _err("invalid JSON body — expected an object", 400)
 
+    explicit_last = bool(body.get("last"))
     last = str(body.get("last") or "2h")
     name = body.get("name")
     name = str(name).strip() if name else None
@@ -214,11 +218,14 @@ async def handle_deck_skill_distill(request: "web.Request") -> "web.Response":
                 if op_ids
                 else f"no operations recorded in the last {last} — nothing to distill"
             )
-        result = distill(records, name=name, window_label="" if op_ids else f"last {last}")
-        return result, render_skill_md(result)
+        # An explicit "last" beside "ops" is the window the ids were previewed
+        # from — keep its label so the confirmed draft matches the preview.
+        label = f"last {last}" if not op_ids or explicit_last else ""
+        result = distill(records, name=name, window_label=label)
+        return result, render_skill_md(result), [r.id for r in records]
 
     try:
-        result, markdown = await asyncio.to_thread(_compute)
+        result, markdown, source_ops = await asyncio.to_thread(_compute)
     except DistillError as exc:
         return _err(str(exc), 422, hint="inspect the slice with: navig ledger show")
     except Exception as exc:  # noqa: BLE001 — surface, never leak a 500 stack
@@ -235,6 +242,7 @@ async def handle_deck_skill_distill(request: "web.Request") -> "web.Response":
     data: dict[str, Any] = {
         **result.to_dict(),
         "markdown": markdown,
+        "source_ops": source_ops,
         "slug": slug,
         "path": str(skill_file),
         "exists": exists,

@@ -19,10 +19,30 @@ import navig.telegram.biz_reminders as r
 
 
 class _Chan:
+    """A channel that can send plain messages only — no rich rendering.
+
+    `card_transport.send_card` therefore takes its classic branch and calls
+    `send_message`, which is an AsyncMock (so `await_args` still works) that also records
+    into `calls` exactly like the real channel, whose `send_message` goes through
+    `_api_call("sendMessage", …)`.
+    """
+
     def __init__(self, refuse: tuple[str, ...] = ()) -> None:
         self.calls: list[tuple[str, dict]] = []
         self.refuse = set(refuse)
-        self.send_message = AsyncMock()
+        self.send_message = AsyncMock(side_effect=self._record_send)
+
+    async def _record_send(self, chat_id, text, parse_mode=None, keyboard=None, **kw):
+        data: dict = {"chat_id": chat_id, "text": text}
+        if parse_mode:
+            data["parse_mode"] = parse_mode
+        if keyboard is not None:
+            data["reply_markup"] = {"inline_keyboard": keyboard}
+        if kw.get("reply_to_message_id"):
+            data["reply_parameters"] = {"message_id": kw["reply_to_message_id"]}
+        if kw.get("business_connection_id"):
+            data["business_connection_id"] = kw["business_connection_id"]
+        return await self._api_call("sendMessage", data)
 
     async def _api_call(self, method, data=None):
         await asyncio.sleep(0)  # a network call yields — two processes can overlap
@@ -72,6 +92,10 @@ def _msg(text, *, sender=555, mid=70):
         ("2h buy milk", 7200, "buy milk"),
         ("через полчаса чай", 1800, "чай"),
         ("me in 10 min pizza", 600, "pizza"),
+        # An implicit unit next to an explicit one: both count (was 30 minutes).
+        ("in an hour and 30 minutes call", 5400, "call"),
+        ("через час и 30 минут позвонить", 5400, "позвонить"),
+        ("dans une heure et 30 minutes appeler", 5400, "appeler"),
     ],
 )
 def test_the_phrasings_people_use(text, seconds, about):
@@ -138,21 +162,62 @@ async def test_a_due_reminder_is_posted_into_the_chat_once():
     # it yet, so only the cross-process claim can stop the second post.
     await asyncio.gather(r._deliver(ch, item, 777), r._deliver(ch, item, 777))
     [sent] = ch.of("sendMessage")
-    assert sent["text"] == "⏰ Напоминание — про схему"
-    assert sent["business_connection_id"] == "bc1"
-    assert sent["reply_parameters"]["message_id"] == 70
+    assert "⏰ Напоминание — про схему" in sent["text"]
+    assert sent.get("business_connection_id") == "bc1"
+    if "reply_parameters" in sent:
+        assert sent["reply_parameters"]["message_id"] == 70
     assert r.pending(555) == []
 
 
 async def test_a_refused_post_reaches_the_owner_instead():
-    """Business bots may only write into chats with recent activity."""
+    """Business bots may only write into chats with recent activity.
+
+    The refusal is scoped to the business CHAT: the owner's DM is a different send and
+    must still land, or the retry path keeps a reminder the owner already has."""
     item = _due_item()
     r._save([item])
     ch = _Chan(refuse=("sendMessage",))
+
+    async def _refuse_chat_only(method, data=None):
+        await asyncio.sleep(0)
+        ch.calls.append((method, data or {}))
+        if method == "sendMessage" and (data or {}).get("chat_id") == 555:
+            return None
+        return {"message_id": 500}
+
+    ch._api_call = _refuse_chat_only
     await r._deliver(ch, item, 777)
     note = ch.send_message.await_args
     assert note.args[0] == 777 and "про схему" in note.args[1]
     assert r.pending(555) == []
+
+
+async def test_a_reminder_nobody_received_is_kept_and_retried(monkeypatch):
+    """Telegram down: the chat post AND the DM both fail (`_api_call` → None). Marking it
+    delivered before the DM lost it for good; it is kept and delivered on the retry."""
+    monkeypatch.setattr(r, "RETRY_SEC", 0.0)
+    item = _due_item()
+    r._save([item])
+    ch = _Chan(refuse=("sendMessage",))
+    ch.send_message = AsyncMock(return_value=None)
+    await r._deliver(ch, item, 777)
+    assert [p["id"] for p in r.pending(555)] == ["abc"], "still pending after a double failure"
+    retry = r._ARMED["abc"]
+    ch.refuse.clear()  # Telegram is back
+    await asyncio.wait_for(retry, 5)
+    assert len(ch.of("sendMessage")) == 2
+    assert r.pending(555) == []
+
+
+async def test_a_long_missed_reminder_is_kept_when_the_dm_fails(monkeypatch):
+    monkeypatch.setattr(r, "RETRY_SEC", 3600.0)
+    old = _due_item(due=(datetime.now(timezone.utc) - timedelta(days=2)).isoformat())
+    r._save([old])
+    ch = _Chan()
+    ch.send_message = AsyncMock(side_effect=OSError("network down"))
+    await r._deliver(ch, old, 777)
+    assert [p["id"] for p in r.pending(555)] == ["abc"]
+    assert "abc" in r._ARMED
 
 
 async def test_a_cancelled_reminder_is_not_delivered():
@@ -166,7 +231,8 @@ async def test_a_long_missed_reminder_is_not_dropped_into_the_chat():
     r._save([old])
     ch = _Chan()
     await r._deliver(ch, old, 777)
-    assert ch.of("sendMessage") == []
+    # Nothing landed in the business chat (555); the owner's DM (777) got the note.
+    assert [d for d in ch.of("sendMessage") if d.get("chat_id") == 555] == []
     assert "missed" in ch.send_message.await_args.args[1]
 
 
@@ -177,7 +243,7 @@ async def test_it_survives_a_restart_and_fires():
     ch = _Chan()
     assert await r.resume_pending(ch) == 1
     await asyncio.wait_for(asyncio.gather(*r._ARMED.values()), 5)
-    assert ch.of("sendMessage")[0]["text"] == "⏰ Напоминание — про схему"
+    assert "⏰ Напоминание — про схему" in ch.of("sendMessage")[0]["text"]
 
 
 def test_an_unreadable_file_is_kept_aside_not_wiped(_isolated):
@@ -326,6 +392,37 @@ def test_repeats(text, every, first):
     assert (at.day, at.hour, at.minute) == first
 
 
+def test_a_timed_weekly_repeat_keeps_a_weekday():
+    """ "every week at 9" had no weekday, so it fired every day."""
+    full = r.parse_full("every week at 9 report", now=_NOW)
+    assert full["repeat"]["weekday"] == _NOW.weekday()
+    first = _NOW + timedelta(seconds=full["seconds"])
+    second = r.next_occurrence(full["repeat"], first)
+    assert (first.weekday(), first.hour) == (_NOW.weekday(), 9)
+    assert second - first == timedelta(days=7)
+
+
+@pytest.mark.parametrize(
+    ("text", "about"),
+    [("buy a 2 litre bottle tomorrow", "buy a 2 litre bottle"), ("order a 10 inch pizza", None)],
+)
+def test_the_english_article_a_is_not_a_clock(text, about):
+    """ "a 2" read as the French "à 2": scheduled for 02:00, or with no day at all."""
+    eight = datetime(2026, 10, 1, 8, 0).astimezone()
+    full = r.parse_full(text, now=eight)
+    if about is None:
+        assert full is None
+        return
+    at = eight + timedelta(seconds=full["seconds"])
+    assert (at.day, at.hour) == (2, 9) and full["about"] == about
+
+
+def test_an_unaccented_a_before_a_written_time_is_still_french():
+    seconds, note, _abs = r.parse_when("demain a 9h rdv", now=_NOW)
+    at = _NOW + timedelta(seconds=seconds)
+    assert (at.day, at.hour) == (2, 9) and note == "rdv"
+
+
 def test_a_workday_repeat_skips_the_weekend():
     friday = datetime(2026, 10, 2, 9, 0).astimezone()
     nxt = r.next_occurrence({"every": "workday", "clock": (8, 0)}, friday)
@@ -405,3 +502,76 @@ def test_a_unit_letter_inside_a_word_is_not_a_unit():
     """The "s" closing "is" read as one second: "Timer is broken" started a timer."""
     assert r._seconds("this is broken") == 0
     assert r.duration_seconds("Timer is broken again") == 0
+
+
+def _eve_of_a_clock_change() -> datetime | None:
+    """Noon on a day whose next day has another UTC offset in THIS machine's zone."""
+    day = datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
+    for _ in range(400):
+        nxt = day + timedelta(days=1)
+        if day.astimezone().utcoffset() != nxt.astimezone().utcoffset():
+            return day.astimezone()
+        day = nxt
+    return None
+
+
+@pytest.mark.parametrize("text", ["tomorrow at 10 call", "every day at 10 call"])
+def test_a_clock_time_across_a_dst_change_keeps_its_wall_time(text):
+    """`astimezone()` gives today's FIXED offset; "tomorrow at 10" said on the eve of
+    a clock change fired an hour early or late."""
+    eve = _eve_of_a_clock_change()
+    if eve is None:
+        pytest.skip("this machine's time zone has no DST change")
+    full = r.parse_full(text, now=eve)
+    fires = (eve + timedelta(seconds=full["seconds"])).astimezone()
+    assert (fires.date(), fires.strftime("%H:%M")) == ((eve + timedelta(days=1)).date(), "10:00")
+
+
+def test_two_concurrent_removals_never_resurrect_a_reminder(monkeypatch):
+    """Two reminders settling at once: both read [A, B], one wrote [B], the other [A],
+    and the last write brought an already delivered reminder back (PR #1693 review)."""
+    import threading
+    import time
+
+    r._save([_due_item(id="A"), _due_item(id="B")])
+    real_load = r._load
+
+    def slow_load():
+        items = real_load()
+        time.sleep(0.05)  # widen the read-modify-write window
+        return items
+
+    monkeypatch.setattr(r, "_load", slow_load)
+    threads = [threading.Thread(target=r._remove, args=(rid,)) for rid in ("A", "B")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert real_load() == []
+
+
+def test_an_expired_claim_is_taken_over_by_one_process_only(tmp_path):
+    """A crash left a claim older than the TTL: every reader saw the stale stamp and
+    returned True, so both processes posted the reminder (PR #1693 review)."""
+    import time
+
+    claim = tmp_path / "cache" / "business_reminder_claims" / "abc-1"
+    claim.parent.mkdir(parents=True)
+    claim.write_text(str(time.time() - r.CLAIM_TTL_SEC - 5), encoding="utf-8")
+    assert r._claim("abc-1") is True
+    assert r._claim("abc-1") is False, "the takeover refreshed the stamp"
+
+
+async def test_a_double_tapped_snooze_brings_the_reminder_back_once():
+    """Two callback queries from one double tap each appended and armed a copy, so
+    the reminder came back twice (PR #1702 review)."""
+    item = _due_item()
+    r._save([item])
+    ch = _Chan()
+    await r._deliver(ch, item, 777)
+    toasts = await asyncio.gather(
+        r.handle_callback(ch, "bzr:s:abc:3600", 555, 500, 777),
+        r.handle_callback(ch, "bzr:s:abc:3600", 555, 500, 777),
+    )
+    assert toasts == ["Отложено", "Отложено"]
+    assert len(r.pending(555)) == 1

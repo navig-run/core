@@ -73,7 +73,9 @@ def _manager(timeout_s: float = 0.05):
 async def _ask(mgr) -> str:
     ids: list[str] = []
     mgr.on_request(lambda req: ids.append(req.id))
-    await mgr.request_approval("tool deploy_prod", channel="telegram", user_id="42")
+    await mgr.request_approval(
+        "tool deploy_prod", channel="telegram", user_id="42", resumable=True
+    )
     assert ids, "the request published no id"
     return ids[0]
 
@@ -89,11 +91,44 @@ async def test_an_approval_after_a_restart_is_recognised_and_resumed(spawned):
 
     applied = await after_restart.respond(request_id, approved=True)
 
-    assert applied is False, "a post-restart answer is not applied inline — it re-enters"
+    assert applied is True, (
+        "a post-restart Approve that started the resume reported 'not found' — the "
+        "operator is invited to re-issue an action that is already running"
+    )
     assert spawned, (
         "a post-restart Approve started nothing — the durable record was never consulted, "
         "so the operator's tap did nothing"
     )
+
+
+async def test_a_request_outstanding_at_shutdown_is_resumable_after_restart(spawned):
+    """stop() cancels the waiter — a shutdown, not a denial; the durable records survive."""
+    import asyncio
+
+    from navig.approval import journal, resume
+
+    before = _manager(timeout_s=30.0)
+    ids: list[str] = []
+    before.on_request(lambda req: ids.append(req.id))
+    task = asyncio.create_task(
+        before.request_approval(
+            "tool deploy_prod", channel="telegram", user_id="42", resumable=True
+        )
+    )
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        if ids:
+            break
+    assert ids
+
+    await before.stop()
+    assert await task is False
+
+    assert resume.peek(ids[0]) is not None, "shutdown discarded the resume record"
+    assert ids[0] in journal.list_pending(), "shutdown cleared the pending journal entry"
+
+    await _manager().respond(ids[0], approved=True)
+    assert spawned, "a post-restart Approve of a shutdown-interrupted request did nothing"
 
 
 async def test_a_denial_after_a_restart_consumes_the_record(spawned):
@@ -101,7 +136,9 @@ async def test_a_denial_after_a_restart_consumes_the_record(spawned):
 
     request_id = await _ask(_manager())
 
-    await _manager().respond(request_id, approved=False)
+    assert await _manager().respond(request_id, approved=False) is True, (
+        "a post-restart denial that consumed the record reported 'not found'"
+    )
 
     assert spawned == [], "a DENIAL started a resume"
     assert resume.peek(request_id) is None, "a denied record was left resumable"
@@ -166,7 +203,7 @@ def test_doctor_does_not_report_an_unreadable_journal_as_nothing_waiting(monkeyp
     from navig.approval import journal
     from navig.commands.doctor import check_pending_approvals
 
-    def boom():
+    def boom(**_kw):
         raise OSError("journal unreadable (disk full / permissions)")
 
     monkeypatch.setattr(journal, "list_pending", boom)
@@ -213,7 +250,7 @@ def test_doctor_never_raises_on_a_broken_store(monkeypatch):
     from navig.commands.doctor import check_pending_approvals
 
     monkeypatch.setattr(
-        journal, "list_pending", lambda: (_ for _ in ()).throw(OSError("nope"))
+        journal, "list_pending", lambda **_kw: (_ for _ in ()).throw(OSError("nope"))
     )
     rows = check_pending_approvals()  # must not raise
     assert isinstance(rows, list)

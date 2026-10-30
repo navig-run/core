@@ -72,7 +72,10 @@ def _resolve(card_id: str) -> dict[str, Any]:
     """Exact id, then unambiguous prefix — silently acting on the wrong card is
     the one outcome a task surface must never produce (same rule as todo)."""
     card = _store().get_card(card_id)
-    if card is not None:
+    # `get_card` reads the shared table, so an exact id can name a todo or an
+    # appointment; only a board card resolves here (the prefix path below is
+    # card-only via `list_cards`), or `deps`/`subtask` would wire PIM rows in.
+    if card is not None and card.get("kind", "card") == "card":
         return card
     matches = [c for c in _store().list_cards() if str(c["id"]).startswith(card_id)]
     if not matches:
@@ -268,6 +271,14 @@ def move_cmd(
             ("Allowed: " + ", ".join(allowed)) if allowed else "This role moves no cards.",
         )
         raise typer.Exit(1)
+    # Same dependency gate the Deck run route enforces (409): no work starts or is
+    # submitted on a card whose dependencies are still unfinished.
+    if target in ("in_progress", "agent") and card.get("gate") == "waiting":
+        ch.error(
+            f"{card['title']} is waiting on unfinished dependencies.",
+            "Finish them first — see: navig card show " + str(card["id"]),
+        )
+        raise typer.Exit(1)
 
     moved = _store().move_card(card["id"], target, actor="agent")
     if moved is None:
@@ -295,6 +306,17 @@ def claim_cmd(
             f"Held by: {held} · release it first (its session, or orchestrator --force).",
         )
         raise typer.Exit(1)
+    # The registry is the other coordination view (`navig mesh agents list`): keep it
+    # in step, and undo a fresh board claim if it cannot be — never two answers.
+    from navig import agent_registry  # noqa: PLC0415
+
+    try:
+        agent_registry.set_card(holder, card["id"])
+    except OSError as exc:
+        if card.get("origin_ref") != holder:
+            _store().release_card(card["id"], holder)
+        ch.error("Claim undone — the agent registry could not be updated.", str(exc))
+        raise typer.Exit(1) from exc
     if as_json:
         ch.emit_json({"id": card["id"], "holder": holder, "claimed": True})
         return
@@ -321,6 +343,16 @@ def release_cmd(
             f"Held by: {card.get('origin_ref') or 'nobody'}",
         )
         raise typer.Exit(1)
+    from navig import agent_registry  # noqa: PLC0415
+
+    try:
+        agent_registry.clear_card(card["id"])
+    except OSError as exc:
+        previous = card.get("origin_ref")
+        if previous:
+            _store().claim_card(card["id"], str(previous))
+        ch.error("Release undone — the agent registry could not be updated.", str(exc))
+        raise typer.Exit(1) from exc
     if as_json:
         ch.emit_json({"id": card["id"], "released": True, "forced": force})
         return

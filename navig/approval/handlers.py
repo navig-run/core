@@ -98,12 +98,18 @@ class TelegramApprovalHandler:
             from navig.telegram import chat_tidy
 
             with chat_tidy.routine("system"):
-                await self.bot.send_message(
+                sent = await self.bot.send_message(
                     chat_id=int(chat_id),
                     text=message,
                     parse_mode="HTML",
                     keyboard=keyboard,
                 )
+            # Remember which card asks it, so the tidy keeps it until answered/expired.
+            mid = sent.get("message_id") if isinstance(sent, dict) else None
+            if isinstance(mid, int):
+                from navig.approval import journal
+
+                journal.note_card(request.id, int(chat_id), mid)
         except Exception as e:  # noqa: BLE001 - a prompt must never break the request
             logger.error("Failed to send Telegram approval request: %s", e)
 

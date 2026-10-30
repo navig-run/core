@@ -101,6 +101,14 @@ def _documented_toggles() -> set[str]:
     return {t.rstrip(".") for t in found}
 
 
+# Wrappers that ARE the coercion: a read wrapped in one of these is not raw.
+# `require_auth_enabled` delegates to `coerce_bool` for every non-empty value and
+# keeps sign-in on for empty — its truth table is pinned by
+# tests/telegram/test_require_auth_rule.py, so the wrapper cannot drift into a
+# truthy read without that test failing first.
+DELEGATING_WRAPPERS = frozenset({"coerce_bool", "require_auth_enabled"})
+
+
 def _raw_reads_in(tree: ast.AST) -> list[tuple[ast.Call, str, int]]:
     """Real `<cfg>.get("key", True|False)` CALLS, excluding ones already wrapped.
 
@@ -113,7 +121,7 @@ def _raw_reads_in(tree: ast.AST) -> list[tuple[ast.Call, str, int]]:
         if (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Name)
-            and node.func.id == "coerce_bool"
+            and node.func.id in DELEGATING_WRAPPERS
             and node.args
         ):
             wrapped.add(id(node.args[0]))
@@ -252,7 +260,7 @@ def _security_offenders_in(tree: ast.AST, path: Path) -> list[str]:
         if (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Name)
-            and node.func.id == "coerce_bool"
+            and node.func.id in DELEGATING_WRAPPERS
             and node.args
         ):
             wrapped.add(id(node.args[0]))

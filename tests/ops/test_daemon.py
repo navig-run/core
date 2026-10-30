@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import types
 from unittest.mock import patch
 
 import pytest
@@ -163,8 +164,6 @@ class TestNavigDaemon:
         from navig.daemon.supervisor import NavigDaemon
 
         monkeypatch.setattr("navig.daemon.supervisor.sys.platform", "win32")
-        # the Windows branch passes this flag; it only exists in Windows' subprocess
-        monkeypatch.setattr("navig.daemon.supervisor.subprocess.CREATE_NO_WINDOW", 0x08000000, raising=False)
         monkeypatch.setattr(NavigDaemon, "read_pid", staticmethod(lambda: 4242))
 
         class _R:
@@ -179,7 +178,14 @@ class TestNavigDaemon:
             calls["n"] += 1
             return _R()
 
-        monkeypatch.setattr("navig.daemon.supervisor.subprocess.run", _fake_run)
+        # The win32 branch passes `subprocess.CREATE_NO_WINDOW`, which a Linux interpreter
+        # does not have. Stand in for the whole module instead of fabricating the attribute
+        # with `raising=False` (that creates a name nothing reads, and the phantom-target
+        # guard refuses it): the shipped code only ever calls `run` here.
+        monkeypatch.setattr(
+            "navig.daemon.supervisor.subprocess",
+            types.SimpleNamespace(CREATE_NO_WINDOW=0x08000000, run=_fake_run),
+        )
         monkeypatch.setattr(
             "navig.daemon.supervisor.time.sleep",
             lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not wait")),

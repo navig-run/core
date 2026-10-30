@@ -291,7 +291,9 @@ def test_manager_snapshot_merges_uplink_state():
 # ── reconnect backoff: storm protection ─────────────────────────────────────
 
 
-async def _drive_reconnect_loop(monkeypatch, *, connected_ago: float, n_serves: int):
+async def _drive_reconnect_loop(
+    monkeypatch, *, connected_ago: float, n_serves: int, raise_on_close: bool = False
+):
     """Run ``_run()`` with ``_connect_and_serve`` stubbed to a connection that came
     up ``connected_ago`` seconds before it returns (i.e. was online that long),
     ``n_serves`` times, and capture the un-jittered waits between reconnects.
@@ -314,6 +316,8 @@ async def _drive_reconnect_loop(monkeypatch, *, connected_ago: float, n_serves: 
         c.state.connected_at = uplink_mod._now() - connected_ago
         if calls["n"] >= n_serves:
             c._stop = True
+        if raise_on_close:
+            raise RuntimeError("ws error frame")
 
     monkeypatch.setattr(c, "_connect_and_serve", fake_serve)
 
@@ -348,6 +352,20 @@ async def test_backoff_resets_after_a_stable_connection(monkeypatch):
 
     sleeps = await _drive_reconnect_loop(
         monkeypatch, connected_ago=uplink_mod._BACKOFF_STABLE_S + 5.0, n_serves=4
+    )
+    assert sleeps == [1.0, 1.0, 1.0]
+
+
+async def test_backoff_resets_after_a_stable_connection_that_errors(monkeypatch):
+    # A long-lived session that ends through an ERROR (not a clean close) was still
+    # stable — it must reset the backoff too, not keep an earlier escalated delay.
+    import navig.cloud.uplink as uplink_mod
+
+    sleeps = await _drive_reconnect_loop(
+        monkeypatch,
+        connected_ago=uplink_mod._BACKOFF_STABLE_S + 5.0,
+        n_serves=4,
+        raise_on_close=True,
     )
     assert sleeps == [1.0, 1.0, 1.0]
 

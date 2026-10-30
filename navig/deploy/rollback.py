@@ -35,6 +35,11 @@ class RollbackManager:
     _EXIT_SNAPSHOT_MISSING = 3
     _EXIT_SETASIDE_FAILED = 4
     _EXIT_COPY_FAILED = 5
+    _EXIT_SWAP_FAILED = 6
+
+    # The restore copies a whole deployment in one remote call; the process-wide SSH
+    # default (30 s) would kill a large copy mid-way.
+    _RESTORE_TIMEOUT_S = 3600
 
     def __init__(
         self,
@@ -125,8 +130,11 @@ class RollbackManager:
 
         target_safe = shlex.quote(self._target)
         snap_path_safe = shlex.quote(snap_path)
-        staged = f"{self._target}.navig-rollback-tmp"
-        staged_safe = shlex.quote(staged)
+        # A per-invocation staging dir next to the target (same filesystem, so the swap is
+        # two renames). Never a fixed path: a fixed `<target>.navig-rollback-tmp` was
+        # `rm -rf`'d unconditionally, destroying another rollback's staged tree or the
+        # only intact copy an interrupted rollback left behind.
+        template_safe = shlex.quote(f"{self._target}.navig-rollback.XXXXXX")
 
         # The restore used to be `rm -rf <target> && mv <snapshot> <target>`, which
         # destroys the live deployment BEFORE knowing whether it can be replaced:
@@ -136,20 +144,25 @@ class RollbackManager:
         #   * `mv` CONSUMES the snapshot, so running `navig deploy rollback` twice
         #     deleted the deployment and then failed, with nothing left to restore from.
         #
-        # This sequence never removes the deployment until a copy is in place, keeps the
-        # snapshot so rollback is repeatable, and puts the original back if the copy
-        # fails. `cp -a` (not `-r`) preserves mode, ownership and timestamps.
+        # This sequence copies the snapshot into the private staging dir FIRST, while the
+        # live target keeps serving; only after the copy succeeded is the target swapped
+        # out with two renames, and put back if the second rename fails. The snapshot is
+        # kept so rollback is repeatable. `cp -a` (not `-r`) preserves mode, ownership and
+        # timestamps.
         script = (
             f"if [ ! -e {snap_path_safe} ]; then exit {self._EXIT_SNAPSHOT_MISSING}; fi; "
-            f"rm -rf {staged_safe}; "
+            f"st=$(mktemp -d {template_safe}) || exit {self._EXIT_COPY_FAILED}; "
+            f'if ! cp -a {snap_path_safe} "$st/new"; then '
+            f'rm -rf "$st"; exit {self._EXIT_COPY_FAILED}; fi; '
             f"if [ -e {target_safe} ]; then "
-            f"mv {target_safe} {staged_safe} || exit {self._EXIT_SETASIDE_FAILED}; fi; "
-            f"if cp -a {snap_path_safe} {target_safe}; then rm -rf {staged_safe}; else "
-            f"rm -rf {target_safe}; "
-            f"if [ -e {staged_safe} ]; then mv {staged_safe} {target_safe}; fi; "
-            f"exit {self._EXIT_COPY_FAILED}; fi"
+            f'mv {target_safe} "$st/old" || {{ rm -rf "$st"; exit {self._EXIT_SETASIDE_FAILED}; }}; fi; '
+            f'if mv "$st/new" {target_safe}; then rm -rf "$st"; else '
+            f'if [ -e "$st/old" ]; then mv "$st/old" {target_safe}; fi; '
+            f'rm -rf "$st"; exit {self._EXIT_SWAP_FAILED}; fi'
         )
-        r = self._remote.execute_command(script, self._server)
+        r = self._remote.execute_command(
+            script, self._server, timeout=self._RESTORE_TIMEOUT_S
+        )
 
         if r.returncode == self._EXIT_SNAPSHOT_MISSING:
             return False, (
@@ -163,7 +176,12 @@ class RollbackManager:
             )
         if r.returncode == self._EXIT_COPY_FAILED:
             return False, (
-                f"Restore failed while copying {snap_path}; {self._target} was put back. "
+                f"Restore failed while copying {snap_path}; {self._target} was left untouched. "
+                f"{r.stderr or r.stdout}".rstrip()
+            )
+        if r.returncode == self._EXIT_SWAP_FAILED:
+            return False, (
+                f"Restore failed while swapping in {snap_path}; {self._target} was put back. "
                 f"{r.stderr or r.stdout}".rstrip()
             )
         if r.returncode != 0:

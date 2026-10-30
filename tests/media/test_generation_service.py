@@ -21,14 +21,23 @@ class _FakeObj:
         self.model = model
 
 
+#: Every `quality=` the production code passed to the provider runner (cleared per test).
+QUALITY_SEEN: list = []
+
+
 @pytest.fixture
 def wired(tmp_path, monkeypatch):
     """Point the store at a temp DB and stub the provider runner."""
     store = GeneratedMediaStore(tmp_path / "gm.db")
     monkeypatch.setattr(svc, "get_generated_media", lambda: store)
+    QUALITY_SEEN.clear()
 
     async def fake_run(modality, enriched_prompt, *, provider, size, kind,
-                       duration_s, n, seed, out_dir, preset_system=None):
+                       duration_s, n, seed, out_dir, preset_system=None, quality=None,
+                       model=None):
+        # Mirrors navig_generate's real runner: `quality` must always be accepted —
+        # feat(generate) 990caaeceb passes it on every call (None when unspecified).
+        QUALITY_SEEN.append(quality)
         objs = []
         for i in range(max(1, n) if modality == "image" else 1):
             p = Path(out_dir) / f"fake_{i}.bin"
@@ -170,3 +179,105 @@ class TestImageSizeIsNotSilentlyDropped:
         from navig.tools.image_generation import ImageSize
 
         assert "1024x1536" in {s.value for s in ImageSize}
+
+
+async def test_image_quality_reaches_the_provider(wired):
+    """The parameter the operator asks for lands on the provider runner.
+
+    feat(generate) "make image quality reach the request" (990caaeceb) passes
+    `quality=` on every call — this is the contract that change introduced and no
+    test covered, which is exactly how the stale fakes stayed invisible to every
+    gate (the selection never ran this file).
+    """
+    space, store = wired
+    await svc.generate(modality="image", prompt="octopus", n=1, space_dir=space, quality="high")
+    assert QUALITY_SEEN and QUALITY_SEEN[-1] == "high", "an explicit quality must reach the provider"
+    await svc.generate(modality="image", prompt="octopus", n=1, space_dir=space)
+    assert QUALITY_SEEN[-1] is None, "an unspecified quality passes None, never a guess"
+
+
+class TestRequestedModelReachesTheProvider:
+    """A requested ``model`` used to be recorded as metadata only: the generator always
+    used its config default (gpt-image-1 / Veo Fast), so the media API's model choices
+    could not be selected."""
+
+    def _capture(self, monkeypatch, module, cls_name, result):
+        seen = {}
+
+        class _Gen:
+            def __init__(self, cfg):
+                seen["cfg"] = cfg
+
+            async def generate(self, *_a, **_k):
+                return result
+
+            async def close(self):
+                pass
+
+        monkeypatch.setattr(module, cls_name, _Gen)
+        return seen
+
+    def test_image_model_is_applied_to_the_provider_config(self, monkeypatch, tmp_path):
+        import asyncio
+
+        from navig_generate.tools import image_generation as ig
+
+        from navig.media import generation_service as gen
+
+        seen = self._capture(monkeypatch, ig, "ImageGenerator", [])
+        asyncio.run(gen._run_provider(
+            "image", "x", provider="elevenlabs", size=None, kind="music",
+            duration_s=None, n=1, seed=None, out_dir=tmp_path, model="seedream-x",
+        ))
+        assert seen["cfg"].eleven_model == "seedream-x"
+
+    def test_video_model_is_applied_to_the_provider_config(self, monkeypatch, tmp_path):
+        import asyncio
+
+        from navig_generate.tools import video_generation as vg
+
+        from navig.media import generation_service as gen
+
+        seen = self._capture(monkeypatch, vg, "VideoGenerator", object())
+        asyncio.run(gen._run_provider(
+            "video", "x", provider="elevenlabs", size=None, kind="music",
+            duration_s=None, n=1, seed=None, out_dir=tmp_path, model="veo-3.1-generate-001",
+        ))
+        assert seen["cfg"].eleven_model == "veo-3.1-generate-001"
+
+    def test_no_model_keeps_the_config_default(self, monkeypatch, tmp_path):
+        import asyncio
+
+        from navig_generate.tools import image_generation as ig
+
+        from navig.media import generation_service as gen
+
+        seen = self._capture(monkeypatch, ig, "ImageGenerator", [])
+        asyncio.run(gen._run_provider(
+            "image", "x", provider="elevenlabs", size=None, kind="music",
+            duration_s=None, n=1, seed=None, out_dir=tmp_path,
+        ))
+        assert seen["cfg"].eleven_model == ig.ImageGenerationConfig().eleven_model
+
+
+async def test_relocated_refs_dir_keeps_the_originating_space(wired):
+    """A space whose refs_dir is absolute and outside it: the row records THAT space
+    (not refs_dir/../..), so reroll/keep resolve the same relocated library."""
+    import json
+
+    tmp, store = wired
+    space = tmp / "persona"
+    (space / ".navig").mkdir(parents=True)
+    studio_refs = tmp / "studio" / "refs"
+    (space / ".navig" / "space.config.json").write_text(
+        json.dumps({"refs_dir": str(studio_refs)}), encoding="utf-8"
+    )
+    result = await svc.generate(modality="image", prompt="octopus", n=1, space_dir=space)
+    src = result["variants"][0]
+    assert Path(src["space"]) == space
+    assert Path(src["path"]).is_relative_to(studio_refs)
+
+    again = await svc.reroll(src["id"])
+    assert Path(again["variants"][0]["space"]) == space
+    kept = svc.keep(src["id"])
+    assert Path(kept["path"]).parent == studio_refs / "images"

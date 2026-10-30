@@ -224,3 +224,43 @@ async def test_the_card_falls_back_to_labelled_utc_if_the_time_cannot_be_read(en
     await _business_deletion(ch, 555, 1)
     await d.flush_digest(ch)
     assert "UTC" in _cards(ch)[0]["text"]
+
+
+async def test_deletions_from_while_a_chat_was_muted_stay_unannounced_after_unmute(env):
+    """A muted-only window counted zero and left the watermark behind it, so
+    unmuting the chat later surfaced deletions from while it was muted."""
+    d.set_muted(556, True)
+    ch = _ch()
+    await _business_deletion(ch, 556, 1)            # muted
+    assert (await d.flush_digest(ch))["reason"] == "nothing_pending"
+
+    d.set_muted(556, False)
+    await _business_deletion(ch, 555, 1)
+    res = await d.flush_digest(ch)
+    assert res["sent"] and res["count"] == 1 and res["chats"] == 1
+
+
+async def test_an_older_cards_show_reveals_only_its_own_window(env):
+    """The Show token carried only the window start, so an older card's Show also
+    delivered every later window's rows."""
+    ch = _ch()
+    await _business_deletion(ch, 555, 1, text="first window")
+    assert (await d.flush_digest(ch))["sent"]
+    first_token = _cards(ch)[0]["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
+    await _business_deletion(ch, 555, 2, text="second window")
+    assert (await d.flush_digest(ch))["count"] == 1
+
+    ch._api_call.reset_mock()
+    assert await d.handle_callback(ch, first_token, chat_id=777, message_id=5,
+                                   user_id=777) == "Showed 1"
+    detail = "\n".join(c["text"] for c in _cards(ch))
+    assert "first window" in detail and "second window" not in detail
+
+
+async def test_a_card_from_before_the_end_bound_still_shows(env):
+    ch = _ch()
+    await _business_deletion(ch, 555, 1, text="legacy card")
+    since = d._watermark()
+    token = f"{d.CB_PREFIX}show:{d._token_for(since)}"
+    assert await d.handle_callback(ch, token, chat_id=777, message_id=5,
+                                   user_id=777) == "Showed 1"

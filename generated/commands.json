@@ -2825,7 +2825,7 @@
       "path": "navig ahk ocr",
       "since": "",
       "status": "stable",
-      "summary": "Extract text from screen or image (requires pytesseract).",
+      "summary": "Extract text from screen or image (requires navig[ocr] and the Tesseract binary).",
       "tags": []
     },
     {
@@ -22837,6 +22837,21 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig desktop"
+      ],
+      "handler": "_windows_only",
+      "module": "navig.commands.desktop",
+      "options": [],
+      "path": "navig desktop",
+      "since": "",
+      "status": "stable",
+      "summary": "Run navig desktop",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "script-or-path",
@@ -24872,189 +24887,6 @@
       "since": "",
       "status": "stable",
       "summary": "List active conversation threads.",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "arguments": [],
-      "examples": [
-        "navig display"
-      ],
-      "handler": "display_default",
-      "module": "navig_display.commands.display",
-      "options": [],
-      "path": "navig display",
-      "since": "",
-      "status": "stable",
-      "summary": "Show every monitor and its current brightness.",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "arguments": [
-        {
-          "name": "level",
-          "required": false,
-          "variadic": false
-        }
-      ],
-      "examples": [
-        "navig display bright"
-      ],
-      "handler": "display_bright",
-      "module": "navig_display.commands.display",
-      "options": [
-        {
-          "flags": [
-            "--by"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--monitor",
-            "-m"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--json"
-          ],
-          "takes_value": false
-        }
-      ],
-      "path": "navig display bright",
-      "since": "",
-      "status": "stable",
-      "summary": "Make monitors brighter \u2014 an exact level, a step, or the default 20-point step.",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "arguments": [
-        {
-          "name": "level",
-          "required": false,
-          "variadic": false
-        }
-      ],
-      "examples": [
-        "navig display dim"
-      ],
-      "handler": "display_dim",
-      "module": "navig_display.commands.display",
-      "options": [
-        {
-          "flags": [
-            "--by"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--monitor",
-            "-m"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--json"
-          ],
-          "takes_value": false
-        }
-      ],
-      "path": "navig display dim",
-      "since": "",
-      "status": "stable",
-      "summary": "Make monitors darker \u2014 an exact level, a step, or the default 20-point step.",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "arguments": [],
-      "examples": [
-        "navig display list"
-      ],
-      "handler": "display_list",
-      "module": "navig_display.commands.display",
-      "options": [
-        {
-          "flags": [
-            "--json"
-          ],
-          "takes_value": false
-        }
-      ],
-      "path": "navig display list",
-      "since": "",
-      "status": "stable",
-      "summary": "List connected monitors and their brightness.",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "arguments": [],
-      "examples": [
-        "navig display restore"
-      ],
-      "handler": "display_restore",
-      "module": "navig_display.commands.display",
-      "options": [
-        {
-          "flags": [
-            "--monitor",
-            "-m"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--json"
-          ],
-          "takes_value": false
-        }
-      ],
-      "path": "navig display restore",
-      "since": "",
-      "status": "stable",
-      "summary": "Put back the brightness saved before the first change.",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "arguments": [
-        {
-          "name": "level",
-          "required": true,
-          "variadic": false
-        }
-      ],
-      "examples": [
-        "navig display set"
-      ],
-      "handler": "display_set",
-      "module": "navig_display.commands.display",
-      "options": [
-        {
-          "flags": [
-            "--monitor",
-            "-m"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--json"
-          ],
-          "takes_value": false
-        }
-      ],
-      "path": "navig display set",
-      "since": "",
-      "status": "stable",
-      "summary": "Set every selected monitor to an exact brightness.",
       "tags": []
     },
     {
@@ -27362,6 +27194,47 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig doctor remote-dev"
+      ],
+      "handler": "remote_dev_cmd",
+      "module": "navig.commands.doctor",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--editor-url"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--no-remote-probe"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--verbose",
+            "-v"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig doctor remote-dev",
+      "since": "",
+      "status": "stable",
+      "summary": "Report whether NAVIG can develop, test, build and publish with this workstation off.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "url",
@@ -27945,6 +27818,12 @@
             "--publish"
           ],
           "takes_value": false
+        },
+        {
+          "flags": [
+            "--live-edit"
+          ],
+          "takes_value": false
         }
       ],
       "path": "navig ebay bulk",
@@ -27986,6 +27865,12 @@
         {
           "flags": [
             "--publish"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--live-edit"
           ],
           "takes_value": false
         }
@@ -28938,6 +28823,139 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email graph connect"
+      ],
+      "handler": "cmd_connect",
+      "module": "navig_email.commands.graph",
+      "options": [
+        {
+          "flags": [
+            "--client-id"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--tenant"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--wait"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email graph connect",
+      "since": "",
+      "status": "stable",
+      "summary": "Sign in with a device code and store the refresh token in the vault.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email graph disconnect"
+      ],
+      "handler": "cmd_disconnect",
+      "module": "navig_email.commands.graph",
+      "options": [],
+      "path": "navig email graph disconnect",
+      "since": "",
+      "status": "stable",
+      "summary": "Forget the stored Graph refresh token (the Entra app registration stays).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email graph setup"
+      ],
+      "handler": "cmd_setup",
+      "module": "navig_email.commands.graph",
+      "options": [
+        {
+          "flags": [
+            "--client-id"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--tenant"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig email graph setup",
+      "since": "",
+      "status": "stable",
+      "summary": "How to register the Entra app, and save its client id when given.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email graph status"
+      ],
+      "handler": "cmd_status",
+      "module": "navig_email.commands.graph",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email graph status",
+      "since": "",
+      "status": "stable",
+      "summary": "Whether a Graph account is connected, and with which app/tenant.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email identities"
+      ],
+      "handler": "cmd_identities",
+      "module": "navig_email.commands.email",
+      "options": [
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email identities",
+      "since": "",
+      "status": "stable",
+      "summary": "Which address belongs to which identity (mailroom.identities in the space config).",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "user",
@@ -28956,6 +28974,12 @@
             "--password"
           ],
           "takes_value": true
+        },
+        {
+          "flags": [
+            "--guide"
+          ],
+          "takes_value": false
         }
       ],
       "path": "navig email imap connect",
@@ -28966,7 +28990,13 @@
     },
     {
       "aliases": [],
-      "arguments": [],
+      "arguments": [
+        {
+          "name": "user",
+          "required": false,
+          "variadic": false
+        }
+      ],
       "examples": [
         "navig email imap disconnect"
       ],
@@ -28976,7 +29006,7 @@
       "path": "navig email imap disconnect",
       "since": "",
       "status": "stable",
-      "summary": "Forget the stored app password.",
+      "summary": "Forget one stored app password (the mailbox itself is untouched).",
       "tags": []
     },
     {
@@ -28998,7 +29028,28 @@
       "path": "navig email imap status",
       "since": "",
       "status": "stable",
-      "summary": "Whether an app password is stored, and where it comes from (never shows it).",
+      "summary": "Every mailbox connected over IMAP, the default, and where each lives (never a password).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "user",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig email imap use"
+      ],
+      "handler": "imap_use",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email imap use",
+      "since": "",
+      "status": "stable",
+      "summary": "Make one connected mailbox the default (no --account needed).",
       "tags": []
     },
     {
@@ -29212,6 +29263,588 @@
       "since": "",
       "status": "stable",
       "summary": "Undo an apply: take off the labels it added, delete the filters it created.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "flow",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig email otp accept"
+      ],
+      "handler": "cmd_accept",
+      "module": "navig_email.commands.otp",
+      "options": [
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--url"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--submit/--no-submit"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email otp accept",
+      "since": "",
+      "status": "stable",
+      "summary": "Use a held code: fill it and submit \u2014 the terminal twin of the card's \u201cUse it\u201d.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "flow",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig email otp code"
+      ],
+      "handler": "cmd_code",
+      "module": "navig_email.commands.otp",
+      "options": [
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--reveal"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email otp code",
+      "since": "",
+      "status": "stable",
+      "summary": "Show the code a flow is holding; --reveal consumes it.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email otp corpus harvest"
+      ],
+      "handler": "cmd_corpus_harvest",
+      "module": "navig_email.commands.otp",
+      "options": [
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--window"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--limit"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--negatives/--no-negatives"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email otp corpus harvest",
+      "since": "",
+      "status": "stable",
+      "summary": "Fetch real OTP and non-OTP mail into the corpus (IMAP, bodies stay local).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "message-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig email otp corpus label"
+      ],
+      "handler": "cmd_corpus_label",
+      "module": "navig_email.commands.otp",
+      "options": [
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--auth/--not-auth"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--code"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--language"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email otp corpus label",
+      "since": "",
+      "status": "stable",
+      "summary": "Record ground truth for one message (codes are stored as hashes only).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email otp corpus review"
+      ],
+      "handler": "cmd_corpus_review",
+      "module": "navig_email.commands.otp",
+      "options": [
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--limit"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email otp corpus review",
+      "since": "",
+      "status": "stable",
+      "summary": "Unlabeled messages, with what the extractor currently thinks (masked).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email otp corpus score"
+      ],
+      "handler": "cmd_corpus_score",
+      "module": "navig_email.commands.otp",
+      "options": [
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--precision"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--recall"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--specificity"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email otp corpus score",
+      "since": "",
+      "status": "stable",
+      "summary": "Score the extractor against the labels; exits 1 when the Phase 0 bar is missed.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email otp corpus stats"
+      ],
+      "handler": "cmd_corpus_stats",
+      "module": "navig_email.commands.otp",
+      "options": [
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email otp corpus stats",
+      "since": "",
+      "status": "stable",
+      "summary": "How big the corpus is and how much of it is labeled.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "flow",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig email otp fill"
+      ],
+      "handler": "cmd_fill",
+      "module": "navig_email.commands.otp",
+      "options": [
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--url"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--submit/--no-submit"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email otp fill",
+      "since": "",
+      "status": "stable",
+      "summary": "Type the held code into the page, verify it, submit \u2014 the last metre.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email otp flows"
+      ],
+      "handler": "cmd_flows",
+      "module": "navig_email.commands.otp",
+      "options": [
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email otp flows",
+      "since": "",
+      "status": "stable",
+      "summary": "Open and recent flows, with the code each holds (masked).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "flow",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig email otp learn"
+      ],
+      "handler": "cmd_learn",
+      "module": "navig_email.commands.otp",
+      "options": [
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email otp learn",
+      "since": "",
+      "status": "stable",
+      "summary": "Teach the extractor a sender's template from a confirmed flow (opt-in).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "target",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig email otp open"
+      ],
+      "handler": "cmd_open",
+      "module": "navig_email.commands.otp",
+      "options": [
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--purpose"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--senders"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--ttl"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email otp open",
+      "since": "",
+      "status": "stable",
+      "summary": "Mint an alias and open a correlated window for one login/signup.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "flow",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig email otp reject"
+      ],
+      "handler": "cmd_reject",
+      "module": "navig_email.commands.otp",
+      "options": [
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email otp reject",
+      "since": "",
+      "status": "stable",
+      "summary": "Discard a flow and the code it holds \u2014 the twin of the card's \u201cIgnore\u201d.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email otp sms"
+      ],
+      "handler": "cmd_sms",
+      "module": "navig_email.commands.otp",
+      "options": [
+        {
+          "flags": [
+            "--to"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--test"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email otp sms",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83d\udcf1 Relay codes by SMS \u2014 status, or one proof send.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email otp status"
+      ],
+      "handler": "cmd_status",
+      "module": "navig_email.commands.otp",
+      "options": [
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email otp status",
+      "since": "",
+      "status": "stable",
+      "summary": "Whether the pipeline is on, and what it has resolved.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email otp templates"
+      ],
+      "handler": "cmd_templates",
+      "module": "navig_email.commands.otp",
+      "options": [
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--learned"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig email otp templates",
+      "since": "",
+      "status": "stable",
+      "summary": "Sender templates the extractor knows: shipped seeds plus learned ones.",
       "tags": []
     },
     {
@@ -30166,6 +30799,12 @@
         },
         {
           "flags": [
+            "--attach"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
             "--yes"
           ],
           "takes_value": false
@@ -30359,6 +30998,12 @@
         },
         {
           "flags": [
+            "--all"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
             "--yes"
           ],
           "takes_value": false
@@ -30366,6 +31011,24 @@
         {
           "flags": [
             "--dry-run"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--every"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--status"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--supervise"
           ],
           "takes_value": false
         },
@@ -35701,6 +36364,18 @@
         {
           "flags": [
             "--size"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--quality"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--preset"
           ],
           "takes_value": true
         },
@@ -48382,6 +49057,200 @@
     },
     {
       "aliases": [],
+      "arguments": [
+        {
+          "name": "directory",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig mailroom deploy"
+      ],
+      "handler": "cmd_deploy",
+      "module": "navig_email.commands.mailroom",
+      "options": [
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig mailroom deploy",
+      "since": "",
+      "status": "stable",
+      "summary": "Install the Worker's dependencies and deploy it (wrangler does the auth).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "directory",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig mailroom init"
+      ],
+      "handler": "cmd_init",
+      "module": "navig_email.commands.mailroom",
+      "options": [
+        {
+          "flags": [
+            "--domain"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--forward-to"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--worker-name"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--default-from"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--default-from-name"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--notify-aliases"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--force"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig mailroom init",
+      "since": "",
+      "status": "stable",
+      "summary": "Write the Worker template into a directory you own, with your domain filled in.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "zone",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig mailroom rules"
+      ],
+      "handler": "cmd_rules",
+      "module": "navig_email.commands.mailroom",
+      "options": [
+        {
+          "flags": [
+            "--to"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--worker"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--address"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig mailroom rules",
+      "since": "",
+      "status": "stable",
+      "summary": "Point a domain's catch-all at a mailbox, or one address at the Worker.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "directory",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig mailroom secrets"
+      ],
+      "handler": "cmd_secrets",
+      "module": "navig_email.commands.mailroom",
+      "options": [
+        {
+          "flags": [
+            "--values"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--read-token"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig mailroom secrets",
+      "since": "",
+      "status": "stable",
+      "summary": "Upload the Worker's secrets from the vault (Telegram, /events read key).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "url",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig mailroom status"
+      ],
+      "handler": "cmd_status",
+      "module": "navig_email.commands.mailroom",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig mailroom status",
+      "since": "",
+      "status": "stable",
+      "summary": "Read the Worker's own /health report.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [],
       "examples": [
         "navig matrix"
@@ -51434,6 +52303,58 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig missions work"
+      ],
+      "handler": "missions_work",
+      "module": "navig.commands.missions",
+      "options": [
+        {
+          "flags": [
+            "--node-id"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--url"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--token"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--once/--loop"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--interval"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig missions work",
+      "since": "",
+      "status": "stable",
+      "summary": "Claim a queued mission for this node, run it, and finish it with a receipt.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "address",
@@ -53218,6 +54139,12 @@
         },
         {
           "flags": [
+            "--app"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
             "--case"
           ],
           "takes_value": true
@@ -53240,7 +54167,7 @@
       "path": "navig mobile ui record",
       "since": "",
       "status": "stable",
-      "summary": "Record your manual flow into a replayable .ad script (interactive).",
+      "summary": "Open a session that records a replayable .ad script \u2014 saved on `ui close`.",
       "tags": []
     },
     {
@@ -65822,6 +66749,54 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig recall resurrect"
+      ],
+      "handler": "resurrect_cmd",
+      "module": "navig.commands.recall",
+      "options": [
+        {
+          "flags": [
+            "--project",
+            "-p"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--here"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--limit",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--telegram"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig recall resurrect",
+      "since": "",
+      "status": "stable",
+      "summary": "The ideas worth reviving \u2014 ranked by a deterministic score, each with its reasons.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "action",
@@ -68840,187 +69815,6 @@
       "aliases": [],
       "arguments": [],
       "examples": [
-        "navig signing guide"
-      ],
-      "handler": "guide",
-      "module": "navig_signing",
-      "options": [
-        {
-          "flags": [
-            "--dir",
-            "-C"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--json"
-          ],
-          "takes_value": false
-        }
-      ],
-      "path": "navig signing guide",
-      "since": "",
-      "status": "stable",
-      "summary": "Where the project's enrollment guide lives, and the checklist.",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "arguments": [],
-      "examples": [
-        "navig signing readiness"
-      ],
-      "handler": "readiness",
-      "module": "navig_signing",
-      "options": [
-        {
-          "flags": [
-            "--dir",
-            "-C"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--json"
-          ],
-          "takes_value": false
-        }
-      ],
-      "path": "navig signing readiness",
-      "since": "",
-      "status": "stable",
-      "summary": "Run the project's signing-readiness report (enrollment, tools, certificate).",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "arguments": [],
-      "examples": [
-        "navig signing sign"
-      ],
-      "handler": "sign",
-      "module": "navig_signing",
-      "options": [
-        {
-          "flags": [
-            "--dir",
-            "-C"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--artifact"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--mode"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--approve"
-          ],
-          "takes_value": false
-        },
-        {
-          "flags": [
-            "--json"
-          ],
-          "takes_value": false
-        }
-      ],
-      "path": "navig signing sign",
-      "since": "",
-      "status": "stable",
-      "summary": "Sign one artifact using the project's own policy-enforcing signer.",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "arguments": [],
-      "examples": [
-        "navig signing status"
-      ],
-      "handler": "status",
-      "module": "navig_signing",
-      "options": [
-        {
-          "flags": [
-            "--dir",
-            "-C"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--mode"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--json"
-          ],
-          "takes_value": false
-        }
-      ],
-      "path": "navig signing status",
-      "since": "",
-      "status": "stable",
-      "summary": "Policy summary for a project: domain, enforcement, publisher, latest artifact.",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "arguments": [],
-      "examples": [
-        "navig signing verify"
-      ],
-      "handler": "verify",
-      "module": "navig_signing",
-      "options": [
-        {
-          "flags": [
-            "--dir",
-            "-C"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--artifact"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--mode"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--json"
-          ],
-          "takes_value": false
-        }
-      ],
-      "path": "navig signing verify",
-      "since": "",
-      "status": "stable",
-      "summary": "Read-only signature verification through the project's verifier.",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "arguments": [],
-      "examples": [
         "navig skill"
       ],
       "handler": "skills_callback",
@@ -70359,7 +71153,7 @@
       "path": "navig social relay drain",
       "since": "",
       "status": "stable",
-      "summary": "Send everything that is due now, without waiting for the next cron tick.",
+      "summary": "Run one drain tick now (the relay caps it: 25 posts, 5 per channel) instead of waiting for cron.",
       "tags": []
     },
     {
@@ -74973,7 +75767,7 @@
       "arguments": [
         {
           "name": "code",
-          "required": true,
+          "required": false,
           "variadic": false
         }
       ],
@@ -75831,7 +76625,7 @@
       "arguments": [
         {
           "name": "phone",
-          "required": true,
+          "required": false,
           "variadic": false
         }
       ],
@@ -83359,6 +84153,279 @@
     },
     {
       "aliases": [],
+      "arguments": [
+        {
+          "name": "wf-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig webflow delete"
+      ],
+      "handler": "webflow_delete",
+      "module": "navig.commands.webflow",
+      "options": [
+        {
+          "flags": [
+            "--yes",
+            "-y"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig webflow delete",
+      "since": "",
+      "status": "stable",
+      "summary": "Delete a webflow and every revision of it.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "wf-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig webflow export"
+      ],
+      "handler": "webflow_export",
+      "module": "navig.commands.webflow",
+      "options": [
+        {
+          "flags": [
+            "--output",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--revision",
+            "-r"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig webflow export",
+      "since": "",
+      "status": "stable",
+      "summary": "Export the sanitized navig.webflow/1 JSON (what import accepts).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "file",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig webflow import"
+      ],
+      "handler": "webflow_import",
+      "module": "navig.commands.webflow",
+      "options": [],
+      "path": "navig webflow import",
+      "since": "",
+      "status": "stable",
+      "summary": "Import a webflow as a new flow (validated and sanitized first).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig webflow list"
+      ],
+      "handler": "webflow_list",
+      "module": "navig.commands.webflow",
+      "options": [
+        {
+          "flags": [
+            "--match",
+            "-m"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig webflow list",
+      "since": "",
+      "status": "stable",
+      "summary": "List saved webflows (newest first).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "wf-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig webflow rollback"
+      ],
+      "handler": "webflow_rollback",
+      "module": "navig.commands.webflow",
+      "options": [
+        {
+          "flags": [
+            "--revision",
+            "-r"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig webflow rollback",
+      "since": "",
+      "status": "stable",
+      "summary": "Restore an older revision as a new one \u2014 append-only, so nothing is lost.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "wf-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig webflow run"
+      ],
+      "handler": "webflow_run",
+      "module": "navig.commands.webflow",
+      "options": [
+        {
+          "flags": [
+            "--param",
+            "-p"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--allow-vault"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--headed"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--repair"
+          ],
+          "takes_value": false
+        },
+        {
+          "flags": [
+            "--resume"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--revision",
+            "-r"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig webflow run",
+      "since": "",
+      "status": "stable",
+      "summary": "Replay a webflow headless; exit 0 only when a check verified the outcome, not merely ran.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "wf-id",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig webflow runs"
+      ],
+      "handler": "webflow_runs",
+      "module": "navig.commands.webflow",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig webflow runs",
+      "since": "",
+      "status": "stable",
+      "summary": "List saved run checkpoints: what paused, what finished, what may resume.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "wf-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig webflow show"
+      ],
+      "handler": "webflow_show",
+      "module": "navig.commands.webflow",
+      "options": [
+        {
+          "flags": [
+            "--revision",
+            "-r"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": false
+        }
+      ],
+      "path": "navig webflow show",
+      "since": "",
+      "status": "stable",
+      "summary": "Show a webflow: its sites, parameters and steps.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [],
       "examples": [
         "navig whoami"
@@ -84205,7 +85272,7 @@
       "tags": []
     }
   ],
-  "generated_at": "2026-10-24T10:59:48.561050+00:00",
+  "generated_at": "2026-10-28T05:09:35.250748+00:00",
   "groups": {
     "action": "Manage quick actions (stored shortcuts)",
     "agent": "Manage autonomous agent mode",
@@ -84271,7 +85338,6 @@
     "devnet": "Developer/ops network inspection: DNS, WHOIS, SSL certificate lookups.",
     "discord": "Discord account manager \u2014 your servers, channels, roles and members",
     "dispatch": "Multi-network message dispatch",
-    "display": "Monitor brightness \u2014 read, set, dim, brighten and restore physical backlights.",
     "distribution": "Distribution: projects, channels, campaigns, content, approvals and the journal.",
     "do": "Ask the AI to do a task in your browser, e.g. navig do \"open gmail and email bob@x.com\".",
     "dock": "NAVIG Dock \u2014 let AI agents use your own browser (pairing and status).",
@@ -84321,6 +85387,7 @@
     "local": "Local machine management (system info, security, network)",
     "log": "Log viewing and management",
     "logs": "Log viewing and management",
+    "mailroom": "Deploy the NAVIG mailroom Worker on your own Cloudflare account (template, deploy, routes).",
     "matrix": "Matrix messaging operations (login, send, rooms, admin)",
     "mcp": "Manage MCP (Model Context Protocol) servers",
     "memory": "Manage conversation memory and knowledge base",
@@ -84330,6 +85397,7 @@
     "mind": "NAVIG MIND \u2014 personal cognitive/language preferences",
     "mini": "Control remote NAVIG Mini agent daemons (Raspberry Pi, NAS, VPS).",
     "miniapp": "Telegram Mini App menu button management.",
+    "missions": "Work the distributed-mission queue for this machine.",
     "mobile": "\ud83d\udcf1 Mobile: Android + iOS device ops \u2014 connect \u00b7 info \u00b7 apps \u00b7 files \u00b7 screenshots \u00b7 backups \u00b7 forensics \u00b7 spyware scan \u00b7 root/jailbreak assist.",
     "mode": "LLM mode routing \u2014 view, configure, and test multi-mode AI routing",
     "mount": "Manage drive junctions (Windows NTFS) via a persistent registry",
@@ -84374,7 +85442,6 @@
     "service": "Manage NAVIG as a persistent background service (daemon)",
     "sessions": "Read and finish the Claude Code sessions open in VS Code over CDP.",
     "signals": "Inbound Signals \u2014 signed webhooks from your own apps (or Stripe) \u2192 deck + Telegram.",
-    "signing": "Read-only Windows signing inspection; signing delegates to the project's own policy.",
     "skill": "Manage AI skill definitions",
     "social": "\ud83d\udd17 Connect social accounts (LinkedIn \u00b7 YouTube \u00b7 Threads \u00b7 Pinterest \u00b7 Meta \u00b7 dev.to)",
     "software": "Local software package management (list, search)",
@@ -84407,10 +85474,11 @@
     "voice": "Voice synthesis and recognition commands",
     "watch": "Observe and react to filesystem and system events",
     "web": "Web server management (Nginx/Apache vhosts, sites, modules)",
+    "webflow": "Browser procedures recorded in the NAVIG Dock \u2014 list, replay (no AI), export, import.",
     "wiki": "\ud83d\udcda Wiki & Knowledge Base Management",
     "work": "Track work items (leads, projects, tasks, \u2026) across stages.",
     "wut": "Show what NAVIG thinks is happening (context snapshot)"
   },
   "schema_version": "1.0.0",
-  "total": 2417
+  "total": 2444
 }

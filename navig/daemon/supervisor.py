@@ -25,6 +25,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -92,6 +93,22 @@ def _daemon_dir() -> Path:
     return paths.config_dir() / "daemon"
 
 
+def _sweep_brain(config_dir: Path | None) -> Path:
+    """The config dir a kill sweep treats as OURS — resolved.
+
+    Under pytest with no isolated brain, ``paths.config_dir()`` is the operator's
+    REAL ``~/.navig``; ``_daemon_dir`` already moves the pid file off it, and a
+    sweep scoped to it would then find the LIVE daemon as a same-brain orphan that
+    the (now temporary) pid file no longer excludes, and force-kill it. Scope the
+    sweep to the throwaway test dir instead, which no real process uses.
+    """
+    if config_dir is not None:
+        return Path(config_dir).resolve()
+    if _under_pytest() and not os.environ.get("NAVIG_CONFIG_DIR"):
+        return _pytest_state_dir().resolve()
+    return paths.config_dir().resolve()
+
+
 def _pid_file() -> Path:
     return PID_FILE if PID_FILE is not None else _daemon_dir() / "supervisor.pid"
 
@@ -146,7 +163,52 @@ HEARTBEAT_S: float = 30.0
 HEARTBEAT_STALE_S: float = 3 * HEARTBEAT_S
 
 
-def _capture_code_identity() -> dict[str, Any]:
+#: Top-level commands whose next token is a free-form payload (a shell command, a
+#: question, a URL, a key/value) rather than a verb: only ``navig <command>`` is kept.
+_FREE_ARG_COMMANDS = frozenset({
+    "apply", "ask", "chat", "do", "docs", "exec", "fetch", "help", "kill", "local",
+    "procs", "run", "search", "settings", "ssh", "undo", "wire",
+})
+
+
+def _command_verb(cmd: str) -> str:
+    """``navig <group> <verb>`` from an audited command line — never an argument.
+
+    Tokens are kept only while they look like a command-path segment, so a flag, a
+    ``KEY=value``, a path or a payload word ends the verb; after a free-argument
+    command (``navig run 'API_KEY=secret deploy'``) nothing more is kept at all.
+    """
+    out: list[str] = []
+    for tok in cmd.split():
+        if len(out) >= 3 or not re.fullmatch(r"[a-z][a-z0-9_-]*", tok):
+            break
+        out.append(tok)
+        if len(out) == 2 and out[0] == "navig" and tok in _FREE_ARG_COMMANDS:
+            break
+    return " ".join(out)
+
+
+def _tracks_navig_source(src_dir: Path) -> bool:
+    """Does the git checkout that *src_dir* sits in actually TRACK this navig package?
+
+    ``git -C <dir>`` walks UP to the nearest repository, so a wheel installed into a
+    repo-local ``.venv`` (``<app-repo>/.venv/Lib/site-packages``) would otherwise "find"
+    the enclosing application repo and report ITS HEAD as NAVIG's code identity. Only a
+    checkout in which ``<src_dir>/navig/__init__.py`` is a tracked file is NAVIG's source.
+    """
+    try:
+        res = subprocess.run(
+            ["git", "-C", str(src_dir), "ls-files", "--error-unmatch", "navig/__init__.py"],
+            capture_output=True,
+            text=True,
+            timeout=5, encoding="utf-8", errors="replace",
+        )
+    except Exception:  # noqa: BLE001
+        return False
+    return res.returncode == 0
+
+
+def _capture_code_identity(src_dir: Path | None = None) -> dict[str, Any]:
     """Snapshot which code THIS process loaded at boot, so a later ``navig doctor`` can
     tell whether the running daemon is executing STALE code — i.e. the source moved on
     disk after boot (a merge, a ``git pull``, a branch switch) while the daemon kept the
@@ -166,8 +228,12 @@ def _capture_code_identity() -> dict[str, Any]:
         pass  # version is a bonus; the git commit below is the primary signal
     try:
         # <src>/navig/daemon/supervisor.py -> parents[2] == <src> (the editable root)
-        src_dir = Path(__file__).resolve().parents[2]
+        if src_dir is None:
+            src_dir = Path(__file__).resolve().parents[2]
         info["src"] = str(src_dir)
+        if not _tracks_navig_source(src_dir):
+            info["install"] = "pip"  # a wheel, even one inside an unrelated repo
+            return info
         rev = subprocess.run(
             ["git", "-C", str(src_dir), "rev-parse", "HEAD"],
             capture_output=True,
@@ -326,6 +392,16 @@ def _make_logger(name: str, log_file: Path, level: int = logging.INFO) -> loggin
     return logger
 
 
+def _process_create_time(pid: int) -> float | None:
+    """The OS creation time of ``pid``, or None when it cannot be read (best-effort)."""
+    try:
+        import psutil  # type: ignore[import-untyped]
+
+        return float(psutil.Process(pid).create_time())
+    except Exception:  # noqa: BLE001 — an identity marker must never fail a spawn
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Child process descriptor
 # ---------------------------------------------------------------------------
@@ -353,6 +429,12 @@ class ChildProcess:
         self.restart_count = 0
         self.last_start: float | None = None
         self.last_exit_code: int | None = None
+        # The OS creation time of the current process: lets a reader of state.json
+        # tell this child from an unrelated process that reused its pid.
+        self.create_time: float | None = None
+        # When a dead child is due to restart (monotonic). The loop keeps polling and
+        # beating while it waits instead of sleeping the back-off inline.
+        self.restart_at: float | None = None
         self._backoff = INITIAL_RESTART_DELAY
         self._stopped = False  # True when intentionally stopped
 
@@ -389,6 +471,7 @@ class ChildProcess:
                 kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
             self.process = subprocess.Popen(self.command, **kwargs)
             self.last_start = time.monotonic()
+            self.create_time = _process_create_time(self.process.pid)
             self.restart_count += 1
             logger.info(
                 "Started %s (pid=%d, attempt=%d) -> %s",
@@ -480,6 +563,7 @@ class ChildProcess:
             "enabled": self.enabled,
             "pid": self.process.pid if self.process and self.is_alive() else None,
             "alive": self.is_alive(),
+            "create_time": self.create_time if self.process and self.is_alive() else None,
             "restart_count": self.restart_count,
             "last_exit_code": self.last_exit_code,
         }
@@ -682,9 +766,47 @@ class NavigDaemon:
         # it, within one interval. That dates the death — detection can be five
         # minutes later — and it closes the neighbour window, so a command run
         # against an already-dead daemon is not listed as a suspect.
-        last_alive = NavigDaemon.last_seen_alive()
-        pf.unlink(missing_ok=True)
+        # Only a state file that carries heartbeats can date anything: one written by
+        # a daemon that predates them (an upgrade killed it) has an mtime that is just
+        # its last rewrite, possibly days before the death.
+        state = NavigDaemon.read_state()
+        last_alive = (
+            NavigDaemon.last_seen_alive()
+            if isinstance(state, dict) and state.get("heartbeat_s")
+            else None
+        )
+        # Take the file atomically, THEN judge what was taken. A compare followed by
+        # a separate unlink still deleted a pid file a relaunching daemon claimed in
+        # between, and two concurrent checkers both passed the compare and both
+        # recorded the death. Only the caller whose rename succeeds owns this reap.
+        taken = pf.with_name(f"{pf.name}.reaping.{os.getpid()}")
+        try:
+            os.replace(pf, taken)
+        except OSError:
+            return  # gone: another caller reaped it (and recorded it) first
+        try:
+            moved = int(taken.read_text(encoding="utf-8").strip() or 0)
+        except (OSError, ValueError):
+            moved = pid
+        if moved != pid:
+            # A newborn daemon's claim: put it back, never over a newer claim.
+            try:
+                os.link(taken, pf)
+            except OSError:
+                if not pf.exists():
+                    try:
+                        os.replace(taken, pf)
+                    except OSError:
+                        pass
+            taken.unlink(missing_ok=True)
+            return
+        taken.unlink(missing_ok=True)
         _state_file().unlink(missing_ok=True)
+        # The pid file WAS the next boot line's evidence of an unclean end; it is
+        # gone now, so leave that evidence where `boot_cause` will find it.
+        from navig.daemon.restart_cause import mark_previous_died  # noqa: PLC0415
+
+        mark_previous_died(pid, reason)
         try:
             from navig.core import incidents
 
@@ -763,7 +885,7 @@ class NavigDaemon:
                 except ValueError:
                     details = {}
             cmd = str((details or {}).get("command") or r.get("action") or "")
-            verb = " ".join(cmd.split()[:3])  # "navig cdp stop" — never the arguments
+            verb = _command_verb(cmd)  # "navig cdp stop" — never the arguments
             out.append(
                 {
                     "at": str(r.get("timestamp") or ""),
@@ -891,6 +1013,14 @@ class NavigDaemon:
             # leaves, and it used to be discarded here without a word.
             pf = _pid_file()
             if pf.exists():
+                # "Could not inspect" is not "dead": a non-elevated status check
+                # against an elevated daemon reads AccessDenied. Reaping then deletes
+                # the LIVE daemon's pid file and the watchdog boots a duplicate.
+                from navig.daemon.single_instance import pid_status  # noqa: PLC0415
+
+                status, _ = pid_status(pf)
+                if status in ("unknown", "alive"):
+                    return True
                 try:
                     stale = int(pf.read_text(encoding="utf-8").strip() or 0)
                 except (OSError, ValueError):
@@ -1024,11 +1154,38 @@ class NavigDaemon:
             "log_file": _resolved_log_file(),
             "cwd": os.getcwd(),
         }
+        # A child launched from ANOTHER cwd (the legacy ``bot_script`` runs from the
+        # script's own folder) resolves base_dir from there, so it can log to a
+        # different project's .navig/navig.log. The supervisor cannot know which file
+        # that is: record the path as unknown, with the reason, rather than a guess.
+        foreign = self._foreign_cwd_child()
+        if foreign is not None:
+            state["log_file"] = None
+            state["log_file_unknown"] = (
+                f"child {foreign.name} runs from {foreign.cwd} and may log to that "
+                "project's .navig/navig.log"
+            )
         try:
             atomic_write_text(_state_file(), json.dumps(state, indent=2))
             self._last_beat = time.monotonic()
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
+
+    def _foreign_cwd_child(self) -> ChildProcess | None:
+        """The first child whose cwd is not the supervisor's own, or None."""
+        try:
+            here = Path.cwd().resolve()
+        except OSError:
+            return None
+        for child in self.children:
+            if child.cwd is None:
+                continue
+            try:
+                if Path(child.cwd).resolve() != here:
+                    return child
+            except OSError:
+                return child
+        return None
 
     def _heartbeat(self) -> None:
         """Touch ``state.json`` every :data:`HEARTBEAT_S` — proof the LOOP is alive.
@@ -1161,7 +1318,9 @@ class NavigDaemon:
             self._health_server = await asyncio.start_server(
                 handler, "127.0.0.1", self._health_port
             )
-        except OSError as exc:
+        except (OSError, OverflowError, ValueError) as exc:
+            # OverflowError / ValueError: an out-of-range port (e.g. 99999 from
+            # `--health-port` or config) fails inside bind() the same way.
             # The health endpoint is DIAGNOSTICS; the supervisor's job is running children.
             # This call sits at the top of `_supervisor_loop` OUTSIDE its try/except, so an
             # escaping bind error meant not one child was ever started — the auxiliary
@@ -1296,12 +1455,20 @@ class NavigDaemon:
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
 
+        # Only an orderly end (the loop returned after a signal, or Ctrl+C) is a clean
+        # exit. An exception escaping the loop is a crash, and the marker would make
+        # the next boot report "stopped cleanly" over it.
+        clean = False
         try:
             asyncio.run(self._supervisor_loop())
+            clean = True
         except KeyboardInterrupt:
-            pass  # user interrupted; clean exit
+            clean = True  # user interrupted; clean exit
+        except Exception:
+            self.logger.exception("Supervisor loop crashed")
+            raise
         finally:
-            self._shutdown()
+            self._shutdown(clean=clean)
 
     def _signal_handler(self, signum, frame):
         self.logger.info("Received signal %s - shutting down", signum)
@@ -1329,20 +1496,25 @@ class NavigDaemon:
                     # Check if dead
                     rc = child.poll()
                     if rc is not None:
-                        # If process ran for > 60s, reset back-off (healthy run)
-                        if child.last_start and (time.monotonic() - child.last_start) > 60:
-                            child.reset_backoff()
+                        # The back-off is a DEADLINE, not an inline sleep: sleeping up to
+                        # MAX_RESTART_DELAY here stopped the heartbeat (stale after
+                        # HEARTBEAT_STALE_S) and every other child's supervision with it.
+                        if child.restart_at is None:
+                            # If process ran for > 60s, reset back-off (healthy run)
+                            if child.last_start and (time.monotonic() - child.last_start) > 60:
+                                child.reset_backoff()
 
-                        delay = child.next_restart_delay
-                        self.logger.warning(
-                            "%s exited with code %d - restarting in %.0fs",
-                            child.name,
-                            rc,
-                            delay,
-                        )
-                        await asyncio.sleep(delay)
-                        if not self._running:
-                            break
+                            delay = child.next_restart_delay
+                            self.logger.warning(
+                                "%s exited with code %d - restarting in %.0fs",
+                                child.name,
+                                rc,
+                                delay,
+                            )
+                            child.restart_at = time.monotonic() + delay
+                        if time.monotonic() < child.restart_at:
+                            continue
+                        child.restart_at = None
 
                         child.start(self.logger)
                         self._write_state()
@@ -1356,17 +1528,21 @@ class NavigDaemon:
                 await self._health_server.wait_closed()
                 self._health_server = None
 
-    def _shutdown(self) -> None:
-        """Stop all children and clean up."""
+    def _shutdown(self, *, clean: bool = True) -> None:
+        """Stop all children and clean up. *clean* is False after a crash."""
         self.logger.info("Shutting down all children...")
         for child in self.children:
             child.stop(self.logger)
         self._remove_pid()
         if _state_file().exists():
             _state_file().unlink(missing_ok=True)
-        from navig.daemon.restart_cause import mark_clean_exit
+        from navig.daemon.restart_cause import mark_clean_exit, mark_previous_died
 
-        mark_clean_exit()
+        if clean:
+            mark_clean_exit()
+        else:
+            # The pid file is gone, so this marker is the next boot's only evidence.
+            mark_previous_died(os.getpid(), "supervisor loop raised")
         self.logger.info("=== NAVIG Daemon stopped ===")
 
     # -- external control --------------------------------------------------
@@ -1479,9 +1655,8 @@ class NavigDaemon:
             import psutil  # type: ignore[import-untyped]
 
             from navig.daemon.single_instance import config_dir_of
-            from navig.platform import paths
 
-            mine = (config_dir if config_dir is not None else paths.config_dir()).resolve()
+            mine = _sweep_brain(config_dir)
         except Exception:  # noqa: BLE001
             return []
         out: list[tuple[int, float]] = []
@@ -1638,9 +1813,7 @@ class NavigDaemon:
             except Exception:  # noqa: BLE001 — self-exclusion below still holds
                 keep = {current_pid}
         try:
-            from navig.platform import paths
-
-            mine = (config_dir if config_dir is not None else paths.config_dir()).resolve()
+            mine = _sweep_brain(config_dir)
         except Exception:  # noqa: BLE001 — can't identify our own brain → kill nothing (safe)
             return []
 

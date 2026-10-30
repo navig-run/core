@@ -118,13 +118,14 @@ def resolve_telegram() -> StatusBadge:
 def resolve_ssh() -> StatusBadge:
     """Check whether any SSH hosts are configured."""
     try:
-        from navig.core import Config
+        from navig.config import get_config_manager
 
         # Hosts are per-host YAML files under config_dir()/hosts (+ legacy apps/),
-        # NOT a `hosts:` key in config.yaml. Config.list_hosts() is the same source
-        # `navig host list` uses; the old config.yaml read found nothing, so the
-        # badge always said "missing" even with hosts configured.
-        hosts = Config().list_hosts()
+        # NOT a `hosts:` key in config.yaml. The ConfigManager's list_hosts() is the
+        # same source `navig host list` uses. (`navig.core.Config` is the shared-config
+        # singleton, which has no list_hosts(): the AttributeError was swallowed and
+        # the badge always said "missing" even with hosts configured.)
+        hosts = get_config_manager().list_hosts()
         if hosts:
             count = len(hosts)
             return StatusBadge(
@@ -277,11 +278,14 @@ def resolve_mesh() -> StatusBadge:
         # non-existent registry.list_nodes(), guarded by hasattr, so it silently
         # returned [] — node_count was ALWAYS 0 and the badge always read
         # "single-node mode", even on a live multi-node mesh.
-        peers = registry.get_peers()
+        # get_peers() keeps a silent peer cached until EVICT_AFTER_S (15 min) while
+        # its health turns "offline" after OFFLINE_AFTER_S (2 min) — count only the
+        # peers that are not offline, or a dead mesh reads healthy for ~13 minutes.
+        peers = [p for p in registry.get_peers() if getattr(p, "health", "") != "offline"]
         if not peers:
             return StatusBadge("Mesh", "missing", "no peers — single-node mode")
 
-        node_count = len(registry.get_all())  # peers + self
+        node_count = len(peers) + 1  # live peers + self
         # Read the elected leader from the registry — the same source of truth
         # ElectionManager uses (registry.get_leader()); no live manager needed.
         # (The old code imported a phantom navig.mesh.election.get_current_leader,
@@ -360,6 +364,23 @@ def resolve_scheduler() -> StatusBadge:
         )
 
 
+def _gateway_storage_dir():
+    """The directory the gateway persists its queue in — same rule as GatewayConfig.
+
+    ``gateway.storage_dir`` when configured, else ``config_dir()``.
+    """
+    from pathlib import Path
+
+    try:
+        from navig.config import get_config_manager
+
+        gateway_cfg = get_config_manager().global_config.get("gateway") or {}
+        storage = gateway_cfg.get("storage_dir") if isinstance(gateway_cfg, dict) else None
+    except Exception:  # noqa: BLE001
+        storage = None
+    return Path(storage).expanduser() if storage else config_dir()
+
+
 def resolve_task_queue() -> StatusBadge:
     """Check task queue depth (reads the daemon's persisted queue)."""
     try:
@@ -369,7 +390,7 @@ def resolve_task_queue() -> StatusBadge:
         # storage_dir defaults to config_dir()). A bare TaskQueue() is an empty
         # throwaway that always reads 0 — and `size`/`total` are properties, so the
         # old q.pending_count() never existed: the badge was permanently "0 pending".
-        q = TaskQueue(persist_path=str(config_dir() / "task_queue.json"))
+        q = TaskQueue(persist_path=str(_gateway_storage_dir() / "task_queue.json"))
         pending = q.size
         tracked = q.total
 

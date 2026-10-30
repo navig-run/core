@@ -64,6 +64,19 @@ class TestSummarize:
         assert s["days"] == 4
         assert s["habits"]["wake"]["missed"] == 3
 
+    def test_future_dated_rows_are_outside_the_period(self):
+        """`habit log --date` accepts a future day; counting it made the span zero or
+        negative (day -4) and inflated `done` against the span."""
+        only_future = _rows(("2026-08-20", list(NON_NEGOTIABLES)))
+        s = habit_tracker.summarize(only_future, MONDAY)
+        assert s["days"] == 0 and s["complete"] == 0
+
+        mixed = _rows(("2026-08-17", ["wake"]), ("2026-08-25", ["wake"]))
+        s = habit_tracker.summarize(mixed, date(2026, 8, 18))
+        assert s["days"] == 2
+        assert s["habits"]["wake"]["done"] == 1
+        assert s["habits"]["wake"]["missed"] == 1
+
     def test_best_streak_survives_a_later_break(self):
         rows = _rows(
             ("2026-08-17", ["wake"]),
@@ -240,6 +253,32 @@ class TestTelegramStatsPanel:
         assert "Nothing logged yet" in text
         assert keyboard["inline_keyboard"] == []
 
+    def test_a_tracker_with_no_valid_date_shows_the_empty_state(self, tracker):
+        """A hand-edited file can hold rows whose every date is malformed: rows,
+        but no cycle — the panel must say so, not raise on a missing start."""
+        habit_tracker.write_tracker(
+            tracker, [{"date": "garbage", "habit": "wake", "completed": "yes", "notes": ""}]
+        )
+        text, keyboard = self._panel(tracker)
+        assert "Nothing logged yet" in text
+        assert keyboard["inline_keyboard"] == []
+
+    def test_all_days_fits_one_telegram_message(self, tracker):
+        """"All" grows a line a day and is sent as ONE editMessageText; past 4096
+        UTF-16 units Telegram refuses the edit. A year of history must still fit,
+        keep the most recent days, and say how many earlier ones were left out."""
+        today = date.today()
+        habit_tracker.write_tracker(tracker, [
+            {"date": (today - timedelta(days=i)).isoformat(), "habit": "wake",
+             "completed": "yes", "notes": ""}
+            for i in range(365)
+        ])
+        text, _ = self._panel(tracker, days=0)
+
+        assert len(text.encode("utf-16-le")) // 2 <= 4096, len(text)
+        assert "earlier days not shown" in text
+        assert f"{habit_actions_weekday(today)} {today.day:02d}" in text, "today stays"
+
     def test_panel_names_the_three_in_words(self, tracker):
         habit_tracker.upsert(tracker, date.today().isoformat(), "out", "yes")
         text, _ = self._panel(tracker)
@@ -309,8 +348,17 @@ class TestTelegramPauseMenu:
         from navig.telegram import habit_actions
 
         _, keyboard = habit_actions.build_pause_menu()
-        rows = [r[0]["callback_data"] for r in keyboard["inline_keyboard"][:-1]]
+        # The last row is "pause all / resume all", the one before it the close button.
+        rows = [r[0]["callback_data"] for r in keyboard["inline_keyboard"][:-2]]
         assert rows == ["hb:p:wake", "hb:p:out"] or rows == ["hb:p:out", "hb:p:wake"]
+
+    def test_the_menu_can_be_closed(self, service):
+        from navig.telegram import habit_actions
+
+        _, keyboard = habit_actions.build_pause_menu()
+        close = keyboard["inline_keyboard"][-1][0]
+        assert close["callback_data"] == "hb:close"
+        assert "Close" in close["text"]
 
     def test_menu_never_offers_a_non_habit_job(self, service):
         """THE GUARD: the operator's other cron work is not the tracker's to switch off."""
@@ -345,6 +393,40 @@ class TestTelegramPauseMenu:
         for row in keyboard["inline_keyboard"][:-1]:
             label = row[0]["text"].split(" ", 1)[1]
             assert "_" not in label, f"raw job key on a button: {label}"
+
+    def test_the_rich_menu_is_a_table_with_one_row_per_reminder(self, service):
+        """Three columns, not ``—``-joined prose: habit, schedule, next fire."""
+        from navig.telegram import habit_actions
+
+        html, _ = habit_actions.build_pause_menu_rich()
+        assert "<table" in html
+        assert "<h2>" in html  # a settings screen is a section, not the display title
+        body = html.split("<table", 1)[1].split("</table>", 1)[0]
+        assert body.count("<tr>") == 3  # header + wake + walk
+        # The rows name the habits in words, never the raw scheduler job keys.
+        assert "Wake" in body and "Walk" in body
+        assert "out" not in body and "wake" not in body.replace("Wake", "")
+
+    def test_the_rich_menu_shows_the_state_and_the_next_fire(self, service):
+        from navig.telegram import habit_actions
+
+        habit_store.set_jobs_enabled("out", enabled=False)
+        html, _ = habit_actions.build_pause_menu_rich()
+        walk_row = next(row for row in html.split("<tr>") if "Walk" in row)
+        assert "🔕" in walk_row
+        assert "paused" in walk_row.lower()
+        wake_row = next(row for row in html.split("<tr>") if "Wake" in row)
+        assert "🔔" in wake_row
+
+
+    def test_every_reminder_the_operator_has_reads_as_words(self, service):
+        """Job names are ad-hoc (`spark_am`, `midday`) — none may reach the screen raw."""
+        from navig.telegram import habit_actions
+
+        for key in ("checkin", "close", "wake", "midday", "expire", "spark_am", "spark_pm", "review"):
+            word = habit_actions.word(key)
+            assert "_" not in word, f"raw job key on the pause menu: {word}"
+            assert word != key, f"unlocalized job key: {key}"
 
 
 class TestPhoneCallbacks:
@@ -387,6 +469,41 @@ class TestPhoneCallbacks:
         channel = FakeChannel()
         assert "⚠️" in self._tap(channel, tracker, "hb:p:nosuchjob")
 
+    def test_a_pause_tap_rewrites_the_menu_with_the_new_state(
+        self, tracker, service, monkeypatch, tmp_path
+    ):
+        """The table has to follow the switch, or the screen contradicts the toast."""
+        monkeypatch.setattr(habit_tracker, "_targets_file", lambda: tmp_path / "t.json")
+        channel = FakeChannel()
+        self._tap(channel, tracker, "hb:p:out")
+
+        method, payload = channel.calls[-1]
+        assert method == "editMessageText"
+        # A classic channel gets the plain projection — this fake has no rich method.
+        assert "🔕" in payload["text"] and "<pre>" in payload["text"]
+
+    def test_a_rich_channel_gets_the_table_back(self, tracker, service, monkeypatch, tmp_path):
+        monkeypatch.setattr(habit_tracker, "_targets_file", lambda: tmp_path / "t.json")
+        channel = RichFakeChannel()
+        self._tap(channel, tracker, "hb:p:out")
+
+        method, payload = channel.calls[-1]
+        assert method == "editMessageText"
+        html = (payload.get("rich_message") or {}).get("html", "")
+        assert "🔕" in html and "<table" in html
+
+    def test_the_close_button_finishes_the_menu(self, tracker, service, monkeypatch, tmp_path):
+        """A settings screen that stays interactive under a settled card is a trap."""
+        monkeypatch.setattr(habit_tracker, "_targets_file", lambda: tmp_path / "t.json")
+        channel = FakeChannel()
+        toast = self._tap(channel, tracker, "hb:close")
+
+        assert toast == ""
+        method, payload = channel.calls[-1]
+        assert method == "editMessageText"
+        assert payload["reply_markup"] == {"inline_keyboard": []}
+        assert "✕" in payload["text"]
+
 
 class FakeChannel:
     def __init__(self):
@@ -397,7 +514,31 @@ class FakeChannel:
         return {"ok": True, "result": {"message_id": 1}}
 
 
+class RichFakeChannel(FakeChannel):
+    """The same fake, but it can draw rich messages (Bot API 10.1+)."""
+
+    async def send_rich_message(self, chat_id, *, html=None, **kwargs):
+        return await self._api_call("sendRichMessage", {"chat_id": chat_id, "html": html})
+
+    async def edit_rich_message(self, chat_id, message_id, *, html=None, **kwargs):
+        return await self._api_call(
+            "editMessageText",
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "rich_message": {"html": html},
+                "reply_markup": kwargs.get("keyboard"),
+            },
+        )
+
+
 def habit_actions_module():
     from navig.telegram import habit_actions
 
     return habit_actions
+
+
+def habit_actions_weekday(day: date) -> str:
+    from navig.telegram import habit_actions
+
+    return habit_actions._weekday_name(day.weekday())

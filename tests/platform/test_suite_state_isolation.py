@@ -67,11 +67,18 @@ def test_the_checkout_really_is_a_navig_project() -> None:
         f"expected {CHECKOUT / 'core' / '.navig'} to exist — it is what makes the source "
         f"tree an app root, and therefore what these guards are about"
     )
-    assert _inside_checkout(Path.cwd()) or True  # cwd may be core/ or the repo root
 
 
-def test_bare_config_manager_resolves_outside_the_checkout() -> None:
-    """The one a test actually trips over: `ConfigManager()` with no arguments."""
+def test_bare_config_manager_resolves_outside_the_checkout(monkeypatch) -> None:
+    """The one a test actually trips over: `ConfigManager()` with no arguments.
+
+    Run from INSIDE the checkout on purpose. App-root detection walks up from the CWD, so
+    when pytest is launched by absolute path from elsewhere the walk never meets
+    `core/.navig/`, and this would pass without exercising the suppression at all.
+    """
+    inside = CHECKOUT / "core" if (CHECKOUT / "core").is_dir() else CHECKOUT
+    monkeypatch.chdir(inside)
+    assert _inside_checkout(Path.cwd()), Path.cwd()
     cm = ConfigManager()
     for name in ("base_dir", "hosts_dir", "apps_dir", "cache_dir", "global_config_dir"):
         value = getattr(cm, name, None)

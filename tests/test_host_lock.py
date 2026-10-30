@@ -172,6 +172,14 @@ def test_host_names_are_filesystem_safe(lockdir):
     assert "/" not in files[0].name and "\\" not in files[0].name
 
 
+def test_escaped_host_names_do_not_collide(lockdir):
+    """Review #1099: `prod us` and `prod_us` both became `host-prod_us.lock`."""
+    assert host_lock.lock_path("prod us") != host_lock.lock_path("prod_us")
+    assert host_lock.lock_path("a/b") != host_lock.lock_path("a:b")
+    # A name that needs no escaping keeps its existing path.
+    assert host_lock.lock_path("prod_us").name == "host-prod_us.lock"
+
+
 def test_separate_hosts_have_separate_locks(lockdir, monkeypatch):
     host_lock.claim("vps-1")
     monkeypatch.setenv("NAVIG_SESSION_ID", "session-B")
@@ -353,6 +361,35 @@ def test_session_alive_reads_the_registry(lockdir, sessions):
     assert host_lock.session_alive("nobody-knows") is None  # not registered → TTL rules
     assert host_lock.session_alive(None) is None
     assert host_lock.session_alive("?") is None
+
+
+def test_a_resumed_session_with_a_stale_registration_is_alive(lockdir, sessions, monkeypatch):
+    """Regression: a resumed session leaves ``<old-pid>.json`` beside ``<new-pid>.json``;
+    the dead old entry must not make the live session (and its fresh lock) look ended."""
+    import os
+
+    # Both orders, so the verdict cannot depend on glob order.
+    directory = host_lock.claude_sessions_dir()  # the `sessions` fixture's registry
+    (directory / "0000-old.json").write_text(
+        json.dumps({"pid": _dead_pid(), "sessionId": "resumed"}), encoding="utf-8"
+    )
+    (directory / "zzzz-new.json").write_text(
+        json.dumps({"pid": os.getpid(), "sessionId": "resumed"}), encoding="utf-8"
+    )
+    assert host_lock.session_alive("resumed") is True
+    (directory / "0000-new.json").write_text(
+        json.dumps({"pid": os.getpid(), "sessionId": "resumed"}), encoding="utf-8"
+    )
+    (directory / "zzzz-new.json").unlink()
+    (directory / "zzzz-old.json").write_text(
+        json.dumps({"pid": _dead_pid(), "sessionId": "resumed"}), encoding="utf-8"
+    )
+    assert host_lock.session_alive("resumed") is True
+
+    monkeypatch.setenv("NAVIG_SESSION_ID", "resumed")
+    host_lock.claim("vps-1", "deploy")
+    monkeypatch.setenv("NAVIG_SESSION_ID", "session-B")
+    assert host_lock.lock_state(host_lock.read_lock("vps-1")).state == "held"
 
 
 def test_lock_of_an_ended_session_is_stale_immediately(lockdir, sessions, monkeypatch):
@@ -538,3 +575,57 @@ def test_try_guard_remote_treats_unknown_host_as_remote(lockdir):
     st = host_lock.try_guard_remote(Exploding(), "mystery", "cmd")
     assert st is None  # free → claimed
     assert host_lock.lock_state(host_lock.read_lock("mystery")).state == "mine"
+
+
+# ── acquisition is one atomic step ───────────────────────────────────────────
+
+
+@pytest.mark.parametrize("entry", ["guard", "try_guard_remote"])
+def test_two_sessions_racing_a_free_host_cannot_both_claim_it(lockdir, monkeypatch, entry):
+    """Regression: both sessions read "free", both claimed, the last writer won and BOTH
+    went on to mutate the server. The check and the claim must be one critical section."""
+    import threading
+    import time
+
+    import typer
+
+    who = threading.local()
+    monkeypatch.setattr(host_lock, "session_id", lambda: who.name)
+    real_state = host_lock.lock_state
+
+    def slow_state(lock, **kwargs):
+        st = real_state(lock, **kwargs)
+        time.sleep(0.3)  # widen the read → claim window the race lives in
+        return st
+
+    monkeypatch.setattr(host_lock, "lock_state", slow_state)
+
+    class _Remote:
+        def is_local_host(self, _host):
+            return False
+
+    barrier = threading.Barrier(2)
+    outcomes: dict[str, str] = {}
+
+    def run(name: str) -> None:
+        who.name = name
+        barrier.wait()
+        if entry == "guard":
+            try:
+                host_lock.guard("vps-1", "deploy")
+                outcomes[name] = "claimed"
+            except typer.Exit:
+                outcomes[name] = "refused"
+        else:
+            conflict = host_lock.try_guard_remote(_Remote(), "vps-1", "deploy")
+            outcomes[name] = "refused" if conflict is not None else "claimed"
+
+    threads = [threading.Thread(target=run, args=(n,)) for n in ("session-X", "session-Y")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    assert sorted(outcomes.values()) == ["claimed", "refused"]
+    winner = next(n for n, o in outcomes.items() if o == "claimed")
+    assert host_lock.read_lock("vps-1")["session_id"] == winner

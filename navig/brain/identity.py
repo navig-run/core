@@ -204,7 +204,12 @@ def host_is_always_on() -> bool:
     honest heuristic used only for a WARNING — never for enforcement:
 
     * a system service config dir (``/etc/navig``, ``/var/lib/navig``) is always-on;
-    * Linux/macOS normally are; Windows desktop is normally not.
+    * a WINDOWS desktop normally is not;
+    * a POSIX host with a graphical session is a workstation, one without is a server.
+
+    The last rule is what the old expression meant to say and did not:
+    ``return sys.platform != "darwin" or True`` is unconditionally True, so every Linux
+    Brain was promised always-on and the warning never fired (measured 2026-10-30).
     """
     from navig.platform import paths  # noqa: PLC0415
 
@@ -214,6 +219,6 @@ def host_is_always_on() -> bool:
         cfg = ""
     if cfg.startswith("/etc/navig") or cfg.startswith("/var/lib/navig"):
         return True
-    if os.name == "nt":
+    if sys.platform == "win32":
         return False
-    return sys.platform != "darwin" or True
+    return not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))

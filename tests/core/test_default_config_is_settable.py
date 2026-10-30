@@ -21,6 +21,8 @@ default and the vocabulary cannot drift apart again.
 
 from __future__ import annotations
 
+import typing
+
 import pytest
 
 from navig.core.execution import VALID_CONFIRMATION_LEVELS, VALID_MODES
@@ -32,6 +34,21 @@ def _defaults() -> dict:
     # avoids touching the real config dir (the class is a process-wide singleton).
     obj = ConfigSingleton.__new__(ConfigSingleton)
     return obj._get_default_config()
+
+
+def _protocol_members(proto: type) -> set[str]:
+    """A Protocol's declared members on every supported Python (>=3.10).
+
+    `typing.get_protocol_members` is 3.13+, `__protocol_attrs__` 3.12+; 3.10/3.11 have only
+    the private `typing._get_protocol_attrs`. Reading `__protocol_attrs__` alone made the
+    conformance check below fail on 3.10/3.11 with an empty member set.
+    """
+    if hasattr(typing, "get_protocol_members"):
+        return set(typing.get_protocol_members(proto))
+    attrs = getattr(proto, "__protocol_attrs__", None)
+    if attrs is not None:
+        return set(attrs)
+    return set(typing._get_protocol_attrs(proto))  # type: ignore[attr-defined]
 
 
 def test_default_execution_mode_is_a_valid_mode():
@@ -76,9 +93,7 @@ def test_the_defaults_survive_a_round_trip_through_their_own_setters():
     # its declared members rather than isinstance — derived from the Protocol, so a
     # renamed method fails here instead of silently making this test a no-op.
     required = {
-        name
-        for name in getattr(ExecutionConfigProvider, "__protocol_attrs__", ())
-        if not name.startswith("__")
+        name for name in _protocol_members(ExecutionConfigProvider) if not name.startswith("__")
     }
     assert required, "could not read the Protocol's members — this check would be vacuous"
     missing = sorted(name for name in required if not hasattr(provider, name))

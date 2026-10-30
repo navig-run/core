@@ -352,6 +352,10 @@ def formation_sync(
         text = "\n".join(lines) + agent.system_prompt.strip() + "\n"
 
         target = out_dir / f"{aid}.md"
+        if not target.resolve().is_relative_to(out_dir.resolve()):
+            # An agent id is a filename here; one that escapes .navig/agents is never written.
+            missing.append(aid)
+            continue
         rel = str(target)
         current = target.read_text(encoding="utf-8") if target.exists() else None
         if current == text:

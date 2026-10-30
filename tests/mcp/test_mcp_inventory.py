@@ -133,13 +133,20 @@ class TestListHosts:
         """
         server = _server(hosts={
             "outpost": {
-                "host": "192.0.2.10", "user": "operator", "hostname": "example-host",
-                "metadata": {"role": "brain", "os": "Ubuntu 25.10"},
+                "host": "192.0.2.10", "user": "operator",
+                "metadata": {"role": "brain", "hostname": "example-host", "os": "Ubuntu 25.10"},
+            },
+            "legacy": {
+                "host": "192.0.2.11", "user": "operator", "hostname": "example-legacy",
             },
         })
-        (row,) = _tool_list_hosts(server, {})
-        assert row["role"] == "brain"
-        assert row["hostname"] == "example-host"
+        rows = {row["name"]: row for row in _tool_list_hosts(server, {})}
+        assert rows["outpost"]["role"] == "brain"
+        # Every host file the operator actually has stores the hostname under `metadata`.
+        assert rows["outpost"]["hostname"] == "example-host"
+        # A host file written before that convention still lists its hostname.
+        assert rows["legacy"]["hostname"] == "example-legacy"
+        assert rows["legacy"]["role"] is None
 
     def test_role_absent_is_none_not_an_error(self):
         """Hosts written before the role convention existed must still list cleanly."""

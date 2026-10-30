@@ -131,23 +131,44 @@ def test_the_cache_delegates_to_the_per_user_cache_dir(monkeypatch, tmp_path):
     )
 
 
-def test_the_per_user_cache_dir_is_not_the_shared_temp_dir(monkeypatch):
+@pytest.mark.parametrize("os_name", ["windows", "macos", "linux"])
+def test_the_per_user_cache_dir_is_not_the_shared_temp_dir(monkeypatch, os_name):
     """A fixed name in the shared temp dir is the first account's to own.
 
     With nothing overriding it, `cache_dir()` must land in this account's own cache
-    (LOCALAPPDATA/navig/cache, ~/Library/Caches/navig, $XDG_CACHE_HOME/navig) — never
-    the shared temp dir. Read-only: `cache_dir()` creates nothing, so this touches none of
+    (LOCALAPPDATA/navig/cache, ~/Library/Caches/navig, ~/.cache/navig) — never the
+    shared temp dir. Read-only: `cache_dir()` creates nothing, so this touches none of
     the operator's real directories.
+
+    EVERY override is isolated first. Clearing only `NAVIG_CACHE_DIR` left the
+    runner's own `XDG_CACHE_HOME` / `HOME` / `LOCALAPPDATA` in charge, so a valid
+    per-user `XDG_CACHE_HOME=/tmp/user-cache` failed this test. Home and LOCALAPPDATA
+    point at a fixed path outside the temp dir, and the result must be exactly the
+    per-OS default.
     """
     import tempfile  # noqa: PLC0415
 
     from navig.platform import paths  # noqa: PLC0415
 
-    monkeypatch.delenv("NAVIG_CACHE_DIR", raising=False)
-
-    d = paths.cache_dir().resolve()
     shared = Path(tempfile.gettempdir()).resolve()
+    home = Path(shared.anchor) / "navig-test-home"
+    local_appdata = home / "AppData" / "Local"
 
+    monkeypatch.delenv("NAVIG_CACHE_DIR", raising=False)
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(local_appdata))
+    monkeypatch.setattr(paths, "home_dir", lambda: home)
+    monkeypatch.setattr(paths, "current_os", lambda: os_name)
+    monkeypatch.setattr(paths, "_is_system_service", lambda: False)
+
+    expected = {
+        "windows": local_appdata / "navig" / "cache",
+        "macos": home / "Library" / "Caches" / "navig",
+        "linux": home / ".cache" / "navig",
+    }[os_name]
+    d = paths.cache_dir()
+
+    assert d == expected, f"{os_name} default cache dir is {d}, expected {expected}"
     assert shared not in d.parents and d != shared, (
         f"the per-user cache dir is under the shared temp dir ({d}) — it must be per-user"
     )

@@ -30,3 +30,16 @@ except ImportError as exc:  # pragma: no cover - exercised only on a bare instal
         "NAVIG Blackbox requires the navig-blackbox engine. "
         "Install it with: pip install navig[blackbox]"
     ) from exc
+
+#: The submodule shims (``navig.blackbox.recorder`` …). Loaded lazily on attribute
+#: access, so ``import navig.blackbox`` then ``navig.blackbox.recorder.get_recorder()``
+#: keeps working as it did before the engine moved out, without importing all of them.
+_SUBMODULES = frozenset({"bundle", "crash", "export", "recorder", "seal", "timeline", "types"})
+
+
+def __getattr__(name: str):
+    if name in _SUBMODULES:
+        import importlib
+
+        return importlib.import_module(f"{__name__}.{name}")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

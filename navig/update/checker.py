@@ -45,10 +45,13 @@ class VersionChecker:
         # `.git` lives at the monorepo ROOT, not inside `core/`, so `(src_dir/".git").exists()`
         # is False on an editable install and this mis-reported "pip" (#533's trap). Ask git
         # whether it actually tracks navig's source here.
-        from navig.commands.update import _is_navig_git_checkout
+        from navig.commands.update import _git_commits_behind, _is_navig_git_checkout
 
         src_dir = Path(__file__).resolve().parent.parent.parent
         install_type = "git" if _is_navig_git_checkout(src_dir) else "pip"
+        # A git checkout's version only bumps on a release tag: ask git whether upstream has
+        # commits HEAD lacks, or `navig update` reports "up to date" over untagged commits.
+        commits_behind = _git_commits_behind(src_dir) if install_type == "git" else None
 
         latest = self._latest_cached()
 
@@ -57,6 +60,7 @@ class VersionChecker:
             current=current,
             latest=latest,
             install_type=install_type,
+            commits_behind=commits_behind,
             source_name=self._source.label,
             error=None if latest else "Could not determine latest version",
         )

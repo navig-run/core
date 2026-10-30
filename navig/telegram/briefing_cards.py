@@ -24,6 +24,17 @@ import logging
 from datetime import datetime, time
 from typing import Any
 
+from navig.telegram.card_doc import (
+    Bullets,
+    Button,
+    Card,
+    Heading,
+    Para,
+    Raw,
+    Tasks,
+    esc,
+)
+
 logger = logging.getLogger(__name__)
 
 KINDS = ("morning", "evening")
@@ -159,7 +170,7 @@ def _pick(key: str) -> str:
 
 
 def _date_label(now: datetime) -> str:
-    """"Friday, 9 October" — in the operator's language."""
+    """ "Friday, 9 October" — in the operator's language."""
     weekdays = _pool("briefing.weekdays")
     day = weekdays[now.weekday()] if len(weekdays) == 7 else now.strftime("%A")
     month_key = f"month.{now.month}"
@@ -169,31 +180,47 @@ def _date_label(now: datetime) -> str:
     return f"{day}, {now.day} {month}"
 
 
+def morning_card(now: datetime, anchor: str = "") -> Card:
+    """The morning card as structure — one definition, two renders.
+
+    ``build_morning`` projects it for ``sendMessage``, ``build_morning_rich`` for
+    ``sendRichMessage``: a heading, a section, a bullet list and an italic closing
+    line become a real card (headline, checkbox-style moves, footer) on a client
+    that renders rich messages, and keep the old layout everywhere else.
+
+    Buttons appear only when there is an anchor to act on: the morning card has no
+    other action of its own, and inventing a callback that nothing dispatches is
+    how a card gets a button that does nothing.
+    """
+    # The briefing IS the screen: it arrives alone and owns the first scroll, so it
+    # earns the display size every other card is denied.
+    card = Card(title=_t("briefing.morning.title"), glyph="☀️", meta=_date_label(now), big=True)
+    if anchor:
+        card.add(Para(Raw(f"📌 <b>{esc(_t('briefing.morning.anchor'))}</b>")))
+        card.add(Para(anchor, style="italic"))
+    card.add(Heading(_t("briefing.morning.first_moves"), level=3))
+    card.add(Bullets(_pool("briefing.morning.moves")))
+    card.footer = _pick("briefing.morning.closings")
+
+    if anchor:
+        card.buttons(
+            Button(_t("briefing.button.anchor_keep"), data="morn:anchor_ok", style="success"),
+            Button(_t("briefing.button.anchor_new"), data="eve:plan_tomorrow", style="primary"),
+        )
+    return card
+
+
 def build_morning(now: datetime, anchor: str = "") -> tuple[str, list[list[dict]] | None]:
     """``(html, keyboard)`` for the morning card. *anchor* is yesterday's
     "tomorrow's top priority", logged through the evening card."""
-    lines = [
-        f"☀️ <b>{html.escape(_t('briefing.morning.title'))}</b>"
-        f"  ·  <i>{html.escape(_date_label(now))}</i>",
-        "",
-    ]
-    if anchor:
-        lines += [
-            f"📌 <b>{html.escape(_t('briefing.morning.anchor'))}</b>",
-            f"<i>{html.escape(anchor)}</i>",
-            "",
-        ]
-    lines.append(f"<b>{html.escape(_t('briefing.morning.first_moves'))}</b>")
-    lines += [f"• {html.escape(m)}" for m in _pool("briefing.morning.moves")]
-    lines += ["", f"<i>{html.escape(_pick('briefing.morning.closings'))}</i>"]
+    card = morning_card(now, anchor)
+    return card.classic_html(), card.keyboard()
 
-    keyboard = None
-    if anchor:
-        keyboard = [[
-            {"text": _t("briefing.button.anchor_keep"), "callback_data": "morn:anchor_ok"},
-            {"text": _t("briefing.button.anchor_new"), "callback_data": "eve:plan_tomorrow"},
-        ]]
-    return "\n".join(lines), keyboard
+
+def build_morning_rich(now: datetime, anchor: str = "") -> tuple[str, list[list[dict]] | None]:
+    """``(rich_html, keyboard)`` — the same card for ``sendRichMessage``."""
+    card = morning_card(now, anchor)
+    return card.rich_html(), card.keyboard()
 
 
 def brief_plain(now: datetime, *, anchor: str = "") -> str:
@@ -216,45 +243,173 @@ def brief_plain(now: datetime, *, anchor: str = "") -> str:
     return "\n".join(lines)
 
 
-def build_evening(now: datetime, *, shipped: str = "",
-                  priority: str = "") -> tuple[str, str, list[list[dict]]]:
-    """``(title, html, keyboard)`` for the evening card.
+def evening_card(now: datetime, *, shipped: str = "", priority: str = "") -> Card:
+    """The evening card as structure — see :func:`morning_card` for the contract.
 
     *shipped* / *priority* are what was already logged today, so the card shows
-    them as done and drops their buttons instead of asking twice."""
+    them as done (a checked row, no button) instead of asking twice.
+    """
     contexts = _pool("briefing.evening.context")
     context = contexts[now.weekday()] if len(contexts) == 7 else ""
-    title = _t("briefing.evening.title", date=_date_label(now))
-
-    checklist = [f"<b>{html.escape(_t('briefing.evening.checklist'))}</b>"]
+    card = Card(
+        title=_t("briefing.evening.title", date=_date_label(now)),
+        glyph="🌙",
+        meta=context,
+        footer=_pick("briefing.evening.closings"),
+        big=True,
+    )
+    card.add(Heading(_t("briefing.evening.checklist"), level=3))
+    rows: list[tuple[str | Raw, bool]] = []
     if shipped:
-        checklist.append(f"✅ <i>{html.escape(_t('briefing.evening.shipped', value=shipped))}</i>")
+        rows.append((_t("briefing.evening.shipped", value=shipped), True))
     else:
-        checklist.append(f"• {html.escape(_t('briefing.evening.review'))}")
+        rows.append((_t("briefing.evening.review"), False))
     if priority:
-        checklist.append(f"📌 <i>{html.escape(_t('briefing.evening.anchor', value=priority))}</i>")
+        rows.append((_t("briefing.evening.anchor", value=priority), True))
     else:
-        checklist.append(f"• {html.escape(_t('briefing.evening.plan'))}")
-    checklist += [
-        f"• {html.escape(_t('briefing.evening.backups'))}",
-        f"• {html.escape(_t('briefing.evening.close'))}",
-    ]
+        rows.append((_t("briefing.evening.plan"), False))
+    rows.append((_t("briefing.evening.backups"), False))
+    rows.append((_t("briefing.evening.close"), False))
+    card.add(Tasks(rows))
 
-    body = [f"🌙 <b>{html.escape(title)}</b>", ""]
-    if context:
-        body += [f"<i>{html.escape(context)}</i>", ""]
-    body += [*checklist, "", f"<i>{html.escape(_pick('briefing.evening.closings'))}</i>"]
-
-    row1 = []
     if not shipped:
-        row1.append({"text": _t("briefing.button.log_shipped"), "callback_data": "eve:log_shipped"})
+        card.buttons(
+            Button(_t("briefing.button.log_shipped"), data="eve:log_shipped", style="success")
+        )
     if not priority:
-        row1.append({"text": _t("briefing.button.plan_tomorrow"), "callback_data": "eve:plan_tomorrow"})
-    row2 = [
-        {"text": _t("briefing.button.backup_check"), "callback_data": "eve:backup_check"},
-        {"text": _t("briefing.button.dnd_on"), "callback_data": "eve:dnd_on"},
-    ]
-    return title, "\n".join(body), [r for r in (row1, row2) if r]
+        card.buttons(
+            Button(_t("briefing.button.plan_tomorrow"), data="eve:plan_tomorrow", style="primary")
+        )
+    card.buttons(
+        Button(_t("briefing.button.backup_check"), data="eve:backup_check"),
+        Button(_t("briefing.button.dnd_on"), data="eve:dnd_on"),
+    )
+    return card
+
+
+def build_evening(
+    now: datetime, *, shipped: str = "", priority: str = ""
+) -> tuple[str, str, list[list[dict]]]:
+    """``(title, html, keyboard)`` for the evening card."""
+    card = evening_card(now, shipped=shipped, priority=priority)
+    return card.title, card.classic_html(), card.keyboard()
+
+
+def build_evening_rich(
+    now: datetime, *, shipped: str = "", priority: str = ""
+) -> tuple[str, str, list[list[dict]]]:
+    """``(title, rich_html, keyboard)`` — the same card for ``sendRichMessage``."""
+    card = evening_card(now, shipped=shipped, priority=priority)
+    return card.title, card.rich_html(), card.keyboard()
+
+
+# ── The screens behind the two evening buttons ───────────────────────────────
+#
+# "✅ What got done" used to answer with a sentence asking the operator to type what
+# he shipped — at 18:00, when the day is a blur and the phone keyboard is the worst
+# place to reconstruct it. The button now opens a picker: the last things he actually
+# logged, one tap each, plus the free-text door. It edits the evening card in place,
+# so the chat keeps one card instead of growing scaffolding underneath it.
+
+#: How many past items a picker offers, and how far back it looks. Four fits one
+#: thumb-scroll; a longer list is a log, not a choice.
+PICK_LIMIT = 4
+PICK_DAYS = 14
+
+#: Kinds a picker can serve — the same two the evening card asks about.
+PICK_KINDS = ("shipped", "priority")
+
+#: The separator ``save_shipped`` writes between items of one day.
+_ITEM_SEP = " · "
+
+
+def _one_line(text: Any, limit: int) -> str:
+    """A candidate as a button label: one line, no runaway width."""
+    flat = " ".join(str(text).split())
+    if len(flat) <= limit:
+        return flat
+    cut = flat[: limit - 1].rstrip(" ,;:.·-")
+    return f"{cut}…"
+
+
+def _recent(kind: str, limit: int, days: int) -> list[str]:
+    from navig.agent.proactive import eve_log
+
+    out: list[str] = []
+    seen: set[str] = set()
+    today = datetime.now().strftime("%Y-%m-%d")
+    try:
+        entries = eve_log.history(days)
+    except Exception:  # noqa: BLE001 — a picker with no history is still a picker
+        logger.debug("briefing picker: no history", exc_info=True)
+        return out
+    for key, entry in entries.items():
+        if key == today:
+            # Today's own line is already the ticked row on the evening card; offering
+            # it back would invite logging the same sentence twice.
+            continue
+        raw = str(entry.get(kind) or "")
+        parts = raw.split(_ITEM_SEP) if kind == "shipped" else [raw]
+        for part in parts:
+            text = " ".join(part.split()).strip(" ,;.")
+            if len(text) < 3:
+                continue
+            low = text.lower()
+            if low in seen:
+                continue
+            seen.add(low)
+            out.append(text)
+            if len(out) >= limit:
+                return out
+    return out
+
+
+def recent_shipped(limit: int = PICK_LIMIT, *, days: int = PICK_DAYS) -> list[str]:
+    """What shipped on previous days, newest first, one item per choice."""
+    return _recent("shipped", limit, days)
+
+
+def recent_priorities(limit: int = PICK_LIMIT, *, days: int = PICK_DAYS) -> list[str]:
+    """Tomorrow's-anchor candidates: the plans he already carried, newest first."""
+    return _recent("priority", limit, days)
+
+
+def pick_card(now: datetime, kind: str, candidates: list[str]) -> Card:
+    """The screen behind “What got done” / “Plan tomorrow”.
+
+    Every choice is a button that logs exactly the words it shows, and the two ways
+    out (type something new, cancel) live in the last row — a picker with no exit is
+    a dead end, and a cancel that posts a message instead of restoring the card
+    leaves the chat holding a question nobody asked any more.
+    """
+    if kind not in PICK_KINDS:
+        raise ValueError(f"unknown picker kind {kind!r}; want one of {PICK_KINDS}")
+    shipped = kind == "shipped"
+    card = Card(
+        title=_t(f"briefing.pick.{kind}.title"),
+        glyph="📦" if shipped else "🎯",
+        meta=_date_label(now),
+        footer=_t("briefing.pick.cancel_hint"),
+    )
+    card.add(Para(_t(f"briefing.pick.{kind}.body"), style="italic"))
+    if candidates:
+        card.add(Heading(_t(f"briefing.pick.{kind}.recent"), level=3))
+        card.add(Para(_t("briefing.pick.tap_hint"), style="italic"))
+        for index, text in enumerate(candidates):
+            card.buttons(
+                Button(
+                    f"{index + 1} · {_one_line(text, 34)}",
+                    data=f"eve:set:{kind}:{index}",
+                    style="primary",
+                )
+            )
+    else:
+        card.add(Para(_t("briefing.pick.empty"), style="italic"))
+    card.buttons(
+        Button(_t("briefing.button.type_it"), data=f"eve:type:{kind}"),
+        Button(_t("briefing.button.cancel"), data="eve:cancel"),
+    )
+    return card
 
 
 def prompt_html(kind: str) -> str:
@@ -270,5 +425,6 @@ def prompt_html(kind: str) -> str:
 
 #: Replies that dismiss a pending log/plan prompt. Both languages: the operator
 #: answers in whichever one their thumb picks.
-CANCEL_WORDS = frozenset({"cancel", "skip", "no", "stop",
-                          "отмена", "пропустить", "пропуск", "нет", "стоп"})
+CANCEL_WORDS = frozenset(
+    {"cancel", "skip", "no", "stop", "отмена", "пропустить", "пропуск", "нет", "стоп"}
+)

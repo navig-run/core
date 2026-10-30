@@ -57,6 +57,9 @@ NOTIFICATION_TYPES: list[dict] = [
     # asked for the goal, so its progress is news, not noise — unlike mission_complete.
     {"key": "goal_digest",      "label": "Goal progress",      "category": "Agent",    "default_channels": ["deck", "telegram"]},
     {"key": "approval",         "label": "Approvals needed",   "category": "Agent",    "default_channels": ["deck", "telegram"]},
+    # The result of an approval answered after its turn ended (navig.approval.resume).
+    # Delivered back through the channel that asked; these are the defaults otherwise.
+    {"key": "approval_resume",  "label": "Late approval results", "category": "Agent", "default_channels": ["deck", "telegram"]},
     # Agent Monitor (navig-agentctl): a tracked run finished / failed / needs you / went quiet.
     # Deck only by default — Telegram and the Windows toast are opt-in per type.
     {"key": "agent_done",        "label": "Agent run finished", "category": "Agent",    "default_channels": ["deck"]},
@@ -100,6 +103,7 @@ NOTIFICATION_TYPES: list[dict] = [
     # (9 a month on the operator's install). Opt Telegram in from the matrix if wanted.
     {"key": "deploy",           "label": "Deployments",        "category": "NAVIG",    "default_channels": ["deck"]},
     {"key": "connectivity",     "label": "Brain reachability", "category": "NAVIG",    "default_channels": ["deck", "telegram"]},
+    {"key": "recall_digest",    "label": "Recall resurrection", "category": "NAVIG",    "default_channels": ["deck", "telegram"]},
     {"key": "config_incident",  "label": "Config rescues",     "category": "NAVIG",    "default_channels": ["deck", "telegram"]},
     # A primary model stopped answering and replies switched to a fallback model (and
     # the "it's back" follow-up). Deduped by navig.llm.model_fallback (first switch,
@@ -108,6 +112,10 @@ NOTIFICATION_TYPES: list[dict] = [
     # A Lens is waiting on a person: an agent proposed one, or an update was fetched from
     # its install link (navig.lenses.review). Nothing runs until it is approved.
     {"key": "lens_review",      "label": "Lens reviews",       "category": "NAVIG",    "default_channels": ["deck", "telegram"]},
+    # A headless Webflow run paused for the person (a secret nobody may fill, a vault login
+    # to add, a step only they can finish). The run keeps its checkpoint and says so; the
+    # message names how to resume (`navig webflow run --resume`).
+    {"key": "webflow_needs_user", "label": "Webflow needs you", "category": "NAVIG",    "default_channels": ["deck", "telegram"]},
     # Games — free-game claims (navig-games plugin).
     {"key": "free_game",        "label": "Free games",         "category": "Games",    "default_channels": ["deck", "telegram"]},
     {"key": "custom",           "label": "Custom / other",     "category": "Other",    "default_channels": ["deck"]},
@@ -126,7 +134,7 @@ def emoji_for_type(type_key: str) -> str:
         "sms_inbound": "📩", "email_important": "📧", "email_new": "✉️",
         "mail_outbox": "📤", "mail_sent": "📨", "mail_send_problem": "📛", "mail_digest": "📰",
         "reminder": "⏰", "appointment": "📅", "briefing": "☀️", "mission_complete": "✅", "goal_digest": "🎯",
-        "approval": "🔔", "agent_message": "🤖",
+        "approval": "🔔", "approval_resume": "☑️", "agent_message": "🤖",
         "agent_done": "✅", "agent_failed": "❌", "agent_needs_input": "🙋", "agent_stalled": "⏳", "system_alert": "🚨",
         "creative_proposal": "💡",
         "node_status": "🛰️", "security_alert": "🛡️", "invoice_due": "🧾",
@@ -134,6 +142,7 @@ def emoji_for_type(type_key: str) -> str:
         "message_deleted": "🗑", "breach_alert": "🔓",
         "signal_event": "📡", "self_error": "💥", "deploy": "🚀",
         "connectivity": "📶", "config_incident": "🩺", "model_fallback": "🔀", "lens_review": "👓", "free_game": "🎮",
+        "webflow_needs_user": "⏸️",
         "sale": "💰", "sales_digest": "📊", "sales_check_failed": "⚠️",
-        "custom": "📢",
+        "custom": "📢", "recall_digest": "🌱",
     }.get(type_key, "📢")

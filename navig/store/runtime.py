@@ -34,11 +34,14 @@ from navig.store.base import BaseStore, _to_utc_iso, _utcnow
 
 logger = logging.getLogger(__name__)
 
+
 def _runtime_db_path() -> Path:
     return config_dir() / "runtime.db"
 
+
 def _utc_now_dt() -> datetime:
     return datetime.now(timezone.utc)
+
 
 class RuntimeStore(BaseStore):
     """
@@ -197,9 +200,7 @@ class RuntimeStore(BaseStore):
         """
         )
 
-    def _migrate(
-        self, conn: sqlite3.Connection, from_version: int, to_version: int
-    ) -> None:
+    def _migrate(self, conn: sqlite3.Connection, from_version: int, to_version: int) -> None:
         # AUDIT DECISION:
         # Is this the correct implementation? Yes — migration steps are dispatched
         # incrementally and missing steps fail fast.
@@ -302,8 +303,7 @@ class RuntimeStore(BaseStore):
             """
         )
         conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_commit_plans_expires"
-            " ON commit_plans (expires_at)"
+            "CREATE INDEX IF NOT EXISTS idx_commit_plans_expires ON commit_plans (expires_at)"
         )
 
     # ── Legacy migration ──────────────────────────────────────
@@ -333,10 +333,7 @@ class RuntimeStore(BaseStore):
             except Exception as exc:
                 logger.warning("Legacy bot_data.db migration failed: %s", exc)
 
-        if (
-            legacy_daily.exists()
-            and not legacy_daily.with_suffix(".db.migrated").exists()
-        ):
+        if legacy_daily.exists() and not legacy_daily.with_suffix(".db.migrated").exists():
             try:
                 self._copy_tables_from(
                     legacy_daily,
@@ -443,9 +440,7 @@ class RuntimeStore(BaseStore):
     def get_stats_summary(self) -> dict[str, Any]:
         """Aggregate command statistics."""
         conn = self._get_conn()
-        today_start = (
-            _utc_now_dt().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        )
+        today_start = _utc_now_dt().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
 
         commands_today = conn.execute(
             "SELECT COUNT(*) FROM command_log WHERE executed_at >= ?",
@@ -488,9 +483,7 @@ class RuntimeStore(BaseStore):
                 "command": r["command"],
                 "count": r["count"],
                 "last_used": r["last_used"],
-                "avg_duration_ms": (
-                    r["total_duration_ms"] / r["count"] if r["count"] else 0
-                ),
+                "avg_duration_ms": (r["total_duration_ms"] / r["count"] if r["count"] else 0),
                 "error_count": r["error_count"],
             }
             for r in rows
@@ -530,9 +523,7 @@ class RuntimeStore(BaseStore):
         )
         return cursor.lastrowid  # type: ignore[return-value]
 
-    def get_recent_interactions(
-        self, hours: int = 24, limit: int = 50
-    ) -> list[dict[str, Any]]:
+    def get_recent_interactions(self, hours: int = 24, limit: int = 50) -> list[dict[str, Any]]:
         """Recent interaction entries."""
         cutoff = (_utc_now_dt() - timedelta(hours=hours)).isoformat()
         rows = self._read_all(
@@ -655,9 +646,28 @@ class RuntimeStore(BaseStore):
     def complete_reminder(self, reminder_id: int) -> None:
         self._write("UPDATE reminders SET completed = 1 WHERE id = ?", (reminder_id,))
 
-    def increment_reminder_retry(
-        self, reminder_id: int, reschedule_seconds: int = 60
-    ) -> None:
+    def snooze_reminder(self, reminder_id: int, *, seconds: int = 3600) -> str | None:
+        """Push one pending reminder *seconds* into the future; returns its new ISO time.
+
+        The "+1 h" button on a ping had no counterpart in the store: the only way to
+        move a reminder was to create a new row, which left the original to fire again.
+        The bookkeeping is rewound with it — a snoozed row is a fresh delivery, so a
+        stale claim (a poller that died mid-send) and the retry counter must not carry
+        over, or the retry bound would eat the snooze.
+        """
+        row = self.get_reminder(reminder_id)
+        if not row or int(row.get("completed") or 0):
+            return None
+        when = datetime.now(timezone.utc) + timedelta(seconds=max(60, int(seconds)))
+        stamp = _to_utc_iso(when)
+        self._write(
+            "UPDATE reminders SET remind_at = ?, completed = 0, claimed_at = NULL,"
+            " retry_count = 0 WHERE id = ?",
+            (stamp, int(reminder_id)),
+        )
+        return stamp
+
+    def increment_reminder_retry(self, reminder_id: int, reschedule_seconds: int = 60) -> None:
         """Increment retry_count and push remind_at forward by *reschedule_seconds*.
 
         ``remind_at`` MUST be written in the same ISO-8601 'T'/'Z' shape the rest of the
@@ -707,7 +717,9 @@ class RuntimeStore(BaseStore):
             "chat_id": row["chat_id"],
             "mode": row["mode"],
             "persona": row["persona"],
-            "persona_explicit": bool(row["persona_explicit"]) if "persona_explicit" in keys else False,
+            "persona_explicit": bool(row["persona_explicit"])
+            if "persona_explicit" in keys
+            else False,
             "started_at": row["started_at"],
             "context": json.loads(row["context"]) if row["context"] else None,
             "last_active_at": row["last_active_at"] if "last_active_at" in keys else None,
@@ -715,9 +727,9 @@ class RuntimeStore(BaseStore):
         }
         if state["mode"] == "active" and state["last_active_at"]:
             try:
-                last_active = datetime.fromisoformat(
-                    state["last_active_at"].rstrip("Z")
-                ).replace(tzinfo=timezone.utc)
+                last_active = datetime.fromisoformat(state["last_active_at"].rstrip("Z")).replace(
+                    tzinfo=timezone.utc
+                )
                 age_hours = (_utc_now_dt() - last_active).total_seconds() / 3600
                 if age_hours >= 24:
                     self._write(
@@ -795,9 +807,7 @@ class RuntimeStore(BaseStore):
                 return cached["value"]
             del self._mem_cache[key]
 
-        row = self._read_one(
-            "SELECT value, expires_at FROM cache WHERE key = ?", (key,)
-        )
+        row = self._read_one("SELECT value, expires_at FROM cache WHERE key = ?", (key,))
         if not row:
             return None
 
@@ -834,9 +844,7 @@ class RuntimeStore(BaseStore):
     def cache_clear_expired(self) -> int:
         """Purge expired cache entries. Returns count deleted."""
         now = _utcnow()
-        self._mem_cache = {
-            k: v for k, v in self._mem_cache.items() if v["expires_at"] > now
-        }
+        self._mem_cache = {k: v for k, v in self._mem_cache.items() if v["expires_at"] > now}
         cursor = self._write("DELETE FROM cache WHERE expires_at <= ?", (now,))
         return cursor.rowcount
 
@@ -873,9 +881,7 @@ class RuntimeStore(BaseStore):
         """Persist the last-run date for a scheduled task with a 48-hour TTL."""
         self.cache_set(f"sched:{task_name}:last_run", date_str, ttl_seconds=48 * 3600)
 
-    def prune(
-        self, command_log_days: int = 30, interaction_days: int = 30
-    ) -> dict[str, int]:
+    def prune(self, command_log_days: int = 30, interaction_days: int = 30) -> dict[str, int]:
         """Purge old data. Returns counts deleted.
 
         Same ISO-shape threshold rule as ``increment_reminder_retry`` (see its note): the
@@ -928,13 +934,23 @@ class RuntimeStore(BaseStore):
 
         return stats
 
+
 # ── Module-level singleton ────────────────────────────────────
 
 _store: RuntimeStore | None = None
 
+
 def get_runtime_store(db_path: Path | None = None) -> RuntimeStore:
-    """Get or create the global RuntimeStore instance."""
+    """Get or create the global RuntimeStore instance.
+
+    The cache is keyed by the database it points at: the caller that runs FIRST must not pin
+    the store for the whole process. When the data directory is redirected — a test's isolated
+    ``NAVIG_DATA_DIR``, a per-project store — the cached store stayed bound to the first path,
+    and once that path was gone the reopened database had no schema ("no such table: ai_state",
+    measured 2026-10-30 in the Telegram suite). A changed path now gets a fresh store.
+    """
     global _store
-    if _store is None:
+    target = Path(db_path) if db_path is not None else _runtime_db_path()
+    if _store is None or _store.db_path != target:
         _store = RuntimeStore(db_path)
     return _store

@@ -316,7 +316,7 @@ class _Daemon:
 @pytest.fixture
 def fast(monkeypatch):
     monkeypatch.setattr("time.sleep", lambda *_a, **_kw: None)
-    monkeypatch.setattr(svc.os, "name", "nt")
+    monkeypatch.setattr(svc.sys, "platform", "win32")
     monkeypatch.setattr("navig.daemon.service_manager.task_scheduler_run", lambda: (True, "ok"))
     spawned: list = []
     monkeypatch.setattr(svc, "_spawn_daemon_direct", lambda: spawned.append(True))

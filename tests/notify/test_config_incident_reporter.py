@@ -178,7 +178,9 @@ async def test_install_registers_and_uninstall_clears_the_hook():
     assert incidents._notify_hook is None, "uninstall must clear it"
 
 
-async def test_end_to_end_record_pushes_through_the_installed_reporter(monkeypatch):
+async def test_end_to_end_record_pushes_through_the_installed_reporter(monkeypatch, tmp_path):
+    # Own incident log: install replays what other tests recorded in a shared one.
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
     sent: list = []
 
     async def fake_dispatch(type_key, title, body, **kw):
@@ -308,3 +310,62 @@ def test_suppressed_incidents_are_reported_in_the_next_push():
     # The body is captured in the closure the reporter scheduled; re-render to check.
     _, body = r._render(incidents.WIPE_REFUSED)
     assert r._throttle.drain_suppressed() == 0, "the count was already drained into the push"
+
+
+# ── incidents recorded with no reporter listening are replayed at install ─────
+#
+# The daemon ENTRY process records an ungraceful death before the gateway child (and its
+# reporter) exists; that record only reached the JSONL log, so the advertised push never
+# fired and the operator learned of it only from `doctor`.
+
+
+def _capture_reporter(monkeypatch) -> list[tuple[str, dict]]:
+    pushed: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        ci.ConfigIncidentReporter,
+        "on_incident",
+        lambda self, ev, data: pushed.append((ev, data)),
+    )
+    return pushed
+
+
+async def test_an_incident_recorded_before_install_is_pushed_once(monkeypatch, tmp_path):
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+    incidents.set_notify_hook(None)
+    incidents.record(incidents.DAEMON_DIED_UNGRACEFULLY, previous_pid=4242)
+    pushed = _capture_reporter(monkeypatch)
+
+    ci.install_config_incident_reporter()
+    assert [ev for ev, _ in pushed] == [incidents.DAEMON_DIED_UNGRACEFULLY]
+    assert pushed[0][1].get("previous_pid") == 4242
+
+    ci.uninstall_config_incident_reporter()
+    ci.install_config_incident_reporter()
+    assert len(pushed) == 1, "a replayed incident was pushed again on the next install"
+
+
+async def test_a_live_push_is_not_replayed_by_the_next_install(monkeypatch, tmp_path):
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+    pushed = _capture_reporter(monkeypatch)
+    ci.install_config_incident_reporter()
+    incidents.record(incidents.WIPE_REFUSED)
+    assert len(pushed) == 1
+
+    ci.uninstall_config_incident_reporter()
+    ci.install_config_incident_reporter()
+    assert len(pushed) == 1, "an incident already pushed live was replayed"
+
+
+async def test_history_older_than_the_replay_window_is_not_pushed(monkeypatch, tmp_path):
+    import json
+    import time
+
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+    log = tmp_path / "perf" / f"{incidents.LOG_NAME}.jsonl"
+    log.parent.mkdir(parents=True)
+    old = {"ts": time.time() - ci._REPLAY_WINDOW_S - 60, "event": incidents.WIPE_REFUSED, "data": {}}
+    log.write_text(json.dumps(old) + "\n", encoding="utf-8")
+    pushed = _capture_reporter(monkeypatch)
+
+    ci.install_config_incident_reporter()
+    assert pushed == []

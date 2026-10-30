@@ -122,6 +122,18 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
             "cd:",
             # "eng:" is /doctor's Heal / Re-check / Restart buttons (engine control).
             "eng:",
+            # "hm:" is the menu hub (navig/telegram/menu_card.py): every button opens a
+            # surface in place, "hm:home" comes back. Core, because the hub is the one
+            # card that must answer even when a surface's own switch is off - it then
+            # reports that surface as unavailable instead of leaving a dead row.
+            "hm:",
+            # "cli:" is a command card re-running its own command (navig/telegram/
+            # cli_card.py). Core, because the press only redraws the card that produced
+            # it; what the command is allowed to do is the command's own gate.
+            "cli:",
+            # "noop" is an inert spacer button (telegram.py): it answers with a toast and
+            # edits nothing, so gating it could only strand a row inside a live card.
+            "noop",
             # One prefix per LINE: a shared line holds 10 prefixes at once, so a
             # merge that resolves it the wrong way drops all 10 (measured: #1817
             # landed without "hbhow:"/"hbchk:", which #1834 had added to this list —
@@ -227,7 +239,8 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
         description="One-off and recurring reminders delivered to this chat.",
         group="Life", icon="alarm-clock",
         commands=frozenset({"remindme", "myreminders", "reminders", "cancelreminder"}),
-        callback_prefixes=("rv:",),
+        # "rv:" is the list card, "rem:" the Done / +1 h row under a delivered reminder.
+        callback_prefixes=("rv:", "rem:"),
         about=(
             "those four commands stop working",
             "reminders already due are not delivered while it is off",
@@ -285,6 +298,9 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
         description="DNS, SSL, WHOIS and network lookups.",
         group="Systems", icon="globe",
         commands=frozenset({"ip", "dns", "ssl", "whois", "netstat"}),
+        # "wh:" re-runs the WHOIS lookup on the card (/whois answered as a card),
+        # "nt:" re-runs the DNS or SSL probe and opens the other one on the same name.
+        callback_prefixes=("wh:", "nt:"),
     ),
     TelegramExtension(
         id="mesh",
@@ -365,6 +381,10 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
         group="Create", icon="mic",
         commands=frozenset({"voiceon", "voiceoff"}),
         callback_prefixes=("audio:", "audmsg:"),
+        about=(
+            "/voiceon and /voiceoff stop working",
+            "voice notes are no longer transcribed - the bot says the feature is off",
+        ),
     ),
     TelegramExtension(
         id="media",
@@ -451,6 +471,10 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
                     "space with local OCR, never sent to a vision model.",
         group="Life", icon="mailbox",
         commands=frozenset({"courrier"}),
+        about=(
+            "a photo captioned /courrier is not filed - and is never sent to vision instead",
+            "everything already filed stays in the paperwork space",
+        ),
     ),
     TelegramExtension(
         id="autopilot",

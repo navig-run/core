@@ -411,15 +411,40 @@ class TestApiKeyConnect:
         get_connector_registry().register(CyberAigenConnector)
 
         result = runner.invoke(
-            connector_app, ["connect", "cyberaigen"], input="secret-token\n\n"
+            connector_app,
+            ["connect", "cyberaigen"],
+            input="secret-token\nhttps://breach.internal/app\n",
         )
 
         assert result.exit_code == 0, result.output
         assert stored.get("cyberaigen/token") == "secret-token"
-        # Enter on the base-URL prompt accepts the GENERIC placeholder — no
-        # operator's host is baked in as a default anywhere.
-        assert stored.get("cyberaigen/base_url") == CYBERAIGEN_BASE_URL.placeholder
+        # No operator's host is baked in as a default anywhere: the URL is typed.
+        assert stored.get("cyberaigen/base_url") == "https://breach.internal/app"
+        assert stored.get("cyberaigen/base_url") != CYBERAIGEN_BASE_URL.placeholder
         assert "connected" in result.output.lower()
+
+    def test_enter_on_the_base_url_does_not_store_the_placeholder(self, monkeypatch):
+        """The `.example` placeholder is a hint: Enter must not connect to it."""
+        from navig.connectors.cyberaigen.connector import (
+            CYBERAIGEN_BASE_URL,
+            CyberAigenConnector,
+        )
+
+        stored: dict[str, str] = {}
+        monkeypatch.setattr("navig.connectors.secrets.resolve", lambda f: "")
+        monkeypatch.setattr(
+            "navig.connectors.secrets.store",
+            lambda f, v: stored.__setitem__(f.vault_label, v),
+        )
+        get_connector_registry().register(CyberAigenConnector)
+
+        result = runner.invoke(
+            connector_app, ["connect", "cyberaigen"], input="secret-token\n\n"
+        )
+
+        assert result.exit_code == 1, result.output
+        assert "cyberaigen/base_url" not in stored
+        assert CYBERAIGEN_BASE_URL.placeholder in result.output  # still shown as a hint
 
     def test_already_configured_fields_are_not_prompted(self, monkeypatch):
         """Env/vault-present fields skip the prompt — extra input would abort, exit 0 proves it."""

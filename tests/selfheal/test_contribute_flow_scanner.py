@@ -285,3 +285,28 @@ class TestScanFinding:
     def test_category_stored(self):
         f = self._valid(category="security")
         assert f.category == "security"
+
+
+# ===========================================================================
+# run_approval_flow
+# ===========================================================================
+
+
+def test_run_approval_flow_with_a_bot_token_still_reaches_the_cli_review(monkeypatch):
+    """No bot-side consumer drives ContributeFlow, so a set TELEGRAM_BOT_TOKEN must not
+    drop a finished scan on the floor."""
+    import navig.bot.contribute_flow as cf
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+    calls: list[dict] = []
+
+    def _fake_review(**kwargs):
+        calls.append(kwargs)
+        return "https://example.invalid/pr/1"
+
+    monkeypatch.setattr(cf, "cli_review_and_approve", _fake_review)
+
+    result = cf.run_approval_flow([_make_finding("critical")], "selfheal/x")
+
+    assert result == "https://example.invalid/pr/1"
+    assert calls and calls[0]["branch"] == "selfheal/x"

@@ -191,7 +191,21 @@ def _ts_number_record(text: str, name: str) -> dict[str, int] | None:
     if not m:
         return None
     body = re.sub(r"//[^\n]*", "", m.group(1))
-    return {k: int(v.replace("_", "")) for k, v in re.findall(r"(\w+):\s*(\d[\d_]*)", body)}
+    entry = r"(\w+)\s*:\s*([^,\n]*)"
+    out: dict[str, int] = {}
+    for key, raw in re.findall(entry, body):
+        value = raw.strip()
+        # The WHOLE value must be a plain integer literal. A prefix match read
+        # `plus: 5e2` as 5 and `399.99` as 399, so drift passed as parity.
+        if not re.fullmatch(r"\d[\d_]*", value):
+            raise ValueError(f"{name}.{key}: unsupported numeric literal {value!r}")
+        out[key] = int(value.replace("_", ""))
+    # Anything that is not a `key: value` entry (a spread, a quoted key, a
+    # computed key) is a value this parser would otherwise silently drop.
+    leftover = re.sub(entry, "", body).replace(",", "").strip()
+    if leftover:
+        raise ValueError(f"{name}: unparsed entries {leftover!r}")
+    return out
 
 
 def _ts_string_array_record(text: str, name: str) -> dict[str, set[str]] | None:
@@ -200,10 +214,53 @@ def _ts_string_array_record(text: str, name: str) -> dict[str, set[str]] | None:
     if not m:
         return None
     body = re.sub(r"//[^\n]*", "", m.group(1))
-    return {
-        tier: set(re.findall(r"""['"]([a-z_:][a-z0-9_:.-]*)['"]""", arr))
-        for tier, arr in re.findall(r"(\w+):\s*\[(.*?)\]", body, re.S)
-    }
+    literal = r"""['"]([a-z_:][a-z0-9_:.-]*)['"]"""
+    entry = r"(\w+):\s*\[(.*?)\]"
+    out: dict[str, set[str]] = {}
+    for tier, arr in re.findall(entry, body, re.S):
+        # Only string literals may remain: `['core_ops', ...EXTRA_CAPS]` parsed
+        # as {'core_ops'} while billing granted everything in EXTRA_CAPS.
+        rest = re.sub(literal, "", arr).replace(",", "").strip()
+        if rest:
+            raise ValueError(f"{name}.{tier}: unparsed capability expression {rest!r}")
+        out[tier] = set(re.findall(literal, arr))
+    leftover = re.sub(entry, "", body, flags=re.S).replace(",", "").strip()
+    if leftover:
+        raise ValueError(f"{name}: unparsed entries {leftover!r}")
+    return out
+
+
+@pytest.mark.parametrize("value", ["5e2", "399.99", "0x10", "5 * 2", "LIMIT"])
+def test_number_record_rejects_a_partially_parsed_literal(value: str) -> None:
+    text = f"const T: Record<Tier, number> = {{\n  free: 1,\n  plus: {value},\n}};\n"
+    with pytest.raises(ValueError, match="plus"):
+        _ts_number_record(text, "T")
+
+
+def test_number_record_rejects_an_entry_it_cannot_read() -> None:
+    text = "const T = {\n  free: 1,\n  ...EXTRA,\n};\n"
+    with pytest.raises(ValueError, match="unparsed entries"):
+        _ts_number_record(text, "T")
+
+
+def test_number_record_reads_plain_and_underscored_integers() -> None:
+    text = "const T = {\n  // note\n  free: 1,\n  pro: 74_900, // trailing\n};\n"
+    assert _ts_number_record(text, "T") == {"free": 1, "pro": 74900}
+
+
+@pytest.mark.parametrize(
+    "arr", ["'core_ops', ...EXTRA_CAPS", "'core_ops', EXTRA", "'core_ops', `echo`"]
+)
+def test_string_array_record_rejects_a_non_literal_element(arr: str) -> None:
+    text = f"const C = {{\n  free: [{arr}],\n}};\n"
+    with pytest.raises(ValueError, match="unparsed capability expression"):
+        _ts_string_array_record(text, "C")
+
+
+def test_string_array_record_rejects_a_non_array_entry() -> None:
+    text = "const C = {\n  free: ['core_ops'],\n  plus: PLUS_CAPS,\n};\n"
+    with pytest.raises(ValueError, match="unparsed entries"):
+        _ts_string_array_record(text, "C")
 
 
 def test_billing_ts_tier_values_match_spec() -> None:
@@ -219,9 +276,14 @@ def test_billing_ts_tier_values_match_spec() -> None:
     # that is the exact shape that let the two tests above skip for months.
     assert limits, "could not parse TIER_HOST_LIMIT from billing.ts"
     assert caps, "could not parse TIER_CAPABILITIES from billing.ts"
-    assert len(limits) >= len(expected), (
-        f"parsed only {len(limits)} host limits from billing.ts, spec has {len(expected)} tiers"
-    )
+    # Exact key sets, both directions: a tier billing can mint but the spec does
+    # not know is drift too, and the per-tier loop below only walks the spec.
+    for label, record in (("TIER_HOST_LIMIT", limits), ("TIER_CAPABILITIES", caps)):
+        assert set(record) == set(expected), (
+            f"billing.ts {label} tiers drift from tiers.json — "
+            f"missing {sorted(set(expected) - set(record))}, "
+            f"extra {sorted(set(record) - set(expected))}"
+        )
 
     for name, t in expected.items():
         assert name in limits, f"billing.ts TIER_HOST_LIMIT missing {name}"

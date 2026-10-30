@@ -667,3 +667,46 @@ async def test_a_card_answered_before_the_redraw_existed_folds_on_its_next_tap(m
     edits = _edits(channel)
     assert edits, "the card was left open under a 'done' announcement"
     assert _labels(edits[-1]["reply_markup"]) == [ba.t("btn.edit")]
+
+
+def test_a_pending_note_supersedes_an_earlier_all_fine(metrics):
+    """Reopening a card that held "treatment: ok" and asking for a note folded the card
+    straight back to "all fine" while the note was awaited (PR #1608 review)."""
+    bm.upsert(metrics, DAY, {"notes": "treatment: ok"})
+    assert ba.weekly_answers(metrics, DAY, CHAT)["treatment"] == "ok"
+    bm.set_prompt(CHAT, "note", DAY, 77)
+    assert ba.weekly_answers(metrics, DAY, CHAT)["treatment"] == "pending"
+
+
+async def test_an_undelivered_completion_is_not_claimed(metrics):
+    """The week was claimed before the send, so a refused completion message lost
+    the once-per-week notice for good (PR #1608 review)."""
+
+    class _Refusing(_Channel):
+        async def _api_call(self, method, payload):
+            self.calls.append((method, payload))
+            return None if method == "sendMessage" else {"result": {"message_id": 1}}
+
+    channel = _Refusing()
+    for cb in (f"bm:m:8:{COMPACT}", f"bm:sl:7:{COMPACT}", f"bm:tx:ok:{COMPACT}"):
+        await _tap_on(metrics, cb, channel)
+    assert _sends(channel), "the completion was attempted"
+    assert bm.claim_weekly_done(CHAT, DAY) is True, "the week is still unannounced"
+
+
+async def test_a_finishing_note_whose_receipt_fails_is_not_claimed(metrics):
+    from navig.gateway.channels.telegram import TelegramChannel
+
+    class _Mute(_Channel):
+        async def send_message(self, chat_id, text, **_):
+            return None
+
+    channel = _Mute()
+    await _tap_on(metrics, f"bm:m:8:{COMPACT}", channel)
+    await _tap_on(metrics, f"bm:sl:7:{COMPACT}", channel)
+    await _tap_on(metrics, f"bm:tx:no:{COMPACT}", channel)
+    prompt_id = bm.pending_prompt(CHAT)[2]
+    await TelegramChannel._handle_pending_body_input(
+        channel, chat_id=CHAT, text="appetite a bit lower", reply_to_message_id=prompt_id
+    )
+    assert bm.claim_weekly_done(CHAT, DAY) is True, "the week is still unannounced"

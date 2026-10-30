@@ -335,6 +335,134 @@ async def lookup_domain(domain: str) -> dict[str, str]:
     return {"domain": d, "outcome": "ok", "source": "whois", **_parse_whois(raw)}
 
 
+# ── DNS (Cloudflare DoH: no nslookup binary, no resolver config, any host) ────
+
+_DNS_TYPES = ("A", "AAAA", "CNAME", "MX", "TXT", "NS")
+
+
+async def dns_records(name: str) -> list[tuple[str, str]]:
+    """``[(type, value), …]`` for *name*, asked over DNS-over-HTTPS.
+
+    A business chat asking "dns example.com" wants the facts, not a tutorial: A/AAAA give
+    the address the site resolves to, MX says where mail goes, TXT carries the SPF/DKIM that
+    explains a delivery complaint, NS says who hosts it. Anything that fails is simply absent
+    — a lookup that could not run must not claim a record does not exist.
+    """
+    host = _clean_domain(name)
+    if not host or "." not in host:
+        return []
+    out: list[tuple[str, str]] = []
+    for rtype in _DNS_TYPES:
+        url = f"https://cloudflare-dns.com/dns-query?name={host}&type={rtype}"
+        data = await _get_json(url, headers={"Accept": "application/dns-json"})
+        if not isinstance(data, dict):
+            continue
+        for answer in data.get("Answer") or []:
+            value = str(answer.get("data") or "").strip()
+            if not value:
+                continue
+            if rtype == "TXT":
+                value = value.strip('"')[:120]
+            if rtype == "MX":
+                value = value.split()[-1] if value.split() else value
+            pair = (rtype, value)
+            if pair not in out:
+                out.append(pair)
+    return out
+
+
+# ── TLS certificate and a URL's actual behaviour ────────────────────────────
+
+#: Hosts a chat message must never reach: the box's own services and cloud metadata.
+_PRIVATE_HOST_RE = re.compile(
+    r"^(localhost|127\.|0\.0\.0\.0|10\.|192\.168\.|169\.254\.|::1|\[::1\])"
+    r"|^172\.(1[6-9]|2\d|3[01])\."
+)
+
+
+def is_private_target(host: str) -> bool:
+    """True for loopback, link-local, RFC1918 and the cloud metadata address."""
+    return bool(_PRIVATE_HOST_RE.search((host or "").strip().lower()))
+
+
+def _ssl_probe(host: str) -> dict[str, str]:
+    """Blocking TLS handshake — run in a thread. Returns raw facts, never raises."""
+    import ssl
+    from datetime import datetime, timezone
+
+    ctx = ssl.create_default_context()
+    with socket.create_connection((host, 443), timeout=8) as raw:
+        with ctx.wrap_socket(raw, server_hostname=host) as tls:
+            cert = tls.getpeercert() or {}
+    not_after = str(cert.get("notAfter") or "")
+    subject = dict(x[0] for x in cert.get("subject", ()) if x)
+    issuer = dict(x[0] for x in cert.get("issuer", ()) if x)
+    days = ""
+    if not_after:
+        try:
+            expires = datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z").replace(
+                tzinfo=timezone.utc
+            )
+            days = str((expires - datetime.now(timezone.utc)).days)
+        except ValueError:
+            days = ""
+    return {
+        "subject": str(subject.get("commonName") or host),
+        "issuer": str(issuer.get("organizationName") or issuer.get("commonName") or ""),
+        "not_after": not_after,
+        "days_left": days,
+        "sans": str(len(cert.get("subjectAltName", ())) or ""),
+    }
+
+
+async def ssl_info(host: str) -> dict[str, str]:
+    """Certificate facts for *host*: ``{"outcome": ok|failed, …}``. Never raises."""
+    name = _clean_domain(host)
+    if not name or "." not in name:
+        return {"outcome": "invalid"}
+    if is_private_target(name):
+        return {"outcome": "private"}
+    try:
+        facts = await asyncio.to_thread(_ssl_probe, name)
+    except Exception as exc:  # noqa: BLE001 — a failed handshake is an answer
+        return {"outcome": "failed", "error": str(exc)[:120]}
+    return {"outcome": "ok", "host": name, **facts}
+
+
+async def http_info(url: str) -> dict[str, str]:
+    """Status, final URL and server for *url*, following redirects. Never raises."""
+    raw = (url or "").strip()
+    if not raw:
+        return {"outcome": "invalid"}
+    if "://" not in raw:
+        raw = "https://" + raw
+    if not raw.lower().startswith(("http://", "https://")):
+        return {"outcome": "invalid"}
+    host = _clean_domain(raw)
+    if is_private_target(host):
+        return {"outcome": "private", "host": host}
+
+    import aiohttp
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(raw, allow_redirects=True) as resp:
+                hops = len(resp.history)
+                return {
+                    "outcome": "ok",
+                    "url": raw,
+                    "status": str(resp.status),
+                    "reason": str(resp.reason or ""),
+                    "final_url": str(resp.url),
+                    "redirects": str(hops),
+                    "server": str(resp.headers.get("server") or ""),
+                    "content_type": str(resp.headers.get("content-type") or "")[:60],
+                }
+    except Exception as exc:  # noqa: BLE001 — an unreachable URL is an answer
+        return {"outcome": "failed", "url": raw, "error": str(exc)[:120]}
+
+
 async def whois(domain: str) -> str:
     f = await lookup_domain(domain)
     d, outcome = f["domain"], f["outcome"]

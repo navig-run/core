@@ -35,7 +35,12 @@ generated/commands.json diverge from the thing that checks it.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import importlib.metadata
+import importlib.util
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -67,6 +72,197 @@ if sys.path[: len(_PINNED_PATHS)] != _PINNED_PATHS:
         while _d in sys.path:
             sys.path.remove(_d)
     sys.path[:0] = _PINNED_PATHS
+
+# ── tree scope for the `navig.commands` entry-point group ───────────────────────────
+#
+# The pin above settles WHICH source a plugin loads from, but it cannot uninstall a package
+# this repo does not ship: a `navig-leaks` pulled from PyPI, an editable checkout of another
+# worktree, a plugin dir that was never added to git. Those entry points are real at runtime
+# and must stay — `navig` registers every installed plugin — but the COMMITTED artifact is a
+# different thing. It has to be reproducible from this commit alone, or every machine
+# regenerates a manifest no other machine reproduces, and the freshness gate fails on paths
+# the author never touched. That is exactly what happened on 2026-10-25: 6 `navig display`
+# and 5 `navig signing` commands, from plugin dirs absent from every commit, were baked into
+# generated/commands.json — a clean clone could not regenerate its own manifest.
+#
+# So the exporter scopes the group to entry points whose resolved module file is TRACKED IN
+# THIS CHECKOUT. The rule is path-based on purpose: nothing to maintain, any checkout of this
+# repo is accepted, and precisely what no commit ships is rejected. Outside a git checkout
+# (an sdist, a tarball) discovery is left untouched — there is no commit to scope to.
+
+_ENTRY_POINT_GROUP = "navig.commands"
+
+
+def _clean_git_env() -> dict[str, str]:
+    """The environment for our own git queries, without any inherited repository binding.
+
+    The pre-commit hook runs this script from inside a commit, so the process inherits
+    ``GIT_DIR`` / ``GIT_WORK_TREE`` / ``GIT_INDEX_FILE`` describing the repository git is
+    calling out FROM. Those make ``rev-parse --show-toplevel`` answer for the wrong tree:
+    measured while wiring this filter, ``GIT_DIR`` alone turned all 65 installed entry points
+    into "not part of this checkout" and produced a core-only manifest. Every query here names
+    the path it is about, so the binding is dropped.
+    """
+    return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+
+
+def _git_capture(args: list[str], cwd: Path) -> str | None:
+    """Run git in ``cwd`` and return stdout, or None when it is unavailable or fails."""
+    try:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+            check=False,
+            env=_clean_git_env(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return proc.stdout if proc.returncode == 0 else None
+
+
+def _tracked_in_this_checkout(root: Path) -> set[str] | None:
+    """Every repo-relative path in this checkout's index, or None outside git."""
+    raw = _git_capture(["ls-files", "-z"], root)
+    if raw is None:
+        return None
+    return {part.replace("\\", "/") for part in raw.split("\0") if part}
+
+
+def _entry_point_source(ep: object) -> Path | None:
+    """The file — or package directory — an entry point's target resolves to right now."""
+    module = getattr(ep, "module", None) or str(getattr(ep, "value", "")).split(":")[0]
+    if not module:
+        return None
+    try:
+        spec = importlib.util.find_spec(module)
+    except (ImportError, AttributeError, ValueError):
+        return None
+    if spec is None:
+        return None
+    origin = getattr(spec, "origin", None)
+    if origin and origin not in {"built-in", "frozen"}:
+        path = Path(origin)
+        if path.is_file():
+            return path
+    for location in getattr(spec, "submodule_search_locations", None) or ():
+        return Path(location)
+    return None
+
+
+def _repo_relative(path: Path, toplevels: dict[str, str | None]) -> str | None:
+    """``path`` relative to the repository that contains it, cached per directory."""
+    key = str(path.parent)
+    if key not in toplevels:
+        raw = _git_capture(["rev-parse", "--show-toplevel"], path.parent)
+        toplevels[key] = raw.strip() if raw else None
+    toplevel = toplevels[key]
+    if not toplevel:
+        return None
+    try:
+        return path.resolve().relative_to(Path(toplevel).resolve()).as_posix()
+    except (OSError, ValueError):
+        return None
+
+
+def entry_point_is_in_this_tree(
+    ep: object, tracked: set[str], toplevels: dict[str, str | None]
+) -> bool:
+    """True when the entry point's module lives in a file this checkout tracks."""
+    source = _entry_point_source(ep)
+    if source is None:
+        return False
+    relative = _repo_relative(source, toplevels)
+    if not relative:
+        return False
+    if relative in tracked:
+        return True
+    if source.is_dir():
+        # A package target: tracked when any file below it is (git tracks files, not dirs).
+        prefix = f"{relative}/"
+        return any(path.startswith(prefix) for path in tracked)
+    return False
+
+
+def _scoped(container: object, eps: list, tracked: set[str], toplevels: dict, dropped: list[str]):
+    """Keep the in-tree entry points of one group result, recording what it discarded."""
+    kept = []
+    for ep in eps:
+        if entry_point_is_in_this_tree(ep, tracked, toplevels):
+            kept.append(ep)
+        else:
+            dropped.append(f"{getattr(ep, 'name', '?')} -> {getattr(ep, 'value', '?')}")
+    try:
+        return type(container)(kept)
+    except TypeError:
+        return kept
+
+
+@contextlib.contextmanager
+def tree_scoped_entry_points(root: Path = _REPO_ROOT):
+    """Scope ``entry_points(group="navig.commands")`` to this checkout while inside.
+
+    Installed before the first manifest build (a fresh export process), so
+    ``navig.cli.registration``'s ``_ENTRY_POINT_CMDS`` cache is still cold. Yields the list
+    of dropped ``name -> value`` pairs; outside a git checkout it yields nothing and changes
+    no discovery at all.
+    """
+    tracked = _tracked_in_this_checkout(root)
+    if tracked is None:
+        yield []
+        return
+    original = importlib.metadata.entry_points
+    toplevels: dict[str, str | None] = {}
+    dropped: list[str] = []
+
+    def wants_scope(args: tuple, kwargs: dict) -> bool:
+        groups = set()
+        group = kwargs.get("group")
+        if isinstance(group, str):
+            groups.add(group)
+        for extra in kwargs.get("groups") or ():
+            groups.add(str(extra))
+        for extra in args:
+            if isinstance(extra, str):
+                groups.add(extra)
+        return _ENTRY_POINT_GROUP in groups
+
+    def filtered_entry_points(*args: object, **kwargs: object):
+        result = original(*args, **kwargs)  # type: ignore[arg-type]
+        if not wants_scope(args, kwargs):  # type: ignore[arg-type]
+            return result
+        if isinstance(result, dict):  # the legacy mapping API
+            return {
+                group: (
+                    _scoped(eps, list(eps), tracked, toplevels, dropped)
+                    if group == _ENTRY_POINT_GROUP
+                    else eps
+                )
+                for group, eps in result.items()
+            }
+        return _scoped(result, list(result), tracked, toplevels, dropped)
+
+    importlib.metadata.entry_points = filtered_entry_points  # type: ignore[assignment]
+    try:
+        yield dropped
+    finally:
+        importlib.metadata.entry_points = original  # type: ignore[assignment]
+
+
+def _report_scope(dropped: list[str]) -> None:
+    """One stderr line naming what the scope removed — never silence about the leak."""
+    if not dropped:
+        return
+    names = sorted({entry.split(" -> ", 1)[0] for entry in dropped})
+    print(
+        f"[SCOPE] {len(dropped)} installed command entry point(s) are not part of this "
+        f"checkout and are excluded from the manifest: {', '.join(names)}",
+        file=sys.stderr,
+    )
+
 
 from navig.registry.manifest import (  # noqa: E402 — must follow the sys.path pin above
     build_full_manifest,
@@ -315,11 +511,16 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
-    manifest = (
-        build_full_manifest(validate=False)
-        if args.include_hidden
-        else build_public_manifest(validate=False)
-    )
+    # Scope the plugin entry points to this checkout BEFORE the first manifest build: that
+    # build is what populates navig.cli.registration's entry-point cache, and a command that
+    # reaches the cache reaches the committed artifact.
+    with tree_scoped_entry_points() as dropped_entry_points:
+        manifest = (
+            build_full_manifest(validate=False)
+            if args.include_hidden
+            else build_public_manifest(validate=False)
+        )
+    _report_scope(dropped_entry_points)
 
     if args.validate:
         try:

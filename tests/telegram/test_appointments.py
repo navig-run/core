@@ -235,3 +235,18 @@ def test_small_talk_is_offered_and_schedules_nothing_until_kept(
     # Due TOMORROW: the 3-day and 1-day leads are already past and are skipped, not
     # fired late — what remains is 1 hour before and the moment itself.
     assert [r[3].hour for r in runtime.created] == [9, 10]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Cancel my appointment on October 26 2026 at 10:30",
+        "Move my appointment from October 26 2026 at 10:30 to October 27 2026 at 11:30",
+        "Annule le rendez-vous du 26 octobre 2026 à 10h30",
+        "Отмени встречу 26 октября 2026 в 10:30",
+        "rdv le 26 octobre 2026 à 10h30 puis le 27 octobre 2026 à 11h30",
+    ],
+)
+def test_a_change_or_two_moments_is_left_to_the_agent(text: str) -> None:
+    """Capturing would add a todo named "Cancel …" or save the obsolete time."""
+    assert appointments.classify(text, NOW) is None

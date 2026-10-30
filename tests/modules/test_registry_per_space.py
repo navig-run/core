@@ -136,6 +136,32 @@ def test_cli_reader_returns_space_disabled_ids(tmp_path, monkeypatch):
     assert _space_disabled_module_ids() == {"github"}  # only the OFF ids
 
 
+def test_a_space_disabled_builtin_module_loses_its_cli_verb(monkeypatch):
+    """`modules_disabled: [finance]` drops `navig finance` too, not only plugin verbs."""
+    import typer
+
+    import navig.cli.registration as reg_mod
+
+    seen: list[str] = []
+    monkeypatch.setattr(reg_mod, "_space_disabled_module_ids", lambda: {"finance", "space"})
+    monkeypatch.setattr(reg_mod, "_try_register_one", lambda app, name, already: seen.append(name))
+    monkeypatch.setattr(reg_mod, "_DISABLED_EP_CMDS", {})
+
+    for target in ("finance", "space", "vault"):
+        monkeypatch.setattr(reg_mod, "_resolve_cli_target_from_argv", lambda t=target: t)
+        reg_mod._register_external_commands(target_app=typer.Typer())
+    assert seen == ["space", "vault"], seen  # `space` is the way back: never gated
+    assert reg_mod._DISABLED_EP_CMDS == {"finance": "space:finance"}
+
+    seen.clear()
+    monkeypatch.setattr(reg_mod, "_resolve_cli_target_from_argv", lambda: None)
+    monkeypatch.setattr(reg_mod, "_entry_point_commands", lambda: {})
+    for name in ("_try_register_wire", "_try_register_apply", "_try_register_undo", "_try_register_ahk"):
+        monkeypatch.setattr(reg_mod, name, lambda *a, **k: None)
+    reg_mod._register_external_commands(target_app=typer.Typer())
+    assert "finance" not in seen and "vault" in seen
+
+
 # ── writer round-trip: set_enabled_in_space ──────────────────────────────────
 def test_set_enabled_in_space_roundtrip(tmp_path):
     reg = ModuleRegistry().discover()

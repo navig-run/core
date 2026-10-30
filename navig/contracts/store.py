@@ -4,12 +4,17 @@ RuntimeStore — durable in-memory store for Node, Mission, and ExecutionReceipt
 Persistence: JSON files in ~/.navig/runtime/ (auto-created on first write).
 Restart recovery: loaded from disk on init.
 
-Thread safety: single-process access assumed (asyncio-friendly reads/writes).
+Thread safety: single-process access assumed (asyncio-friendly reads/writes),
+except receipts: flush() folds in receipts another process wrote, under a
+cross-process lock, so two concurrent `receipt record` runs both persist.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
+import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 from navig.contracts.capability import TrustScore
@@ -47,6 +52,32 @@ _STATUS_TO_OUTCOME = {
     MissionStatus.CANCELLED: ReceiptOutcome.CANCELLED,
     MissionStatus.TIMED_OUT: ReceiptOutcome.TIMED_OUT,
 }
+
+
+@contextlib.contextmanager
+def _dir_lock(directory: Path) -> Iterator[None]:
+    """Exclusive cross-process lock on *directory*'s ``.flush.lock`` file."""
+    with open(directory / ".flush.lock", "a+", encoding="utf-8") as fh:
+        if sys.platform == "win32":
+            import msvcrt  # noqa: PLC0415
+
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)  # retries ~10 s, then OSError
+        else:
+            import fcntl  # noqa: PLC0415
+
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            try:
+                if sys.platform == "win32":
+                    fh.seek(0)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            except OSError as exc:  # closing the handle releases it anyway
+                logger.debug("[RuntimeStore] unlock: %s", exc)
 
 
 def _result_artifacts(result) -> dict:
@@ -136,6 +167,7 @@ class RuntimeStore:
         mission = self.get_mission(mission_id)
         if mission is None:
             raise KeyError(f"Mission {mission_id!r} not found")
+        was_terminal = mission.is_terminal
         if action == "start":
             mission.start()
         elif action == "timeout":
@@ -153,6 +185,10 @@ class RuntimeStore:
             mission.retry()
         else:
             raise ValueError(f"Unknown mission action: {action!r}")
+        if mission.is_terminal and not was_terminal:
+            # Every terminal transition leaves a signed receipt — the public
+            # advance route included, not only complete_mission's callers.
+            self.record_receipt_from_mission(mission)
         return mission
 
     def complete_mission(
@@ -279,18 +315,21 @@ class RuntimeStore:
         """
         try:
             self._dir.mkdir(parents=True, exist_ok=True)
-            for name, target, parser, id_attr in self._collections():
-                if name in self._load_failed:
-                    # self-heal: the transient failure may be gone now
-                    self._ingest(name, target, parser, id_attr, prefer_memory=True)
-                if name in self._load_failed:
-                    logger.warning(
-                        "[RuntimeStore] %s still unreadable — skipping write to "
-                        "avoid overwriting unread data",
-                        name,
-                    )
-                    continue
-                self._write_file(name, [obj.to_dict() for obj in target.values()])
+            with _dir_lock(self._dir):
+                for name, target, parser, id_attr in self._collections():
+                    if name in self._load_failed or name == "receipts.json":
+                        # self-heal: the transient failure may be gone now. Receipts
+                        # are append-only: fold in any another process wrote since we
+                        # loaded, or last-writer-wins drops its signed verdict.
+                        self._ingest(name, target, parser, id_attr, prefer_memory=True)
+                    if name in self._load_failed:
+                        logger.warning(
+                            "[RuntimeStore] %s still unreadable — skipping write to "
+                            "avoid overwriting unread data",
+                            name,
+                        )
+                        continue
+                    self._write_file(name, [obj.to_dict() for obj in target.values()])
         except Exception as e:
             logger.warning("[RuntimeStore] Flush failed: %s", e)
 

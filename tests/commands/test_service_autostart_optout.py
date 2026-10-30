@@ -117,11 +117,11 @@ def test_start_and_restart_share_one_precondition_gate(monkeypatch, tmp_path):
         lambda: {"brainName": "outpost-server"},
         raising=False,
     )
-    import click
+    import typer
 
-    # typer.Exit is click.exceptions.Exit, which does not derive from SystemExit when the
+    # typer.Exit derives from the click Typer itself runs on, not from SystemExit, when the
     # function is called directly instead of through the CLI runner.
-    with _pytest.raises((SystemExit, click.exceptions.Exit)):
+    with _pytest.raises((SystemExit, typer.Exit)):
         svc._enforce_start_preconditions(force=False)
     # and the same gate must let an explicit --force through
     svc._enforce_start_preconditions(force=True)

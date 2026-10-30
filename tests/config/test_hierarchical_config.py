@@ -68,6 +68,15 @@ def _write_host(hosts_dir: Path, cfg: dict) -> None:
 
 def test_hierarchical_config():
     """App-local host config overrides the global one; the global is used outside an app."""
+    # Without NAVIG_CONFIG_DIR, config_dir() is the operator's REAL ~/.navig, and this test
+    # writes and then unlinks hosts/test-server.yaml there. The conftest session fixture
+    # isolates it under pytest; anything else (a direct call, an odd runner) must refuse
+    # BEFORE touching a file rather than trust that it was isolated.
+    if not os.environ.get("NAVIG_CONFIG_DIR"):
+        pytest.fail(
+            "NAVIG_CONFIG_DIR is not set, so config_dir() is the real ~/.navig — refusing "
+            "to write a test host into it. Run under pytest (conftest isolates it)."
+        )
     original_dir = Path.cwd()
     test_dir = Path(tempfile.mkdtemp(prefix="navig-hierarchy-test-"))
 
@@ -149,5 +158,26 @@ def test_hierarchical_config():
             gtf.unlink()
 
 
+def test_refuses_to_run_against_an_unisolated_config_dir(monkeypatch, tmp_path):
+    """A direct run (the `__main__` path) has no conftest, so NAVIG_CONFIG_DIR is unset.
+
+    HOME/USERPROFILE point at tmp_path too, so even with the guard gone this test can only
+    ever write into its own sandbox — it then fails because nothing refused.
+    """
+    monkeypatch.delenv("NAVIG_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    with pytest.raises(pytest.fail.Exception, match="NAVIG_CONFIG_DIR is not set"):
+        test_hierarchical_config()
+    assert not (tmp_path / ".navig" / "hosts" / "test-server.yaml").exists()
+
+
 if __name__ == "__main__":
-    test_hierarchical_config()
+    # No conftest here: isolate explicitly, or config_dir() is the operator's real ~/.navig.
+    _sandbox = Path(tempfile.mkdtemp(prefix="navig-hierarchy-main-"))
+    os.environ["NAVIG_CONFIG_DIR"] = str(_sandbox / ".navig")
+    os.environ["NAVIG_DATA_DIR"] = str(_sandbox / ".navig" / "data")
+    try:
+        test_hierarchical_config()
+    finally:
+        shutil.rmtree(_sandbox, ignore_errors=True)

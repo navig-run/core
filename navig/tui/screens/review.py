@@ -13,8 +13,8 @@ from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Label, RichLog, Static
 from textual.worker import WorkerCancelled
 
+from navig.tui import config_model
 from navig.tui.config_model import (
-    DEFAULT_CONFIG_FILE,
     NavigConfig,
     build_config_dict,
     check_git_installed,
@@ -115,7 +115,7 @@ class ReviewScreen(Screen):  # type: ignore[type-arg]
                 yield Button("← Edit", variant="default", id="btn-back")
 
     def on_mount(self) -> None:
-        if DEFAULT_CONFIG_FILE.exists():
+        if config_model.DEFAULT_CONFIG_FILE.exists():
             self.app.push_screen(ConfirmModal(), self._handle_confirm_modal)
 
     def _handle_confirm_modal(self, result: bool) -> None:
@@ -357,7 +357,7 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
             log.write("[dim]Writing configuration…[/dim]")
             await asyncio.sleep(0.15)
             try:
-                save_config(cfg_dict, DEFAULT_CONFIG_FILE)
+                save_config(cfg_dict, config_model.DEFAULT_CONFIG_FILE)
             except OSError as exc:
                 self.notify(f"Config write failed: {exc}", severity="error")
                 retry_btn.display = True

@@ -264,3 +264,11 @@ def test_serpapi_reports_api_error(monkeypatch):
     result = _search_serpapi("q", "bad-key", count=5)
     assert result.success is False
     assert "Invalid API key" in (result.error or "")
+
+
+def test_ddg_unwrap_url_does_not_double_decode():
+    # review F0199: parse_qs already decoded `uddg`; a second unquote turned q=a%26b into q=a&b.
+    from urllib.parse import quote
+
+    target = "https://example.com/search?q=a%26b"
+    assert _ddg_unwrap_url("//duckduckgo.com/l/?uddg=" + quote(target, safe="")) == target

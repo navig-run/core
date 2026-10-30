@@ -285,6 +285,12 @@ def test_check_transport_errors_never_carry_the_endpoint(monkeypatch):
     message = str(excinfo.value)
     assert "127.0.0.1" not in message and "http:" not in message and "https:" not in message
     assert "<endpoint>" in message
+    # A logger.exception traceback prints the chained cause — it must not carry the URL.
+    import traceback
+
+    rendered = "".join(traceback.format_exception(excinfo.value))
+    assert excinfo.value.__cause__ is None
+    assert "127.0.0.1" not in rendered
 
 
 def test_health_check_reports_a_500_as_unhealthy():

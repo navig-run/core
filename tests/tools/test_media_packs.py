@@ -119,6 +119,41 @@ def test_seed_image_inside_the_media_home_is_allowed(tmp_path, monkeypatch):
     assert Path(got).resolve() == seed.resolve()
 
 
+def _dir_link(link: Path, target: Path) -> None:
+    """A directory symlink, or an NTFS junction where symlinks need privileges."""
+    try:
+        link.symlink_to(target, target_is_directory=True)
+        return
+    except OSError:
+        pass
+    try:
+        import _winapi
+
+        _winapi.CreateJunction(str(target), str(link))
+    except (ImportError, OSError):
+        pytest.skip("cannot create a directory symlink or junction here")
+
+
+def test_seed_image_under_a_linked_refs_root_is_allowed(tmp_path, monkeypatch):
+    """review F2817: a refs dir configured through a junction/symlink contains its seeds."""
+    import navig_sdk.host as host
+
+    import navig.media.refs_library as refs_library
+
+    monkeypatch.setattr(host, "media_dir", lambda kind="": tmp_path / "data" / kind)
+    real = tmp_path / "real-refs"
+    real.mkdir()
+    seed = real / "frame.png"
+    seed.write_bytes(b"png")
+    link = tmp_path / "space" / ".media"
+    link.parent.mkdir()
+    _dir_link(link, real)
+    monkeypatch.setattr(refs_library, "resolve_refs_root", lambda *a, **k: link)
+
+    got = video_pack._safe_seed_image(str(link / "frame.png"))
+    assert Path(got).resolve() == seed.resolve()
+
+
 def test_seed_image_outside_every_root_is_refused(tmp_path, monkeypatch):
     """The exfil shape: a model points image_url at a secret outside every root."""
     import navig_sdk.host as host

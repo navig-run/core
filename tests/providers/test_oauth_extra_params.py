@@ -90,6 +90,20 @@ class TestGmailConfigRequestsOfflineAccess:
         cfg = oc.get_gmail_oauth_config()
         assert cfg.client_id == "env-id"
 
+    def test_env_client_id_with_vault_secret(self, monkeypatch):
+        # A split config (id in env, secret only in the vault) must still carry the
+        # secret, or token exchange and refresh go out without client_secret.
+        from navig.connectors.gmail import oauth_config as oc
+
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "env-id")
+        monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
+        store = {oc.VAULT_CLIENT_SECRET_LABEL: "vault-sec"}
+        monkeypatch.setattr(oc, "_vault_secret", lambda label: store.get(label, ""))
+        cfg = oc.get_gmail_oauth_config()
+        assert cfg is not None
+        assert cfg.client_id == "env-id"
+        assert cfg.client_secret == "vault-sec"
+
 
 class TestInteractiveFlowUsesCliRedirect:
     def _run(self, monkeypatch, cfg: OAuthProviderConfig):

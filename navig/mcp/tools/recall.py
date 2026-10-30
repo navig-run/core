@@ -142,6 +142,14 @@ TOOLS: dict[str, dict[str, Any]] = {
         "rejected, the longest-untouched first." + _AUTHORITY,
         "inputSchema": _schema({"limit": _LIMIT}),
     },
+    "recall_resurrect": {
+        "description": "The ideas worth reviving, ranked by a deterministic score with the reason each one "
+        "scores (the owner's own words quoted in it, audit recovery rank, quoted passages, staleness). "
+        "Rejected and superseded ideas never appear, and nothing here is a model opinion — the same bank "
+        "always ranks the same way. Use recall_forgotten_ideas for what was set aside without a revival "
+        "score, and recall_get to open one idea in full." + _AUTHORITY,
+        "inputSchema": _schema({"limit": _LIMIT}),
+    },
     "recall_tables": {
         "description": "Markdown tables from past conversations, verbatim (the body is the table)."
         + _AUTHORITY,
@@ -362,6 +370,15 @@ def _view_tool(name: str, *, with_body: bool = False):
 
 
 @_safe
+def _tool_resurrect(args: dict[str, Any]) -> dict[str, Any]:
+    from navig.recall import query  # noqa: PLC0415
+
+    scope = _scope(args)
+    rows = query.resurrect(limit=_limit(args, 10), scope=scope)
+    return {"scope": scope.to_dict(), "ideas": rows, "count": len(rows), **_hint(bool(rows))}
+
+
+@_safe
 def _tool_excerpt(args: dict[str, Any]) -> dict[str, Any]:
     from navig.recall import query  # noqa: PLC0415
 
@@ -420,6 +437,7 @@ RAW_TOOLS: dict[str, Any] = {
     "recall_decisions": _view_tool("decisions"),
     "recall_open_questions": _view_tool("open_questions"),
     "recall_forgotten_ideas": _view_tool("forgotten_ideas"),
+    "recall_resurrect": _tool_resurrect,
     "recall_tables": _view_tool("tables", with_body=True),
     "recall_source_excerpt": _tool_excerpt,
     "recall_ingest": _tool_ingest,

@@ -284,7 +284,7 @@ def test_land_deletes_the_proven_local_branch_even_if_the_remote_delete_fails(re
     real = repo_mod._git
 
     def _no_remote_delete(args, cwd, **kw):
-        if args[:3] == ["push", "origin", "--delete"]:
+        if args[0] == "push" and "--delete" in args:
             return subprocess.CompletedProcess(args, 1, "", "remote: permission denied")
         return real(args, cwd, **kw)
 
@@ -342,3 +342,55 @@ def test_land_human_output_says_why_and_how_to_proceed(repo: Path):
     result = runner.invoke(repo_app, ["land", "done/busy", "--repo", str(repo), "--no-fetch", "--yes"])
     assert result.exit_code != 0
     assert "uncommitted" in result.output and "navig repo remove" in result.output, result.output
+
+
+# -- the remote ref is proven on its own, and deleted under a lease ---------------
+
+
+def test_land_keeps_a_remote_ref_that_gained_unmerged_work(repo: Path):
+    """The local branch is merged; origin/<branch> got a new commit afterwards. The local
+    proof says nothing about it, and an unconditional `push --delete` removed that work."""
+    base_sha = _git("rev-parse", "HEAD", cwd=repo)
+    _git("branch", "done/shared", base_sha, cwd=repo)
+    _git("push", "-q", "origin", "done/shared", cwd=repo)
+    other = repo.parent / "other"
+    _git("clone", "-q", str(repo.parent / "origin.git"), str(other), cwd=repo.parent)
+    _git("config", "user.email", "o@navig.local", cwd=other)
+    _git("config", "user.name", "o", cwd=other)
+    _git("checkout", "-q", "done/shared", cwd=other)
+    new_tip = _commit(other, "later.txt")
+    _git("push", "-q", "origin", "done/shared", cwd=other)
+
+    result = runner.invoke(
+        repo_app, ["land", "done/shared", "--repo", str(repo), "--yes", "--no-github", "--json"]
+    )
+    payload = json.loads(result.output)
+    assert payload["proof"] == "ancestor" and payload["remote_proof"] is None, payload
+    assert payload["failed"]["remote"].startswith("kept:"), payload
+    assert "done/shared" not in _local_branches(repo), "the proven local branch still goes"
+    heads = _git("ls-remote", "--heads", "origin", "done/shared", cwd=repo)
+    assert heads.split()[0] == new_tip, "the unmerged remote work must survive"
+
+
+def test_land_leases_the_remote_delete_to_the_planned_tip(repo: Path, monkeypatch):
+    """--no-fetch judges the cached tracking ref; a newer tip on origin must refuse."""
+    base_sha = _git("rev-parse", "HEAD", cwd=repo)
+    _git("branch", "done/raced", base_sha, cwd=repo)
+    _git("push", "-q", "origin", "done/raced", cwd=repo)
+    other = repo.parent / "other"
+    _git("clone", "-q", str(repo.parent / "origin.git"), str(other), cwd=repo.parent)
+    _git("config", "user.email", "o@navig.local", cwd=other)
+    _git("config", "user.name", "o", cwd=other)
+    _git("checkout", "-q", "done/raced", cwd=other)
+    new_tip = _commit(other, "raced.txt")
+    _git("push", "-q", "origin", "done/raced", cwd=other)
+
+    result = runner.invoke(
+        repo_app,
+        ["land", "done/raced", "--repo", str(repo), "--no-fetch", "--yes", "--no-github", "--json"],
+    )
+    payload = json.loads(result.output)
+    assert payload["remote_proof"] == "same tip", payload
+    assert payload["failed"].get("remote"), payload
+    heads = _git("ls-remote", "--heads", "origin", "done/raced", cwd=repo)
+    assert heads.split()[0] == new_tip, "the lease must refuse a tip the plan never saw"

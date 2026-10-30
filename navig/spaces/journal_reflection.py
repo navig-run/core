@@ -47,7 +47,9 @@ def is_enabled() -> bool:
     try:
         from navig.config import get_config_manager
 
-        return coerce_bool(get_config_manager().get("journal.reflect", False), default=False)
+        # get_live, not get: the daemon's snapshot would keep sending private
+        # entries to a model after `navig config set journal.reflect false`.
+        return coerce_bool(get_config_manager().get_live("journal.reflect", False), default=False)
     except Exception:  # noqa: BLE001
         return False
 
@@ -71,7 +73,8 @@ def model_override() -> str | None:
     try:
         from navig.config import get_config_manager
 
-        raw = get_config_manager().get("journal.model", None)
+        # get_live: a privacy switch must take effect without a daemon restart.
+        raw = get_config_manager().get_live("journal.model", None)
     except Exception:  # noqa: BLE001
         return None
     spec = str(raw).strip() if raw is not None else ""

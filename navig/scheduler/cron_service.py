@@ -12,6 +12,7 @@ import asyncio
 import json
 import os
 import re
+import signal
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -82,6 +83,109 @@ def split_exec_command(line: str) -> list[str]:
             for a in shlex.split(line, posix=False)
         ]
     return shlex.split(line)
+
+
+#: How much of the child's own output a FAILED run keeps in the run history. A
+#: success gets 500 characters — nobody reads it later. A failure's output is the
+#: post-mortem, so a crash traceback is not cut off at its first frame.
+FAILED_RUN_OUTPUT_CHARS = 2000
+
+
+def _signal_name(returncode: int) -> str | None:
+    """The signal that killed a child, from its negative returncode (POSIX)."""
+    if returncode >= 0:
+        return None
+    try:
+        return signal.Signals(-returncode).name
+    except ValueError:  # a signal number this platform does not name
+        return None
+
+
+def _child_env() -> dict[str, str]:
+    """The environment a job's program runs in.
+
+    ``PYTHONFAULTHANDLER`` makes a crashing CPython print its Python stack to
+    stderr *before* it dies. Without it a SIGSEGV child writes nothing at all, so
+    the record can only say "-11" and the crashing frame is gone (2026-10-25:
+    ``navig tasks tick`` died with SIGSEGV six times in one day, unexplained). An
+    explicit value from the operator still wins.
+    """
+    env = dict(os.environ)
+    env.setdefault("PYTHONFAULTHANDLER", "1")
+    return env
+
+
+class JobCommandError(RuntimeError):
+    """A job's program exited non-zero, or was killed by a signal.
+
+    ``str(exc)`` is the one-line summary every consumer shows (alert payload, log
+    line, run-now response): the program, *how* it died — including the signal
+    name, because "-11" names nothing — and the most useful line the child
+    printed. ``output`` keeps everything the child wrote, which is the only
+    evidence a crashed interpreter leaves behind; the scheduler records it
+    instead of discarding it at the raise.
+    """
+
+    def __init__(self, argv: list[str], returncode: int, output: str) -> None:
+        self.argv = list(argv)
+        self.returncode = returncode
+        self.output = output
+        super().__init__(self._summarize())
+
+    @property
+    def program(self) -> str:
+        return Path(self.argv[0]).name if self.argv else "program"
+
+    @property
+    def signal_name(self) -> str | None:
+        return _signal_name(self.returncode)
+
+    def _summarize(self) -> str:
+        if self.returncode < 0:
+            named = self.signal_name or f"signal {-self.returncode}"
+            how = f"was killed by {named} (exit code {self.returncode})"
+        else:
+            # Keeps the historical "exit code N" wording: log greps, the run-now
+            # response and the existing tests all match on it.
+            how = f"failed with exit code {self.returncode}"
+        detail = self._diagnostic_line()
+        return f"{self.program} {how}" + (f": {detail}" if detail else "")
+
+    def _diagnostic_line(self) -> str:
+        """The one line worth putting in a summary."""
+        lines = [line.strip() for line in self.output.splitlines() if line.strip()]
+        if not lines:
+            return ""
+        for line in lines:
+            # faulthandler's first line names the crash and beats any tail.
+            if line.startswith("Fatal Python error"):
+                return line[:300]
+        return lines[-1][:300]
+
+    def record_output(self, limit: int = FAILED_RUN_OUTPUT_CHARS) -> str:
+        """Summary first, then the child's output — what a post-mortem reads."""
+        summary = self._summarize()
+        body = self._without_repeated_diagnostic_line()
+        if not body:
+            return summary
+        return f"{summary}\n{body[:limit]}"
+
+    def _without_repeated_diagnostic_line(self) -> str:
+        """The child's output, minus one copy of the line the summary already shows."""
+        body = self.output.strip()
+        detail = self._diagnostic_line()
+        if not body or not detail:
+            return body
+        lines = body.splitlines()
+        # A single long line keeps all of its text — only a whole line is dropped.
+        if len(lines) == 1:
+            return "" if lines[0].strip() == detail else body
+        if lines[0].strip() == detail:
+            lines = lines[1:]
+        if lines and lines[-1].strip() == detail:
+            lines = lines[:-1]
+        return "\n".join(lines).strip()
+
 
 #: Default lateness window for one occurrence (see ``CronJob.misfire_grace_seconds``).
 DEFAULT_MISFIRE_GRACE_SECONDS = 3600
@@ -853,6 +957,9 @@ class CronService:
 
     def _log_run(self, job: CronJob, trigger: str, started_at: datetime, duration_s: float) -> None:
         """Append one execution record to the run-history JSONL (best-effort)."""
+        # A failure keeps more of its output: that text is the post-mortem (a crash
+        # traceback finishes well past 500 characters). Successes stay at 500.
+        keep = FAILED_RUN_OUTPUT_CHARS if job.last_status is JobStatus.FAILED else 500
         entry = {
             "job_id": job.id,
             "name": job.name,
@@ -860,7 +967,7 @@ class CronService:
             "started_at": started_at.isoformat(),
             "duration_s": round(duration_s, 3),
             "status": job.last_status.value if job.last_status else None,
-            "output": (job.last_output or "")[:500],
+            "output": (job.last_output or "")[:keep],
         }
         try:
             runs_path = self._get_runs_path()
@@ -1364,7 +1471,11 @@ class CronService:
 
             except Exception as e:
                 job.last_status = JobStatus.FAILED
-                job.last_output = str(e)
+                # A failed program's own output is the only evidence it leaves
+                # behind (see JobCommandError). Keep it on the record — the run
+                # history and run-now response read this — while the log line and
+                # the alert payload stay on the one-line summary.
+                job.last_output = e.record_output() if isinstance(e, JobCommandError) else str(e)
                 job.retry_count += 1
 
                 logger.error("Cron job failed: %s - %s", job.name, e)
@@ -1522,6 +1633,7 @@ class CronService:
                 *argv,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=_child_env(),
             )
         except FileNotFoundError as exc:
             # A bare WinError 2 is the only thing the operator's failure alert
@@ -1548,12 +1660,18 @@ class CronService:
             if process.returncode is None:
                 await kill_process_tree(process)
 
-        output = stdout_bytes.decode()
+        # errors="replace": a crash dump or a non-UTF-8 tool is exactly the case
+        # this output exists for, and a UnicodeDecodeError here would replace the
+        # real failure with a decoding one.
+        output = stdout_bytes.decode(errors="replace")
         if stderr_bytes:
-            output += f"\n{stderr_bytes.decode()}"
+            output += f"\n{stderr_bytes.decode(errors='replace')}"
 
         if process.returncode != 0:
-            raise RuntimeError(f"Command failed with exit code {process.returncode}")
+            # The child's own output travels WITH the error: the scheduler used to
+            # raise a bare "exit code -11" and drop the captured stderr, which is
+            # why a segfaulting tick was undiagnosable. See JobCommandError.
+            raise JobCommandError(argv=argv, returncode=process.returncode, output=output)
 
         return output
 

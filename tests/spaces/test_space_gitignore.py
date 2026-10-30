@@ -110,8 +110,14 @@ def test_the_scaffold_ends_with_exactly_the_managed_block() -> None:
         ".navig/refs/notes/INDEX.md",  # /inbox distillery output: private R&D
         ".navig/data/x.db",
         ".navig/logs/run.log",
+        ".navig/devnet/http_history.jsonl",  # repeater history carries auth headers
         ".navig/navig.log",
         ".navig/id.key",
+        ".navig/history/operations.jsonl",
+        ".navig/cache/active_host.txt",
+        ".navig/project_index.db",
+        ".navig/project_index.db-wal",
+        ".navig/menu.cache.json",
         ".claude/skills",
         ".claude/rules",
         ".dev/tmp/x",
@@ -356,6 +362,48 @@ def test_reconcile_is_idempotent_and_reports_nothing_the_second_time(tmp_path: P
     assert gi.reconcile(tmp_path) == []
 
 
+@pytest.mark.parametrize("lost", ["end", "start"])
+def test_reconcile_repairs_a_block_that_lost_one_marker(tmp_path: Path, lost: str) -> None:
+    """With one marker gone neither the refresh nor the append applied, so doctor's
+    advertised fix was a no-op. The orphan block is replaced; the operator's rules stay."""
+    block = gi.managed_block().splitlines()
+    torn = block[:-1] if lost == "end" else block[1:]
+    if lost == "end":
+        lines = ["node_modules/", *torn[:6], "my-rule/"]
+    else:
+        lines = ["node_modules/", "my-rule/", *torn[-6:]]
+    (tmp_path / ".gitignore").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    first = gi.reconcile(tmp_path)
+    assert any("repair" in a for a in first), first
+    text = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+    assert text.count(gi.MANAGED_START) == 1 and text.count(gi.MANAGED_END) == 1, text
+    assert gi.managed_block() in text
+    assert "node_modules/" in text and "my-rule/" in text
+    assert gi.reconcile(tmp_path) == []  # the second run is a no-op
+
+
+def test_reconcile_reports_an_unwritable_gitignore_instead_of_raising(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """An OSError on write aborted `navig wire` and `space doctor --fix`; it must come
+    back as a warning action, the way an unreadable file already does."""
+    (tmp_path / ".gitignore").write_text("node_modules/" + chr(10), encoding="utf-8")
+
+    def refuse(self, *a, **kw):
+        raise PermissionError(13, "read-only")
+
+    monkeypatch.setattr(Path, "write_text", refuse)
+    actions = gi.reconcile(tmp_path)
+    assert actions and actions[-1].startswith("⚠ .gitignore not writable"), actions
+
+
+def test_reconcile_leaves_a_directory_in_the_gitignore_slot_alone(tmp_path: Path) -> None:
+    (tmp_path / ".gitignore").mkdir()
+    actions = gi.reconcile(tmp_path)
+    assert any("not writable" in a for a in actions), actions
+    assert (tmp_path / ".gitignore").is_dir()
+
+
 # ── one rule for the registry's source column ────────────────────────────────
 
 
@@ -413,7 +461,23 @@ def test_retire_removes_only_the_rule_and_its_label(tmp_path: Path) -> None:
 def test_retire_keeps_an_unrelated_comment_above_the_rule(tmp_path: Path) -> None:
     (tmp_path / ".gitignore").write_text("# build output\n.navig/\n", encoding="utf-8")
     assert gi.retire_blanket_navig_rules(tmp_path) == [".navig/"]
-    assert (tmp_path / ".gitignore").read_text(encoding="utf-8") == "# build output\n"
+    assert (tmp_path / ".gitignore").read_text(encoding="utf-8").startswith("# build output\n")
+
+
+def test_retire_without_a_managed_block_installs_it_so_private_state_stays_ignored(
+    tmp_path: Path,
+) -> None:
+    """The blanket rule may be the only thing ignoring the vault: retiring it must lay the
+    managed block down first, or `.navig/vault` and credentials become committable."""
+    _git(tmp_path, "init", "-q", ".")
+    (tmp_path / ".gitignore").write_text(".navig/\n", encoding="utf-8")
+    assert gi.retire_blanket_navig_rules(tmp_path) == [".navig/"]
+    text = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+    assert gi.MANAGED_START in text and gi.MANAGED_END in text
+    assert not gi.blanket_navig_rule_outside_block(text)
+    assert _ignored(tmp_path, ".navig/vault/secrets.db")
+    assert _ignored(tmp_path, ".navig/credentials/token")
+    assert not _ignored(tmp_path, ".navig/plans/CURRENT_PHASE.md")
 
 
 def test_the_doctor_menu_offers_retire_only_when_a_blanket_rule_exists(fresh_space: Path) -> None:
@@ -457,3 +521,38 @@ def test_the_confirm_defaults_to_no() -> None:
 
     src = inspect.getsource(space_cmd._doctor_interactive_loop)
     assert 'typer.confirm("Remove these lines?", default=False)' in src
+
+
+def test_the_retire_preview_lists_every_line_the_write_removes(
+    fresh_space: Path, monkeypatch, capsys
+) -> None:
+    """The label comment above the rule is deleted too, so the confirmation must show it —
+    the operator approves the exact lines the write removes, no more."""
+    gi_path = fresh_space / ".gitignore"
+    gi_path.write_text("# navig stuff\n.navig/\n" + gi_path.read_text(encoding="utf-8"), encoding="utf-8")
+    assert gi.retirement_plan(gi_path.read_text(encoding="utf-8")) == [1, 2]
+
+    answers = iter(["retire", "q"])
+    monkeypatch.setattr("typer.prompt", lambda *a, **k: next(answers))
+    monkeypatch.setattr("typer.confirm", lambda *a, **k: False)
+    space_cmd._doctor_interactive_loop(fresh_space, "demo")
+    preview = capsys.readouterr().out
+    assert "- # navig stuff" in preview and "- .navig/" in preview, preview
+
+
+def test_doctor_fix_repairs_the_source_of_an_already_registered_project(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A row an older doctor --fix filed as "root" kept that label: ensure_registered
+    returned on a known path after checking only id/name."""
+    from navig.spaces import registry as reg
+
+    monkeypatch.setattr(reg.paths, "spaces_dir", lambda: tmp_path / "spaces")
+    monkeypatch.setattr(reg, "_registry_file", lambda: tmp_path / "spaces.json")
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    reg.register(proj, id="proj", name="proj", source="root")  # the historical misfile
+    space_cmd._scaffold_space_skeleton(proj, "proj")
+    space_cmd._apply_fix(proj, "proj")
+    row = next(e for e in reg.load_registry()["spaces"] if e["id"] == "proj")
+    assert row["source"] == "external", row

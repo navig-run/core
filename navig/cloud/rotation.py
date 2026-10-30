@@ -77,22 +77,22 @@ def repoint_owned(cfg=None) -> tuple[list[str], list[str]]:
     fixed: list[str] = []
     failed: list[str] = []
 
+    # 1. The Telegram webhook — without this the bot receives NOTHING. Only the
+    #    lighthouse webhook is tenant-bound; outside lighthouse there is none to move.
     edge, _key = _lighthouse(cfg)
-    if not edge:
-        return fixed, failed  # not lighthouse — nothing of ours is tenant-bound
+    if edge:
+        try:
+            from navig.commands.lighthouse import configure_telegram_webhook
 
-    # 1. The Telegram webhook — without this the bot receives NOTHING.
-    try:
-        from navig.commands.lighthouse import configure_telegram_webhook
+            if configure_telegram_webhook(edge):
+                fixed.append("Telegram webhook")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("webhook repoint failed", exc_info=True)
+            failed.append(f"Telegram webhook ({exc})")
 
-        if configure_telegram_webhook(edge):
-            fixed.append("Telegram webhook")
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("webhook repoint failed", exc_info=True)
-        failed.append(f"Telegram webhook ({exc})")
-
-    # 2. The Mini App menu button — it embeds the RAW key, so a rotation leaves the
-    #    deck seeding a dead key into localStorage (blank screen / 401).
+    # 2. The Mini App menu button — it embeds the RAW key in EVERY mode (direct,
+    #    cloudflared, Tailscale too), so a rotation leaves the deck seeding a dead key
+    #    into localStorage (blank screen / 401). A no-op without a deck URL or token.
     try:
         if repoint_menu_button(cfg):
             fixed.append("Mini App menu button")
@@ -126,7 +126,9 @@ def repoint_menu_button(cfg=None) -> bool:
     """Re-register the bot's Mini App button with the current key. False when N/A.
 
     A no-op (returns False) when there is no bot token or no deck URL — a user who
-    never deployed the deck has no button to fix.
+    never deployed the deck has no button to fix. A call Telegram rejects (or that
+    never reached it) RAISES, so :func:`repoint_owned` reports it as failed instead of
+    a silent "not applicable" while the button keeps the old key.
     """
     cfg = _cfg(cfg)
     url = menu_button_url(cfg)
@@ -144,15 +146,15 @@ def repoint_menu_button(cfg=None) -> bool:
         "setChatMenuButton",
         {"menu_button": {"type": "web_app", "text": "NAVIG Deck", "web_app": {"url": url}}},
     )
-    ok = bool(result.get("ok"))
-    if ok:
-        # The default is only what a chat WITHOUT its own override sees. Re-pointing it
-        # while a per-chat override still shadows it repairs nothing for that user.
-        try:
-            clear_stale_chat_menu_buttons(cfg, token=token)
-        except Exception:  # noqa: BLE001 — the default is fixed; this is best-effort
-            logger.debug("per-chat menu button sweep failed", exc_info=True)
-    return ok
+    if not result.get("ok"):
+        raise RuntimeError(str(result.get("description") or "setChatMenuButton failed"))
+    # The default is only what a chat WITHOUT its own override sees. Re-pointing it
+    # while a per-chat override still shadows it repairs nothing for that user.
+    try:
+        clear_stale_chat_menu_buttons(cfg, token=token)
+    except Exception:  # noqa: BLE001 — the default is fixed; this is best-effort
+        logger.debug("per-chat menu button sweep failed", exc_info=True)
+    return True
 
 
 # ── per-chat overrides: the button a user actually taps ──────────────────────
@@ -185,9 +187,14 @@ def _url_carries_key(url: str, key: str) -> bool:
 
 
 def stale_chat_menu_buttons(cfg=None, *, token: str | None = None) -> list[tuple[int, str]]:
-    """``[(chat_id, origin)]`` for per-chat buttons that shadow the default WITHOUT the
-    live key. ``origin`` is scheme+host only — the URL carries the raw key, so it is
-    never returned or logged. Empty when there is no token, no key, or nothing stale.
+    """``[(chat_id, origin)]`` for per-chat buttons that shadow the default with a URL
+    that is not the current entry: no live key, or (when the bot default is a web app)
+    any URL other than the default's — an old origin or a stale ``v=`` bundle signature
+    keeps that user on the wrong deck. ``origin`` is scheme+host only — the URL carries
+    the raw key, so it is never returned or logged. Empty when there is no token, no
+    key, or nothing stale. RAISES when Telegram cannot answer for a chat: an
+    uninspected override is unknown, never "no override" (a health row must not go green
+    and a sweep must not report clean over a button it never saw).
     """
     cfg = _cfg(cfg)
     key = str(cfg.get("deck.api_key", "") or "").strip()
@@ -202,16 +209,31 @@ def stale_chat_menu_buttons(cfg=None, *, token: str | None = None) -> list[tuple
     if not token:
         return []
 
+    chats = sorted(_known_private_chats(cfg))
+    if not chats:
+        return []
+    # The default every chat should inherit (no chat_id = the bot-wide button).
+    dresp = _tg_call(token, "getChatMenuButton", {})
+    dinfo = (dresp.get("result") or {}) if dresp.get("ok") else {}
+    default_url = ""
+    if str(dinfo.get("type") or "") == "web_app":
+        default_url = str((dinfo.get("web_app") or {}).get("url") or "")
+
     stale: list[tuple[int, str]] = []
-    for chat_id in sorted(_known_private_chats(cfg)):
+    for chat_id in chats:
         resp = _tg_call(token, "getChatMenuButton", {"chat_id": chat_id})
-        info = (resp.get("result") or {}) if resp.get("ok") else {}
+        if not resp.get("ok"):
+            raise RuntimeError(
+                f"getChatMenuButton failed for chat {chat_id}: "
+                f"{resp.get('description') or 'no answer from Telegram'}"
+            )
+        info = resp.get("result") or {}
         # "default" = inherits the bot default (correct); "commands" = a deliberate
         # non-app button. Only a web_app override can shadow the deck.
         if str(info.get("type") or "") != "web_app":
             continue
         url = str((info.get("web_app") or {}).get("url") or "")
-        if not _url_carries_key(url, key):
+        if not _url_carries_key(url, key) or (default_url and url != default_url):
             parts = urlsplit(url)
             stale.append((chat_id, f"{parts.scheme}://{parts.netloc}" if parts.netloc else "?"))
     return stale

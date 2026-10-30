@@ -5,6 +5,7 @@ from typing import Any
 
 from navig.messaging.provider import IMessagingProvider
 from navig.messaging.secrets import resolve_telegram_bot_token, resolve_telegram_uid
+from navig.telegram.config import require_auth_enabled
 
 _SUPPORTED_PROVIDER_NAMES = frozenset(
     {
@@ -53,7 +54,7 @@ def _telegram_config(raw_config: dict[str, Any]) -> dict[str, Any]:
         "owner_uid": owner_uid,
         "allowed_users": telegram_cfg.get("allowed_users", []),
         "allowed_groups": telegram_cfg.get("allowed_groups", []),
-        "require_auth": telegram_cfg.get("require_auth", True),
+        "require_auth": require_auth_enabled(telegram_cfg.get("require_auth", True)),
     }
 
 

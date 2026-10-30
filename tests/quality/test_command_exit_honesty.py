@@ -208,6 +208,37 @@ def _returns_a_value(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return _scan(fn)
 
 
+def _returns_only_bools(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Every value it returns is a literal `True`/`False` — a success-flag HANDLER.
+
+    `_returns_a_value` alone cannot tell a helper from a command: `files_advanced.py`'s
+    `delete_file_cmd`, `mkdir_cmd`, `chmod_cmd`, `chown_cmd` and `write_file_cmd` are
+    real CLI handlers that `return True` on success, so the old blanket skip took each
+    of them out of the scan entirely — a new `ch.error(...); return` in any of them
+    passed. A bare `return` in a function whose every other answer is a bool is not a
+    failure SIGNAL (None is not the contract there; `False` is), so it is still the
+    silent-exit shape and stays in scope. A `-> str | None` helper whose None IS its
+    failure signal is untouched.
+    """
+    values: list[ast.expr] = []
+
+    def _scan(node: ast.AST) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue  # its own contract — do not descend
+            if isinstance(child, ast.Return) and child.value is not None:
+                if not (
+                    isinstance(child.value, ast.Constant) and child.value.value is None
+                ):
+                    values.append(child.value)
+            _scan(child)
+
+    _scan(fn)
+    return bool(values) and all(
+        isinstance(v, ast.Constant) and isinstance(v.value, bool) for v in values
+    )
+
+
 def _descends_into(stmt: ast.stmt) -> bool:
     """Whether a walker should recurse into this statement's body.
 
@@ -459,6 +490,16 @@ def _offenders(path: Path) -> list[str]:
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         if _returns_a_value(node):
+            if _returns_only_bools(node):
+                # A success-flag handler: `return` (None) after an error is not its
+                # failure contract — see _returns_only_bools.
+                flagged: list[tuple[int, str]] = []
+                _walk_bodies(node.body, flagged)
+                out += [
+                    f"{path.name}:{lineno}  in {node.name}()  {sink}(...) then bare "
+                    "return in a True/False handler"
+                    for lineno, sink in flagged
+                ]
             continue  # a helper that signals failure to its caller — see above
         hits: list[tuple[int, str]] = []
         _walk_bodies(node.body, hits)
@@ -885,3 +926,45 @@ def test_the_nested_def_still_gets_scanned_on_its_own() -> None:
     hits: list[tuple[int, str]] = []
     _walk_bodies(inner.body, hits)
     assert [s for _, s in hits] == ["ch.error"], hits
+
+
+def test_a_true_false_handler_is_still_scanned(tmp_path: Path) -> None:
+    """`return True` on success must not take a handler out of the scan (#736 review).
+
+    The files_advanced handlers return a success flag, so `_returns_a_value` alone
+    skipped them whole; an added `ch.error(...); return` in one exited 0 unseen.
+    """
+    src = tmp_path / "handler.py"
+    src.write_text(
+        "def mkdir_cmd(options):\n"
+        "    if bad:\n"
+        "        ch.error('boom')\n"
+        "        return\n"
+        "    if cancelled:\n"
+        "        return False\n"
+        "    return True\n",
+        encoding="utf-8",
+    )
+    found = _offenders(src)
+    assert len(found) == 1 and "in mkdir_cmd()" in found[0], found
+
+
+def test_a_true_false_handler_that_raises_is_not_flagged(tmp_path: Path) -> None:
+    """Anti-vacuity: exiting non-zero clears it, and a `-> str | None` helper whose
+    None IS its failure signal stays exempt."""
+    src = tmp_path / "handler.py"
+    src.write_text(
+        "def mkdir_cmd(options):\n"
+        "    if bad:\n"
+        "        ch.error('boom')\n"
+        "        raise typer.Exit(1)\n"
+        "    return True\n"
+        "\n"
+        "def _resolve(x):\n"
+        "    if bad:\n"
+        "        ch.error('no such file')\n"
+        "        return None\n"
+        "    return x\n",
+        encoding="utf-8",
+    )
+    assert _offenders(src) == []

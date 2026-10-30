@@ -104,7 +104,8 @@ def test_install_writes_hooks_wiring_and_gitignore(target: Path) -> None:
     settings = json.loads((target / ".claude" / "settings.json").read_text(encoding="utf-8"))
     pre = settings["hooks"]["PreToolUse"]
     assert len(pre) == 1
-    assert "PowerShell" in pre[0]["matcher"]
+    # Every tool: the heartbeat keeps a READING holder's lock fresh, not only an editing one.
+    assert pre[0]["matcher"] == "*"
     assert "agent_lock.py" in pre[0]["hooks"][0]["command"]
     assert settings["hooks"]["SessionEnd"] and settings["hooks"]["SessionStart"]
 
@@ -147,6 +148,32 @@ def test_install_is_idempotent_and_preserves_user_hooks(target: Path) -> None:
     assert sum("agent_lock.py" in c for c in commands) == 1
     assert len(settings["hooks"]["SessionEnd"]) == 1
     assert len(settings["hooks"]["SessionStart"]) == 1
+
+
+def test_install_widens_an_old_edit_only_matcher_to_every_tool(target: Path) -> None:
+    """An older install matched only edit/shell tools, so a session reading for an hour
+    never reached the heartbeat and its lock went stale. Re-installing upgrades it."""
+    claude_dir = target / ".claude"
+    claude_dir.mkdir()
+    old = {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell",
+                    "hooks": [{"type": "command", "command": 'python "x/agent_lock.py"'}],
+                },
+                {"matcher": "Bash", "hooks": [{"type": "command", "command": "echo user-hook"}]},
+            ]
+        }
+    }
+    (claude_dir / "settings.json").write_text(json.dumps(old), encoding="utf-8")
+
+    guard_install_cmd(repo=str(target))
+
+    pre = json.loads((claude_dir / "settings.json").read_text(encoding="utf-8"))["hooks"][
+        "PreToolUse"
+    ]
+    assert [e["matcher"] for e in pre] == ["*", "Bash"], "only OUR entry is widened"
 
 
 def test_install_refuses_invalid_settings_json(target: Path) -> None:

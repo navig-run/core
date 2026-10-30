@@ -680,10 +680,14 @@ def print_json(data: dict | list, indent: int = 2):
     Renders through Rich Syntax with ``word_wrap=True``, which hard-wraps long
     lines at the console width: the output is pretty but NOT reliably
     parseable once piped. For ``--json`` output use :func:`emit_json`.
+
+    ``default=str``: a raw YAML config can carry YAML-native scalars (an unquoted
+    ``2026-09-04`` loads as ``datetime.date``) that plain ``json.dumps`` rejects, which
+    crashed ``navig config show`` on exactly the settings it exists to reveal.
     """
     import json
 
-    json_str = json.dumps(data, indent=indent)
+    json_str = json.dumps(data, indent=indent, default=str)
     print_code(json_str, language="json")
 
 

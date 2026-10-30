@@ -15,6 +15,9 @@ examples:
   - "Restore my iPhone to iOS 16.5 with my saved blob"
   - "Downgrade using shsh2 blob"
   - "Preview the restore command without running it"
+# Written against a planned command surface that is not implemented yet
+# (KNOWN_MISSING in tests/quality/test_content_command_refs_resolve.py).
+activatable: false
 ---
 
 # futurerestore iOS Restore

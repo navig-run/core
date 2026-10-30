@@ -34,7 +34,7 @@ pytestmark = pytest.mark.integration
 
 def classify(argv_tail: list[str]) -> OperationType:
     """Classify exactly as the middleware does: strip global flags first."""
-    return _classify_operation_type(extract_non_global_tokens(argv_tail))
+    return _classify_operation_type(extract_non_global_tokens(argv_tail), argv_tail)
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +106,7 @@ def test_misclassification_fixed(argv, expected, was):
         (["docker", "restart", "web"], OperationType.DOCKER_COMMAND),
         (["service", "restart", "nginx"], OperationType.SERVICE_RESTART),
         (["db", "query", "SELECT 1"], OperationType.DATABASE_QUERY),
-        (["local", "ls"], OperationType.LOCAL_COMMAND),
+        (["local", "audit"], OperationType.LOCAL_COMMAND),
         (["backup", "create"], OperationType.LOCAL_COMMAND),
         ([], OperationType.LOCAL_COMMAND),
     ],
@@ -128,6 +128,13 @@ def test_free_payload_resources_ignore_read_verbs():
     """`navig run list` executes `list` remotely — it is not a listing."""
     assert classify(["run", "list"]) == OperationType.REMOTE_COMMAND
     assert classify(["ssh", "status"]) == OperationType.REMOTE_COMMAND
+
+
+@pytest.mark.parametrize("action", ["show", "ports", "firewall", "interfaces", "ping", "dns"])
+def test_local_is_a_command_group_not_a_free_payload(action):
+    """`navig local` is a Typer group: `local show` / `local ports` are reads, not red
+    local_commands (while `run list` above stays a remote command)."""
+    assert classify(["local", action]) == OperationType.READ_QUERY
 
 
 def test_short_aliases_classify_like_their_resource():
@@ -198,3 +205,23 @@ def test_from_dict_degrades_unknown_enum_values(tmp_path):
     records = list(recorder.iter_operations(limit=10))
     assert len(records) == 1
     assert records[0].operation_type == OperationType.OTHER
+
+
+# ---------------------------------------------------------------------------
+# A read verb whose option writes a local file (review F0271, F1964)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        (["file", "show", "/etc/hosts", "--download", "hosts"], OperationType.FILE_DOWNLOAD),
+        (["file", "show", "/etc/hosts", "-d", "hosts"], OperationType.FILE_DOWNLOAD),
+        (["file", "show", "/etc/hosts", "--download=hosts"], OperationType.FILE_DOWNLOAD),
+        (["file", "show", "/etc/hosts"], OperationType.READ_QUERY),
+        (["github", "diff", "a", "b", "--output", "r.txt"], OperationType.FILE_CREATE),
+        (["github", "diff", "a", "b", "-o", "r.txt"], OperationType.FILE_CREATE),
+        (["github", "diff", "a", "b"], OperationType.READ_QUERY),
+    ],
+)
+def test_output_writing_flag_is_not_a_read(argv: list[str], expected: OperationType) -> None:
+    assert classify(argv) is expected

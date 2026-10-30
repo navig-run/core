@@ -40,6 +40,11 @@ def _chat_context() -> dict[str, Any]:
     return context
 
 
+#: Prior messages (user + assistant) carried into each interactive turn — enough for
+#: follow-ups, bounded so a long session does not grow the prompt without limit.
+_HISTORY_MESSAGES = 20
+
+
 def run_ai_chat(initial_query: str | None = None, single_query: bool = False) -> None:
     """Run interactive AI chat or process a single query."""
 
@@ -55,11 +60,20 @@ def run_ai_chat(initial_query: str | None = None, single_query: bool = False) ->
         # AIAssistant exposes ask(), not chat(), and it is SYNCHRONOUS. Every call
         # here used to be `asyncio.run(ai.chat(text, conversation))`, which raised
         # AttributeError into the handler below — so `navig chat` only ever printed
-        # "AI chat error: 'AIAssistant' object has no attribute 'chat'". ask() keeps
-        # its own conversation history (ConversationStore), so no list is threaded.
+        # "AI chat error: 'AIAssistant' object has no attribute 'chat'". ask() builds a
+        # fresh prompt per call and records nothing, so the session keeps its own
+        # transcript and hands the recent turns to ask() through the context.
         if single_query and initial_query:
             console.print(ai.ask(initial_query, context))
             return
+
+        history: list[tuple[str, str]] = []
+
+        def _turn(question: str) -> str:
+            turn_context = {**context, "conversation": history[-_HISTORY_MESSAGES:]}
+            answer = ai.ask(question, turn_context)
+            history.extend([("user", question), ("assistant", str(answer))])
+            return answer
 
         # Interactive mode
         console.print("\n🤖 [bold cyan]NAVIG AI Chat[/bold cyan]")
@@ -67,7 +81,7 @@ def run_ai_chat(initial_query: str | None = None, single_query: bool = False) ->
 
         if initial_query:
             console.print(f"[dim]You:[/dim] {initial_query}")
-            console.print(f"\n{ai.ask(initial_query, context)}\n")
+            console.print(f"\n{_turn(initial_query)}\n")
 
         while True:
             try:
@@ -80,7 +94,7 @@ def run_ai_chat(initial_query: str | None = None, single_query: bool = False) ->
                     console.print("\n👋 Goodbye!")
                     break
 
-                console.print(f"\n{ai.ask(user_input, context)}\n")
+                console.print(f"\n{_turn(user_input)}\n")
 
             except KeyboardInterrupt:
                 console.print("\n👋 Goodbye!")

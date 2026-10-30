@@ -137,6 +137,33 @@ def test_claim_is_exclusive_across_sessions_and_force_is_orchestrator_only(monke
     assert board_mod.get_board_store().get_card(c["id"])["origin_ref"] is None
 
 
+def _registry_card(session_id: str):
+    return next(
+        e for e in agent_registry.load()["agents"] if e["session_id"] == session_id
+    ).get("card")
+
+
+def test_claim_and_release_keep_the_agent_registry_in_step():
+    """`navig mesh agents list` reads the registry: it must show the card a claim took."""
+    c = _card()
+    assert runner.invoke(card_app, ["claim", c["id"]]).exit_code == 0
+    assert _registry_card(_SESS) == c["id"]
+    assert runner.invoke(card_app, ["release", c["id"]]).exit_code == 0
+    assert _registry_card(_SESS) is None
+
+
+def test_a_claim_the_registry_cannot_record_is_undone(monkeypatch):
+    c = _card()
+
+    def _boom(*_a, **_k):
+        raise OSError("registry is read-only")
+
+    monkeypatch.setattr(agent_registry, "set_card", _boom)
+    res = runner.invoke(card_app, ["claim", c["id"]])
+    assert res.exit_code == 1
+    assert board_mod.get_board_store().get_card(c["id"])["origin_ref"] is None
+
+
 def test_release_of_a_card_you_do_not_hold_is_an_error():
     c = _card()
     res = runner.invoke(card_app, ["release", c["id"]])
@@ -161,6 +188,15 @@ def test_deps_wiring_refuses_cycles_and_self_edges():
     assert b["id"] not in board_mod.get_board_store().get_card(a["id"])["deps"]
     twice = runner.invoke(card_app, ["deps", "remove", a["id"], "--from", b["id"]])
     assert twice.exit_code == 1
+
+
+def test_an_exact_todo_id_is_not_a_card():
+    """`get_card` reads the shared table: a todo's exact id must not resolve as a card."""
+    a = _card("a")
+    todo = board_mod.get_board_store().create_todo("Buy milk")
+    res = runner.invoke(card_app, ["deps", "add", a["id"], "--on", todo["id"]])
+    assert res.exit_code == 1
+    assert board_mod.get_board_store().get_card(a["id"])["deps"] == []
 
 
 def test_subtask_role_gates():
@@ -190,3 +226,19 @@ def test_show_json_carries_checklist_and_history():
     assert row["canonical_stage"] == "active"
     assert [s["title"] for s in row["subtasks"]] == ["checked"]
     assert row["history"] and row["history"][0]["to_stage"] == "in_progress"
+
+
+def test_move_into_work_is_refused_while_dependencies_wait():
+    a, b = _card("a"), _card("b")
+    assert runner.invoke(card_app, ["deps", "add", a["id"], "--on", b["id"]]).exit_code == 0
+    assert board_mod.get_board_store().get_card(a["id"])["gate"] == "waiting"
+    agent_registry.claim("backend-worker", session_id=_SESS)
+
+    res = runner.invoke(card_app, ["move", a["id"], "--to", "active"])
+    assert res.exit_code == 1
+    assert "waiting on unfinished dependencies" in res.output
+    assert board_mod.get_board_store().get_card(a["id"])["stage"] == "backlog"
+
+    # Once the dependency is done, the same move goes through.
+    board_mod.get_board_store().move_card(b["id"], "done", actor="agent")
+    assert runner.invoke(card_app, ["move", a["id"], "--to", "active"]).exit_code == 0

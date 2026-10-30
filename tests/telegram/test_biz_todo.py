@@ -218,3 +218,20 @@ def test_moving_due_shifts_the_chat_ping(env) -> None:
     service.update(item["id"], {"due_at": NOW + timedelta(days=3)})
     (row,) = runtime.rows.values()
     assert row["bcid"] == "BC"
+
+
+def test_a_long_list_still_fits_one_telegram_message(monkeypatch) -> None:
+    """100 open items of 200 characters rendered one card far over Telegram's 4096-unit
+    limit; the raw send was refused and the old card stayed (PR #1778 review)."""
+    from navig.gateway.channels.base import utf16_len
+
+    rows = [
+        {"list_seq": i, "title": "ж" * 200, "done": False, "when_label": None}
+        for i in range(1, 101)
+    ]
+    rows += [{"list_seq": 200 + i, "title": "x" * 200, "done": True} for i in range(5)]
+    monkeypatch.setattr(service, "tasks", lambda **_: rows)
+    card = biz_todo.render("tg:1", "en")
+    assert utf16_len(card) <= 4096
+    assert "#1</code>" in card and "more</i>" in card
+    assert card.rstrip().endswith("undo N</i>"), "the hint and done items are kept"

@@ -78,9 +78,7 @@ MUST_LOCK: dict[str, tuple[str, ...]] = {
         "rotate_logs",       # logrotate -f
     ),
     "backup.py": (
-        "backup_system_config",  # mkdir + tar on the host
         "backup_hestia",         # mkdir + tar + rm -f on the host
-        "backup_web_config",
     ),
     # `monitoring` is otherwise read-only — this one function restarts a systemd unit,
     # which is why "the module looks like reads" is not a classification.
@@ -129,6 +127,10 @@ READ_ONLY: dict[str, str] = {
     "generate_report": "top/free — reads",
     "list_users_cmd": "v-list-users — reads",
     "list_domains_cmd": "v-list-users + v-list-web-domains — reads",
+    # Both send only `test -f/-d` and `find` to the host; the files come down over SCP
+    # into a LOCAL backup dir. Nothing on the server changes.
+    "backup_system_config": "test -f + SCP download — reads",
+    "backup_web_config": "test -f/-d + find + SCP download — reads",
 }
 
 

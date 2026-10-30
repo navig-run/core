@@ -60,7 +60,7 @@ steps:
     safety: moderate
     capabilities: [exec:navig]
     network: required
-    argv: [navig, download, "{{inputs.output_file}}", "{{inputs.local_dir}}/"]
+    argv: [navig, file, get, "{{inputs.output_file}}", "{{inputs.local_dir}}/{{inputs.output_file}}"]
 
   - id: cleanup
     kind: command
@@ -93,7 +93,8 @@ must exist when the run finishes.
 2. **db-list** — enumerate databases (a sanity check before dumping).
 3. **dump** — `navig db dump <db_name> -o <output_file>` on the server
    *(destructive — heavy prod I/O; needs `--approve dump`)*.
-4. **download** — pull the dump into `local_dir/`. This runs **before** cleanup,
+4. **download** — `navig file get` the dump into `local_dir/` (the directory must
+   already exist). This runs **before** cleanup,
    so if the download fails the block aborts and the remote dump is preserved.
 5. **cleanup** — remove the remote dump *(destructive — `--approve cleanup`)*.
 

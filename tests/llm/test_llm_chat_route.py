@@ -212,3 +212,75 @@ async def test_llm_chat_auth_required_when_gateway_token_set(app, mock_gateway):
             headers={"Authorization": "Bearer secret-token"},
         )
         assert authorized.status == 200
+
+
+# ── The CLI passthrough must be off on this route (#1667 follow-up) ──────────
+#
+# /llm/chat is the ONE guarded route that also accepts the fleet-shared
+# `gateway.mesh_token` — a PEER credential. A message starting "navig " would
+# otherwise run as a subprocess with no approval gate, which
+# require_bearer_auth's own contract says the mesh secret must never unlock.
+
+
+async def test_mesh_peer_message_cannot_reach_the_cli_passthrough(app, mock_gateway):
+    """A peer authenticating with gateway.mesh_token gets no CLI subprocess."""
+    pytest.importorskip("aiohttp")
+    from aiohttp.test_utils import TestClient, TestServer
+
+    mock_gateway.config_manager = SimpleNamespace(
+        global_config={"gateway": {"mesh_token": "fleet-secret"}}
+    )
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.post(
+            "/llm/chat",
+            json={"text": "navig vault list", "conversation": [], "scope": "personal"},
+            headers={"Authorization": "Bearer fleet-secret"},
+        )
+        assert resp.status == 200  # the chat still works; only the passthrough is off
+
+    kwargs = mock_gateway.router.route_message.call_args.kwargs
+    assert kwargs["message"] == "navig vault list"  # text reaches the agent as TEXT
+    assert kwargs["allow_cli"] is False
+
+
+async def test_admin_token_keeps_the_cli_passthrough(app, mock_gateway):
+    """The operator's own path is unchanged: `navig …` still runs here.
+
+    NAVIG OS / anchor / echo authenticate with the ADMIN token and deliberately
+    let the operator type a `navig …` line expecting the command to run. The fix
+    is therefore per-credential, not unconditional — this test is what stops the
+    next reader from "tightening" the route and breaking those desktop apps.
+    """
+    pytest.importorskip("aiohttp")
+    from aiohttp.test_utils import TestClient, TestServer
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.post(
+            "/llm/chat",
+            json={"text": "/navig host list", "conversation": [], "scope": "personal"},
+            headers=_AUTH,
+        )
+        assert resp.status == 200
+
+    kwargs = mock_gateway.router.route_message.call_args.kwargs
+    assert kwargs["allow_cli"] is True
+    assert kwargs["message"] == "/navig host list"
+
+
+async def test_an_absent_mesh_token_leaves_the_admin_path_alone(app, mock_gateway):
+    """No peer secret configured → nothing to mistake for a peer, so admin behaves as always."""
+    pytest.importorskip("aiohttp")
+    from aiohttp.test_utils import TestClient, TestServer
+
+    mock_gateway.config_manager = SimpleNamespace(global_config={"gateway": {}})
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.post(
+            "/llm/chat",
+            json={"text": "navig status", "conversation": [], "scope": "personal"},
+            headers=_AUTH,
+        )
+        assert resp.status == 200
+
+    assert mock_gateway.router.route_message.call_args.kwargs["allow_cli"] is True

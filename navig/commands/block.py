@@ -618,14 +618,17 @@ def apply_command(
         claim=("apply",),  # enrich the CLI middleware's record — one ledger line per run
     ) as rec:
         run = apply_block(block, inputs, yes=yes, dry_run=dry_run, approvals=approvals, workdir=wd)
-        rec.success = run.outcome in ("succeeded", "planned")
         rec.output = f"{block.id}:{run.outcome}"
+        # The receipt is part of the run: write it INSIDE the claimed record, and mark
+        # success only after it persists — a receipt that fails to write must leave the
+        # ledger line failed, not "successful".
+        if not dry_run:
+            receipt = build_receipt(block, run, inputs, trust="first-party")
+            path = persist_receipt(receipt)
+        rec.success = run.outcome in ("succeeded", "planned")
 
     if dry_run:
         return
-
-    receipt = build_receipt(block, run, inputs, trust="first-party")
-    path = persist_receipt(receipt)
 
     if json_out:
         print(receipt.to_json())

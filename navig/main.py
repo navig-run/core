@@ -349,6 +349,32 @@ def _normalize_help_compat_args(argv: list[str]) -> list[str]:
     return argv
 
 
+def _ledger_exit_code(exc: SystemExit) -> object | None:
+    """The exit code the operation ledger should see for *exc*.
+
+    Click/Typer turn a cancelled prompt (Ctrl-C at ``click.prompt``/``confirm``, or a
+    declined ``confirm(abort=True)``) into ``click.Abort``, which standalone mode
+    reports as ``sys.exit(1)`` — raised INSIDE ``except click.Abort``, so the Abort is
+    the SystemExit's ``__context__``. That is a cancel, not a failure: report 130
+    (CANCELLED) so ``skill distill`` does not mine it as a pitfall. An Abort caused by
+    EOF (no stdin for a prompt) stays a failure. The process still exits with
+    ``exc.code``.
+    """
+    ctx = exc.__context__
+    if ctx is not None and exc.code == 1:
+        try:
+            # NOT `import click`: Typer 0.27 vendors click and installs no `click` package,
+            # so a fresh install fails this import outright (guarded tree-wide). The
+            # sanctioned resolver is navig.core.click_compat — see cli/__init__.py.
+            from navig.core.click_compat import abort_class  # noqa: PLC0415
+
+            if isinstance(ctx, abort_class()) and not isinstance(ctx.__context__, EOFError):
+                return 130
+        except ImportError:  # pragma: no cover — click_compat resolves on a fresh install
+            pass
+    return exc.code
+
+
 def _note_terminal_exit_code(code: object | None) -> None:
     """Report the process's terminal exit code to the operation ledger.
 
@@ -961,7 +987,7 @@ def main() -> None:
         # SystemExit(0), typer.Exit(n)/usage errors are SystemExit(n). Report it
         # to the ledger before re-raising so the atexit completer records the
         # truthful status (a non-zero exit is NOT a success).
-        _note_terminal_exit_code(e.code)
+        _note_terminal_exit_code(_ledger_exit_code(e))
         # Catch Typer/Click parsing errors that indicate PowerShell mangled the input
         if e.code != 0 and len(sys.argv) >= 2:
             _handle_powershell_parsing_error(sys.argv)

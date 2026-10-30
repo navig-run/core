@@ -13,6 +13,8 @@ line would still put a window on screen.
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from navig.browser import cdp_actions
@@ -135,6 +137,11 @@ def test_launch_gains_headless_for_browsers(captured_argv, monkeypatch):
 def test_launch_does_not_send_headless_to_electron_apps(captured_argv, monkeypatch):
     """Discord/Slack/VS Code are not browsers; `--headless=new` is meaningless there."""
     monkeypatch.setattr("navig.browser.targets.probe_port", lambda *a, **k: None)
+    # The real resolver returns None where Discord is not installed (this box), and the
+    # launch then stops before any argv exists — the subject here is the argv, so the
+    # executable is supplied (2026-10-30, outpost).
+    monkeypatch.setattr("navig.browser.targets.resolve_executable",
+                        lambda app: sys.executable)
     cdp_actions.launch("discord", port=9999, context="agent")
     assert not any(a.startswith("--headless") for a in captured_argv["extra_args"])
 

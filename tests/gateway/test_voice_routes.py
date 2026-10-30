@@ -237,8 +237,18 @@ async def test_synthesize_under_offline_never_reaches_a_cloud_engine(policy_engi
     assert policy_engine["calls"] == [], "the engine ran while offline had no on-device voice"
 
 
-async def test_synthesize_pins_the_routed_provider_into_the_engine(policy_engine):
+async def test_synthesize_pins_the_routed_provider_into_the_engine(policy_engine, monkeypatch):
     policy_engine["state"]["policy"] = "auto"
+    # Availability is decided by importability + a vault key, so on a host without
+    # `edge-tts` Auto raised "no free speech engine is available" before the route could pin
+    # anything. The subject here is the ROUTE's pinning, so the router is stubbed with a
+    # decision that is available; the engine call itself stays the fixture's stub.
+    from navig_audio.voice import catalog as cat
+    from navig_audio.voice.tts import TTSProvider
+
+    monkeypatch.setattr(
+        cat, "route", lambda requested=None, policy="auto": types.SimpleNamespace(provider=TTSProvider.EDGE)
+    )
     status, body = await _post_synthesize({})
     # The stub answers "no audio" (500), but only AFTER the route chose the provider —
     # pinned into synthesize(), never the TTS default chain behind it.

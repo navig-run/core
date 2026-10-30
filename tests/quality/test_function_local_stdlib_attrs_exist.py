@@ -26,6 +26,7 @@ import ast
 import functools
 import importlib
 import sys
+import types
 from pathlib import Path
 
 CORE = Path(__file__).resolve().parents[2] / "navig"
@@ -38,6 +39,14 @@ STDLIB = set(sys.stdlib_module_names)
 _PLATFORM_ONLY = {
     "SIGKILL",  # signal — POSIX; the Windows branch above it uses taskkill
     "AF_UNIX",  # socket — POSIX; only reached from _send_unix
+    # Windows-only. Without these the guard reported 32 false findings on a Linux host
+    # (measured under WSL), so the source-guard step failed on every non-Windows run.
+    "windll",  # ctypes — every use sits under a `sys.platform == "win32"` branch
+    "startfile",  # os — `config edit`'s Windows opener
+    "CREATE_NO_WINDOW",  # subprocess creation flags — Windows spawn branches only
+    "CREATE_NEW_PROCESS_GROUP",
+    "DETACHED_PROCESS",
+    "CTRL_BREAK_EVENT",  # signal — platform/windows_utils.py
 }
 
 
@@ -142,9 +151,20 @@ def test_the_scan_actually_inspects_a_meaningful_number_of_calls() -> None:
     )
 
 
-def test_the_detector_still_catches_the_bug_it_was_written_for() -> None:
+def test_the_detector_still_catches_the_bug_it_was_written_for(monkeypatch) -> None:
     """`winreg.OpenSubKey` is the exact shape that shipped. If this stops being
     detected, the guard has been narrowed into decoration."""
+    try:
+        importlib.import_module("winreg")
+    except ModuleNotFoundError:
+        # Off Windows there is no `winreg`, and importing it raised here. Stand in a
+        # module carrying the REAL names the snippet uses, so the check still proves
+        # the detector flags the one that does not exist.
+        stub = types.ModuleType("winreg")
+        stub.OpenKey = lambda *a, **k: None
+        stub.HKEY_CURRENT_USER = 0x80000001
+        stub.KEY_WRITE = 0x20006
+        monkeypatch.setitem(sys.modules, "winreg", stub)
     src = (
         "def uninstall():\n"
         "    import winreg\n"

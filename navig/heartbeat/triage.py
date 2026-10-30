@@ -19,9 +19,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-#: The finding is ABOUT an LLM provider / model / route …
+#: The finding is ABOUT an LLM provider / model / route … A bare "endpoint" is not
+#: enough: "nginx health endpoint returned 503" is a crashed service, not a provider.
 _SUBJECT_RE = re.compile(
-    r"\b(llm mode|routing tier|provider|model|api key|api token|endpoint|credential)\b", re.I
+    r"\b(llm mode|routing tier|provider|model|api key|api token|credential|"
+    r"(llm|model|provider|inference) endpoint)\b",
+    re.I,
 )
 #: … and describes a condition only the operator or the router can change.
 _CONDITION_RE = re.compile(

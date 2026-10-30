@@ -73,3 +73,20 @@ def test_off_by_default_and_silent_without_a_date(store: BoardStore, monkeypatch
         biz_agenda.maybe_propose(ch, _msg("On se voit lundi 26 octobre à 10h30 au bureau"), owner_id=7)
     ) is False
     assert ch.calls == [] and store.list_appointments() == []
+
+
+class _RefusingChannel(_Channel):
+    async def _api_call(self, method: str, data: dict[str, Any]) -> Any:
+        self.calls.append((method, data))
+        return None  # how `_api_call` reports a refusal
+
+
+def test_a_proposal_telegram_refused_stays_retryable(store: BoardStore) -> None:
+    """The DM card never arrived: nothing may sit unseen, and the redelivery of the
+    same message must propose it again rather than count as a duplicate."""
+    msg = _msg("On se voit lundi 26 octobre à 10h30 au bureau")
+    assert asyncio.run(biz_agenda.maybe_propose(_RefusingChannel(), msg, owner_id=7)) is False
+    assert store.list_appointments() == []
+    ch = _Channel()
+    assert asyncio.run(biz_agenda.maybe_propose(ch, msg, owner_id=7)) is True
+    assert len(store.list_appointments()) == 1 and len(ch.calls) == 1

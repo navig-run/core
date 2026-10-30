@@ -32,11 +32,15 @@ class VersionInfo:
     install_type: str = "unknown"  # "git" | "pip" | "unknown"
     source_name: str = "unknown"
     error: str | None = None
+    # Git checkouts only: upstream commits HEAD lacks (None = not a git install / unknown).
+    commits_behind: int | None = None
 
     @property
     def needs_update(self) -> bool:
         if self.error or self.current == "unknown" or not self.latest:
             return False
+        if self.install_type == "git" and self.commits_behind:
+            return True
         return _version_lt(self.current, self.latest)
 
     @property
@@ -69,6 +73,12 @@ class NodeResult:
     error: str | None = None
     elapsed_seconds: float = 0.0
     steps: list[str] = field(default_factory=list)
+    #: The new code is on disk but the running daemon could not be reloaded, so it
+    #: still executes the OLD code (e.g. an elevated daemon under a non-interactive
+    #: run). The install itself succeeded — ``ok`` stays True — but the update is not
+    #: live, so :attr:`UpdateResult.success` is False until the restart happens.
+    restart_pending: bool = False
+    restart_note: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -82,6 +92,8 @@ class NodeResult:
             "error": self.error,
             "elapsed_seconds": round(self.elapsed_seconds, 2),
             "steps": self.steps,
+            "restart_pending": self.restart_pending,
+            "restart_note": self.restart_note,
         }
 
 
@@ -120,7 +132,13 @@ class UpdateResult:
 
     @property
     def success(self) -> bool:
-        return all(r.ok or r.skipped for r in self.node_results)
+        # A node whose daemon still runs the old code is not a successful update:
+        # automation must not treat that deployment as live.
+        return all((r.ok or r.skipped) and not r.restart_pending for r in self.node_results)
+
+    @property
+    def restart_pending_nodes(self) -> list[NodeResult]:
+        return [r for r in self.node_results if r.restart_pending]
 
     @property
     def failed_nodes(self) -> list[NodeResult]:

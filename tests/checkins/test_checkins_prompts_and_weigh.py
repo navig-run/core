@@ -193,3 +193,21 @@ async def test_weekly_card_runs_in_process_once_a_day(ci_env, tg):
         "weigh", CHAT, "weekly", None, send=tg, now=at(2026, 10, 11, 18, 50)
     )
     assert again.startswith("skipped")
+
+
+def test_forget_drops_asked_and_nudged_marks(ci_env):
+    """Remove + re-add the same id on the same day: its first prompt and nudge still fire."""
+    from navig.checkins import state
+
+    day = "2026-10-08"
+    state.mark_asked(CHAT, "metformin", "0800", day)
+    state.mark_asked(CHAT, "metformin", None, day)
+    state.mark_asked(CHAT, "metformin-xr", "0800", day)        # a different item stays
+    assert state.claim_nudge(CHAT, "metformin", "0800", day) is True
+
+    state.forget("metformin")
+
+    assert state.asked_on(CHAT, "metformin", "0800") is None
+    assert state.asked_on(CHAT, "metformin", None) is None
+    assert state.claim_nudge(CHAT, "metformin", "0800", day) is True
+    assert state.asked_on(CHAT, "metformin-xr", "0800") == day

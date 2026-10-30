@@ -339,3 +339,19 @@ def test_is_connected_agrees_with_list_connected_accounts():
 
     listed = "svc_expired" in mgr.list_connected_accounts()
     assert listed is mgr.is_connected("svc_expired") is True
+
+
+def test_list_connected_accounts_drops_expired_token_without_refresh():
+    """An expired access token with no refresh token is not connected anywhere.
+
+    `connector list` and `resolve_connected()` read this listing; reporting the
+    credential as connected selected a connector whose hydration must fail.
+    """
+    mgr = _fresh_manager()
+    _stub_vault_creds(mgr, OAuthCredentials(access="old", refresh="", expires=1))
+    mgr._vault.list.return_value = [
+        MagicMock(provider="svc_dead", metadata={"email": "user@example.com"})
+    ]
+
+    assert mgr.list_connected_accounts() == {}
+    assert mgr.is_connected("svc_dead") is False

@@ -73,8 +73,21 @@ async def maybe_propose(channel: Any, msg: dict[str, Any], *, owner_id: int) -> 
     if rendered is None:
         return False
     body, keyboard = rendered
-    await channel._api_call(
-        "sendMessage",
-        {"chat_id": owner_id, "text": body, "parse_mode": "HTML", "reply_markup": keyboard},
-    )
+    try:
+        sent = await channel._api_call(
+            "sendMessage",
+            {"chat_id": owner_id, "text": body, "parse_mode": "HTML", "reply_markup": keyboard},
+        )
+    except Exception:  # noqa: BLE001 — treated like a refusal: roll back below
+        logger.debug("agenda proposal send failed", exc_info=True)
+        sent = None
+    if not sent:
+        # `_api_call` refuses with None. The proposal would sit unseen, and its
+        # origin_ref would turn every redelivery into a "duplicate" — roll it back
+        # WITHOUT a dismissal so the next delivery can offer it again.
+        try:
+            service.delete(item["id"], dismiss=False)
+        except Exception:  # noqa: BLE001
+            logger.warning("agenda proposal rollback failed for %s", item.get("id"), exc_info=True)
+        return False
     return True

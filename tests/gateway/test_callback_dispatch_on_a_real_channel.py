@@ -100,6 +100,19 @@ def test_a_settings_nav_button_renders_its_panel(button, expects):
     )
 
 
+def test_the_providers_button_renders_both_of_its_panels():
+    """`st_goto_providers` sends the models panel and THEN awaits the provider hub, and the
+    dispatcher swallows a handler's exception -- so "any one send" stayed green when the
+    second panel raised. Both sends must happen, the provider hub among them."""
+    ch = _real_channel()
+    asyncio.run(ch._cb_handler.handle(_press("st_goto_providers")))
+    sends = [f for f in _effects(ch) if f.startswith("send:")]
+    assert len(sends) >= 2, f"expected the models panel AND the provider hub, got: {sends}"
+    assert any("AI Providers" in f for f in sends), (
+        f"the provider hub never rendered after the models panel: {sends}"
+    )
+
+
 def test_kill_confirm_reaches_its_handler():
     """It used to answer 'Killing…' and kill nothing. A bogus id must now be REJECTED,
     which proves the handler ran rather than the branch falling through."""

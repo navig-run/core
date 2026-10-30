@@ -30,7 +30,7 @@ def _read_backup_metadata(metadata_file: Path) -> dict[str, Any] | None:
     try:
         with open(metadata_file, encoding="utf-8") as f:
             data = json.load(f)
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError):  # ValueError covers JSONDecodeError AND UnicodeDecodeError
         return None
     return data if isinstance(data, dict) else None
 
@@ -109,10 +109,9 @@ def backup_system_config(name: str | None, options: dict[str, Any]):
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
     server_name = require_active_server(options, config_manager)
 
-    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
-    from navig.core import host_lock  # noqa: PLC0415
-
-    host_lock.guard_remote(config_manager, server_name, "navig backup system-config")
+    # No host lock: this backup only runs `test`/`find` on the host and downloads over
+    # SCP — a read. Claiming the host would block it behind another session's work and
+    # leave a lock that blocks later mutations (only `backup hestia` writes remotely).
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -658,10 +657,9 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
     server_name = require_active_server(options, config_manager)
 
-    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
-    from navig.core import host_lock  # noqa: PLC0415
-
-    host_lock.guard_remote(config_manager, server_name, "navig backup web-config")
+    # No host lock: this backup only runs `test`/`find` on the host and downloads over
+    # SCP — a read. Claiming the host would block it behind another session's work and
+    # leave a lock that blocks later mutations (only `backup hestia` writes remotely).
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -1436,7 +1434,9 @@ def backup_watch(
     folder = resolve_user_path(path)
     label = name or folder.name or str(folder)
     verdict = bw.check(folder, name=label, max_age_hours=max_age_hours, pattern=pattern)
-    edge = bw.latch(verdict, paths.data_dir() / "backup_watch.json") if notify else None
+    state_file = paths.data_dir() / "backup_watch.json"
+    edge = bw.latch(verdict, state_file) if notify else None
+    notify_error: str | None = None
     if edge:
         from navig.notify.router import dispatch
 
@@ -1446,11 +1446,21 @@ def backup_watch(
             title, body, prio = (f"Backup fresh again: {label}",
                                  f"newest: {verdict.newest} ({verdict.age_hours} h old)", "normal")
         try:
-            asyncio.run(dispatch("system_alert", title, body, priority=prio))
+            result = asyncio.run(dispatch("system_alert", title, body, priority=prio))
+            attempted = (result or {}).get("channels") or []
+            if attempted and not any(c.get("ok") for c in attempted):
+                raise RuntimeError("; ".join(f"{c.get('channel')}: {c.get('detail')}" for c in attempted))
         except Exception as exc:  # noqa: BLE001 — the exit code still tells the truth
-            ch.warning(f"alert not sent: {exc}")
+            # Nothing was delivered: keep the edge so the next run alerts again.
+            bw.unlatch(verdict, state_file)
+            notify_error = str(exc)
+            if not json_out:  # in --json mode stdout must stay one JSON document
+                ch.warning(f"alert not sent: {exc}")
     if json_out:
-        ch.console.print_json(json.dumps({**asdict(verdict), "edge": edge}))
+        payload = {**asdict(verdict), "edge": edge}
+        if notify_error is not None:
+            payload["notify_error"] = notify_error
+        ch.console.print_json(json.dumps(payload))
     elif verdict.ok:
         ch.success(f"{label}: fresh — {verdict.newest} ({verdict.age_hours} h old)")
     else:

@@ -404,6 +404,45 @@ def test_move_folder_refuses_when_the_destination_exists(isolated: Path) -> None
     assert _says(r, "--move-folder"), "the message says how to finish the half that did not land"
 
 
+def test_a_move_folder_retry_reconciles_the_registry_row_and_the_pointer(isolated: Path) -> None:
+    """The first `--move-folder` fails on an occupied destination after the manifest
+    already says the new id; the retry takes the `old == new` branch and must still
+    re-key the row and move the pointer, or the active space resolves to nothing."""
+    from navig.platform import paths
+
+    p = _space(paths.spaces_dir(), "homelab", folder="homelab")
+    space_cmd._set_active_space("homelab")
+    blocker = paths.spaces_dir() / "lab"
+    blocker.mkdir()
+    assert _run(str(p), "lab", "--move-folder").exit_code == 1
+    assert registry.entry_for(p)["id"] == "homelab", "precondition: the row still has the old id"
+    blocker.rmdir()
+
+    r = _run(str(p), "lab", "--move-folder")
+    assert r.exit_code == 0, r.output
+    moved = paths.spaces_dir() / "lab"
+    assert moved.is_dir() and not p.exists()
+    row = registry.entry_for(moved)
+    assert row is not None and row["id"] == "lab"
+    assert space_cmd.resolve_active_space() == "lab"
+
+
+def test_move_folder_never_rekeys_a_stale_row_at_the_destination(isolated: Path) -> None:
+    """A stale row already names the (absent) destination, so repath refuses; the rename
+    must re-key the SOURCE row, not the occupant that happens to live at the new path."""
+    from navig.platform import paths
+
+    p = _space(paths.spaces_dir(), "homelab", folder="homelab")
+    dest = paths.spaces_dir() / "lab"
+    registry.register(dest, id="ghost", name="ghost", source="external")
+
+    r = _run(str(p), "lab", "--move-folder")
+    assert r.exit_code == 0, r.output
+    assert _says(r, "registry row still names")
+    assert registry.entry_for(dest)["id"] == "ghost", "the occupant row was re-keyed"
+    assert registry.entry_for(p)["id"] == "lab"
+
+
 def test_move_folder_does_not_apply_to_a_space_outside_the_spaces_root(isolated: Path) -> None:
     p = _space(isolated, "homelab")  # an ordinary project folder
     r = _run(str(p), "lab", "--move-folder")

@@ -157,3 +157,31 @@ def test_update_sidecar_refuses_to_wipe_on_a_transient_lock(tmp_path, monkeypatc
     # THE INVARIANT: the file is byte-for-byte the original — the update was skipped, not
     # applied over an empty dict (which would have dropped provider/prompt).
     assert json.loads(sidecar.read_text(encoding="utf-8")) == original
+
+
+def test_keep_and_reject_abort_before_moving_when_the_sidecar_is_unreadable(tmp_path, monkeypatch):
+    """A sidecar that stays locked must fail the keep/reject BEFORE the asset moves —
+    otherwise the file and the ledger say "kept" while the sidecar still says "generated"
+    and nothing ever re-applies the update."""
+    import pytest
+
+    from navig.core.json_io import JsonReadError
+
+    root = rl.resolve_refs_root(tmp_path)
+    staged = rl.stage(root, media_id="m1", modality="image", ext="png", data=b"x")
+    ledger_before = (root / "ledger.jsonl").read_text(encoding="utf-8")
+
+    def _boom(*_a, **_k):
+        raise JsonReadError("sidecar is locked (simulated sharing violation)")
+
+    monkeypatch.setattr("navig.core.json_io.load_json_for_update", _boom)
+
+    with pytest.raises(JsonReadError):
+        rl.promote(root, "m1", "image")
+    with pytest.raises(JsonReadError):
+        rl.reject(root, "m1")
+
+    assert staged.exists()
+    assert not (root / "images" / "m1.png").exists()
+    assert not (root / ".rejected" / "m1.png").exists()
+    assert (root / "ledger.jsonl").read_text(encoding="utf-8") == ledger_before

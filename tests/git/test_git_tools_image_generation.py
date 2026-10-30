@@ -200,6 +200,7 @@ class TestImageSize:
             ImageSize.PORTRAIT,
             ImageSize.PORTRAIT_GPT,
             ImageSize.LANDSCAPE_GPT,
+            ImageSize.WIDE_2K,  # bfd66ea7dd: the widest frame the provider renders (2:1)
         }
 
 
@@ -211,7 +212,15 @@ class TestImageQuality:
         assert ImageQuality.HD.value == "hd"
 
     def test_all_qualities(self):
-        assert set(ImageQuality) == {ImageQuality.STANDARD, ImageQuality.HD}
+        # One scale for every provider: gpt-image's own vocabulary plus the two
+        # historical DALL·E-era aliases (standard→medium, hd→high) kept for compatibility.
+        assert set(ImageQuality) == {
+            ImageQuality.LOW,
+            ImageQuality.MEDIUM,
+            ImageQuality.HIGH,
+            ImageQuality.STANDARD,
+            ImageQuality.HD,
+        }
 
 
 class TestImageStyle:

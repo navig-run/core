@@ -7,6 +7,9 @@ navig-commands:
   - navig sys perf
 os: [windows]
 tool_id: win_perf_tuner
+# Written against a planned command surface that is not implemented yet
+# (KNOWN_MISSING in tests/quality/test_content_command_refs_resolve.py).
+activatable: false
 ---
 
 # Skill: win-perf-tuner

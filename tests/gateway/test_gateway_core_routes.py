@@ -594,3 +594,48 @@ async def test_health_stays_unambiguous_when_nothing_is_recorded(monkeypatch):
     rec = await _health_data(monkeypatch, recorded_port=None, served_port=8789)
     assert rec["canonical"] is True
     assert rec["port"] == 8789
+
+
+async def test_a_listed_session_can_be_shown_and_cleared(tmp_path):
+    """`session list` reads gw.sessions; show/clear must act on that same store.
+
+    They used the /memory/* routes (the unrelated ConversationStore), so a session
+    returned by `list` showed no messages and `clear` answered 404 without touching it.
+    """
+    pytest.importorskip("aiohttp")
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from navig.gateway.session_manager import SessionManager
+
+    gateway = _build_gateway()
+    gateway.sessions = SessionManager(tmp_path)
+    key = "agent:default:telegram:42"
+    await gateway.sessions.add_message(key, "user", "hello there")
+    app = _build_core_app(gateway)
+
+    async with TestClient(TestServer(app)) as client:
+        listed = await (await client.get("/sessions", headers=_AUTH)).json()
+        assert key in [s["key"] for s in listed["data"]["sessions"]]
+
+        shown = await client.get(f"/sessions/{key}", headers=_AUTH)
+        assert shown.status == 200
+        messages = (await shown.json())["data"]["messages"]
+        assert [m["content"] for m in messages] == ["hello there"]
+
+        cleared = await client.delete(f"/sessions/{key}", headers=_AUTH)
+        assert cleared.status == 200
+        assert key not in gateway.sessions.sessions
+
+        assert (await client.get(f"/sessions/{key}", headers=_AUTH)).status == 404
+        assert (await client.delete(f"/sessions/{key}", headers=_AUTH)).status == 404
+        assert key not in gateway.sessions.sessions, "a 404 read must not create the session"
+
+
+async def test_single_session_routes_require_the_token(tmp_path):
+    pytest.importorskip("aiohttp")
+    from aiohttp.test_utils import TestClient, TestServer
+
+    app = _build_core_app(_build_gateway(auth_token="s3cret"))
+    async with TestClient(TestServer(app)) as client:
+        assert (await client.get("/sessions/k")).status == 401
+        assert (await client.delete("/sessions/k")).status == 401

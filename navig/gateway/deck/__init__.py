@@ -920,6 +920,7 @@ def register_deck_routes(
         app.router.add_post("/api/deck/planner/tasks/{id}/done", _planner.handle_planner_task_done)
         app.router.add_post("/api/deck/planner/tasks/{id}/reopen", _planner.handle_planner_task_reopen)
         app.router.add_post("/api/deck/planner/tasks/{id}/move", _planner.handle_planner_task_move)
+        app.router.add_get("/api/deck/planner/items/{id}", _planner.handle_planner_item_get)
         app.router.add_get("/api/deck/planner/agenda", _planner.handle_planner_agenda)
         app.router.add_post("/api/deck/planner/agenda", _planner.handle_planner_agenda_create)
         app.router.add_patch("/api/deck/planner/agenda/{id}", _planner.handle_planner_item_update)
@@ -1329,6 +1330,10 @@ def register_deck_routes(
         # NAVIG Voice — the reader surface the Dock (and any remote client) speaks through.
         from navig.gateway.deck.routes import voice as _voice
         _voice.register(app)
+        # Telegram feature switches no other deck route reaches (room catalog, link
+        # cards, boot greeting, daily tidy …) — one allowlisted catalog.
+        from navig.gateway.deck.routes import telegram_features as _tg_features
+        _tg_features.register(app)
 
         # NAVIG Translate — select a passage in the Dock, translate it, put it back
         # (one route; deck auth answers for it like every other /api/deck/* route).

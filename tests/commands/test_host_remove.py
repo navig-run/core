@@ -103,3 +103,60 @@ def test_the_subapp_is_reachable_without_the_root_callback(cfg):
 
     assert "NoneType" not in result.output, result.output
     assert result.exit_code == 0
+
+
+def test_dry_run_removes_nothing(cfg):
+    """Review #789: the root `--dry-run` flag reached remove_host and was ignored —
+    the "show what would happen" switch deleted the host."""
+    _add(cfg, "box")
+
+    result = CliRunner().invoke(host_app, ["remove", "box", "--force"], obj={"dry_run": True})
+
+    assert result.exit_code == 0, result.output
+    assert cfg.host_exists("box"), "--dry-run deleted the host"
+    assert "DRY RUN" in result.output
+
+
+def test_removing_clears_the_project_local_selector(cfg, tmp_path):
+    """Review #789: only the cache file was cleared, so a project-local
+    `active_host` survived and re-activated a re-added same-name host."""
+    _add(cfg, "box")
+    (tmp_path / ".navig").mkdir()
+    cfg.set_local_config({"active_host": "box", "keep": 1}, tmp_path)
+
+    result = CliRunner().invoke(host_app, ["remove", "box", "--force"])
+
+    assert result.exit_code == 0, result.output
+    local = cfg.get_local_config(tmp_path)
+    assert "active_host" not in local and local.get("keep") == 1
+    _add(cfg, "box")
+    assert cfg.get_active_host() is None, "re-adding the host silently made it active again"
+
+
+def test_removing_clears_legacy_global_and_default_selectors(cfg, tmp_path):
+    _add(cfg, "box")
+    (tmp_path / ".navig").write_text("box:site", encoding="utf-8")
+    cfg.set_global("active_host", "box")
+    cfg.set_global("default_host", "box")
+
+    result = CliRunner().invoke(host_app, ["remove", "box", "--force"])
+
+    assert result.exit_code == 0, result.output
+    assert not (tmp_path / ".navig").exists()
+    assert not cfg.refresh_global_config().get("active_host")
+    assert not cfg.global_config.get("default_host")
+    _add(cfg, "box")
+    assert cfg.get_active_host() is None
+
+
+def test_selectors_naming_another_host_are_left_alone(cfg, tmp_path):
+    _add(cfg, "box")
+    _add(cfg, "other")
+    cfg.set_global("default_host", "other")
+    cfg.set_active_host("other")
+
+    result = CliRunner().invoke(host_app, ["remove", "box", "--force"])
+
+    assert result.exit_code == 0, result.output
+    assert cfg.get_active_host() == "other"
+    assert cfg.global_config.get("default_host") == "other"

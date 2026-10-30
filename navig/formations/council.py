@@ -118,7 +118,7 @@ def _fallback_route(failed_provider: str | None) -> tuple[str | None, str | None
       seam (no override).
     * ``(provider, "provider:model")`` — the default resolution still lands on
       the failed provider (e.g. a connection record whose credential cannot be
-      resolved at dispatch time); use the mode's configured fallback pair — the
+      resolved at dispatch time), or the error named no provider at all; use the mode's configured fallback pair — the
       same route the router itself takes for a truly keyless provider.
     * ``(None, None)`` — routing introspection failed; retry the plain seam and
       report no substitute name.
@@ -129,7 +129,11 @@ def _fallback_route(failed_provider: str | None) -> tuple[str | None, str | None
         from navig.llm.router import get_mode_fallback_spec, resolve_llm
 
         cfg = resolve_llm()
-        if not failed_provider or cfg.provider != failed_provider:
+        # The failed call went through the plain (no-pin) seam, so an error that
+        # names no provider (a bare connection/timeout error) failed on the
+        # DEFAULT route itself — retrying that same route would only repeat it.
+        failed_provider = failed_provider or cfg.provider
+        if cfg.provider != failed_provider:
             return cfg.provider, None
         spec = get_mode_fallback_spec(cfg.mode)
         if spec and spec.split(":", 1)[0] != failed_provider:
@@ -142,6 +146,42 @@ def _fallback_route(failed_provider: str | None) -> tuple[str | None, str | None
         return None, None
 
 
+def _accepts_timeout(fn: Callable[..., Any]) -> bool:
+    """True when *fn* takes a ``timeout`` keyword (directly or through ``**kwargs``)."""
+    import inspect  # noqa: PLC0415
+
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(p.name == "timeout" or p.kind is p.VAR_KEYWORD for p in params)
+
+
+def _ask(
+    prompt: str,
+    *,
+    system_prompt: str,
+    model: str | None = None,
+    timeout: float | None = None,
+) -> str:
+    """Call the AI seam, bounding the call itself by *timeout*.
+
+    The council can only abandon a worker thread, never kill it, so a hung provider
+    call kept its thread alive past the round (piling up across gateway runs and
+    blocking interpreter exit). Passing the per-agent timeout down to the HTTP client
+    makes the worker itself return. ``model`` and ``timeout`` are only passed when
+    set / accepted, so plain ``(prompt, system_prompt)`` seams keep working.
+    """
+    if _ask_ai is None:
+        raise ImportError("navig.ai.ask_ai_with_context not available")
+    kwargs: dict[str, Any] = {"system_prompt": system_prompt}
+    if model:
+        kwargs["model"] = model
+    if timeout is not None and _accepts_timeout(_ask_ai):
+        kwargs["timeout"] = timeout
+    return _ask_ai(prompt, **kwargs)
+
+
 def _call_agent(
     agent: AgentSpec,
     question: str,
@@ -149,6 +189,7 @@ def _call_agent(
     round_num: int,
     other_roles: str = "",
     fallback_warned: set[str] | None = None,
+    timeout: float | None = None,
 ) -> dict[str, Any]:
     """Call AI for a single agent. Returns response dict.
 
@@ -203,10 +244,7 @@ React to specific points. Challenge weak ideas, support strong ones, propose alt
     try:
         if _ask_ai is None:
             raise ImportError("navig.ai.ask_ai_with_context not available")
-        response_text = _ask_ai(
-            prompt,
-            system_prompt=agent.system_prompt,
-        )
+        response_text = _ask(prompt, system_prompt=agent.system_prompt, timeout=timeout)
         if not response_text:
             response_text = "[NO RESPONSE]"
     except Exception as e:
@@ -225,17 +263,12 @@ React to specific points. Challenge weak ideas, support strong ones, propose alt
                     "has no credential" if status == "nokey" else "is unreachable",
                 )
             try:
-                if retry_spec:
-                    response_text = _ask_ai(
-                        prompt,
-                        system_prompt=agent.system_prompt,
-                        model=retry_spec,
-                    )
-                else:
-                    response_text = _ask_ai(
-                        prompt,
-                        system_prompt=agent.system_prompt,
-                    )
+                response_text = _ask(
+                    prompt,
+                    system_prompt=agent.system_prompt,
+                    model=retry_spec,
+                    timeout=timeout,
+                )
                 if not response_text:
                     response_text = "[NO RESPONSE]"
                 provider_fallback = True
@@ -417,6 +450,7 @@ def run_council(
                     round_num,
                     other_str,
                     fallback_warned,
+                    timeout,
                 ): agent.id
                 for agent, other_str in agents_to_call
             }
@@ -602,20 +636,13 @@ As {default_agent.name}, wrap this up. Highlight where the team AGREED and where
         # despite the timeout. Shut down without waiting (a Python thread can't be
         # force-killed) so the timeout is honoured.
         executor = ThreadPoolExecutor(max_workers=1)
-        if model_spec:
-            future = executor.submit(
-                _ask_ai,
-                synthesis_prompt,
-                system_prompt=default_agent.system_prompt,
-                model=model_spec,
-            )
-        else:
-            # Plain seam — no ``model=`` kwarg (backward-compatible fakes).
-            future = executor.submit(
-                _ask_ai,
-                synthesis_prompt,
-                system_prompt=default_agent.system_prompt,
-            )
+        future = executor.submit(
+            _ask,
+            synthesis_prompt,
+            system_prompt=default_agent.system_prompt,
+            model=model_spec,
+            timeout=timeout,
+        )
         try:
             return future.result(timeout=timeout) or "[No synthesis generated]"
         finally:

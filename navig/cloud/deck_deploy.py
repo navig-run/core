@@ -65,13 +65,16 @@ _ASSET_CONFIG_FILES = {"/_headers"}
 # the `_headers` rules on the way out. The deck is a static export, so all
 # routing is handled by the assets layer.
 _ASSETS_WORKER_TEMPLATE = """const HEADER_RULES = __RULES__;
+// Compiled once at module init: the rule set is fixed for a deployment, so a
+// request must not pay for building every RegExp again.
+const COMPILED_RULES = HEADER_RULES.map(([re, headers]) => [new RegExp(re), headers]);
 
 // Cloudflare's `_headers` matching: every rule whose pattern matches applies, in
 // file order, so a later rule overrides an earlier one for the same header.
 function headersFor(pathname) {
   const out = {};
-  for (const [re, headers] of HEADER_RULES) {
-    if (new RegExp(re).test(pathname)) Object.assign(out, headers);
+  for (const [re, headers] of COMPILED_RULES) {
+    if (re.test(pathname)) Object.assign(out, headers);
   }
   return out;
 }

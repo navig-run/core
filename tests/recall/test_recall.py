@@ -701,3 +701,73 @@ def test_tombstones_are_not_links_anywhere_they_are_counted(bank) -> None:
     counts = ing.reindex()
     assert counts["links"] >= 0
     assert ing.store.stats()["links"] == after
+
+
+# --- lock resilience (crash-20261016-211129: the daemon's recall_ingest monitor held
+# index.db while the backfill ran; one BEGIN IMMEDIATE OperationalError killed a 2.5 h
+# approved run). A same-process thread never reaches this — the in-process lock serialises
+# it — so the test uses a FOREIGN connection, which is what the monitor actually is.
+
+
+def test_another_process_holding_the_index_is_retried_not_crashed(tmp_path: Path) -> None:
+    import sqlite3
+    import threading
+    import time
+
+    db = tmp_path / "index.db"
+    store = RecallStore(db)
+    store.PRAGMAS = {"busy_timeout": 100}  # fail each attempt fast; the RETRY must save it
+
+    # The holder's connection must be created AND used in the same thread: sqlite3's
+    # check_same_thread guard makes a cross-thread COMMIT raise ProgrammingError, which
+    # silently leaves the lock held forever (that flaw made the first version of this test
+    # look like the fix failing when the fix was right).
+    holding = threading.Event()
+    released = threading.Event()
+    holder_errors: list[str] = []
+
+    def _hold() -> None:
+        conn = sqlite3.connect(str(db), timeout=0.1)
+        conn.isolation_level = None
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            holding.set()
+            time.sleep(1.5)
+            conn.execute("COMMIT")
+        except Exception as exc:  # noqa: BLE001 — reported through holder_errors, not swallowed
+            holder_errors.append(f"{type(exc).__name__}: {exc}")
+        finally:
+            conn.close()
+            released.set()
+
+    th = threading.Thread(target=_hold, daemon=True)
+    th.start()
+    assert holding.wait(10), "the holder never acquired the write lock"
+    try:
+        started = time.monotonic()
+        assert store.add_review("unit", "rk-lock", "", {"why": "contention"}) is True  # _write path
+        assert store._tx(lambda conn: 42) == 42  # _tx path — the frame that crashed
+        elapsed = time.monotonic() - started
+    finally:
+        assert released.wait(15), "the holder never released"
+        th.join(timeout=10)
+    assert not holder_errors, f"holder failed: {holder_errors}"
+    assert elapsed >= 1.0, f"writes did not wait for the foreign lock ({elapsed:.2f}s)"
+    assert [r["kind"] for r in store.list_review()] == ["unit"]
+    store.close()
+
+
+def test_a_non_lock_error_is_not_retried(tmp_path: Path) -> None:
+    import sqlite3
+
+    store = RecallStore(tmp_path / "index.db")
+    calls = {"n": 0}
+
+    def _boom() -> None:
+        calls["n"] += 1
+        raise sqlite3.OperationalError("no such table: not_a_table")
+
+    with pytest.raises(sqlite3.OperationalError):
+        store._retry_locked(_boom)
+    assert calls["n"] == 1, "a real SQL error must not be retried as if it were contention"
+    store.close()

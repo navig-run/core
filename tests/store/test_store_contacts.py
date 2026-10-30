@@ -65,6 +65,13 @@ class TestNormalizePhone:
     def test_x_extension_is_dropped(self):
         assert normalize_phone("+1 555 1234 x99") == "+15551234"
 
+    def test_extension_touching_the_last_digit_is_dropped(self):
+        """`\\b` never matches between a digit and a letter, so a marker written
+        flush against the number welded the extension onto it."""
+        assert normalize_phone("+1-555-123-4567ext.99") == "+15551234567"
+        assert normalize_phone("+1-555-123-4567x99") == "+15551234567"
+        assert normalize_phone("+1-555-123-4567EXT99") == "+15551234567"
+
     def test_dtmf_pause_is_dropped(self):
         assert normalize_phone("+33612345678,123") == "+33612345678"
 
@@ -197,6 +204,65 @@ class TestContactStoreAdd:
         assert len(sms) == 1
         assert sms[0].address == "+15551234567"
 
+    def test_two_spellings_of_one_number_in_add_contact_store_one_route(self, store):
+        # A plain bulk INSERT hit UNIQUE after the contact row committed, which
+        # raised and left the contact with no routes at all.
+        c = store.add_contact(
+            "bob", "Bob", routes=["sms:+1 (555) 123-4567", "sms:+15551234567"]
+        )
+        assert [(r.network, r.address) for r in c.routes] == [("sms", "+15551234567")]
+
+
+class TestLegacyPhoneRouteMigration:
+    """A v2 book can hold phone routes stored before addresses were canonicalised."""
+
+    def _legacy_book(self, tmp_path):
+        path = tmp_path / "contacts.db"
+        s = ContactStore(db_path=path)
+        s.add_contact("frank", "Frank")
+        s.add_contact("gina", "Gina")
+        s.close()
+        conn = sqlite3.connect(path)
+        frank, gina = (conn.execute("SELECT id FROM contacts WHERE alias = ?", (a,))
+                       .fetchone()[0] for a in ("frank", "gina"))
+        conn.executemany(
+            "INSERT INTO contact_routes (contact_id, network, address, priority, meta_json) "
+            "VALUES (?, ?, ?, ?, '{}')",
+            [(frank, "sms", "+1 (555) 123-4567", 0),
+             (gina, "sms", "+15550001111", 0),
+             (gina, "whatsapp", "+1 555 000 1111", 1),
+             (gina, "sms", "+1 555 000-1111", 2),
+             (gina, "discord", "12 34", 3)],
+        )
+        conn.execute("UPDATE schema_version SET version = 2")
+        conn.commit()
+        conn.close()
+        return path
+
+    def test_open_canonicalises_and_dedups_legacy_routes(self, tmp_path):
+        path = self._legacy_book(tmp_path)
+        s = ContactStore(db_path=path)
+        gina = {(r.network, r.address, r.priority) for r in s.resolve_alias("gina").routes}
+        assert gina == {("sms", "+15550001111", 0), ("whatsapp", "+15550001111", 1),
+                        ("discord", "12 34", 3)}
+        # The legacy row is removable by the string it was written with.
+        assert s.remove_route("frank", "sms:+1 (555) 123-4567") is True
+        assert s.resolve_alias("frank").routes == []
+        s.close()
+        conn = sqlite3.connect(path)
+        assert conn.execute("SELECT version FROM schema_version").fetchone()[0] \
+            == ContactStore.SCHEMA_VERSION
+        conn.close()
+
+    def test_the_migration_is_idempotent(self, tmp_path):
+        from navig.store.contacts import canonicalize_phone_routes
+
+        path = self._legacy_book(tmp_path)
+        ContactStore(db_path=path).close()
+        conn = sqlite3.connect(path)
+        assert canonicalize_phone_routes(conn) == 0
+        conn.close()
+
 
 class TestContactStoreResolve:
     def test_resolve_existing(self, store):
@@ -310,6 +376,15 @@ class TestRouteIdentifiers:
         assert conn.execute(
             "SELECT kind, value_norm FROM contact_identifiers").fetchall() == [
                 ("telegram", "alice_tg")]
+
+    def test_a_telegram_handle_with_or_without_at_is_one_identifier(self, tmp_path):
+        """"@Alice" and "alice" are the same handle, so one merge key."""
+        store = self._store(tmp_path)
+        store.add_contact(alias="alice", routes=["telegram:@Alice", "telegram:alice"])
+        conn = sqlite3.connect(tmp_path / "contacts.db")
+        assert conn.execute(
+            "SELECT kind, value_norm FROM contact_identifiers").fetchall() == [
+                ("telegram", "alice")]
 
     def test_transports_sharing_one_number_make_one_identifier(self, tmp_path):
         """sms, whatsapp, signal and imessage are all the same phone number."""

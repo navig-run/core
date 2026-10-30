@@ -245,14 +245,14 @@ class TestFetchStats:
 
     def test_exits_on_http_error(self):
         """_fetch_stats calls typer.Exit(1) on HTTP/network error."""
-        import click
         import requests as _req
+        import typer
 
         def fake_get(url, timeout):
             raise _req.exceptions.ConnectionError("refused")
 
         with patch("requests.get", fake_get):
-            with pytest.raises(click.exceptions.Exit):
+            with pytest.raises(typer.Exit):
                 _fetch_stats("http://unreachable.invalid")
 
     def test_percentage_calculation_logic(self):

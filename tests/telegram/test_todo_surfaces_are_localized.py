@@ -45,6 +45,10 @@ ALLOWED = frozenset(
 )
 
 _WORD = re.compile(r"[A-Za-z]+")
+#: Tag names are markup, not prose. The card now renders <pre>, <details>, <summary>,
+#: <table> and <blockquote>, so scanning them would turn this guard into a list of
+#: HTML element names instead of a check on what the operator reads.
+_TAG = re.compile(r"<[^>]+>")
 
 
 @pytest.fixture
@@ -85,7 +89,8 @@ def russian(monkeypatch) -> Iterator[None]:
 
 
 def english_words(text: str) -> list[str]:
-    return sorted({w for w in _WORD.findall(text) if w.lower() not in ALLOWED})
+    """Latin words in what the operator SEES, tags stripped first."""
+    return sorted({w for w in _WORD.findall(_TAG.sub(" ", text)) if w.lower() not in ALLOWED})
 
 
 def surfaces(store: BoardStore) -> dict[str, str]:

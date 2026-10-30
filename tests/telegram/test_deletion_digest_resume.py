@@ -71,9 +71,10 @@ async def _delete(ch, chat_id, mid):
 
 
 def _batch_key():
-    """The claim key production uses: the pending batch's newest deleted_at — the
-    one thing two processes see identically."""
-    return _store().count_deleted_since(d._watermark())["latest"]
+    """The claim key production uses: the stored watermark, or with none stored the
+    pending batch's newest deleted_at — what two processes see identically."""
+    since = d._watermark()
+    return d._claim_key(since, _store().count_deleted_since(since)["latest"])
 
 
 def _cards(ch):
@@ -237,10 +238,217 @@ async def test_two_processes_agree_on_the_key_even_with_no_watermark_stored(env)
     the two processes DIFFERENT keys and both sent. Keyed on the batch, two
     independent reads — as two processes would make — must agree."""
     await _delete(_ch(), 555, 1)
-    assert d.CFG_WATERMARK not in env.d            # the first-run path
+    # Arming now seeds the watermark; drop it to stay on the first-run path (a
+    # seed that could not be persisted, or rows recorded before an upgrade).
+    env.d.pop(d.CFG_WATERMARK, None)
     first_since, second_since = d._watermark(), d._watermark()
     first = _store().count_deleted_since(first_since)["latest"]
     second = _store().count_deleted_since(second_since)["latest"]
     assert first and first == second
     assert d._claim_window(first) is True
     assert d._claim_window(second) is False        # the sibling stands down
+
+
+# ── the first window starts when the first deletion arms it ──────────────────
+
+
+async def test_a_first_isolated_deletion_is_reported_when_its_timer_fires(env, monkeypatch):
+    """With no watermark stored, the window start used to be derived at FLUSH time
+    — a full window after the deletion — so the deletion that armed the timer fell
+    before its own window and the card was never sent."""
+    from datetime import timedelta
+
+    monkeypatch.setattr(d, "_flush_task", None)
+    ch = _ch()
+    await _delete(ch, 555, 1)
+    assert env.d.get(d.CFG_WATERMARK), "arming must persist the window start"
+    if d._flush_task is not None:
+        d._flush_task.cancel()
+
+    fired = d._now() + timedelta(seconds=d.window_sec() + 1)
+    monkeypatch.setattr(d, "_now", lambda: fired)
+    res = await d.flush_digest(ch)
+    assert res["sent"] is True and res["count"] == 1
+
+
+# ── the window edge and the row stamps must use the same precision ───────────
+
+
+async def test_a_deletion_in_the_boundary_millisecond_is_still_reported(env, monkeypatch):
+    """The edge was millisecond precision, the rows microsecond precision.
+
+    Both sides are compared as strings (`deleted_at >= since`), so an edge of
+    `…:00.123Z` sorts AFTER every row stamped `…:00.123456Z`. A deletion recorded in the
+    boundary millisecond was thus outside the window that ended there AND behind the one
+    that started there: never counted, never reported. Watermarks written by the old
+    build end in `.123Z`, which is why reading one pads it rather than ignoring it.
+    """
+    from datetime import timedelta
+
+    ch = _ch()
+    monkeypatch.setattr(d, "_flush_task", None)
+    edge_dt = (d._now() - timedelta(minutes=1)).replace(microsecond=123456)
+    edge = edge_dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{edge_dt.microsecond // 1000:03d}Z"
+    stamp = edge_dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    assert stamp < edge, "the fixture must reproduce the string-comparison inversion"
+
+    store = _store()
+    store.upsert_message(555, 7, sender_id=777, sender_name="operator", date="1",
+                         text="hi", kind="business", raw={"business": True})
+    store.mark_message_deleted(555, 7)
+    # Stamp the row inside the boundary millisecond the watermark names.
+    store._write(
+        "UPDATE tg_messages SET deleted_at = ? WHERE chat_id = ? AND message_id = ?",
+        (stamp, 555, 7),
+    )
+    env.d[d.CFG_WATERMARK] = edge
+
+    res = await d.flush_digest(ch)
+    assert res["sent"] is True, res
+    assert res["count"] == 1, res
+
+
+# ── a deletion that lands while the card is sending is not skipped ───────────
+
+
+async def test_a_deletion_recorded_during_the_send_reaches_the_next_card(env, monkeypatch):
+    """The watermark used to advance to the time the send FINISHED, past a deletion
+    recorded while the card was in flight — one the card never counted."""
+    monkeypatch.setattr(d, "_flush_task", None)
+    ch = _ch()
+    await _delete(ch, 555, 1)
+    if d._flush_task is not None:
+        d._flush_task.cancel()
+    real_send = d._send
+
+    async def send_while_another_lands(channel, text, **kw):
+        _store().upsert_message(555, 2, sender_id=555, sender_name="sam", date="1",
+                                text="late", kind="business", raw={"business": True})
+        _store().mark_message_deleted(555, 2)
+        return await real_send(channel, text, **kw)
+
+    monkeypatch.setattr(d, "_send", send_while_another_lands)
+    first = await d.flush_digest(ch)
+    assert first["sent"] is True and first["count"] == 1
+
+    monkeypatch.setattr(d, "_send", real_send)
+    second = await d.flush_digest(ch)
+    assert second["sent"] is True and second["count"] == 1
+
+
+async def test_a_deletion_recorded_during_the_send_arms_its_own_timer(env, monkeypatch):
+    """That deletion's own arm_digest found the flush task still running and
+    scheduled nothing, so it waited for the next deletion or a restart."""
+    import asyncio
+
+    monkeypatch.setattr(d, "_flush_task", None)
+    ch = _ch()
+    await _delete(ch, 555, 1)
+    if d._flush_task is not None:
+        d._flush_task.cancel()
+    monkeypatch.setattr(d, "_flush_task", None)
+    real_send = d._send
+
+    async def send_while_another_lands(channel, text, **kw):
+        _store().upsert_message(555, 2, sender_id=555, sender_name="sam", date="1",
+                                text="late", kind="business", raw={"business": True})
+        _store().mark_message_deleted(555, 2)
+        return await real_send(channel, text, **kw)
+
+    monkeypatch.setattr(d, "_send", send_while_another_lands)
+    d.arm_digest(ch, delay=0)
+    first = d._flush_task
+    await first
+    follow_up = d._flush_task
+    assert follow_up is not None and follow_up is not first and not follow_up.done()
+    follow_up.cancel()
+    await asyncio.gather(follow_up, return_exceptions=True)
+
+
+# ── quiet hours hold the digest, they do not drop it ─────────────────────────
+
+
+async def test_a_digest_held_by_quiet_hours_is_retried_and_sent(env, monkeypatch):
+    """The quiet-hours return preserved the watermark but ended the timer, so the
+    held digest waited for another deletion, a restart or a manual flush."""
+    import asyncio
+
+    monkeypatch.setattr(d, "_flush_task", None)
+    ch = _ch()
+    await _delete(ch, 555, 1)
+    if d._flush_task is not None:
+        d._flush_task.cancel()
+    monkeypatch.setattr(d, "_flush_task", None)
+    monkeypatch.setattr(d, "QUIET_RECHECK_SEC", 0)
+    monkeypatch.setattr(d, "should_notify", lambda: (False, "quiet hours"))
+    d.arm_digest(ch, delay=0)
+    first = d._flush_task
+    await first
+    retry = d._flush_task
+    assert retry is not None and retry is not first, "quiet hours must re-arm the flush"
+    assert _cards(ch) == []
+
+    monkeypatch.setattr(d, "should_notify", lambda: (True, ""))
+    await retry
+    assert len(_cards(ch)) == 1
+    if d._flush_task is not None and not d._flush_task.done():
+        d._flush_task.cancel()
+        await asyncio.gather(d._flush_task, return_exceptions=True)
+
+
+def test_two_processes_taking_over_one_stale_claim_send_one_card(env, monkeypatch):
+    """Both processes read the same expired claim; the read-then-replace takeover
+    then let BOTH return True. The sibling's whole takeover is run between this
+    caller's read and its takeover — the interleaving that doubled the card."""
+    from pathlib import Path
+
+    since = d._watermark()
+    assert d._claim_window(since, now=1000.0) is True
+    path = d._claim_path(since)
+    later = 1000.0 + d.CLAIM_TTL_SEC + 1
+    real_read = Path.read_text
+    results: list[bool] = []
+    interleaved: list[bool] = []
+
+    def read_then_sibling_wins(self, *a, **kw):
+        text = real_read(self, *a, **kw)
+        if self == path and not interleaved:
+            interleaved.append(True)
+            results.append(d._claim_window(since, now=later))   # the sibling
+        return text
+
+    monkeypatch.setattr(Path, "read_text", read_then_sibling_wins)
+    results.append(d._claim_window(since, now=later))
+    assert results == [True, False]
+    assert path.exists() and not list(path.parent.glob("*.stale"))
+
+
+async def test_a_deletion_between_the_two_counts_still_yields_one_card(env, monkeypatch):
+    """Keyed on the newest row each process counted, a deletion recorded between the
+    sibling's count and ours gave the two different keys, and both sent."""
+    import asyncio
+
+    monkeypatch.setattr(d, "_flush_task", None)
+    first, second = _ch(), _ch()
+    await _delete(first, 555, 1)                  # arms, which seeds the watermark
+    if d._flush_task is not None:
+        d._flush_task.cancel()
+    assert env.d.get(d.CFG_WATERMARK)
+    real_send = d._send
+    sibling: list[dict] = []
+
+    async def sibling_flushes_after_a_new_deletion(channel, text, **kw):
+        if not sibling:
+            _store().upsert_message(555, 2, sender_id=555, sender_name="sam", date="1",
+                                    text="late", kind="business", raw={"business": True})
+            _store().mark_message_deleted(555, 2)
+            # The sibling process has its own lock.
+            monkeypatch.setattr(d, "_flush_lock", asyncio.Lock())
+            sibling.append(await d.flush_digest(second))
+        return await real_send(channel, text, **kw)
+
+    monkeypatch.setattr(d, "_send", sibling_flushes_after_a_new_deletion)
+    res = await d.flush_digest(first)
+    assert res["sent"] is True
+    assert sibling[0]["reason"] == "claimed_by_sibling"
+    assert _cards(second) == []

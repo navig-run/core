@@ -209,6 +209,25 @@ def test_a_new_plan_is_written_where_the_space_already_keeps_them(spaces_root: P
     assert plans_dir(empty) == empty / ".navig" / "plans"
 
 
+def test_an_unreadable_plan_folder_does_not_stop_plans_dir(
+    spaces_root: Path, monkeypatch
+) -> None:
+    """`Path.is_file` re-raises EACCES; `plan_file` already treated that as best-effort
+    but `plans_dir` let it escape, so one locked folder blocked writing any plan."""
+    space = spaces_root / "locked"
+    (space / "plans").mkdir(parents=True)
+    (space / "plans" / "CURRENT_PHASE.md").write_text("x", encoding="utf-8")
+    real_is_file = Path.is_file
+
+    def _is_file(self: Path) -> bool:
+        if self.parent == space / ".navig" / "plans":
+            raise PermissionError(13, "denied", str(self))
+        return real_is_file(self)
+
+    monkeypatch.setattr(Path, "is_file", _is_file)
+    assert plans_dir(space) == space / "plans"
+
+
 def test_the_search_order_is_not_empty() -> None:
     """Anti-vacuity: every assertion above passes trivially against an empty list."""
     assert ".navig/plans" in PLAN_DIRS
@@ -261,3 +280,54 @@ def test_kickoff_reads_the_SPACE_not_the_working_directory(
     assert "completely different folder" not in joined, (
         "the kickoff read the working directory instead of the space"
     )
+
+
+def test_a_project_space_beats_a_global_one_that_shares_its_manifest_id(
+    spaces_root: Path, tmp_path: Path
+) -> None:
+    """Folder names differ from the shared id, so both exact-path checks miss and the
+    registry fast path used to answer with the global row — discovery registers
+    globals first — while discovery itself lets the project space override it."""
+    make_space(spaces_root, "global-folder", space_id="shared")
+    project = tmp_path / "proj"
+    local = make_space(project / ".navig" / "spaces", "project-folder", space_id="shared")
+
+    assert discover_space_paths(cwd=project)["shared"].path == local  # registers both
+
+    cfg = resolve_space("shared", cwd=project)
+    assert cfg.path == local, f"resolved to {cfg.path}, the global space"
+    assert cfg.scope == "project"
+    # Outside the project the global space still answers.
+    assert resolve_space("shared", cwd=tmp_path).path == spaces_root / "global-folder"
+
+
+def test_a_registered_external_space_keeps_its_scope(spaces_root: Path, tmp_path: Path) -> None:
+    """The registry fast path always answered scope="global", so `plans next --space`
+    labelled an external space global although discovery reports it external."""
+    outside = make_space(tmp_path / "elsewhere", "folder-name", space_id="ext-id")
+    registry.register(outside, id="ext-id", name="ext-id", source="external")
+
+    cfg = resolve_space("ext-id", cwd=tmp_path)
+    assert cfg.path == outside
+    assert cfg.scope == "external"
+    assert cfg.scope == discover_space_paths(cwd=tmp_path)["ext-id"].scope
+
+
+def test_a_root_registry_row_still_resolves_as_global(spaces_root: Path, tmp_path: Path) -> None:
+    real = make_space(spaces_root, "dev-android-space", space_id="android")
+    registry.register(real, id="android", name="android", source="root")
+    assert resolve_space("android", cwd=tmp_path).scope == "global"
+
+
+def test_a_file_named_like_the_space_is_not_resolved_as_one(spaces_root: Path, tmp_path: Path) -> None:
+    """Both exact-path checks used `.exists()`, so a regular FILE named like the space
+    short-circuited resolution and hid the real space behind it."""
+    (spaces_root / "android").write_text("not a space\n", encoding="utf-8")
+    real = make_space(spaces_root, "dev-android-space", space_id="android")
+    assert resolve_space("android", cwd=tmp_path).path == real
+
+    project = tmp_path / "proj"
+    (project / ".navig" / "spaces").mkdir(parents=True)
+    (project / ".navig" / "spaces" / "android").write_text("x\n", encoding="utf-8")
+    cfg = resolve_space("android", cwd=project)
+    assert cfg.path != project / ".navig" / "spaces" / "android"

@@ -115,3 +115,29 @@ def test_corrupt_settings_file_is_quarantined_not_wiped(monkeypatch, tmp_path, c
 
     payload = _payload(capsys.readouterr().out)
     assert payload["vscode_settings_written"] is True
+
+
+def test_jsonc_settings_with_comments_are_left_intact(monkeypatch, tmp_path, capsys):
+    """VS Code settings are JSONC: a file with comments must not be quarantined and
+    replaced by a settings.json holding only our schema block."""
+    monkeypatch.chdir(tmp_path)
+    vscode = tmp_path / ".vscode"
+    vscode.mkdir()
+    original = (
+        "{\n"
+        "  // my font\n"
+        '  "editor.fontSize": 14,\n'
+        '  /* keep */ "remote.url": "https://example.test/a//b",\n'
+        '  "my.custom.setting": "keep-me",\n'
+        "}\n"
+    )
+    (vscode / "settings.json").write_text(original, encoding="utf-8")
+
+    with pytest.raises(typer.Exit) as exc:
+        install_schemas(scope="project", write_vscode_settings=True, options={"json": True})
+    assert exc.value.exit_code == 0
+
+    assert (vscode / "settings.json").read_text(encoding="utf-8") == original
+    assert not (vscode / "settings.json.corrupt").exists()
+    payload = _payload(capsys.readouterr().out)
+    assert payload["vscode_settings_written"] is False

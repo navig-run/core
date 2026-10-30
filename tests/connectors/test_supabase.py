@@ -135,6 +135,26 @@ def test_act_insert_reads_op_from_params(monkeypatch):
     assert seen["method"] == "POST" and seen["url"].endswith("/rest/v1/notes")
 
 
+def test_act_without_op_dispatches_the_standard_action_type(monkeypatch):
+    """The Deck route and MCP tool send action_type=create/update/delete and no params.op."""
+    seen: list[str] = []
+
+    def fake_request(url, headers, method="GET", body=None, timeout=15):
+        seen.append(method)
+        return (201 if method == "POST" else 200), [{"id": 1}]
+
+    monkeypatch.setattr("navig.connectors.supabase.connector._sb_request", fake_request)
+    c = _connected()
+    for at, params in (
+        (ActionType.CREATE, {"table": "notes", "rows": [{"title": "x"}]}),
+        (ActionType.UPDATE, {"table": "notes", "filters": {"id": "eq.1"}, "data": {"t": 1}}),
+        (ActionType.DELETE, {"table": "notes", "filters": {"id": "eq.1"}}),
+    ):
+        res = asyncio.run(c.act(Action(action_type=at, params=params)))
+        assert res.success is True, (at, res.error)
+    assert seen == ["POST", "PATCH", "DELETE"]
+
+
 def test_act_unknown_op_fails_cleanly():
     c = _connected()
     res = asyncio.run(c.act(Action(action_type=ActionType.SEND, params={"op": "nope"})))
@@ -158,3 +178,36 @@ def test_health_check_not_connected_returns_valid_status():
     c = SupabaseConnector()  # never connected → the early-return branch
     hs = asyncio.run(c.health_check())
     assert hs.ok is False  # constructs a valid HealthStatus (was HealthStatus(healthy=…) → TypeError)
+
+
+def _patch_request_with_range(monkeypatch, rows, content_range):
+    def fake_request(url, headers, method="GET", body=None, timeout=15, response_headers=None):
+        if response_headers is not None and content_range is not None:
+            response_headers["content-range"] = content_range
+        return 200, rows
+
+    monkeypatch.setattr("navig.connectors.supabase.connector._sb_request", fake_request)
+
+
+def test_fetch_flags_truncation_from_a_server_row_cap(monkeypatch):
+    # A project max-rows cap (100) below the requested limit (1000) returns a short
+    # page; Content-Range's total shows the read is partial.
+    _patch_request_with_range(monkeypatch, [{"id": i} for i in range(100)], "0-99/500")
+    res = asyncio.run(_connected().fetch("t", limit=1000))
+    assert res is not None
+    assert res.metadata["truncated"] is True
+    assert "of 500" in res.preview
+
+
+def test_fetch_complete_when_content_range_total_is_reached(monkeypatch):
+    _patch_request_with_range(monkeypatch, [{"id": i} for i in range(5)], "0-4/5")
+    res = asyncio.run(_connected().fetch("t", limit=5))
+    assert res is not None
+    assert res.metadata["truncated"] is False
+
+
+def test_fetch_falls_back_to_limit_when_total_unknown(monkeypatch):
+    _patch_request_with_range(monkeypatch, [{"id": i} for i in range(5)], "0-4/*")
+    res = asyncio.run(_connected().fetch("t", limit=5))
+    assert res is not None
+    assert res.metadata["truncated"] is True

@@ -37,13 +37,21 @@ def ours(monkeypatch):
     return OURS
 
 
-def _run(monkeypatch, holders, dirs) -> list[int]:
-    """Drive _free_port with an injected process table; returns the PIDs it killed."""
+GATEWAY_CMD = r"C:\Python313\pythonw.exe -m navig gateway start --port 8789"
+
+
+def _run(monkeypatch, holders, dirs, cmdlines=None) -> list[int]:
+    """Drive _free_port with an injected process table; returns the PIDs it killed.
+
+    Every holder is a NAVIG gateway unless *cmdlines* says otherwise.
+    """
     killed: list[int] = []
+    cmdlines = cmdlines or {}
     returned = gateway._free_port(
         8789,
         holders_reader=lambda _port: holders,
         config_dir_reader=lambda pid: dirs.get(pid),
+        cmdline_reader=lambda pid: cmdlines.get(pid, GATEWAY_CMD),
         killer=killed.append,
     )
     assert returned == killed, "the reported kills must match what was actually killed"
@@ -103,7 +111,40 @@ def test_we_kill_nothing_if_we_cannot_identify_OURSELVES(monkeypatch):
         8789,
         holders_reader=lambda _p: [OUR_STALE],
         config_dir_reader=lambda _pid: OURS,
+        cmdline_reader=lambda _pid: GATEWAY_CMD,
         killer=killed.append,
     )
 
     assert killed == []
+
+
+def test_a_non_navig_holder_is_NOT_killed_even_when_its_dir_reads_as_ours(ours, monkeypatch):
+    """config_dir_of() reports OUR default dir for any process without NAVIG_CONFIG_DIR,
+    so an unrelated app on the port looked like our own stale gateway — and was killed."""
+    killed = _run(
+        monkeypatch,
+        [UNRELATED_APP],
+        {UNRELATED_APP: OURS},
+        cmdlines={UNRELATED_APP: r"C:\Program Files\Other\server.exe --listen 8789"},
+    )
+
+    assert killed == []
+
+
+def test_an_unreadable_cmdline_is_NOT_killed(ours, monkeypatch):
+    killed = _run(monkeypatch, [UNRELATED_APP], {UNRELATED_APP: OURS}, cmdlines={UNRELATED_APP: None})
+
+    assert killed == []
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "navig.exe gateway start",
+        "pythonw.exe -m navig.daemon.telegram_worker",
+        "python -m navig.daemon.entry",
+    ],
+)
+def test_our_own_navig_service_processes_are_still_recognised(ours, monkeypatch, cmd):
+    """Our stale worker holding the gateway port is still reaped (GATEWAY_PATTERNS relies on it)."""
+    assert _run(monkeypatch, [OUR_STALE], {OUR_STALE: OURS}, cmdlines={OUR_STALE: cmd}) == [OUR_STALE]

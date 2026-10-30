@@ -298,8 +298,13 @@ class TestInboxRouterAgentHeuristic:
         assert plan["space_source"] == "frontmatter"
         assert "space: finance" in plan["transformed_content"]
 
-    def test_default_space_is_default_when_unattributed(self, tmp_path):
+    def test_default_space_is_default_when_unattributed(self, tmp_path, monkeypatch):
         from navig.agents.inbox_router import InboxRouterAgent
+
+        # `get_default_space()` reads the host's spaces config, which answers "myspace"
+        # on this machine (measured in the whole-suite run of 2026-10-30). The subject
+        # here is an unattributed note, not this host's default.
+        monkeypatch.setattr("navig.agents.inbox_router.get_default_space", lambda: "default")
 
         inbox = tmp_path / ".navig" / "plans" / "inbox"
         inbox.mkdir(parents=True)

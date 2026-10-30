@@ -279,3 +279,81 @@ class TestEndToEndLedgerHonesty:
             f"a genuinely-failed command recorded as {last['status']!r} — the ledger is lying"
         )
         assert last["exit_code"] == 2
+
+
+# ---------------------------------------------------------------------------
+# A cancelled prompt: Typer turns click.Abort into sys.exit(1)
+# ---------------------------------------------------------------------------
+
+
+def _exit_from_typer(body) -> SystemExit:
+    """Run a one-command Typer app in standalone mode (as navig.main does)."""
+    import typer
+
+    app = typer.Typer()
+
+    @app.command()
+    def go() -> None:
+        body()
+
+    @app.command()
+    def other() -> None:  # a second command keeps `go` a real subcommand
+        pass
+
+    with pytest.raises(SystemExit) as info:
+        app(args=["go"])
+    return info.value
+
+
+class TestAbortIsACancel:
+    def test_ctrl_c_at_a_prompt_is_cancelled(self):
+        import typer
+
+        from navig.main import _ledger_exit_code
+
+        def body():
+            try:
+                raise KeyboardInterrupt
+            except KeyboardInterrupt:
+                raise typer.Abort() from None   # what click.prompt / confirm do
+
+        exc = _exit_from_typer(body)
+        assert exc.code == 1                       # the process still exits 1
+        assert mw._status_for_exit_code(_ledger_exit_code(exc)) is OperationStatus.CANCELLED
+
+    def test_declined_confirm_is_cancelled(self, monkeypatch):
+        import io
+
+        import typer
+
+        from navig.main import _ledger_exit_code
+
+        monkeypatch.setattr("sys.stdin", io.StringIO("n\n"))
+        exc = _exit_from_typer(lambda: typer.confirm("Proceed?", abort=True))
+        assert exc.code == 1
+        assert mw._status_for_exit_code(_ledger_exit_code(exc)) is OperationStatus.CANCELLED
+
+    def test_eof_at_a_prompt_stays_failed(self):
+        import typer
+
+        from navig.main import _ledger_exit_code
+
+        def body():
+            try:
+                raise EOFError
+            except EOFError:
+                raise typer.Abort() from None
+
+        exc = _exit_from_typer(body)
+        assert mw._status_for_exit_code(_ledger_exit_code(exc)) is OperationStatus.FAILED
+
+    def test_plain_failure_is_untouched(self):
+        import typer
+
+        from navig.main import _ledger_exit_code
+
+        def body():
+            raise typer.Exit(1)
+
+        exc = _exit_from_typer(body)
+        assert _ledger_exit_code(exc) == 1

@@ -153,3 +153,38 @@ def test_a_failed_delete_is_reported_not_swallowed(usage, monkeypatch, tmp_path)
     assert res["ok"] is False
     assert "file in use" in res["errors"][0]
     assert res["freed_bytes"] == 0
+
+
+def test_the_orphan_prune_hint_quotes_a_name_with_spaces(usage, monkeypatch, tmp_path):
+    """`profile prune old client` is two names to Typer; the printed hint must be runnable."""
+    import shlex
+    import sys
+
+    from navig_browser.commands import cdp as cdp_cmd
+
+    d = _mkprofile(tmp_path, "old client")
+    usage["orphans"] = [{"name": "old client", "path": str(d), "bytes": 2048, "mtime": 0}]
+    lines: list[str] = []
+    monkeypatch.setattr(cdp_cmd.ch, "dim", lambda msg, *a, **k: lines.append(str(msg)))
+    monkeypatch.setattr(cdp_cmd.ch.console, "print", lambda *a, **k: None)
+
+    cdp_cmd.profile_usage_cmd(json_out=False)
+
+    hint = next(line for line in lines if "orphaned dir" in line)
+    expected = '"old client"' if sys.platform == "win32" else shlex.quote("old client")
+    assert f"profile prune {expected}" in hint, hint
+
+
+@pytest.mark.parametrize("name", ["leftover", "a.b-c_1"])
+def test_a_plain_orphan_name_is_printed_bare(name):
+    from navig_browser.commands import cdp as cdp_cmd
+
+    assert cdp_cmd._shell_arg(name) == name
+
+
+def test_a_powershell_expanding_name_gets_single_quotes_on_windows(monkeypatch):
+    from navig_browser.commands import cdp as cdp_cmd
+
+    monkeypatch.setattr("sys.platform", "win32")
+    assert cdp_cmd._shell_arg("a $b") == "'a $b'"
+    assert cdp_cmd._shell_arg("it's $x") == "'it''s $x'"

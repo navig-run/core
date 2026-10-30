@@ -128,3 +128,38 @@ def test_a_disabled_backup_is_unchanged_in_both_modes(tmp_path: Path):
 
         assert result.success is True
         assert "backup.enabled=false" in result.message
+
+
+def test_deploy_status_hides_the_planned_snapshot_of_a_dry_run(monkeypatch, tmp_path: Path):
+    """History written by an older dry run still carries the planned snapshot path;
+    `deploy status` must not present it as an existing snapshot."""
+    import io
+
+    from rich.console import Console
+
+    import navig.commands.deploy as deploy_cmd
+    import navig.config
+    import navig.deploy.history
+
+    entry = {
+        "app": "testapp", "host": "prod", "started_at": "2026-10-01T10:00:00",
+        "elapsed_seconds": 1.0, "success": True, "rolled_back": False, "dry_run": True,
+        "snapshot": {"path": "/var/backups/testapp/never-made", "created_at": "x"},
+        "git_ref": None, "error": None,
+    }
+    fake_history = MagicMock()
+    fake_history.return_value.read.return_value = [entry]
+    monkeypatch.setattr(navig.deploy.history, "DeployHistory", fake_history)
+    monkeypatch.setattr(navig.config, "get_config_manager", lambda: MagicMock())
+    monkeypatch.setattr(deploy_cmd, "_detect_project_root", lambda cm: tmp_path)
+    monkeypatch.setattr(deploy_cmd, "_load_deploy_yaml", lambda root: {})
+    monkeypatch.setattr(deploy_cmd, "_get_cache_dir", lambda cm: tmp_path)
+    buf = io.StringIO()
+    monkeypatch.setattr(deploy_cmd, "console", Console(file=buf, width=200))
+
+    deploy_cmd.deploy_status(host=None, app=None)
+
+    out = buf.getvalue()
+    assert "Snapshot" in out
+    assert "never-made" not in out
+    assert "(dry run)" in out

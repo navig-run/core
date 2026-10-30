@@ -61,3 +61,71 @@ def test_the_trim_never_raises(perf_dir, monkeypatch):
 
     yaml_io.log_shadow_anomaly("t", "ev", {"i": 1})  # must not raise
     assert (perf_dir / "t.jsonl").exists()
+
+
+def _fill_past_cap(perf_dir, monkeypatch):
+    monkeypatch.setattr(yaml_io, "_JSONL_CAP_BYTES", 4000)
+    monkeypatch.setattr(yaml_io, "_JSONL_KEEP_BYTES", 2000)
+    log = perf_dir / "t.jsonl"
+    with log.open("w", encoding="utf-8") as fh:
+        for i in range(100):
+            fh.write(json.dumps({"ts": 0, "event": "ev", "data": {"i": i, "pad": "x" * 20}}) + "\n")
+    return log
+
+
+def test_an_append_after_the_trim_snapshot_survives_the_rewrite(perf_dir, monkeypatch):
+    """A writer that does not take the lock (the Rust desktop apps append to the
+    incident log) can land between the trim's read and its replace. That entry was
+    overwritten by the older snapshot."""
+    import pathlib
+
+    log = _fill_past_cap(perf_dir, monkeypatch)
+    real_read = pathlib.Path.read_bytes
+
+    def read_then_foreign_append(self):
+        data = real_read(self)
+        if self == log:
+            with open(log, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps({"ts": 0, "event": "late", "data": {}}) + "\n")
+        return data
+
+    monkeypatch.setattr(pathlib.Path, "read_bytes", read_then_foreign_append)
+    yaml_io._cap_jsonl(log)
+
+    rows = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    assert len(log.read_bytes()) < 4000, "trim never ran"
+    assert rows[-1]["event"] == "late", "an append made during the trim was lost"
+
+
+def test_a_python_append_waits_for_a_running_trim(perf_dir, monkeypatch):
+    """Two Python writers: the second append must not land inside the first one's
+    read-rewrite window — it waits for the lock and is still on disk afterwards."""
+    import threading
+    import time as _time
+
+    log = _fill_past_cap(perf_dir, monkeypatch)
+    in_trim = threading.Event()
+    real_cap = yaml_io._cap_jsonl
+
+    def slow_cap(path):
+        if threading.current_thread().name == "trimmer":
+            in_trim.set()
+            _time.sleep(0.5)
+        real_cap(path)
+
+    monkeypatch.setattr(yaml_io, "_cap_jsonl", slow_cap)
+    trimmer = threading.Thread(
+        target=yaml_io.log_shadow_anomaly, args=("t", "first", {}), name="trimmer"
+    )
+    trimmer.start()
+    assert in_trim.wait(5)
+    size_during_trim = log.stat().st_size
+    second = threading.Thread(target=yaml_io.log_shadow_anomaly, args=("t", "second", {}))
+    second.start()
+    _time.sleep(0.2)
+    assert log.stat().st_size == size_during_trim, "an append ran inside the trim window"
+    trimmer.join(10)
+    second.join(10)
+
+    events = [json.loads(line)["event"] for line in log.read_text(encoding="utf-8").splitlines()]
+    assert events[-2:] == ["first", "second"]

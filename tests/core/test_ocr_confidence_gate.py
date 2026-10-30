@@ -83,3 +83,10 @@ class TestConfidenceGate:
     def test_empty_input_is_none(self):
         assert _confident_text(_data([])) is None
         assert _confident_text({}) is None
+
+    def test_missing_or_short_position_arrays_do_not_discard_the_text(self):
+        """A short or null block/par/line array raised IndexError/TypeError, which the
+        caller swallowed into "no text found"."""
+        assert _confident_text({"text": ["hello"], "conf": ["90"]}) == "hello"
+        assert _confident_text({"text": ["hello"], "conf": ["90"], "block_num": []}) == "hello"
+        assert _confident_text({"text": ["hello"], "conf": ["90"], "line_num": None}) == "hello"

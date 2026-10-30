@@ -62,7 +62,9 @@ __all__ = [
     "REQUIRED_CAPABILITIES",
     "RemoteBrain",
     "SshRemote",
+    "TransportBlocked",
     "migrations_dir",
+    "transport_failure",
 ]
 
 #: The eight stages, in order. The list is the contract; receipts name them.
@@ -90,6 +92,59 @@ _STAGE_SKIPPED = "skipped"
 
 class MigrationBlocked(RuntimeError):
     """A stage refused to proceed. The receipt records it; nothing is reported done."""
+
+
+class TransportBlocked(MigrationBlocked):
+    """The link to the target failed, so NOTHING was read and no fact may be inferred.
+
+    Distinct from :class:`MigrationBlocked` only so callers can tell "this machine said
+    no" from "this machine never answered": the second must never be folded into an
+    empty inventory, an empty plugin list or an empty checksum.
+    """
+
+
+# ssh exits 255 for its own failures, but the wrappers do not always keep the code: a
+# killed `ssh`, a mux socket that vanished, or the Windows OpenSSH build can exit 1
+# while printing one of these. Matching the message as well as the code is what keeps a
+# dead link from being read as an empty machine. Deliberately narrow: a remote command
+# that failed ON a reachable host ("No such file", "command not found") must stay a
+# legitimate empty answer.
+_SSH_TRANSPORT_MARKERS = (
+    "could not resolve hostname",
+    "name or service not known",
+    "temporary failure in name resolution",
+    "ssh: connect to host",
+    "connection refused",
+    "connection reset",
+    "connection closed by",
+    "connection timed out",
+    "operation timed out",
+    "no route to host",
+    "network is unreachable",
+    "host key verification failed",
+    "remote host identification has changed",
+    "permission denied (",
+    "kex_exchange_identification",
+    "channel 0: open failed",
+    "control socket connect",
+    "mux_client_request_session",
+    "broken pipe",
+)
+
+
+def transport_failure(code: int, err: str) -> str | None:
+    """Why the transport failed, or ``None`` when the command really ran on the target.
+
+    Pure so it can be tested against real ssh output without a network: the shapes below
+    are what this machine's ssh prints for an unknown alias, a refused port and a dead
+    multiplexer.
+    """
+    text = (err or "").strip()
+    lowered = text.lower()
+    if code == 255 or any(marker in lowered for marker in _SSH_TRANSPORT_MARKERS):
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        return lines[-1] if lines else f"ssh exited {code} without a reason"
+    return None
 
 
 def migrations_dir() -> Path:
@@ -974,17 +1029,28 @@ class SshRemote:
     def _spawn(self, argv: list[str]) -> tuple[int, str, str]:
         import subprocess  # noqa: PLC0415
 
-        proc = subprocess.run(  # noqa: S603 — fixed argv, no shell
-            argv,
-            capture_output=True,
-            # The remote end is a Linux/mac shell whose output is UTF-8. Named explicitly:
-            # `text=True` would decode with the LOCAL code page (cp1252 on this
-            # workstation) and mangle every non-ASCII byte the remote prints.
-            encoding="utf-8",
-            errors="replace",
-            timeout=self.timeout,
-            check=False,
-        )
+        try:
+            proc = subprocess.run(  # noqa: S603 — fixed argv, no shell
+                argv,
+                capture_output=True,
+                # The remote end is a Linux/mac shell whose output is UTF-8. Named explicitly:
+                # `text=True` would decode with the LOCAL code page (cp1252 on this
+                # workstation) and mangle every non-ASCII byte the remote prints.
+                encoding="utf-8",
+                errors="replace",
+                timeout=self.timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            # A process that never returned is not a target with nothing on it.
+            raise TransportBlocked(
+                f"{self.host} did not answer within {self.timeout:.0f}s — nothing was read, "
+                "so there is no verdict about its jobs, spaces or clients"
+            ) from exc
+        except OSError as exc:
+            raise TransportBlocked(
+                f"could not run ssh to reach {self.host}: {exc} — nothing was read"
+            ) from exc
         return proc.returncode, proc.stdout, proc.stderr
 
     def _run(self, *args: str) -> tuple[int, str, str]:
@@ -1001,6 +1067,12 @@ class SshRemote:
     def _json(self, *args: str) -> dict[str, Any]:
         code, out, err = self._run(*args)
         if code != 0:
+            reason = transport_failure(code, err)
+            if reason is not None:
+                raise TransportBlocked(
+                    f"could not reach {self.host} over ssh ({reason}) — nothing was read, so "
+                    f"{args[0] if args else 'the command'} could not be inspected"
+                )
             raise MigrationBlocked(
                 f"{' '.join(('navig', *args))} failed on {self.host} (exit {code}): "
                 f"{(err or out).strip()[:400]}"
@@ -1051,6 +1123,12 @@ class SshRemote:
         remote_path = f"/tmp/{bundle.name}"
         code, out, err = self._remote("sha256sum", remote_path)
         if code != 0:
+            reason = transport_failure(code, err)
+            if reason is not None:
+                raise TransportBlocked(
+                    f"could not reach {self.host} over ssh ({reason}) — the bundle was not "
+                    "hashed, so nothing can be claimed about the transfer"
+                )
             raise MigrationBlocked(
                 f"{bundle.name} is not on {self.host}:{remote_path} ({(err or out).strip()[:200]}). "
                 f"Copy it first — scp {bundle} {self.host}:{remote_path} — then re-run with "
@@ -1063,6 +1141,52 @@ class SshRemote:
             "path": remote_path,
         }
 
+    def _unreachable(self, code: int, err: str) -> None:
+        """Raise when the link failed, so an empty inventory cannot be read as parity.
+
+        Every probe below treats "the command printed nothing" as an empty machine, which
+        is right for a fresh host — but when nothing ever ran, an empty machine makes the
+        parity check claim the target is missing EVERYTHING and blocks a move that may be
+        perfectly fine. Live case, OUTPOST 2026-10-25: the brain answered "28 jobs missing
+        on the target" for a hostname it could not resolve at all.
+
+        :func:`transport_failure` decides, not the exit code alone: ssh's own 255 plus the
+        message shapes the wrappers leave behind (a killed ssh, a dead mux socket) all
+        mean "nothing ran". A remote command that failed ON a reachable host — a missing
+        file, an old `navig` — is still an empty answer, because that host did answer.
+        """
+        reason = transport_failure(code, err)
+        if reason is None:
+            return
+        raise TransportBlocked(
+            f"could not reach {self.host} over ssh ({reason}) — nothing was read, "
+            "so there is no parity verdict: check the ssh alias and try again"
+        )
+
+    def _shell_probe(self) -> None:
+        """Prove the target gives us a shell before any fact is inferred from silence.
+
+        The transport can be fine, the authentication can succeed, and the remote still
+        cannot run a command: GitHub answers "You've successfully authenticated, but
+        GitHub does not provide shell access" with exit 1 and no output, and every probe
+        below then reads as "this machine has no jobs, no spaces, no plugins". Live case
+        (OUTPOST, 2026-10-26): the plan said 28 jobs were missing on github.com.
+
+        A fresh host that really was asked a question prints the marker back, so the
+        legitimate "nothing installed here yet" case keeps working.
+        """
+        code, out, err = self._remote("echo navig-shell-probe")
+        self._unreachable(code, err)
+        if code == 0 and "navig-shell-probe" in out:
+            return
+        detail = (err or out).strip().splitlines()
+        why = detail[-1].strip() if detail else f"exit {code} with no output"
+        raise MigrationBlocked(
+            f"ssh reached {self.host} but the shell did not answer ({why}) — nothing was "
+            "read, so there is no parity verdict: point the move at a machine that runs "
+            "NAVIG, not at a hosting service"
+        )
+
     def target_inventory(self) -> dict[str, Any]:
         """The target's jobs, enabled plugins and spaces — the other half of parity.
 
@@ -1070,21 +1194,51 @@ class SshRemote:
         expanded by the local MSYS ssh on Windows into ``/c/Users/...`` before it
         ever reaches the target.
         """
-        code, out, _ = self._remote('cat "$HOME/.navig/scheduler/cron_jobs.json"')
+        self._shell_probe()
+        code, out, err = self._remote('cat "$HOME/.navig/scheduler/cron_jobs.json"')
+        self._unreachable(code, err)
         try:
             store = json.loads(out) if code == 0 else {}
         except ValueError:
             store = {}
-        code, out, _ = self._remote('ls -1 "$HOME/.navig/spaces"')
+        code, out, err = self._remote('ls -1 "$HOME/.navig/spaces"')
+        self._unreachable(code, err)
         spaces = [s.strip() for s in out.splitlines() if s.strip()] if code == 0 else []
+        # The Mini App facts, in ONE round trip and never `config get deck` as a whole:
+        # that section carries deck.api_key and this output lands in a migration log.
+        code, out, err = self._remote(
+            'PATH="$HOME/.local/bin:$PATH"; export PATH; '
+            'navig config get deck.public_url; navig config get deck.telegram_only; '
+            "navig config get deck.deployed_version"
+        )
+        self._unreachable(code, err)
+        client: dict[str, Any] = {}
+        if code == 0:
+            lines = [ln.strip() for ln in out.splitlines()]
+            url = lines[0] if len(lines) > 0 else ""
+            if url and "not found" not in url:
+                client["public_url"] = url
+            flag = lines[1].lower() if len(lines) > 1 else ""
+            if flag in {"true", "false"}:
+                client["telegram_only"] = flag == "true"
+            version = lines[2] if len(lines) > 2 else ""
+            if version and "not found" not in version:
+                client["deployed_version"] = version
         try:
             plugins_payload: Any = self._json("plugin", "list", "--json")
+        except TransportBlocked:
+            # The link failed: an empty plugin list here would report the target as
+            # plugin-less and block a move for a reason that is not about the target.
+            raise
         except MigrationBlocked:
+            # A plugin list that failed ON a reachable machine is an empty list, not a
+            # blocked move — the three probes above already proved the host answers.
             plugins_payload = {}
         return {
             "jobs": parity.jobs_from_store(store),
             "plugins": parity.plugins_from_list(plugins_payload),
             "spaces": spaces,
+            "client": client,
         }
 
     def validate(self, receipt: MigrationReceipt) -> dict[str, Any]:

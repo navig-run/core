@@ -52,7 +52,9 @@ def test_ask_ai_windows_tasklist_decode_fallback(monkeypatch):
         raw = b'"nginx.exe","1234","Console","1","12,000 K"\n"weird\\xff","9","Console","1","1 K"\n'
         return SimpleNamespace(returncode=0, stdout=raw)
 
-    monkeypatch.setattr(ai_mod, "os", SimpleNamespace(name="nt"))
+    # The product reads `sys.platform` (never `os.name`, which pathlib also consults and
+    # which made a WindowsPath of every path off Windows). Patch that seam, not the module.
+    monkeypatch.setattr(ai_mod.sys, "platform", "win32")
     monkeypatch.setattr(ai_mod.subprocess, "run", fake_run)
     # Keep OS detection off the (globally-faked) subprocess path so the only
     # recorded call is the tasklist probe we're actually asserting on.
@@ -84,7 +86,7 @@ def test_humanize_fallback_reason_prose():
     # Known categories become readable prose (no machine tokens with underscores).
     assert _humanize_fallback_reason("rate_limited") == "rate-limited"
     assert _humanize_fallback_reason("auth") == "failing to authenticate"
-    assert _humanize_fallback_reason("payment") == "having a billing issue"
+    assert _humanize_fallback_reason("payment") == "out of credits or having a billing issue"
     # Empty / None → a safe generic word.
     assert _humanize_fallback_reason(None) == "unavailable"
     assert _humanize_fallback_reason("") == "unavailable"

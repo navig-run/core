@@ -28,7 +28,7 @@ from navig.core.apps import AppManager
 from navig.core.context import ContextManager
 from navig.core.execution import ExecutionSettings
 from navig.core.hosts import HostManager
-from navig.core.yaml_io import atomic_write_text, log_shadow_anomaly
+from navig.core.yaml_io import atomic_write_text, file_lock, log_shadow_anomaly
 from navig.core.yaml_io import atomic_write_yaml as _atomic_write_yaml
 from navig.platform import paths
 
@@ -851,14 +851,17 @@ class ConfigManager:
         mutation, the save sees an unchanged file and writes exactly what you asked
         for (no merge, so removing a key still works).
         """
-        node = self.refresh_global_config()
-        parts = dotted_key.split(".")
-        for part in parts[:-1]:
-            if not isinstance(node.get(part), dict):
-                node[part] = {}
-            node = node[part]
-        node[parts[-1]] = value
-        self._save_global_config(self.global_config)
+        # Refresh, set and save under the cross-process config lock, so another
+        # process cannot write between this refresh and this save.
+        with file_lock(self.global_config_path):
+            node = self.refresh_global_config()
+            parts = dotted_key.split(".")
+            for part in parts[:-1]:
+                if not isinstance(node.get(part), dict):
+                    node[part] = {}
+                node = node[part]
+            node[parts[-1]] = value
+            self._save_global_config(self.global_config)
 
     def get(self, dotted_key: str, default: Any = None) -> Any:
         """Dotted read of a global config value — the ergonomic counterpart of
@@ -1061,27 +1064,30 @@ class ConfigManager:
             _incidents.record(_incidents.WIPE_REFUSED, path=str(global_config_file))
             return
 
-        on_disk_mtime = self._global_config_file_mtime()
-        if (
-            on_disk_mtime is not None
-            and self._global_config_mtime_ns is not None
-            and on_disk_mtime != self._global_config_mtime_ns
-        ):
-            try:
-                fresh = self._load_global_config(validate=False)
-                if isinstance(fresh, dict):
-                    merged = self._merge_onto(fresh, config)
-                    config.clear()
-                    config.update(merged)  # keep the caller's dict identity
-                    logger.debug(
-                        "config.yaml changed under us — merged our keys onto the "
-                        "newer file instead of overwriting it"
-                    )
-            except Exception:  # noqa: BLE001 — never block a save on the merge
-                pass
+        # The conflict check and the write share the cross-process config lock, so no
+        # other writer can land between the check and the replace.
+        with file_lock(global_config_file):
+            on_disk_mtime = self._global_config_file_mtime()
+            if (
+                on_disk_mtime is not None
+                and self._global_config_mtime_ns is not None
+                and on_disk_mtime != self._global_config_mtime_ns
+            ):
+                try:
+                    fresh = self._load_global_config(validate=False)
+                    if isinstance(fresh, dict):
+                        merged = self._merge_onto(fresh, config)
+                        config.clear()
+                        config.update(merged)  # keep the caller's dict identity
+                        logger.debug(
+                            "config.yaml changed under us — merged our keys onto the "
+                            "newer file instead of overwriting it"
+                        )
+                except Exception:  # noqa: BLE001 — never block a save on the merge
+                    pass
 
-        _atomic_write_yaml(config, global_config_file)
-        self._global_config_mtime_ns = self._global_config_file_mtime()
+            _atomic_write_yaml(config, global_config_file)
+            self._global_config_mtime_ns = self._global_config_file_mtime()
         # QUANTUM VELOCITY K2: Refresh pickle cache immediately after every write
         # so the next cold boot reads the fresh cache instead of re-parsing YAML.
         try:
@@ -1445,9 +1451,15 @@ class ConfigManager:
         """Load app configuration. Delegates to AppManager."""
         return self._apps.load(host_name, app_name)
 
-    def save_host_config(self, host_name: str, config: dict[str, Any]):
+    def save_host_config(
+        self, host_name: str, config: dict[str, Any], host_file: Path | None = None
+    ):
         """Save host configuration. Delegates to HostManager."""
-        self._hosts.save(host_name, config)
+        self._hosts.save(host_name, config, host_file=host_file)
+
+    def host_config_source(self, host_name: str) -> Path | None:
+        """The file a host is loaded from, or None. Delegates to HostManager."""
+        return self._hosts.source_path(host_name)
 
     def save_app_config(
         self,

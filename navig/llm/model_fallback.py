@@ -468,8 +468,8 @@ def history(limit: int = 20) -> list[dict[str, Any]]:
 
 _REASON_TEXT = {
     "auth": "key rejected (auth error)",
-    "payment": "billing problem (402)",
-    "rate_limited": "rate-limited (429)",
+    "payment": "out of credits or billing problem (402/403)",
+    "rate_limited": "rate-limited (provider quota)",
     "overloaded": "provider overloaded",
     "server_error": "provider erroring (5xx)",
     "timeout": "timing out",
@@ -518,7 +518,12 @@ def _fallback_text(primary: str, to: str, modes: list[str], reason: str) -> tupl
         f"Mode {mode_txt} · {reason_text(reason)}. Replies continue on "
         f"`{_short_model(to)}` until it works again.\n{MANAGE_HINT}"
     )
-    if reason == "auth":
+    if reason == "payment":
+        # Out of credit looks exactly like a dead key to the operator, and the
+        # only fix is money on the provider account — never a reconnect.
+        provider = norm_spec(primary).split(":", 1)[0]
+        body += f"\nTop up: `{provider}` account billing — the key itself is fine"
+    elif reason == "auth":
         # A rejected credential never fixes itself — say exactly how to fix it.
         try:
             from navig.providers.inference import reconnect_hint

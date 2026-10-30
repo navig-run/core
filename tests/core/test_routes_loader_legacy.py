@@ -104,6 +104,24 @@ routes:
     assert cfg.channels[0].keywords == ["scan", "probe"]
 
 
+def test_routes_with_mapping_form_triggers(temp_dir):
+    """channel-space: `triggers: {keyword: [...]}` — a single trigger, not a list."""
+    root = _write(
+        Path(temp_dir) / "channel",
+        """
+routes:
+  - channel: "#video"
+    owner: editor
+    triggers:
+      keyword: [video, film]
+      formation: cut-room
+""",
+    )
+    cfg = load(root)
+    assert cfg is not None
+    assert cfg.channels[0].keywords == ["video", "film"]
+
+
 def test_channels_with_handler_and_tags(temp_dir):
     """miztizm: right top-level key, but `handler:`/`tags:` instead of agents/keywords."""
     root = _write(
@@ -184,6 +202,24 @@ defaults:
     cfg = load(root)
     assert cfg is not None
     assert cfg.defaults.unrouted_fallback == "chosen-by-hand"
+
+
+def test_an_explicitly_empty_fallback_stays_empty(temp_dir):
+    """Review F1761: `unrouted_fallback: ""` means "no fallback", not "infer one"."""
+    root = _write(
+        Path(temp_dir) / "empty",
+        """
+routes:
+  - channel: "#a"
+    handlers: [alpha]
+    default: true
+defaults:
+  unrouted_fallback: ""
+""",
+    )
+    cfg = load(root)
+    assert cfg is not None
+    assert cfg.defaults.unrouted_fallback == ""
 
 
 def test_channels_wins_when_both_keys_are_present(temp_dir):

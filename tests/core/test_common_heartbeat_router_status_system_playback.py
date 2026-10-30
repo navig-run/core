@@ -8,6 +8,8 @@ Batch 114: tests for
 """
 from __future__ import annotations
 
+import sys
+import types
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -496,9 +498,14 @@ async def test_play_sound_with_mock_windows_path(tmp_path):
     wav = tmp_path / "test.wav"
     wav.write_bytes(b"RIFF" + b"\x00" * 4)
 
+    # `winsound` ships only with CPython on Windows: patching it by dotted name raised
+    # ModuleNotFoundError at patch time off Windows (2026-10-30). Stand the module up in
+    # `sys.modules` so the product's own `import winsound` finds a stub.
+    played: list[object] = []
+    fake_winsound = types.SimpleNamespace(PlaySound=lambda *a, **k: played.append(a))
     with (
         patch("platform.system", return_value="Windows"),
-        patch("winsound.PlaySound", return_value=None),
+        patch.dict(sys.modules, {"winsound": fake_winsound}),
     ):
         result = await play_sound(str(wav))
     # winsound.PlaySound is sync; result may be True or False depending on env

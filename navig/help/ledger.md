@@ -9,6 +9,11 @@ who can rewrite the whole file can recompute the whole chain. What it gives
 you is integrity *evidence*: any casual edit, lost line, or corruption is
 detected and named by line.
 
+Every append is one critical section across processes (a lock on
+`operations.jsonl.lock`), so two commands finishing in the same second cannot
+both claim the same predecessor — a `prev-hash mismatch` on a file nobody
+touched is a real finding about the *writer*, not a mystery about the file.
+
 Commands:
 - `navig ledger verify` — re-walk the file and re-check every link
 - `navig ledger show` — recent operations with per-entry chain state

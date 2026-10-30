@@ -67,6 +67,11 @@ def register(app, gateway):
     app.router.add_post("/message", _message(gateway))
     app.router.add_post("/event", _event(gateway))
     app.router.add_get("/sessions", _sessions(gateway))
+    # One session from the SAME store `GET /sessions` lists (the gateway SessionManager).
+    # `navig gateway session show|clear` used the /memory/* routes, which read the
+    # unrelated ConversationStore — so a listed session showed empty and could not clear.
+    app.router.add_get("/sessions/{session_key}", _session_get(gateway))
+    app.router.add_delete("/sessions/{session_key}", _session_delete(gateway))
     app.router.add_get("/ws", _websocket(gateway))
 
 
@@ -349,6 +354,49 @@ def _sessions(gw):
             for key, session in gw.sessions.sessions.items()
         ]
         return json_ok({"sessions": session_list, "total": len(session_list)})
+
+    return h
+
+
+def _session_exists(gw, key: str) -> bool:
+    mgr = gw.sessions
+    if key in mgr.sessions:
+        return True
+    try:
+        return mgr._get_session_file(key).exists()
+    except Exception:  # noqa: BLE001 — an unreadable store is "not found", never a create
+        return False
+
+
+def _session_get(gw):
+    async def h(r):
+        auth = require_bearer_auth(r, gw)
+        if auth is not None:
+            return auth
+        key = r.match_info["session_key"]
+        # get_session() CREATES a missing session; a read must not.
+        if not _session_exists(gw, key):
+            return json_error_response(
+                f"Session not found: {key}", status=404, code="session_not_found"
+            )
+        session = await gw.sessions.get_session(key)
+        return json_ok(session.to_dict())
+
+    return h
+
+
+def _session_delete(gw):
+    async def h(r):
+        auth = require_bearer_auth(r, gw)
+        if auth is not None:
+            return auth
+        key = r.match_info["session_key"]
+        if not _session_exists(gw, key):
+            return json_error_response(
+                f"Session not found: {key}", status=404, code="session_not_found"
+            )
+        await gw.sessions.delete_session(key)
+        return json_ok({"deleted": True, "key": key})
 
     return h
 

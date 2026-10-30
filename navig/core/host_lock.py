@@ -75,7 +75,10 @@ import platform
 import socket
 import sys
 import tempfile
+import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -186,7 +189,20 @@ def lock_dir(base_dir: Path | None = None) -> Path:
 
 
 def _safe_name(host: str) -> str:
-    return "".join(c if (c.isalnum() or c in "-_.") else "_" for c in host) or "_"
+    """A filesystem-safe lock-file stem that stays UNIQUE per host name.
+
+    A name that needs no escaping is used as-is (so existing lock paths do not move).
+    Any name that does gets a short hash of the FULL original appended: replacing the
+    unsupported characters alone made ``prod us`` and ``prod_us`` share one lock, so
+    operations on unrelated servers blocked or released each other.
+    """
+    safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in host)
+    if safe and safe == host:
+        return safe
+    import hashlib  # noqa: PLC0415 — only on the escaping path
+
+    digest = hashlib.sha256(host.encode("utf-8")).hexdigest()[:12]
+    return f"{safe or '_'}-{digest}"
 
 
 def lock_path(host: str, base_dir: Path | None = None) -> Path:
@@ -249,6 +265,11 @@ def session_alive(session: str | None, sessions_dir: Path | None = None) -> bool
         entries = list(directory.glob("*.json"))
     except OSError:
         return None
+    # A resumed session can leave its old ``<old-pid>.json`` beside the current
+    # ``<new-pid>.json``, both carrying the same sessionId: one live entry means alive, and
+    # only "every match known and dead" means gone — never the first dead one found.
+    dead = False
+    unknown = False
     for entry in entries:
         try:
             data = json.loads(entry.read_text(encoding="utf-8"))
@@ -258,14 +279,20 @@ def session_alive(session: str | None, sessions_dir: Path | None = None) -> bool
             continue
         pid = data.get("pid")
         if not isinstance(pid, int) or pid <= 0:
-            return None
+            unknown = True
+            continue
         try:
             import psutil
 
-            return bool(psutil.pid_exists(pid))
+            if psutil.pid_exists(pid):
+                return True
         except Exception:
-            return None
-    return None
+            unknown = True
+            continue
+        dead = True
+    if unknown:
+        return None
+    return False if dead else None
 
 
 def lock_state(
@@ -347,6 +374,68 @@ def _atomic_write(path: Path, payload: dict) -> None:
         except OSError:
             pass
         raise
+
+
+#: How long :func:`exclusive` waits for another process's check-and-claim to finish.
+_MUTEX_TIMEOUT_S = 10.0
+
+
+@contextmanager
+def exclusive(host: str, base_dir: Path | None = None) -> Iterator[None]:
+    """Serialise one host's read-classify-claim across processes.
+
+    :func:`claim` writes with ``os.replace``, which guarantees a whole file, not an exclusive
+    acquisition: two sessions that both see a free or stale lock would both claim it, and
+    the last writer wins while both proceed against the server. Holding this OS-level lock
+    on a sidecar file around the check and the claim makes the acquisition one atomic step.
+    The OS drops the lock when its holder dies, so a crash can never jam the host; a
+    timeout (something is badly wrong) proceeds unserialised rather than blocking forever.
+    """
+    path = Path(f"{lock_path(host, base_dir)}.mutex")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fh = open(path, "a+b")  # noqa: SIM115 - held open for the whole critical section
+    except OSError as exc:
+        logger.debug("host lock: no mutex for %r (%s) — continuing unserialised", host, exc)
+        yield
+        return
+    locked = False
+    try:
+        deadline = time.monotonic() + _MUTEX_TIMEOUT_S
+        while True:
+            try:
+                if sys.platform == "win32":
+                    import msvcrt
+
+                    fh.seek(0)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                locked = True
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    logger.warning("host lock: mutex for %r busy past %ss — continuing", host, _MUTEX_TIMEOUT_S)
+                    break
+                time.sleep(0.02)
+        yield
+    finally:
+        if locked:
+            try:
+                if sys.platform == "win32":
+                    import msvcrt
+
+                    fh.seek(0)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+        fh.close()
 
 
 def claim(
@@ -458,7 +547,10 @@ def guard(host: str, command: str | None = None, *, base_dir: Path | None = None
     if current == "off":
         return LockState(state="free")
 
-    st = lock_state(read_lock(host, base_dir))
+    with exclusive(host, base_dir):
+        st = lock_state(read_lock(host, base_dir))
+        if not st.blocking:
+            claim(host, command, base_dir=base_dir, kind="implicit")
 
     if st.blocking:
         from navig import console_helper as ch
@@ -482,14 +574,13 @@ def guard(host: str, command: str | None = None, *, base_dir: Path | None = None
             raise _typer.Exit(2)
         return st
 
-    claim(host, command, base_dir=base_dir, kind="implicit")
-
     if identity_quality() == "weak" and st.state == "free":
-        # Say it once per claim rather than implying protection that isn't there.
-        from navig import console_helper as ch
-
-        ch.dim(
-            "host lock: weak identity (set NAVIG_SESSION_ID to make multi-agent detection reliable)"
+        # Say it once per claim rather than implying protection that isn't there — on
+        # STDERR: a notice on stdout is sitting in front of a `--json` payload (measured
+        # 2026-10-30: `navig run --json` output began with this line and stopped parsing).
+        print(
+            "host lock: weak identity (set NAVIG_SESSION_ID to make multi-agent detection reliable)",
+            file=sys.stderr,
         )
     return st
 
@@ -537,7 +628,10 @@ def try_guard_remote(config_manager, host: str | None, command: str | None = Non
     current = mode()
     if current == "off":
         return None
-    st = lock_state(read_lock(host))
+    with exclusive(host):
+        st = lock_state(read_lock(host))
+        if not st.blocking:
+            claim(host, command, kind="implicit")
     if st.blocking:
         if current == "warn":
             logger.warning(
@@ -547,5 +641,4 @@ def try_guard_remote(config_manager, host: str | None, command: str | None = Non
             )
             return None
         return st
-    claim(host, command, kind="implicit")
     return None

@@ -254,8 +254,16 @@ def open_link(
     _ch.info(f"Opening [blue]{link.url}[/blue] with auto-login (cred: {link.vault_cred_id})")
     from navig.browser import cdp_actions
 
-    # context="human": this is an operator command, so the visibility default is a window.
-    launched = cdp_actions.new(app="chrome", profile=profile, headless=headless, context="human")
+    # A headful `--profile` open leaves its browser running, and Chromium will not start a
+    # second instance on that locked profile dir: a fresh new() on another port times out.
+    # Reuse the live session already serving that named profile instead.
+    reused_port = _live_named_profile_port(cdp_actions, profile) if profile else None
+    if reused_port is not None:
+        launched = {"ok": True, "port": reused_port, "reused": True}
+        _ch.info(f"Reusing the open '{profile}' browser on port {reused_port}.")
+    else:
+        # context="human": this is an operator command, so the visibility default is a window.
+        launched = cdp_actions.new(app="chrome", profile=profile, headless=headless, context="human")
     if not launched.get("ok"):
         _ch.warning(
             f"Could not start a browser for auto-login ({launched.get('error', 'unknown')}). "
@@ -285,7 +293,10 @@ def open_link(
     else:
         _ch.warning(f"Auto-login did not complete ({status}: {result.get('error', '')}).")
 
-    if headless:
+    if headless and launched.get("reused"):
+        # We did not launch this browser; it belongs to an earlier open. Leave it running.
+        _ch.info(f"Left the existing '{profile}' browser on port {port} running.")
+    elif headless:
         # A headless browser is invisible; leaving it running is a leak. With --profile the
         # logged-in session is already persisted on disk, which is the point of the flag.
         cdp_actions.stop(port=port)
@@ -293,6 +304,23 @@ def open_link(
     else:
         _ch.info(f"Browser is open on port {port} — close it when you are done, or 'navig cdp stop --port {port}'.")
 
+
+def _live_named_profile_port(cdp_actions, profile: str) -> int | None:
+    """Port of a live NAVIG-launched browser already using the named *profile*, or None."""
+    from pathlib import Path
+
+    try:
+        entries = cdp_actions.launched().get("launched") or []
+    except Exception:  # noqa: BLE001 -- no registry means nothing to reuse; launch fresh
+        return None
+    for entry in entries:
+        path = entry.get("profile")
+        if not path or not entry.get("live"):
+            continue
+        p = Path(str(path))
+        if p.name == profile and p.parent.name == "named":
+            return int(entry["port"])
+    return None
 
 
 @links_app.command("edit")

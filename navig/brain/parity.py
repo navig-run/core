@@ -77,6 +77,51 @@ def gateway_plugin_ids() -> set[str]:
     return out
 
 
+def client_from_config(cfg: Any) -> dict[str, Any]:
+    """The Mini App facts a migration must keep: the URL Telegram opens and its bundle.
+
+    The deck is a static app on Cloudflare (``navig miniapp deploy``) and the bot's menu
+    button is a *Telegram* setting, not a Brain file: it survives a migration and keeps
+    opening whatever URL it was last pointed at. So the target has to answer on the same
+    public URL, and the bundle it would deploy has to be the same build the old Brain
+    served — otherwise the operator's Mini App silently becomes a client of a Brain that
+    is no longer the Brain.
+    """
+    if not isinstance(cfg, dict):
+        if hasattr(cfg, "get"):
+            cfg = {key: cfg.get(key) for key in ("public_url", "telegram_only", "deployed_version")}
+        else:
+            return {}
+    out: dict[str, Any] = {}
+    url = str(cfg.get("public_url") or "").strip()
+    if url:
+        out["public_url"] = url
+    if "telegram_only" in cfg and cfg.get("telegram_only") is not None:
+        out["telegram_only"] = bool(cfg.get("telegram_only"))
+    version = str(cfg.get("deployed_version") or "").strip()
+    if version:
+        out["deployed_version"] = version
+    return out
+
+
+def _deck_config() -> dict[str, Any]:
+    """The ``deck`` config section, read through a FRESH manager (never the singleton)."""
+    try:
+        from navig.config import ConfigManager  # noqa: PLC0415
+
+        cm = ConfigManager()
+        # One key at a time: a whole-section read returns nothing for a section the
+        # merged resolver owns (factory defaults + every scope), and silently reports
+        # "no client facts" for a Brain that has them.
+        section = {
+            key: cm.get(f"deck.{key}")
+            for key in ("public_url", "telegram_only", "deployed_version")
+        }
+    except Exception:  # noqa: BLE001 — a missing config is reported, never raised
+        return {}
+    return {k: v for k, v in section.items() if v not in (None, "")}
+
+
 def local_inventory(config_dir: Path | None = None) -> dict[str, Any]:
     """The source side: enabled jobs, installed plugins, spaces on disk."""
     if config_dir is None:
@@ -107,6 +152,7 @@ def local_inventory(config_dir: Path | None = None) -> dict[str, Any]:
         "gateway_plugins": sorted(gateway_plugin_ids()),
         "required_plugins": sorted(BRAIN_DUTY_PLUGINS | {str(x) for x in extra if x}),
         "spaces": spaces,
+        "client": client_from_config(_deck_config()),
     }
 
 
@@ -179,12 +225,44 @@ def reconcile(source: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
     if platform_local:
         notes.append("platform-local jobs stay on the source: " + ", ".join(sorted(platform_local)))
 
+    # The Mini App is part of the Brain the operator actually uses: a client whose URL
+    # or bundle moved is a migration that "worked" and still broke the surface they touch
+    # every day. Only compared when BOTH sides report the facts (older configs do not).
+    source_client = source.get("client") if isinstance(source.get("client"), dict) else {}
+    target_client = target.get("client") if isinstance(target.get("client"), dict) else {}
+    client_compared = bool(source_client and target_client)
+    src_url = str(source_client.get("public_url") or "")
+    dst_url = str(target_client.get("public_url") or "")
+    if src_url and dst_url and src_url != dst_url:
+        unreconciled.append(
+            f"the Mini App public URL differs: the target serves {dst_url} while Telegram "
+            f"opens {src_url} — the bot button keeps pointing at the old one"
+        )
+    if client_compared and "telegram_only" in source_client and "telegram_only" in target_client:
+        if bool(source_client["telegram_only"]) != bool(target_client["telegram_only"]):
+            notes.append(
+                "deck.telegram_only differs: the target would gate the Mini App "
+                f"{'to' if target_client['telegram_only'] else 'away from'} Telegram "
+                "clients only"
+            )
+    src_deck = str(source_client.get("deployed_version") or "")
+    dst_deck = str(target_client.get("deployed_version") or "")
+    if src_deck and dst_deck and src_deck != dst_deck:
+        notes.append(
+            f"the Mini App was last deployed as {src_deck} from the source and "
+            f"{dst_deck} from the target — deploy once from the target after the move "
+            "so its record is the one that matches the Brain"
+        )
+
     reconciled = [
         k
         for k, bad in (
             ("jobs", bool(missing_jobs)),
             ("spaces", bool(missing_spaces)),
             ("plugins", bool(missing_gateway)),
+            # Only claimed when both sides actually reported the facts: an
+            # uncompared client is not a reconciled one.
+            ("client", not client_compared or bool(src_url and dst_url and src_url != dst_url)),
         )
         if not bad
     ]
@@ -202,5 +280,6 @@ def reconcile(source: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
             "target_plugins": len(target_plugins),
             "spaces": len(source.get("spaces") or []),
             "target_spaces": len(target_spaces),
+            "client_compared": client_compared,
         },
     }

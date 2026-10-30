@@ -133,7 +133,6 @@ def _body_block(start: date, end: date) -> list[str] | None:
 
 def build(tracker: Path, start: date, end: date) -> str:
     """Render the review for the window as a markdown block."""
-    rows = habit_tracker.read_tracker(tracker)
     days = _days(start, end)
     by_day = {d.isoformat(): habit_tracker.day_map(tracker, d.isoformat()) for d in days}
 
@@ -183,6 +182,15 @@ def build(tracker: Path, start: date, end: date) -> str:
     score_avg = _average_number([s for s in scores if s])
     if score_avg:
         out += ["", f"**Day score:** {' · '.join(s or '—' for s in scores)}  (average **{score_avg}**)"]
+
+    # The other value labels are kept out of "The rest" above, so each needs its own
+    # line here or a logged `habit log deep --value 2` vanishes from the review.
+    for label in ("steps", "deep"):
+        values = [by_day[d.isoformat()].get(label, "") for d in days]
+        value_avg = _average_number([v for v in values if v])
+        if value_avg:
+            listed = " · ".join(v or "—" for v in values)
+            out += ["", f"**{_word(label)}:** {listed}  (average **{value_avg}**)"]
 
     body = _body_block(start, end)
     if body:
@@ -239,7 +247,9 @@ def build(tracker: Path, start: date, end: date) -> str:
         "_One decision. Five improvements at once is how you make none of them._",
     ]
 
-    if not rows:
+    # The WINDOW's rows, not the whole tracker: older history used to suppress this
+    # line for a week in which nothing at all was measured.
+    if not any(by_day.values()):
         out += ["", "_The tracker is empty for this window — nothing above was measured._"]
 
     return "\n".join(out) + "\n"

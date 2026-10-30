@@ -55,14 +55,14 @@ def _stop_failure_message() -> str:
     except Exception:  # noqa: BLE001
         pass
     if pid is not None:
-        hint = f"taskkill /F /PID {pid} /T" if os.name == "nt" else f"kill -9 {pid}"
+        hint = f"taskkill /F /PID {pid} /T" if sys.platform == "win32" else f"kill -9 {pid}"
         return f"pid {pid} would not stop. Try:  {hint}"
     return "the daemon would not stop."
 
 
 def _is_elevated() -> bool:
     """True when this process can stop an elevated daemon — admin on Windows, root on POSIX."""
-    if os.name == "nt":
+    if sys.platform == "win32":
         try:
             import ctypes  # noqa: PLC0415
 
@@ -79,7 +79,7 @@ def _process_is_elevated(pid: int | None) -> bool | None:
     """True/False if process *pid* runs at High(+) integrity, or None when it can't be
     determined (non-Windows, no such process, or the probe failed) — never guess. Used
     only to PROACTIVELY warn; a None simply shows nothing."""
-    if os.name != "nt" or not pid:
+    if sys.platform != "win32" or not pid:
         return None
     try:
         import ctypes  # noqa: PLC0415
@@ -131,7 +131,7 @@ def _relaunch_elevated(sub_args: list[str]) -> int | None:
     Windows, ``sudo`` on POSIX — and return the child's exit code. None means the
     elevation was cancelled or couldn't be launched. Call only when NOT elevated;
     the child, being elevated, skips its own relaunch (no loop)."""
-    if os.name != "nt":
+    if sys.platform != "win32":
         # POSIX: hand off to sudo (replaces this process; prompts in-terminal).
         try:
             os.execvp("sudo", ["sudo", sys.executable, "-m", "navig", *sub_args])
@@ -272,7 +272,7 @@ def _spawn_stop_watchdog(duration: int = 30) -> None:
         return  # can't write temp file — skip watchdog silently
 
     flags = 0
-    if os.name == "nt":
+    if sys.platform == "win32":
         flags = (  # type: ignore[attr-defined]
             subprocess.DETACHED_PROCESS
             | subprocess.CREATE_NEW_PROCESS_GROUP
@@ -534,7 +534,7 @@ def _launch_daemon(daemon: object) -> tuple[bool, str]:
     """
     from navig.daemon.service_manager import task_scheduler_run
 
-    if os.name == "nt":
+    if sys.platform == "win32":
         res = task_scheduler_run()
         if isinstance(res, tuple) and res and res[0]:
             # A booting daemon sweeps stale generations BEFORE it writes its pid
@@ -571,6 +571,16 @@ def _launch_daemon(daemon: object) -> tuple[bool, str]:
                 ch.warning(f"systemd did not start {unit}: {msg}")
                 return False, f"systemd ({unit})"
             return _wait_for_daemon(daemon, attempts=_TASK_BOOT_WAIT_S), f"systemd ({unit})"
+    if sys.platform == "darwin":
+        from navig.daemon.service_manager import launchd_installed, launchd_start
+
+        if launchd_installed():
+            # Through launchd, so the started daemon is the one it owns and
+            # crash-restarts — a stop leaves the agent loaded but not running.
+            ok, msg = launchd_start()
+            if ok:
+                return _wait_for_daemon(daemon, attempts=_TASK_BOOT_WAIT_S), "launchd"
+            ch.warning(f"launchd did not start the agent: {msg} — falling back to a direct spawn")
     _spawn_daemon_direct()
     return _wait_for_daemon(daemon, attempts=_TASK_BOOT_WAIT_S), "direct spawn"
 
@@ -746,7 +756,7 @@ def _ensure_autostart_enabled() -> None:
     warning about them from a start path would nag on every launch of a machine
     that deliberately never installed the task.
     """
-    if os.name != "nt":
+    if sys.platform != "win32":
         return
     optout = _autostart_optout_path()
     if optout.exists():
@@ -841,7 +851,28 @@ def service_start(
         # operator to run THIS command to re-enable it -- so returning here made
         # that printed advice a silent no-op, and the machine kept looking
         # healthy while having no autostart at all.
-        _ensure_autostart_enabled()
+        #
+        # The stop guards must go too, or the repair is a lie: a daemon started by
+        # another route after `service stop` leaves `stop_requested` set, every
+        # scheduled boot then exits at entry.py's stop-intent guard, and a live
+        # watchdog deadline can kill the daemon observed here. Same rule as the
+        # not-running path: only an interactive caller may lift a deliberate stop.
+        from navig.daemon.service_manager import (
+            clear_stop_flag,
+            clear_watchdog_deadline,
+            stop_flag_is_set,
+        )
+
+        if stop_flag_is_set() and not _stdin_is_tty():
+            ch.warning(
+                "Daemon was stopped by user intent — autostart left as it is. "
+                "To re-enable it interactively run:  navig service start"
+            )
+        else:
+            if stop_flag_is_set():
+                clear_watchdog_deadline()
+                clear_stop_flag()
+            _ensure_autostart_enabled()
         if logs:
             _tail_service_logs()
         return
@@ -899,7 +930,7 @@ def service_start(
         # task, and the launch goes through the task by preference (see
         # `_launch_daemon`). Enabling here also arms logon/failure-restart on
         # every exit path below. Silent if the task is not installed.
-        if os.name == "nt":
+        if sys.platform == "win32":
             _autostart_enable_guarded()
         ch.info("Starting NAVIG daemon in background...")
         from navig.daemon.restart_cause import record as _record_cause
@@ -966,6 +997,25 @@ def service_stop(
         ch.dim(f"It starts again at boot. To keep it off: {disable}")
         return
 
+    if sys.platform == "darwin":
+        from navig.daemon.service_manager import launchd_job_action, supervising_launchd_job
+
+        job = supervising_launchd_job()
+        if job:
+            # launchd owns this daemon and KeepAlive respawns it, so a kill would read as
+            # a failed stop. `bootout` unloads the job — the one stop launchd honors —
+            # while the plist stays on disk for the next `navig service start`.
+            from navig.daemon.restart_cause import record as _record_cause
+
+            _record_cause("service stop")
+            ok, msg = launchd_job_action("stop")
+            if not ok:
+                ch.error("Couldn't stop the daemon.", msg)
+                raise typer.Exit(1)
+            ch.success(f"Daemon stopped ({job})")
+            ch.dim("It starts again at login. To keep it off: navig service uninstall")
+            return
+
     import time
 
     from navig.daemon.service_manager import (
@@ -991,7 +1041,7 @@ def service_stop(
         return
 
     # Step 1 — disable Task Scheduler task so RestartOnFailure cannot fire.
-    if os.name == "nt":
+    if sys.platform == "win32":
         task_scheduler_disable()
 
     # Step 2 — stop the supervisor gracefully (SIGTERM → wait 10 s → force-kill).
@@ -1092,6 +1142,32 @@ def service_restart(
         ch.error("systemd restarted the unit but no daemon came up.", f"Check: {journal}")
         raise typer.Exit(1)
 
+    if sys.platform == "darwin":
+        from navig.daemon.service_manager import launchd_job_action, supervising_launchd_job
+
+        job = supervising_launchd_job()
+        if job:
+            # `kickstart -k` is launchd's atomic restart, performed by launchd itself —
+            # outside the daemon's process tree, so it also survives being asked for
+            # from INSIDE it (the gateway's restart route runs this as a child).
+            from navig.daemon.restart_cause import record as _record_cause
+            from navig.daemon.supervisor import NavigDaemon
+
+            _record_cause("service restart")
+            ch.info(f"Restarting daemon via launchd ({job})...")
+            ok, msg = launchd_job_action("restart")
+            if not ok:
+                ch.error("Couldn't restart the daemon.", msg)
+                raise typer.Exit(1)
+            if _wait_for_daemon(NavigDaemon, attempts=_TASK_BOOT_WAIT_S):
+                ch.success(f"Daemon restarted (pid={NavigDaemon.read_pid()}, via launchd)")
+                return
+            ch.error(
+                "launchd restarted the job but no daemon came up.",
+                f"Check: launchctl print gui/$(id -u)/{job}",
+            )
+            raise typer.Exit(1)
+
     import time
 
     from navig.daemon.service_manager import (
@@ -1103,7 +1179,7 @@ def service_restart(
 
     # Disable the Task Scheduler task *before* killing so RestartOnFailure
     # cannot respawn the daemon while we are mid-restart (Windows only).
-    if os.name == "nt":
+    if sys.platform == "win32":
         task_scheduler_disable()  # silent if task not installed
 
     # Name this restart on the next boot line (chains onto a fresh api/route intent).
@@ -1125,7 +1201,7 @@ def service_restart(
                 ch.info("Retry elevated:  navig service restart --admin")
             # Re-arm before bailing out: we disabled the task above, and a restart
             # that could not stop the daemon must not ALSO leave autostart off.
-            if os.name == "nt":
+            if sys.platform == "win32":
                 _autostart_enable_guarded()
             raise typer.Exit(1)
         time.sleep(1)
@@ -1165,7 +1241,7 @@ def service_restart(
     # and it must be armed before `_launch_daemon`, which starts the daemon THROUGH the
     # task by preference (`schtasks /run` refuses a disabled task). A deliberate
     # `navig service stop` is a different command and still leaves it off.
-    if os.name == "nt":
+    if sys.platform == "win32":
         _autostart_enable_guarded()  # respects autostart_optout
 
     ch.info("Starting daemon...")

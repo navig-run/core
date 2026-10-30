@@ -35,6 +35,7 @@ from navig.connectors.secrets import KeyField, resolve
 from navig.connectors.types import (
     Action,
     ActionResult,
+    ActionType,
     ConnectorDomain,
     ConnectorStatus,
     HealthStatus,
@@ -44,6 +45,13 @@ from navig.connectors.types import (
 
 logger = logging.getLogger("navig.connectors.supabase")
 
+# Standard action types that map onto a Supabase DB op when ``params['op']`` is absent.
+_STANDARD_OPS: dict[ActionType, str] = {
+    ActionType.CREATE: "insert",
+    ActionType.UPDATE: "update",
+    ActionType.DELETE: "delete",
+}
+
 
 def _sb_request(
     url: str,
@@ -51,13 +59,18 @@ def _sb_request(
     method: str = "GET",
     body: bytes | None = None,
     timeout: int = 15,
+    response_headers: dict[str, str] | None = None,
 ) -> tuple[int, dict | list]:
+    """Send one PostgREST request. When *response_headers* is given it is filled with
+    the success response's headers (e.g. ``Content-Range`` for row counts)."""
     import json
 
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
         resp = urllib.request.urlopen(req, timeout=timeout)
         raw = resp.read()
+        if response_headers is not None:
+            response_headers.update({k.lower(): v for k, v in resp.headers.items()})
         return resp.status, json.loads(raw) if raw else {}
     except urllib.error.HTTPError as exc:
         raw = exc.read()
@@ -66,6 +79,15 @@ def _sb_request(
         except Exception:  # noqa: BLE001 — parse best-effort
             body_data = {"raw": raw.decode("utf-8", errors="replace")}
         return exc.code, body_data
+
+
+def _content_range_total(value: str | None) -> int | None:
+    """The total row count from a PostgREST ``Content-Range`` (``0-99/1234``), or None
+    when the header is absent or the total is unknown (``0-99/*``)."""
+    if not value or "/" not in value:
+        return None
+    total = value.rsplit("/", 1)[1].strip()
+    return int(total) if total.isdigit() else None
 
 
 def _err_detail(data: dict | list) -> str:
@@ -271,7 +293,7 @@ class SupabaseConnector(BaseConnector):
 
     # ── Fetch: read all rows from a table ───────────────────────────────────
 
-    async def fetch(self, resource_id: str, **kwargs: Any) -> Resource | None:
+    async def fetch(self, resource_id: str | None = None, **kwargs: Any) -> Resource | None:
         """Fetch rows from *resource_id* (a table) with optional filters.
 
         Args:
@@ -285,8 +307,12 @@ class SupabaseConnector(BaseConnector):
         """
         # `resource_id` is the base-class parameter name (BaseConnector.fetch);
         # 9 of 12 connectors already use it. Bound to the domain name here so the
-        # body, its log lines and its `metadata` keys stay unchanged.
-        table = resource_id
+        # body, its log lines and its `metadata` keys stay unchanged. The legacy
+        # `table=` keyword is still accepted so keyword callers keep working.
+        legacy = kwargs.pop("table", None)
+        table = resource_id if resource_id is not None else legacy
+        if table is None:
+            raise TypeError("fetch() missing required argument: 'resource_id'")
         self._require_connected()
         select = kwargs.get("select", "*")
         order = kwargs.get("order", None)
@@ -303,9 +329,11 @@ class SupabaseConnector(BaseConnector):
         for col, fil in filters.items():
             qs_dict[col] = fil
         params = urllib.parse.urlencode(qs_dict)
+        resp_headers: dict[str, str] = {}
         status_code, data = _sb_request(
             f"{self._rest_url(table)}?{params}",
             headers=self._headers(),
+            response_headers=resp_headers,
         )
         if status_code in (401, 403):
             raise ConnectorAuthError(self.manifest.id, f"Unauthorized on '{table}' ({status_code})")
@@ -319,9 +347,18 @@ class SupabaseConnector(BaseConnector):
         # We requested at most `limit` rows and don't auto-paginate, so an exact-`limit` result
         # means MORE rows almost certainly exist — flag it rather than presenting a capped read
         # as the whole table (the module docstring's "read all rows" promise).
-        truncated = len(rows) == int(limit)
+        # A server-side max-rows cap below `limit` returns a short page, so the client
+        # limit alone cannot tell; `Prefer: count=exact` makes PostgREST report the real
+        # total in Content-Range — use it when present.
+        total = _content_range_total(resp_headers.get("content-range"))
+        if total is not None:
+            truncated = int(offset) + len(rows) < total
+        else:
+            truncated = len(rows) == int(limit)
         body = f"{len(rows)} row(s) fetched"
-        if truncated:
+        if truncated and total is not None:
+            body += f" of {total} — more rows may exist beyond this page; page with `offset`"
+        elif truncated:
             body += f" (limit {limit} reached — more rows may exist; raise `limit` or page with `offset`)"
         return Resource(
             id=table,
@@ -336,9 +373,10 @@ class SupabaseConnector(BaseConnector):
     # ── Act: insert / update / delete / rpc ─────────────────────────────────
 
     async def act(self, action: Action) -> ActionResult:
-        """Run a Supabase write/RPC op. The op name comes from ``action.params['op']`` (the five
-        DB operations below don't map onto the generic ``ActionType`` enum, so they're carried in
-        params — ``action.action_type`` is unused here).
+        """Run a Supabase write/RPC op. The op name comes from ``action.params['op']``; without
+        one, the standard ``action.action_type`` picks it — CREATE → insert, UPDATE → update,
+        DELETE → delete (what the Deck route and the MCP tool send). ``rpc`` and ``buckets``
+        have no standard type and always need ``op``.
 
         insert:  {"op": "insert", "table": "...", "rows": [...]}
         update:  {"op": "update", "table": "...", "filters": {"id": "eq.5"}, "data": {...}}
@@ -348,7 +386,7 @@ class SupabaseConnector(BaseConnector):
         """
         self._require_connected()
         p = action.params
-        name = p.get("op", "")
+        name = p.get("op") or _STANDARD_OPS.get(action.action_type, "")
 
         if name == "insert":
             import json

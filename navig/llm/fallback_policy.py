@@ -44,6 +44,38 @@ PAYMENT = "payment"             # 402 — billing / insufficient credit
 DEAD_MODEL = "dead_model"       # 404 / 410 — model retired or unknown
 UNKNOWN = "unknown"             # anything else
 
+# What a 402 body says decides what the failure IS. Billing words are checked first, so a
+# message that mentions money is never re-read as a quota, and everything unrecognised keeps
+# the status-code reading (PAYMENT) instead of silently becoming transient.
+_BILLING_WORDS: tuple[str, ...] = (
+    "billing",
+    "insufficient",
+    "payment",
+    "credit",
+    "balance",
+    "card declined",
+    "purchase",
+    "subscribe",
+    "subscription",
+)
+_QUOTA_WORDS: tuple[str, ...] = (
+    "rate limit",
+    "ratelimit",
+    "rate_limit",
+    "quota",
+    "usage limit",
+    "usage_limit",
+    "too many requests",
+    "per minute",
+    "per_minute",
+    "per day",
+    "requests per",
+    "tokens per",
+    "capacity",
+    "try again later",
+    "overloaded",
+)
+
 
 # Human-readable phrase per category for a user-facing rotation notice. Phrased as
 # a present-participle state so it slots into "Primary account was {phrase} —
@@ -56,7 +88,7 @@ _CATEGORY_PHRASE: dict[str, str] = {
     SERVER_ERROR: "erroring",
     TIMEOUT: "timing out",
     AUTH: "failing to authenticate",
-    PAYMENT: "having a billing issue",
+    PAYMENT: "out of credits or having a billing issue",
     DEAD_MODEL: "using a retired model",
     UNKNOWN: "unavailable",
     # "cooldown" is a pre-skip pseudo-reason (the account was still cooling from a
@@ -100,6 +132,12 @@ _HOPPABLE = {
 
 _STATUS_RE = re.compile(r"status[=:\s]+(\d{3})")
 _BARE_STATUS_RE = re.compile(r"\b(4\d\d|5\d\d)\b")
+
+# Providers say "you are out of money" with a 403 as often as with a 402. xAI
+# answers ``403 permission-denied: Your team … has either used all available
+# credit``; classifying that as AUTH told the operator the KEY was rejected and
+# sent them to re-mint a credential that was perfectly good.
+_CREDIT_IN_LOW = re.compile(r"credit|insufficient|out of funds|billing|payment required")
 
 _cooldowns: dict[str, float] = {}
 _lock = threading.Lock()
@@ -153,8 +191,20 @@ def categorize_error(err: object) -> str:
         if status == 503:
             return OVERLOADED
         if status in (401, 403):
+            # A 403 that names an account-state problem is billing, not a bad
+            # credential — read the body before blaming the key.
+            if _CREDIT_IN_LOW.search(low):
+                return PAYMENT
             return AUTH
         if status == 402:
+            # A 402 is not always money. Providers do return it for a plan/usage cap
+            # ("rate limit exceeded", "usage limit"), and reading those as PAYMENT parks a
+            # model that frees up in a minute behind the 600s billing cooldown while doctor
+            # reports a billing problem the operator cannot fix. The message decides.
+            if any(word in low for word in _BILLING_WORDS):
+                return PAYMENT
+            if any(word in low for word in _QUOTA_WORDS):
+                return RATE_LIMITED
             return PAYMENT
         if status in (404, 410):
             return DEAD_MODEL

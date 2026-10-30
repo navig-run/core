@@ -229,6 +229,40 @@ async def test_write_refuses_existing_without_force_then_overwrites(tmp_path, mo
         assert (await forced.json())["data"]["overwritten"] is True
 
 
+async def test_confirm_with_source_ops_writes_exactly_the_preview(tmp_path, monkeypatch):
+    """Confirm re-sends the preview's ``source_ops``: an op that lands in the window
+    between preview and write must not reach the saved SKILL.md."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    rec = _make_recorder(tmp_path / "hist")
+    _seed(rec)
+    store = tmp_path / "store"
+
+    async with TestClient(TestServer(_app(rec, store, monkeypatch))) as client:
+        pr = await client.post(
+            "/api/deck/skills/distill", json={"last": "2h", "name": "demo-flow"}
+        )
+        assert pr.status == 200
+        preview = (await pr.json())["data"]
+        assert len(preview["source_ops"]) == 3
+
+        _record(rec, "navig host list", minutes_ago=1, op_type="read_query")
+
+        wr = await client.post(
+            "/api/deck/skills/distill",
+            json={
+                "last": "2h",
+                "ops": preview["source_ops"],
+                "name": "demo-flow",
+                "dry_run": False,
+            },
+        )
+        assert wr.status == 201
+        written = Path((await wr.json())["data"]["path"]).read_text(encoding="utf-8")
+        assert "navig host list" not in written
+        assert written == preview["markdown"]
+
+
 # ─────────────────────────── selection + refusals ──────────────────────────────
 
 

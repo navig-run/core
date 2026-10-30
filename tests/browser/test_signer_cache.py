@@ -50,6 +50,9 @@ def test_expired_template_is_dropped(tmp_path):
     cache.put(_tpl(t=1000.0, ttl=100.0))
     clock["t"] = 1101.0  # past TTL
     assert cache.get("tiktok.com") is None
+    # dropped from the persisted cache too, not just hidden from this lookup
+    reopened = sc.SignerCache(tmp_path / "sc.json", clock=lambda: 0.0)
+    assert reopened.get("tiktok.com") is None
 
 
 def test_put_bumps_success_count_on_same_path(tmp_path):

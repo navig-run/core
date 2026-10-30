@@ -231,6 +231,39 @@ def release(session_id: str | None = None) -> dict[str, Any] | None:
     return None
 
 
+def set_card(session_id: str, card: str | None) -> bool:
+    """Record which board card *session_id* holds (``None`` clears it).
+
+    ``navig card claim``/``release`` call this so ``navig mesh agents list`` and the
+    board agree on who holds what. True when the session has an entry.
+    """
+    from navig.core.dict_utils import now_iso  # noqa: PLC0415
+
+    sid = (session_id or "").lower()
+    data = load()
+    for entry in data["agents"]:
+        if entry.get("session_id") == sid:
+            entry["card"] = card
+            entry["last_seen"] = now_iso()
+            _save(data)
+            return True
+    return False
+
+
+def clear_card(card: str) -> int:
+    """Clear *card* from every entry that names it — a forced release frees a card
+    another session held. Returns how many entries changed."""
+    data = load()
+    changed = 0
+    for entry in data["agents"]:
+        if entry.get("card") == card:
+            entry["card"] = None
+            changed += 1
+    if changed:
+        _save(data)
+    return changed
+
+
 def _age_seconds(last_seen: str | None) -> int | None:
     if not last_seen:
         return None

@@ -34,7 +34,7 @@ tagged kind ``"system"`` and swept the next morning like everything above —
 turn it off with ``navig telegram tidy --system-off`` (or ``navig config set
 telegram.system_cleanup.enabled false``). The two switches compose: routine
 kinds record only when ``daily_clean.enabled`` is on, ``"system"`` only when
-``system_cleanup.enabled`` is on, and the sweep fires when either is due.
+``system_cleanup.enabled`` is on, and each kind is swept at its own switch's hour.
 Neither ever touches the operator's own messages or the agent's replies —
 those are conversation, not cards.
 """
@@ -177,6 +177,11 @@ def settings(*, fresh: bool = False) -> dict[str, Any]:
                 pass
     except Exception:  # noqa: BLE001 — config unreadable: stay off, never break a send
         logger.debug("daily_clean settings unreadable", exc_info=True)
+        # Fail CLOSED: "on by default" is for a config that was READ and has no
+        # key — an unreadable one may hold the operator's explicit off, and a
+        # sweep then would delete cards they chose to keep.
+        out["enabled"] = False
+        out["system_enabled"] = False
     _settings_cache = (now, out)
     return out
 
@@ -393,19 +398,29 @@ class SweepResult:
 
 
 def _protected() -> set[tuple[int, int]]:
-    """``(chat, message_id)`` of every open check-in question. Never raises.
+    """``(chat, message_id)`` of every open check-in question and every approval
+    card whose request is still waiting. Never raises.
 
-    If the check-in state cannot be read the sweep still runs, protecting nothing
-    extra — exactly the behaviour before check-ins existed — rather than taking
-    the whole tidy down.
+    If either state cannot be read the sweep still runs, protecting nothing extra
+    from that source — exactly the behaviour before it existed — rather than
+    taking the whole tidy down.
     """
+    out: set[tuple[int, int]] = set()
     try:
         from navig.checkins.state import protected_messages  # noqa: PLC0415
 
-        return protected_messages()
+        out |= protected_messages()
     except Exception:  # noqa: BLE001
         logger.debug("check-in protection unavailable", exc_info=True)
-        return set()
+    try:
+        # An unanswered approval card still has live buttons: deleting it left
+        # request_approval() waiting on a prompt the operator could no longer tap.
+        from navig.approval.journal import pending_cards  # noqa: PLC0415
+
+        out |= pending_cards()
+    except Exception:  # noqa: BLE001
+        logger.debug("approval-card protection unavailable", exc_info=True)
+    return out
 
 
 def read_ledger(path: Path) -> list[dict[str, int]]:
@@ -463,15 +478,49 @@ def _take() -> list[dict[str, int]] | None:
     return leftover + read_ledger(aside)
 
 
-def _put_back(entries: list[dict[str, int]]) -> None:
-    if entries:
+def _entry_key(e: dict[str, Any]) -> tuple[Any, ...]:
+    return (e.get("c"), e.get("m"), e.get("t"), e.get("k"))
+
+
+def _put_back(entries: list[dict[str, int]], taken: list[dict[str, int]] | None = None) -> None:
+    """Return *entries* to the live ledger and retire the ``.sweeping`` file.
+
+    On POSIX a :func:`note` that opened the live ledger just before :func:`_take`
+    renamed it appends into the renamed file AFTER it was read; unlinking it then
+    lost that message id for good. So the file is re-read last, and any line the
+    sweep never *taken* is carried over to the live ledger."""
+    aside = ledger_path().with_suffix(".sweeping")
+    late: list[dict[str, int]] = []
+    if taken is not None:
+        seen = {_entry_key(e) for e in taken}
+        late = [e for e in read_ledger(aside) if _entry_key(e) not in seen]
+    out = list(entries) + late
+    if out:
         with open(ledger_path(), "a", encoding="utf-8") as fh:
-            fh.write("".join(json.dumps(e) + "\n" for e in entries))
-    ledger_path().with_suffix(".sweeping").unlink(missing_ok=True)
+            fh.write("".join(json.dumps(e) + "\n" for e in out))
+    aside.unlink(missing_ok=True)
 
 
-async def sweep(api: ApiCall, *, now: datetime | None = None, dry_run: bool = False) -> SweepResult:
-    """Delete every recorded message from before today. Safe to call repeatedly."""
+#: The two independent cleanup schedules, and which ledger kinds each one owns.
+SCHEDULES = ("routine", "system")
+
+
+def _schedule_of(entry: dict[str, Any]) -> str:
+    return "system" if entry.get("k") == "system" else "routine"
+
+
+async def sweep(
+    api: ApiCall,
+    *,
+    now: datetime | None = None,
+    dry_run: bool = False,
+    only: str | None = None,
+) -> SweepResult:
+    """Delete every recorded message from before today. Safe to call repeatedly.
+
+    *only* (``"routine"`` or ``"system"``) restricts the sweep to the kinds that
+    schedule owns; the other schedule's entries stay in the ledger untouched
+    (dropped only once Telegram would refuse to delete them anyway)."""
     now = now or datetime.now()
     today = now.date()
     res = SweepResult()
@@ -488,7 +537,13 @@ async def sweep(api: ApiCall, *, now: datetime | None = None, dry_run: bool = Fa
         protected = _protected()
         spare = keep_kinds()
         for e in entries:
-            if e.get("k") in spare and datetime.fromtimestamp(e["t"]).date() < today:
+            if only is not None and _schedule_of(e) != only:
+                # Another schedule owns this entry: not ours to delete at this hour.
+                if now.timestamp() - e["t"] > DELETE_WINDOW_SEC:
+                    res.expired += 1
+                else:
+                    keep.append(e)
+            elif e.get("k") in spare and datetime.fromtimestamp(e["t"]).date() < today:
                 # The operator keeps this kind: it stays in the chat for good. Dropped
                 # from the ledger rather than retried; the choice is applied when the
                 # message falls due, so un-keeping a kind still sweeps today's.
@@ -530,53 +585,78 @@ async def sweep(api: ApiCall, *, now: datetime | None = None, dry_run: bool = Fa
                     keep.extend(by_id[m] for m in batch)
         res.kept = len(keep) - res.failed - res.protected
         if not dry_run:
-            _put_back(keep)
+            _put_back(keep, taken=entries)
     return res
 
 
-def last_sweep_day() -> str | None:
+def _read_state() -> dict[str, Any]:
     try:
-        return json.loads(_state_path().read_text(encoding="utf-8")).get("last_day")
-    except (OSError, ValueError, AttributeError):
-        return None
+        data = json.loads(_state_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
-def mark_swept(day: str) -> None:
+def last_sweep_day(schedule: str | None = None) -> str | None:
+    """The last day swept — by any schedule, or by *schedule* (``routine``/``system``).
+
+    A state file from before per-schedule tracking holds only ``last_day``; it
+    counts for both schedules."""
+    state = _read_state()
+    if schedule is None:
+        return state.get("last_day")
+    if any(k in state for k in SCHEDULES):
+        return state.get(schedule)
+    return state.get("last_day")
+
+
+def mark_swept(day: str, schedules: tuple[str, ...] = SCHEDULES) -> None:
+    state = _read_state()
+    legacy = state.get("last_day")
+    if legacy and not any(k in state for k in SCHEDULES):
+        # Upgrading a legacy file: it vouched for both schedules.
+        state.update(dict.fromkeys(SCHEDULES, legacy))
+    state.update(dict.fromkeys(schedules, day))
+    state["last_day"] = day
     path = _state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"last_day": day}), encoding="utf-8")
+    tmp.write_text(json.dumps(state), encoding="utf-8")
     os.replace(tmp, path)
 
 
 async def maybe_sweep(api: ApiCall, *, now: datetime | None = None) -> SweepResult | None:
     """The once-a-day trigger, called from a frequent tick. ``None`` = not due.
 
-    Fires when EVERY enabled switch's hour has passed — the latest one wins.
-    An OR here would let the earlier hour silently override the later one
-    (daily_clean set to 06:00 swept at 04:00 by system_cleanup). The ledger
-    only ever holds what the recording gates allowed, so with daily_clean off
-    the sweep touches nothing but ``"system"`` entries."""
+    The two schedules are independent: routine kinds are swept once their
+    ``daily_clean`` hour has passed, ``"system"`` once ``system_cleanup``'s has,
+    each tracked by its own last-swept day. A sweep touches only the kinds of
+    the schedules due right now — so one schedule's hour never sweeps the other's
+    cards early or late, and a switched-off schedule's cards are left alone."""
     global _last_attempt
     now = now or datetime.now()
     cfg = settings()
     day = now.date().isoformat()
-    hours = [
-        h
-        for h, on in ((cfg["hour"], cfg["enabled"]), (cfg["system_hour"], cfg["system_enabled"]))
-        if on
+    due = [
+        name
+        for name, hour, on in (
+            ("routine", cfg["hour"], cfg["enabled"]),
+            ("system", cfg["system_hour"], cfg["system_enabled"]),
+        )
+        if on and now.hour >= hour and last_sweep_day(name) != day
     ]
-    due = bool(hours) and now.hour >= max(hours)
-    if not due or last_sweep_day() == day:
+    if not due:
         return None
     if time.monotonic() - _last_attempt < RETRY_SEC and _last_attempt:
         return None
-    res = await sweep(api, now=now)
+    res = await sweep(api, now=now, only=due[0] if len(due) == 1 else None)
     if res.busy:
         return res  # someone else is on it, or a writer held the file — next tick
-    _last_attempt = time.monotonic()
+    # The retry back-off is for a FAILED sweep; a clean one must not hold back the
+    # other schedule whose hour comes up minutes later.
+    _last_attempt = time.monotonic() if res.failed else 0.0
     if not res.failed:
-        mark_swept(day)
+        mark_swept(day, tuple(due))
     logger.info(
         "daily chat tidy: deleted %d, expired %d, failed %d, kept %d",
         res.deleted, res.expired, res.failed, res.kept,

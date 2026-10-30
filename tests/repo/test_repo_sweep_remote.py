@@ -203,8 +203,8 @@ def test_remote_deletes_go_out_in_batches_not_one_push_per_branch(repo: Path, mo
     real = repo_mod._git
 
     def _spy(args, cwd, **kw):
-        if args[:3] == ["push", "origin", "--delete"]:
-            pushes.append(args[3:])
+        if args[0] == "push" and "--delete" in args:
+            pushes.append(args[args.index("--delete") + 1 :])
         return real(args, cwd, **kw)
 
     monkeypatch.setattr(repo_mod, "_git", _spy)
@@ -226,7 +226,7 @@ def test_a_failing_batch_falls_back_to_one_by_one_so_the_rest_still_go(repo: Pat
     calls = {"batch": 0}
 
     def _flaky(args, cwd, **kw):
-        if args[:3] == ["push", "origin", "--delete"] and len(args) > 4:
+        if args[0] == "push" and "--atomic" in args:
             calls["batch"] += 1
             return subprocess.CompletedProcess(args, 1, "", "error: remote ref does not exist")  # the batch "fails"
         return real(args, cwd, **kw)
@@ -236,3 +236,31 @@ def test_a_failing_batch_falls_back_to_one_by_one_so_the_rest_still_go(repo: Pat
     payload = _json.loads(result.output)
     assert calls["batch"] == 1
     assert {f"ok{i}" for i in range(3)} <= {d["name"] for d in payload["remote"]["deleted"]}, payload["remote"]
+
+
+# -- the delete is leased to the classified sha -------------------------------
+
+
+def test_a_remote_ref_that_advanced_after_classification_survives(repo: Path, monkeypatch):
+    """`--no-fetch` (or a push between classify and delete) judged an OLD tip; an
+    unconditional `push --delete` then removed the newer work. The lease refuses it."""
+    _push_branch_then_forget_it(repo, "feat/landed", land_on_main=True)
+    _push_branch_then_forget_it(repo, "feat/also-landed", land_on_main=True)
+    # Someone else pushes new work onto feat/landed; our tracking ref stays stale.
+    other = repo.parent / "other"
+    _git("clone", "-q", str(repo.parent / "origin.git"), str(other), cwd=repo.parent)
+    _git("config", "user.email", "o@navig.local", cwd=other)
+    _git("config", "user.name", "o", cwd=other)
+    _git("checkout", "-q", "feat/landed", cwd=other)
+    new_tip = _commit(other, "new-work.txt")
+    _git("push", "-q", "origin", "feat/landed", cwd=other)
+
+    res = runner.invoke(
+        repo_app, ["sweep", "--remote", "--no-fetch", "--yes", "--json", "--repo", str(repo)]
+    )
+    assert res.exit_code == 0, res.output
+    remote = json.loads(res.output)["remote"]
+    assert [d["name"] for d in remote["deleted"]] == ["feat/also-landed"]
+    assert [f["name"] for f in remote["failed"]] == ["feat/landed"]
+    heads = _git("ls-remote", "--heads", "origin", "feat/landed", cwd=repo)
+    assert heads.split()[0] == new_tip, "the newer work on origin must survive"

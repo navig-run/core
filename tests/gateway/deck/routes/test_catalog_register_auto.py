@@ -165,3 +165,28 @@ async def test_explicit_register_lifts_a_forget(isolated):
     assert not _registry.is_forgotten(space), "explicit register must lift the forget"
     rows = [s for s in _registry.load_registry().get("spaces", []) if str(s.get("path")) == str(space)]
     assert len(rows) == 1
+
+
+async def test_register_reports_503_when_the_registry_is_unreadable(isolated, monkeypatch):
+    """A locked spaces.json used to yield a phantom entry and a 201 — the space was
+    absent from discovery once the lock cleared."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from navig.core.json_io import JsonReadError
+    from navig.spaces import registry as _registry
+
+    space = _real_space(isolated, "locked-space")
+
+    def _raise_lock(*_a, **_k):
+        raise JsonReadError("simulated transient lock")
+
+    with monkeypatch.context() as m:
+        m.setattr(_registry, "load_json_for_update", _raise_lock)
+        async with TestClient(TestServer(_app())) as client:
+            r = await client.post("/spaces/register", json={"path": str(space)})
+            assert r.status == 503
+            body = await r.json()
+
+    assert body["ok"] is False
+    rows = [s for s in _registry.load_registry().get("spaces", []) if str(s.get("path")) == str(space)]
+    assert rows == []

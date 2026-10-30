@@ -166,3 +166,21 @@ def test_the_decorator_lets_an_enabled_command_through(
 
     _dangerous_command()
     assert ran == [True]
+
+
+@pytest.mark.parametrize("features", ["false", None, 0, ["x"]])
+def test_a_non_mapping_features_block_reads_as_defaults(
+    monkeypatch: pytest.MonkeyPatch, features: object
+) -> None:
+    """Review F0690: `config set comms.matrix.features false` stores a string, and
+    `.get` on it crashed every `@require_feature` command."""
+    import navig.config as config_mod
+
+    class _CM:
+        def get_global_config(self) -> dict:
+            return {"comms": {"matrix": {"features": features}}}
+
+    monkeypatch.setattr(config_mod, "get_config_manager", lambda: _CM())
+    assert mf._get_matrix_features_config() == {}
+    assert mf.is_feature_enabled("admin_ops") is mf.MATRIX_FEATURE_DEFAULTS["admin_ops"]
+    assert mf.get_all_features() == dict(mf.MATRIX_FEATURE_DEFAULTS)

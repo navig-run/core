@@ -363,7 +363,9 @@ def test_the_morning_card_names_the_button_the_operator_can_see(tmp_path, monkey
     path = tmp_path / "habits.csv"
     text, keyboard = ha.build_card(path, date.today().isoformat(), morning=True)
     wake_button = keyboard["inline_keyboard"][0][0]["text"]
-    word = wake_button.split(" ", 1)[1]
+    # A tappable habit carries its state mark only once it is done; an open one is the
+    # bare word. Either way the card must name the same word the button shows.
+    word = wake_button.split(" ", 1)[-1]
     assert word in text, f"card says tap something not on the button: {word!r}"
 
 
@@ -377,7 +379,9 @@ def test_english_is_unchanged_which_is_what_the_habit_suite_pins(tmp_path, monke
     passing — they run hermetically, with no user.language set."""
     text, keyboard = _card(tmp_path, monkeypatch, "en")
     assert "Check-in" in text
-    assert keyboard["inline_keyboard"][0][0]["text"] == "✅ Wake"
+    # The kit draws marks as TEXT (✓ ·), never emoji: emoji are double-width and wrap
+    # inside the card's table. The label is what this pins; the mark shows the state.
+    assert keyboard["inline_keyboard"][0][0]["text"].endswith("Wake")
     assert "Close the day" in keyboard["inline_keyboard"][-1][0]["text"]
 
 
@@ -410,6 +414,7 @@ def test_no_latin_prose_survives_in_a_localized_card(tmp_path, monkeypatch):
     HTML tags are stripped first (`<b>` is not prose), and the tracker labels
     are Cyrillic in this locale, so any Latin word left is untranslated copy.
     """
+    import html
     import re
     from datetime import date
 
@@ -421,12 +426,23 @@ def test_no_latin_prose_survives_in_a_localized_card(tmp_path, monkeypatch):
     day = date.today().isoformat()
     habit_tracker.upsert(path, day, "wake", "yes")   # one done, two open:
                                                      # exercises BOTH branches
-    for morning in (False, True):
-        text, keyboard = ha.build_card(path, day, morning=morning)
+    def _assert_no_latin(text: str, keyboard: dict, which: str) -> None:
         blob = text + " " + " ".join(
             b["text"] for row in keyboard["inline_keyboard"] for b in row
         )
         leftover = sorted(set(re.findall(r"[A-Za-z]{4,}", re.sub(r"<[^>]+>", "", blob))))
-        assert not leftover, (
-            f"{'morning' if morning else 'evening'} card still has English: {leftover}"
-        )
+        assert not leftover, f"{which} card still has English: {leftover}"
+
+    for morning in (False, True):
+        text, keyboard = ha.build_card(path, day, morning=morning)
+        _assert_no_latin(text, keyboard, "morning" if morning else "evening")
+
+    # The evening card above took the still-open branch; the all-three-done line is
+    # only rendered once every non-negotiable is marked, so render that branch too.
+    for habit in habit_tracker.NON_NEGOTIABLES:
+        habit_tracker.upsert(path, day, habit, "yes")
+    text, keyboard = ha.build_card(path, day, morning=False)
+    assert html.escape(ha._t("habit.card.all_three")) in text, (
+        "the completed evening card did not render the all-three-done branch"
+    )
+    _assert_no_latin(text, keyboard, "completed evening")

@@ -106,3 +106,61 @@ def test_get_is_quiet_when_the_profile_has_its_own_key(vault):
     assert res.exit_code == 0, res.output
     assert res.stdout.strip() == SANDBOX_KEY
     assert res.stderr == ""
+
+
+def _unreadable(vault, monkeypatch):
+    """Every decrypt fails as a transient SQLite lock would."""
+
+    def locked(label, *, version=None):
+        raise OSError("database is locked")
+
+    monkeypatch.setattr(vault, "get_bytes", locked)
+
+
+def test_set_refuses_when_the_existing_credential_is_unreadable(vault, monkeypatch):
+    """get() answers None for an unreadable credential; `vault set` used to take that
+    as absent and add() a fresh one under the same label, replacing the live secret."""
+    before = vault.store().get("stripe")
+    _unreadable(vault, monkeypatch)
+    res = runner.invoke(vault_app, ["set", "stripe", "sk_org_live_ROTATED"])
+    assert res.exit_code == 1, res.output
+    after = vault.store().get("stripe")
+    assert after.version == before.version
+    assert after.encrypted_blob == before.encrypted_blob
+
+
+def test_add_refuses_when_the_existing_credential_is_unreadable(vault, monkeypatch):
+    before = vault.store().get("stripe")
+    _unreadable(vault, monkeypatch)
+    res = runner.invoke(
+        vault_app, ["add", "stripe", "--key", "sk_NEW", "--no-interactive"]
+    )
+    assert res.exit_code == 1, res.output
+    assert vault.store().get("stripe").version == before.version
+
+
+def test_config_set_leaves_an_unreadable_vault_credential_alone(tmp_path, monkeypatch):
+    """`config set openai_api_key` writes through to the vault; on an unreadable
+    credential it must not add() a replacement under the same label."""
+    from unittest.mock import MagicMock
+
+    from navig.commands import config as config_cmd
+
+    v = Vault(tmp_path / "v")
+    try:
+        v.add("openai", "api_key", {"api_key": "sk-live", "org": "o-1"}, profile_id="default")
+        before = v.store().get("openai")
+        _unreadable(v, monkeypatch)
+        cm = MagicMock()
+        cm.global_config = {}
+        with (
+            patch("navig.commands.config.get_config_manager", return_value=cm),
+            patch("navig.vault.get_vault", return_value=v),
+            patch("navig.commands.config.ch"),
+        ):
+            config_cmd.set_config("openai_api_key", "sk-NEW")
+        after = v.store().get("openai")
+        assert after.version == before.version
+        assert after.encrypted_blob == before.encrypted_blob
+    finally:
+        v._store.close()

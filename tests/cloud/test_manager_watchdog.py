@@ -11,6 +11,8 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock
 
+import pytest
+
 from navig.cloud import CloudManager
 
 
@@ -53,3 +55,36 @@ async def test_watchdog_retries_after_a_failed_restart(monkeypatch):
     # The watchdog respawned a SECOND time after the first restart failed.
     assert spawn["n"] == 2  # pre-fix: 1 (it gave up and returned)
     assert m.state.rotations == 1  # the successful restart counted
+
+
+async def test_cancelling_kill_proc_still_kills_the_child():
+    """`_kill_proc` clears `_proc` before awaiting; a cancel (stop() cancelling the
+    watchdog) must not leave a SIGTERM-ignoring cloudflared running.
+
+    Review: https://github.com/navig-run/labs/pull/655#discussion_r3648609931
+    """
+
+    class StubbornProc:
+        returncode = None
+        killed = False
+
+        def terminate(self):
+            pass
+
+        def kill(self):
+            self.killed = True
+
+        async def wait(self):
+            await asyncio.Event().wait()  # never exits on SIGTERM
+
+    m = CloudManager(api_key="k", broker_url="https://api.navig.run", gateway_port=8765)
+    proc = StubbornProc()
+    m._proc = proc
+
+    task = asyncio.ensure_future(m._kill_proc())
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert proc.killed, "the child survived a cancelled cleanup"

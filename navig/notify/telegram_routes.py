@@ -41,6 +41,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from navig.notify import dedupe
+
 logger = logging.getLogger("navig.notify.telegram_routes")
 
 _ROUTE_PREFIX = "tg_route:"
@@ -326,7 +328,10 @@ def _check_can_post(chat: ResolvedChat) -> None:
 def _record_route_failure(type_key: str, route: Route, error: str) -> None:
     logger.warning(
         "telegram route for %r → %s (%s) failed: %s — delivered to the DM instead",
-        type_key, route.label(), route.chat_id, error,
+        type_key,
+        route.label(),
+        route.chat_id,
+        error,
     )
     now = time.monotonic()
     last = _last_failure_note.get(route.chat_id)
@@ -349,13 +354,37 @@ def _record_route_failure(type_key: str, route: Route, error: str) -> None:
         logger.debug("route-failure feed note failed", exc_info=True)
 
 
-def _dm(text: str, chat_id: str | None, *, silent: bool, keyboard: list[list[dict]] | None = None) -> bool:
+def _dm(
+    text: str,
+    chat_id: str | None,
+    *,
+    silent: bool,
+    keyboard: list[list[dict]] | None = None,
+    card: Any = None,
+) -> bool:
     """The DM send — through ``notify_operator``, the one process-agnostic DM path."""
     from navig.messaging import notify_operator as no
 
+    if card is not None:
+        # A card carries its own classic projection, so no flags are needed here.
+        return bool(no.notify_operator(text, chat_id=chat_id, silent=silent, card=card))
     if keyboard:
         return bool(no.notify_operator(text, chat_id=chat_id, silent=silent, keyboard=keyboard))
     return bool(no.notify_operator(text, chat_id=chat_id, silent=silent))
+
+
+#: An identical notification inside this window is one event reported twice.
+#: The window and the key live in :mod:`navig.notify.dedupe` so every delivery
+#: seam (this one, and the channel matrix in ``router.dispatch``) collapses on
+#: exactly the same rule.
+COLLAPSE_WINDOW_S = dedupe.COLLAPSE_WINDOW_S
+
+
+def _collapse_key(type_key: str, text: str, event_key: str | None = None) -> str:
+    """The claim key for one arrival — its event identity when known, else its words."""
+    if event_key:
+        return dedupe.payload_key("telegram", type_key, event_key)
+    return dedupe.payload_key("telegram", type_key, text)
 
 
 def deliver(
@@ -364,6 +393,8 @@ def deliver(
     *,
     fallback_chat_id: str | None = None,
     keyboard: list[list[dict]] | None = None,
+    card: Any = None,
+    dedupe_key: str | None = None,
 ) -> tuple[bool, str]:
     """Send *text* (Telegram HTML) for *type_key*: its route, else the DM.
 
@@ -371,20 +402,66 @@ def deliver(
     chat as ``notify_operator`` resolves it. Returns ``(ok, detail)``. ``ok`` is
     True when the message reached *some* chat — a routed send that fell back to
     the DM still delivered, and the detail says so.
+
+    ``card`` (a :class:`navig.telegram.card_doc.Card`) is tried first, routed chat
+    or not: the rich message is the reading experience, and the classic *text* is
+    the fallback that every Bot API server understands.
+
+    ``dedupe_key`` names the event when the caller knows it (a signed webhook's event
+    id). Two real payments can render the same words; with an identity they both
+    arrive, and a repeat of ONE event still collapses.
     """
     from html import escape
 
     silent = is_silent(type_key)
     route = get_route(type_key)
 
+    # One message, one arrival. A provider that retries, a second sender holding
+    # the same token, or a producer with a loop all render the SAME words, and the
+    # operator gets five "💰 Sale — $19.99" cards for one payment. The claim is
+    # keyed on the rendered payload so those five collapse to one; it is released
+    # again below whenever nothing actually reached a chat.
+    collapse = _collapse_key(type_key, text, dedupe_key)
+    if not dedupe.claim(collapse, COLLAPSE_WINDOW_S):
+        logger.info(
+            "notify %r collapsed — an identical card went out within %ss",
+            type_key,
+            COLLAPSE_WINDOW_S,
+        )
+        return True, "duplicate collapsed"
+
+    if card is not None:
+        from navig.messaging import notify_operator as no
+
+        target = route.chat_id if route is not None else fallback_chat_id
+        if no.notify_operator(
+            text,
+            chat_id=str(target) if target else None,
+            silent=silent,
+            keyboard=keyboard,
+            card=card,
+        ):
+            if route is None:
+                return True, "sent"
+            return True, f"sent to {route.label()}"
+        if route is None:
+            dedupe.release(collapse)
+            return False, "telegram not configured"
+        # The card did not go through: fall through to the classic body below, which
+        # also carries the supergroup-migration handling a card send does not do.
+
     if route is None:
         ok = _dm(text, fallback_chat_id, silent=silent, keyboard=keyboard)
+        if not ok:
+            dedupe.release(collapse)
         return ok, ("sent" if ok else "telegram not configured")
 
     out = send(route.chat_id, text, silent=silent, keyboard=keyboard)
     if not out.ok and out.migrate_to:
         # A group upgraded to a supergroup gets a new id. Follow it, keep the route.
-        logger.info("telegram route for %r migrated %s → %s", type_key, route.chat_id, out.migrate_to)
+        logger.info(
+            "telegram route for %r migrated %s → %s", type_key, route.chat_id, out.migrate_to
+        )
         route = Route(chat_id=out.migrate_to, title=route.title)
         set_route(type_key, route.chat_id, route.title)
         out = send(route.chat_id, text, silent=silent, keyboard=keyboard)
@@ -399,6 +476,7 @@ def deliver(
     # The fallback is NOT silent: a broken route is exactly when you need to hear it.
     if _dm(text + note, fallback_chat_id, silent=False, keyboard=keyboard):
         return True, f"{route.label()} failed ({out.error}); delivered to your DM"
+    dedupe.release(collapse)
     return False, f"{route.label()}: {out.error}; the DM fallback failed too"
 
 

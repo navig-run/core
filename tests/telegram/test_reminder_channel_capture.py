@@ -142,7 +142,8 @@ def _reply(env, task_reply_id: int, text: str) -> tuple[bool, str]:
 
     ch = _Channel()
     post = _post(text, mid=77)
-    post["reply_to_message_id"] = task_reply_id
+    # The real Bot API shape: the replied-to message is nested, never a top-level id.
+    post["reply_to_message"] = {"message_id": task_reply_id, "chat": {"id": REMINDERS}}
     consumed = asyncio.run(handle_channel_post(ch, post))
     return consumed, (ch.calls[0][1]["text"] if ch.calls else "")
 
@@ -202,6 +203,24 @@ def test_reply_snooze_moves_the_reminder(env):
     assert after != before, "the due time did not move"
     # The reminder table was rescheduled by the same update path.
     assert len(runtime.rows) >= 1
+
+
+def test_snoozing_an_overdue_task_counts_from_now(env):
+    """A reply that arrives after the due time snoozes from NOW, not from the stale
+    due time — 09:00 + 1h answered at 12:00 was 10:00, a past time no reminder fires for."""
+    from datetime import UTC, timedelta
+
+    from navig.pim.clock import from_utc_iso
+
+    store, _runtime, _route = env
+    _run(_post("dentist friday 9am", mid=5))
+    task_id = store.list_todos()[0]["id"]
+    service.update(task_id, {"due_at": NOW - timedelta(hours=3)})
+
+    consumed, reply = _reply(env, 99, "snooze 1h")
+    assert consumed is True and reply.startswith("⏰ Moved to"), reply
+    after = from_utc_iso(store.list_todos()[0]["due_at"])
+    assert after == (NOW + timedelta(hours=1)).astimezone(UTC), after
 
 
 def test_a_reply_that_is_not_a_command_does_not_become_a_task(env):

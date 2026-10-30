@@ -4703,6 +4703,67 @@ navig apply my-block --input host=staging --input db_name=testdb
 
 For complete documentation, see `docs/WORKFLOWS.md`.
 
+### 21.6 Webflows — recorded browser procedures (`navig webflow`)
+
+A **Webflow** is a browser task you did once while the NAVIG Dock recorded it (side panel →
+Webflows → Record, then *Add check* on the text that proves it worked). It replays with no AI:
+every step must find exactly one element, every wait is a condition with a deadline, and the
+run stays on the flow's own sites.
+
+```bash
+navig webflow list [--match "renew plan"] [--json]   # what exists — a goal discovers flows here
+navig webflow show wf_order-a-pro-plan                # sites, parameters, steps
+navig webflow run wf_order-a-pro-plan -p full_name="Ada Lovelace" [--json] [--headed]
+navig webflow run wf_order-a-pro-plan --allow-vault   # fill vault-backed secret params
+navig webflow run wf_order-a-pro-plan --repair        # the site renamed a control: repair it
+navig webflow run wf_order-a-pro-plan --resume <run>  # continue an interrupted run
+navig webflow runs [wf_order-a-pro-plan] [--json]     # run checkpoints (pause/resume evidence)
+navig webflow rollback wf_order-a-pro-plan -r 1       # old revision → a NEW one (append-only)
+navig webflow export wf_order-a-pro-plan -o order.webflow.json
+navig webflow import order.webflow.json               # validated; always a new flow
+navig webflow delete wf_order-a-pro-plan --yes
+```
+
+**`run` exit codes** — what a goal subtask is judged by:
+
+| Code | Meaning |
+|------|---------|
+| `0` | **Verified** — every step passed and a check proved the outcome |
+| `3` | Completed **without** a check — not proof; add one in the Dock editor |
+| `1` | Failed — the report names the step, its category (`not_found`, `ambiguous`, `assertion`, `origin`, `denied`, `stale`, …) and why |
+| `4` | **Needs you** — paused (a secret nobody may fill, a missing vault login, or a page blocked by a CAPTCHA/MFA check, classified as `challenge`): the checkpoint is kept and the `webflow_needs_user` notification was sent — finish the check in a browser, then resume |
+| `130` | Stopped |
+| `2` | Could not start (unknown flow, a missing value, a secret passed as an argument) |
+
+So a goal subtask `navig webflow run <id> -p … --json` completes only when the outcome was
+verified on the page, and its result is the run report (no values, no secrets).
+
+**Secrets are never arguments.** A secret param tied to a vault login (Dock editor) is filled
+only with `--allow-vault` — just in time, on an https page of the flow's sites whose domain
+matches the login, recorded in the vault audit log (`navig vault login add <site> -u <user>`
+stores the login). Without the vault, a person at the terminal is asked for it — non-interactively
+the run **pauses** (exit `4`, the notification above) instead of failing.
+
+**`--repair` — the site changed under you.** When an acting step (click/fill/select) finds no
+element, the runner re-observes the page and accepts a repair only if it resolves to exactly one
+visible element through the same matcher replay uses: a drifted name/test id/id first, a recorded
+position second, nothing at all otherwise (it never guesses — and it never repairs a *check*, so
+a passing check still means what the page showed). Each repair is an incident
+(`webflow.locator_repair`) and, for a stored flow, a **new revision** (`provenance.source:
+repair`); `navig webflow rollback -r N` restores any earlier one the same way. Origins, urls and
+values never change.
+
+**Checkpoints and `--resume`.** Every run writes a sanitized checkpoint
+(`<config>/webflows/<id>/runs/<run_id>.json` — ids and verdicts only, never a value). A run
+stopped mid-way continues with `--resume <run_id>`: the browser reopens the page it left at, then
+per completed step it **skips what the restored page still proves** (its recorded outcome is
+visible), **re-executes what is idempotent on that page** (a form field the fresh browser lost),
+and **fails closed as `stale`** when neither can be shown — a completed action is never re-clicked
+and never skipped silently. A resume always continues **the revision the run started on** (an
+edited flow resumes its own step list, not the newest one; `--resume` and `--revision` together
+name different revisions is an error). `navig webflow runs` lists what paused, what finished and
+the resume command for each.
+
 ---
 
 <a id="22-ai-integration-mcp--wiki-rag"></a>
@@ -10975,12 +11036,22 @@ work in **your everyday Chrome** — your logins, your tabs — use the NAVIG Do
    itself with NAVIG on this computer (the first extension to pair is trusted; any other
    extension is then refused by the daemon) and keeps one connection open.
 2. Point your agent at NAVIG's MCP server, e.g. Claude Code:
-   `claude mcp add navig -- py -3.13 -m navig.mcp_server`
-3. The agent uses `dock_status`, `dock_tabs`, `dock_open`, `dock_snapshot` (with `since`
+   `claude mcp add navig -- py -3.13 -m navig.mcp_server` — the **default (compact)
+   surface**: 17 domain tools, with browser control as `navig_browser_user` (`action`:
+   status · tabs · snapshot · text · screenshot · console · network · open · act · release).
+   For the raw `dock_*` names instead, add `--profile full` (the full 176-tool catalogue):
+   `claude mcp add navig -- py -3.13 -m navig.mcp_server --profile full`, or serve only the
+   browser tools with `navig mcp serve --transport stdio --only dock`. Codex wires the same
+   way in `~/.codex/config.toml`: `[mcp_servers.navig]` with `command = "navig"`,
+   `args = ["mcp", "serve", "--transport", "stdio"]`.
+   (`navig mcp install-config --client claude-code` exists too, but it registers the
+   Recall-only server — different purpose.)
+3. The agent uses the browser either as the routed `navig_browser_user` actions (default) or,
+   on `--profile full`, as `dock_status`, `dock_tabs`, `dock_open`, `dock_snapshot` (with `since`
    for a diff), `dock_text`, `dock_act` (up to 12 steps in one call: click · type · fill · key ·
    scroll · hover · select · navigate · wait · wait_for · extract · upload · get_text — each
    aimed at a `[ref_N]` or a locator: role + name, testid, css, has_text, xpath), `dock_screenshot`,
-   `dock_console`, `dock_network` and `dock_release`.
+   `dock_console`, `dock_network` and `dock_release` — same tools, same arguments either way.
 
 Agents only touch tabs in the **NAVIG agents** tab group — the ones they open, plus any tab
 you drag into it. While one works, the page glows and names it ("Claude Code clicking …");
@@ -12320,6 +12391,7 @@ answered and open questions, findings, risks, architecture and lore. It is off u
 | `navig recall review [list \| accept <id> \| reject <id>]` | Possible duplicates (accepting merges them and keeps the other as `superseded`) and model items with no verifiable quote (never turned into records). |
 | `navig recall verify -p <project> [--root <repo>]` | Checks ideas and plans against the project's code: `likely` (code and tests), `partial` (code only), `not_found`, or `unknown`. It never sets `verified`. Afterwards it re-derives each record's **delivery lifecycle** (`proposed · implemented_uncommitted · committed · merged · verified · deployed · failed · superseded · abandoned · unknown`) from git verdicts and explicit evidence — deterministic, zero inference; merged never implies deployed, and an assistant claim never yields an `observed` basis. |
 | `navig recall terms` · `navig recall forgotten` | Vocabulary (coined and rejected names, with reasons), and ideas that were never rejected and have no implementation found, oldest first. |
+| `navig recall resurrect [-p project \| --here] [-n N] [--telegram] [--json]` | The same ideas **ranked** by a deterministic score — the reasons are the score: +40 when your own words are quoted in it, up to +24 for quoted passages, +(11−rank)·4 for an audit recovered-idea rank, +15 for staleness, +5 for an open status. Rejected and superseded ideas never appear. `--telegram` sends the digest as one message to the channels enabled for the `recall_digest` type (Deck + Telegram by default, toggleable in NAVIG OS → Settings → Notifications). Every MCP call is Brain-routed: `recall_resurrect` reaches the Brain after the next Brain release; until then it reports "upgrade the Brain". |
 
 **Every extracted record quotes its source verbatim.** The quote must appear in the message
 it cites, or the item goes to review instead. A status of `confirmed`, `approved`, `rejected`

@@ -78,6 +78,14 @@ def _quarantine_corrupt(path: Path, text: str) -> None:
         pass
 
 
+def _quarantine_corrupt_bytes(path: Path) -> None:
+    """:func:`_quarantine_corrupt` for a store that is not even text: copy its raw bytes."""
+    try:
+        (path.parent / (path.name + ".corrupt")).write_bytes(path.read_bytes())
+    except OSError:
+        pass
+
+
 def load_json_for_update(path: str | Path, *, default: Any = None) -> Any:
     """Load a JSON store for a read-MODIFY-write, refusing to mask an unreadable file.
 
@@ -86,7 +94,7 @@ def load_json_for_update(path: str | Path, *, default: Any = None) -> Any:
     * present WITH content but transiently unreadable (lock survived the retries) →
       raises :class:`JsonReadError`, so the caller ABORTS the save rather than writing
       an empty store over every record.
-    * present but corrupt (invalid JSON), OR of a different top-level type than
+    * present but corrupt (invalid JSON or not UTF-8), OR of a different top-level type than
       ``default`` (e.g. a list where a dict-store expects a mapping) → the bytes are
       quarantined as ``*.corrupt`` and the default returned (the data is already lost;
       refusing forever would only wedge the store).
@@ -96,6 +104,11 @@ def load_json_for_update(path: str | Path, *, default: Any = None) -> Any:
         return _fresh(default)
     try:
         text = read_text_retrying(p)  # rides out transient locks; raises OSError if they persist
+    except UnicodeDecodeError:
+        # Not UTF-8 (disk corruption, a writer with the wrong encoding): corrupt, like
+        # invalid JSON — keep the raw bytes and start from the default instead of crashing.
+        _quarantine_corrupt_bytes(p)
+        return _fresh(default)
     except OSError as exc:
         raise JsonReadError(f"{p} exists but could not be read: {exc}") from exc
     if not text.strip():

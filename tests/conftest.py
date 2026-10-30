@@ -515,9 +515,42 @@ def temp_dir():
     on purpose. ``--basetemp`` WIPES the directory it points at, so a fixed one made concurrent
     agent sessions in this checkout delete each other's temp dirs and fail at session start —
     see the comment at the top of ``pytest.ini`` and ``tests/core/test_tmp_dir_concurrency.py``.
+
+    The system temp dir is not trusted blindly: ``TMPDIR``/``TEMP``/``TMP`` can point inside
+    a checkout (the elevated-land workaround does exactly that), so the parent is verified to
+    have no ``.git`` ancestor, falling back to the platform defaults, and the test is skipped
+    when no such parent exists rather than silently handed a directory inside a repo.
     """
-    with tempfile.TemporaryDirectory() as tmpdir:
+    parent = _non_repo_temp_parent()
+    if parent is None:
+        pytest.skip("no writable temp parent outside a git checkout on this machine")
+    with tempfile.TemporaryDirectory(dir=parent) as tmpdir:
         yield Path(tmpdir)
+
+
+def _has_git_ancestor(start: Path) -> bool:
+    cur = start.resolve()
+    while True:
+        if (cur / ".git").exists():
+            return True
+        if cur.parent == cur:
+            return False
+        cur = cur.parent
+
+
+def _non_repo_temp_parent() -> Path | None:
+    """The first existing temp parent with no ``.git`` ancestor, else None."""
+    candidates = [Path(tempfile.gettempdir())]
+    if os.name == "nt":
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            candidates.append(Path(local) / "Temp")
+    else:
+        candidates += [Path("/tmp"), Path("/var/tmp")]
+    for cand in candidates:
+        if cand.is_dir() and not _has_git_ancestor(cand):
+            return cand
+    return None
 
 
 @pytest.fixture
@@ -1051,7 +1084,10 @@ def _no_env_leaks(_isolate_navig_config_dir):
     # This was found by the gate, not by a local run: the ambient shell here already had both
     # set, so there was no delta to see. Validate this guard with `env -u PYTHONIOENCODING -u
     # PYTHONUTF8`, or it silently proves nothing.
-    _product_owned = {"PYTHONIOENCODING", "PYTHONUTF8"}
+    #
+    # Only the exact pairs the CLI writes, and only on Windows (`_force_utf8_stdio` returns
+    # early elsewhere): a POSIX test adding either, or any other value, is a real leak.
+    _product_owned = {"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"} if os.name == "nt" else {}
 
     def _snapshot() -> dict[str, str]:
         return {k: v for k, v in os.environ.items() if k not in _pytest_owned}
@@ -1060,7 +1096,7 @@ def _no_env_leaks(_isolate_navig_config_dir):
     yield
     after = _snapshot()
 
-    added = sorted(after.keys() - before.keys() - _product_owned)
+    added = sorted(k for k in after.keys() - before.keys() if _product_owned.get(k) != after[k])
     removed = sorted(before.keys() - after.keys())
     changed = sorted(k for k in before.keys() & after.keys() if before[k] != after[k])
     if not (added or removed or changed):
@@ -1089,6 +1125,10 @@ def _no_env_leaks(_isolate_navig_config_dir):
     )
 
 
+# Resolved at import: once the cwd is a deleted directory, resolving a path can itself fail.
+_SUITE_ROOT = Path(__file__).resolve().parents[1]
+
+
 @pytest.fixture(autouse=True)
 def _no_cwd_leaks(_isolate_navig_config_dir):
     """A test must leave the process cwd where it found it.
@@ -1111,13 +1151,21 @@ def _no_cwd_leaks(_isolate_navig_config_dir):
     except OSError:
         # The cwd is already gone when this test starts: a previous test's leak that the
         # guard has just repaired would not leave it so; report it rather than mask it.
-        before = None
+        # There is no original to restore, so move to a directory that exists (this
+        # suite's root) before failing, or every later test inherits the broken worker.
+        os.chdir(_SUITE_ROOT)
+        raise AssertionError(
+            "the process cwd was already a deleted directory when this test started -- an "
+            "earlier test (or fixture) chdir'd into a directory and removed it. The guard "
+            "moved the worker to the suite root; the culprit is usually the test that ran "
+            "just before this one in the same xdist worker."
+        ) from None
     yield
     try:
         after = os.getcwd()
     except OSError:
         after = "<deleted directory>"
-    if before is None or after == before:
+    if after == before:
         return
     # Repair before failing: one leaking test must not cascade into every test after it.
     os.chdir(before)

@@ -91,6 +91,31 @@ class TestDeployEngineUnit:
         assert all(p.success for p in result.phases)
         assert (DeployPhase.CLEANUP, "ok") in fired
 
+    def test_dry_run_does_not_record_the_planned_snapshot(self, tmp_path):
+        # The dry-run snapshot record describes a snapshot that was never taken; it
+        # must not reach result.snapshot, or the history (and `deploy status`) shows a
+        # path that does not exist.
+        engine = _make_engine(tmp_path)
+        with (
+            patch("navig.deploy.engine.RollbackManager") as MockRM,
+            patch("navig.deploy.engine.HealthChecker") as MockHC,
+            patch("navig.deploy.engine.build_adapter") as mock_af,
+            patch("navig.deploy.engine.subprocess.run", return_value=_ok_proc()),
+            patch("navig.deploy.engine.DeployHistory") as MockHist,
+        ):
+            MockRM.return_value.create_snapshot.return_value = _snap()
+            MockRM.return_value.load_state.return_value = None
+            MockHC.return_value.check.return_value = (True, "healthy")
+            mock_af.return_value.restart.return_value = (True, "restarted")
+            result = engine.run(dry_run=True)
+        assert result.success is True
+        assert result.snapshot is None
+        assert result.to_dict()["snapshot"] is None
+        MockRM.return_value.save_state.assert_not_called()
+        (persisted,) = MockHist.return_value.append.call_args.args
+        assert persisted["dry_run"] is True
+        assert persisted["snapshot"] is None
+
     def test_pre_check_failure_stops_deploy(self, tmp_path):
         engine = _make_engine(tmp_path)
         engine._remote.execute_command.return_value = _fail_proc("connection refused")

@@ -224,6 +224,8 @@ class BrowserFetchTool(BaseTool):
                     "navig config set net.ssrf.allow_private_network true"
                 ),
             )
+        except OSError as exc:  # after SsrfBlockedError (an OSError): DNS failure (gaierror)
+            return ToolResult(name=self.name, success=False, error=f"cannot resolve host: {exc}")
         except ValueError as exc:
             return ToolResult(name=self.name, success=False, error=f"invalid url: {exc}")
 

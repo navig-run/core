@@ -128,3 +128,21 @@ def get_yesterday() -> EveEntry:
 def get_entry(date: str) -> EveEntry:
     """Return a specific date's entry (YYYY-MM-DD)."""
     return _load().get(date) or {}
+
+
+def history(days: int = _MAX_DAYS) -> dict[str, EveEntry]:
+    """The journal as choices: newest day first, trimmed to *days*.
+
+    Read-only and ordered on purpose. The evening buttons offer what was already
+    logged — "log it again" is one tap, while "type what you shipped" asks the
+    operator to remember the day at the exact moment the day is over. A caller that
+    wants the newest items first must not have to re-sort a JSON dict.
+    """
+    now = datetime.now()
+    oldest = (now - timedelta(days=max(1, int(days)))).strftime("%Y-%m-%d")
+    entries = _load()
+    return {
+        key: entries[key]
+        for key in sorted(entries, reverse=True)
+        if key >= oldest
+    }

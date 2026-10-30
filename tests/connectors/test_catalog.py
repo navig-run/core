@@ -145,6 +145,28 @@ def test_invalid_rows_are_rejected(over, message):
         entry_from_dict(_row(**over))
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        "[]",
+        '"just a string"',
+        json.dumps(_row(name=5)),
+        json.dumps(_row(id=7)),
+        json.dumps(_row(category=["developer"])),
+        json.dumps(_row(rank="first")),
+        json.dumps(_row(rank=None)),
+        json.dumps(_row(flags=5)),
+        json.dumps(_row(flags=[1])),
+        json.dumps(_row(country=1)),
+    ],
+)
+def test_malformed_row_shapes_raise_catalog_error(line):
+    # The CLI and Deck route only catch CatalogError: a wrong JSON shape or field
+    # type must not escape as TypeError/AttributeError.
+    with pytest.raises(CatalogError):
+        parse_rows([("developer.jsonl", line + "\n")])
+
+
 def test_a_valid_resolved_row_is_accepted():
     e = entry_from_dict(
         _row(status="live", integration="remote_mcp", mcp="https://mcp.acme.dev/mcp")

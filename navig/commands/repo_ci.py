@@ -797,6 +797,124 @@ def _authenticated_users_can_modify(path: Path) -> bool | None:
     return False
 
 
+CI_LANE_GROUP = "navig-ci-users"
+
+
+def _console_text(stdout: bytes) -> str:
+    from navig.core.proc_text import decode_console_output  # noqa: PLC0415
+
+    return decode_console_output(stdout)
+
+
+def _ci_group_in_token(group: str = CI_LANE_GROUP) -> bool | None:
+    """Is *group* in THIS process's logon token? None when the OS cannot be asked.
+
+    A Windows (and POSIX) logon token is fixed at sign-in: a group added to the account
+    afterwards is in the database but absent from every process that was already running, so
+    the shared lane stays unreadable until the user signs out and back in.
+    """
+    argv = ["whoami", "/groups"] if sys.platform == "win32" else ["id", "-nG"]
+    try:
+        res = subprocess.run(  # noqa: S603,S607 — fixed argv, no user data
+            argv, capture_output=True, timeout=15, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    text = _console_text(res.stdout)
+    if res.returncode != 0 or not text.strip():
+        return None
+    wanted = group.casefold()
+    if sys.platform == "win32":
+        for line in text.splitlines():
+            fields = line.split()
+            # "whoami /groups" prints "MACHINE\group  Alias  S-1-…"; the SAM name is never localised.
+            if fields and fields[0].split("\\")[-1].casefold() == wanted:
+                return True
+        return False
+    return wanted in (name.strip().casefold() for name in text.split())
+
+
+def _ci_group_lists_user(group: str = CI_LANE_GROUP) -> bool | None:
+    """Does the account database list this account in *group*? None when unanswerable.
+
+    Asks the directory, not the token — that is the difference this whole hint exists for.
+    Cmdlet names and SAM names are English even on localised Windows, unlike `net localgroup`'s
+    translated headers.
+    """
+    import getpass  # noqa: PLC0415
+
+    user = getpass.getuser().casefold()
+    if sys.platform == "win32":
+        script = f"(Get-LocalGroupMember -Group '{group}' -ErrorAction Stop).Name"
+        argv = ["powershell.exe", "-NoProfile", "-Command", script]
+    else:
+        argv = ["getent", "group", group]
+    try:
+        res = subprocess.run(  # noqa: S603,S607 — fixed argv; the group name is a constant
+            argv, capture_output=True, timeout=20, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    text = _console_text(res.stdout)
+    if res.returncode != 0 or not text.strip():
+        return None
+    if sys.platform == "win32":
+        names = [
+            line.split("\\")[-1].strip().casefold() for line in text.splitlines() if line.strip()
+        ]
+    else:
+        _, _, members = text.strip().partition(":")
+        names = [m.strip().casefold() for m in members.partition(":")[2].split(",") if m.strip()]
+    return user in names
+
+
+def _lane_grant_hint(path: Path) -> str:
+    """The exact command that grants access — the operator copies it into an admin shell."""
+    if sys.platform == "win32":
+        return f'icacls "{path}" /grant "{CI_LANE_GROUP}:(OI)(CI)M" /T'
+    return f'setfacl -R -m g:{CI_LANE_GROUP}:rwx "{path}"'
+
+
+def _lane_access_hint(
+    path: Path,
+    *,
+    group: str = CI_LANE_GROUP,
+    in_token=None,
+    lists_user=None,
+) -> str:
+    """Why *path* is not writable and what actually fixes it.
+
+    "Add yourself to the group" was the only advice before this existed, and it is wrong for the
+    common case on a machine whose operator was added after signing in: the group already lists
+    them, so the fix is a new logon token, not another administrator. Each cause gets its own
+    sentence so the row can only be read one way.
+    """
+    token = (in_token or _ci_group_in_token)(group)
+    listed = (lists_user or _ci_group_lists_user)(group)
+    if listed is False:
+        add = (
+            f"net localgroup {group} <user> /add"
+            if sys.platform == "win32"
+            else f"usermod -aG {group} <user>"
+        )
+        return f"add this account to {group} (an administrator has to run: {add})"
+    if listed is True and token is False:
+        return (
+            f"{group} already lists this account but it is not in this logon session's token — "
+            "sign out and back in (no administrator needed)"
+        )
+    if token is True:
+        return (
+            f"{group} is in this session's token, so the directory's ACL is the blocker — "
+            f"an administrator must grant it: {_lane_grant_hint(path)}"
+        )
+    ask = "whoami /groups" if sys.platform == "win32" else "id -nG"
+    return (
+        f"could not read {group} membership here — compare `{ask}` with the group's member list, "
+        "then sign out and back in if they disagree"
+    )
+
+
 def ci_runner_rows(
     *,
     services: dict[str, str] | None = None,
@@ -804,6 +922,8 @@ def ci_runner_rows(
     free_gb=None,
     acl_probe=_authenticated_users_can_modify,
     checkout: Path | None = None,
+    group_in_token=None,
+    group_lists_user=None,
 ) -> list[DoctorRow]:
     """Health of the self-hosted runner host. Empty when none is installed on this machine
     (not having runners is a choice, not a failure).
@@ -849,11 +969,12 @@ def ci_runner_rows(
             probe.unlink()
             rows.append(("Shared lane dir", True, f"{p} writable", False))
         except OSError as exc:
+            hint = _lane_access_hint(p, in_token=group_in_token, lists_user=group_lists_user)
             rows.append(
                 (
                     "Shared lane dir",
                     False,
-                    f"{p} not writable by this user ({exc.__class__.__name__}) — add yourself to navig-ci-users",
+                    f"{p} not writable by this user ({exc.__class__.__name__}) — {hint}",
                     False,
                 )
             )

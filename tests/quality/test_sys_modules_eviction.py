@@ -126,3 +126,36 @@ def test_allowlist_has_no_stale_entries() -> None:
         "allowlist entries that no longer contain a raw sys.modules delitem — delete "
         "them:\n  " + "\n  ".join(stale)
     )
+
+
+def test_evicted_modules_restores_the_originals_when_the_block_closes(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The pre-context state must be back as soon as the `with` exits — not only at the
+    caller's monkeypatch teardown, which left the originals missing from sys.modules (and
+    a re-import minting a third module object) for any code after the block."""
+    import importlib
+    import sys
+
+    from tests.fixtures.module_eviction import evicted_modules
+
+    pkg = tmp_path / "rvfix_evict_pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "child.py").write_text("VALUE = 1\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    try:
+        original = importlib.import_module("rvfix_evict_pkg.child")
+        parent = sys.modules["rvfix_evict_pkg"]
+        # A private monkeypatch, undone before the cleanup below, so its own teardown
+        # cannot re-insert the synthetic module after this test has removed it.
+        with monkeypatch.context() as mp:
+            with evicted_modules(mp, ("rvfix_evict_pkg.child",)):
+                inside = importlib.import_module("rvfix_evict_pkg.child")
+                assert inside is not original
+            assert sys.modules.get("rvfix_evict_pkg.child") is original
+            assert parent.child is original
+            assert importlib.import_module("rvfix_evict_pkg.child") is original
+    finally:
+        for name in ("rvfix_evict_pkg.child", "rvfix_evict_pkg"):
+            sys.modules.pop(name, None)

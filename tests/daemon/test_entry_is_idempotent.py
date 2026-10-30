@@ -21,6 +21,10 @@ import os
 import pytest
 
 import navig.daemon.entry as entry
+import navig.daemon.supervisor as _supervisor
+
+# Captured before the autouse stub below replaces it.
+_REAL_VERIFY_DAEMON_PID = _supervisor.NavigDaemon.__dict__["_verify_daemon_pid"]
 
 
 @pytest.fixture(autouse=True)
@@ -34,6 +38,18 @@ def _entry_chdirs_to_its_home(monkeypatch):
     code under test does; the conftest cwd guard is what named this file.
     """
     monkeypatch.chdir(os.getcwd())
+
+
+@pytest.fixture(autouse=True)
+def _recorded_pid_is_a_daemon(monkeypatch):
+    """The guard also asks the command line whether the recorded pid is a navig daemon.
+    The stub pids here (1, 7, 4321) are not real daemons — answer for them, or a test
+    that means "one is running" would read a stranger's cmdline and boot a real one."""
+    import navig.daemon.supervisor as supervisor
+
+    monkeypatch.setattr(
+        supervisor.NavigDaemon, "_verify_daemon_pid", staticmethod(lambda pid: True)
+    )
 
 
 def _never_reached(*a, **k):  # pragma: no cover - the point is that it is not called
@@ -95,6 +111,10 @@ def test_the_guard_runs_before_any_heavy_work(monkeypatch) -> None:
         @staticmethod
         def read_pid():
             return 7
+
+        @staticmethod
+        def _verify_daemon_pid(pid):
+            return True
 
         def __init__(self, *a, **k):
             pass
@@ -174,3 +194,41 @@ def test_the_stop_intent_flag_still_wins(monkeypatch) -> None:
     monkeypatch.setattr(entry, "_load_config", _never_reached)
 
     entry.main()
+
+
+def test_a_pid_file_naming_a_stranger_does_not_suppress_the_start(monkeypatch) -> None:
+    """`is_running` trusts the pid file's number and create time; a file overwritten with
+    an OLDER unrelated live process still passes it. The guard must also ask whether that
+    process is a navig daemon, or every watchdog launch exits as a "duplicate" of it."""
+    import navig.daemon.supervisor as supervisor
+
+    started: list[str] = []
+
+    class _StrangerInThePidFile:
+        @staticmethod
+        def is_running():
+            return True
+
+        @staticmethod
+        def read_pid():
+            return 4321
+
+        @staticmethod
+        def _read_cmdline(pid):
+            return "notepad.exe"
+
+        # The REAL verification — its cmdline lookup resolves through this class.
+        _verify_daemon_pid = _REAL_VERIFY_DAEMON_PID
+
+        def __init__(self, *a, **k):
+            pass
+
+        def run(self):
+            started.append("ran")
+
+    monkeypatch.setattr(supervisor, "NavigDaemon", _StrangerInThePidFile)
+    monkeypatch.setattr(entry, "_load_config", lambda: {"telegram_bot": False})
+
+    entry.main()
+
+    assert started == ["ran"], "a pid file naming a non-daemon process suppressed the start"

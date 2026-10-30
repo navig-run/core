@@ -206,6 +206,12 @@
       "pip": "navig-lights",
       "description": "Control your lamps: Govee over the LAN API or developer cloud, and anything Home Assistant knows — the clean bridge to Alexa and Matter."
     },
+    "mailroom": {
+      "plugin": "navig-email",
+      "module": null,
+      "pip": "navig-email",
+      "description": "Gmail mailroom: rules, watch, labels, stats, digests, drafts — its own navig-email command (Gmail app password over IMAP), and `navig email` inside navig."
+    },
     "mobile": {
       "plugin": "navig-mobile",
       "module": null,

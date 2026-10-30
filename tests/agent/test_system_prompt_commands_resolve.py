@@ -19,9 +19,15 @@ correct advice if `--var` is a real option (it is).
 from __future__ import annotations
 
 import re
+import sys
 
-import click
 import pytest
+
+from navig.core.click_compat import click_module, is_group
+
+# The click TYPER runs on; a separately installed copy is a different class hierarchy,
+# so `isinstance(cmd, click.Group)` is False for every group (Typer 0.27 vendors click).
+click = click_module()
 from typer.main import get_command
 
 # Trailing words that are placeholders or prose, not subcommands.
@@ -48,24 +54,36 @@ def _referenced() -> list[tuple[str, list[str], list[str]]]:
     out = []
     for match in re.finditer(r"`navig ([^`]+)`", _prompt()):
         raw = match.group(1)
-        words: list[str] = []
-        flags: list[str] = []
-        for token in raw.split():
-            if token.startswith("--"):
-                flags.append(token.split("=", 1)[0])
-            elif _NOT_A_VERB.match(token) or not re.fullmatch(r"[a-z][a-z0-9-]*", token):
-                break  # an argument — everything after it is not a subcommand
-            else:
-                words.append(token)
+        words, flags = _split_ref(raw)
         if words:
             out.append((raw, words, flags))
     return out
 
 
+def _split_ref(raw: str) -> tuple[list[str], list[str]]:
+    """(command words, flags) of one reference.
+
+    The first argument ends the command path, but NOT the scan: options routinely follow
+    a positional (`flow run <name> --var key=value`), and stopping at `<name>` would leave
+    `--var` unchecked.
+    """
+    words: list[str] = []
+    flags: list[str] = []
+    in_args = False
+    for token in raw.split():
+        if token.startswith("--"):
+            flags.append(token.split("=", 1)[0])
+        elif in_args or _NOT_A_VERB.match(token) or not re.fullmatch(r"[a-z][a-z0-9-]*", token):
+            in_args = True  # an argument — nothing after it is a subcommand
+        else:
+            words.append(token)
+    return words, flags
+
+
 def _resolve(root, words: list[str]):
     cur = root
     for i, word in enumerate(words):
-        if not isinstance(cur, click.Group):
+        if not is_group(cur):
             return None, words[i:]
         nxt = cur.get_command(click.Context(cur), word)
         if nxt is None:
@@ -79,11 +97,38 @@ def test_the_prompt_actually_names_commands():
     assert len(_referenced()) >= 8
 
 
+def test_flags_after_a_positional_are_still_checked():
+    """Regression: parsing stopped at `<name>`, so `flow run`'s `--var` was never validated."""
+    assert _split_ref("flow run <name> --var key=value") == (["flow", "run"], ["--var"])
+    # Anti-vacuity: the shipped prompt carries at least one flag the check validates.
+    assert any(flags for _raw, _words, flags in _referenced()), (
+        "no flag extracted from Brain.DEFAULT_SYSTEM_PROMPT — the flag half of "
+        "test_every_command_taught_to_the_model_exists is checking nothing."
+    )
+
+
+# Verbs core registers on ONE platform only. The agent prompt and the shipped prompt files
+# are shared, so they teach `navig ahk …` on every OS — and on Linux that group does not exist
+# BY DESIGN (core registers it only on win32; the navig-ahk plugin skips its tile for the same
+# reason). Calling that "a command that does not exist" made both resolve tests red on every
+# non-Windows box (measured 2026-10-28: 8 + 4 failures, all of them AHK). A verb that is
+# missing on the platform that OWNS it is still a failure.
+_PLATFORM_ONLY_VERBS = {"ahk": "win32"}
+
+
+def _platform_scoped_out(tail: list[str]) -> bool:
+    """True when the reference names a verb this platform does not register on purpose."""
+    scope = _PLATFORM_ONLY_VERBS.get(tail[0] if tail else "")
+    return bool(scope) and sys.platform != scope
+
+
 def test_every_command_taught_to_the_model_exists(root) -> None:
     broken = []
     for raw, words, flags in _referenced():
         command, tail = _resolve(root, words)
         if command is None:
+            if _platform_scoped_out(tail):
+                continue
             broken.append(f"`navig {raw}` — no such command (`{tail[0]}`)")
             continue
         accepted: set[str] = set()
@@ -130,15 +175,7 @@ def _prompt_files() -> list[Path]:
 def _refs_in(text: str, pattern: re.Pattern[str]):
     for match in pattern.finditer(text):
         raw = match.group(1)
-        words: list[str] = []
-        flags: list[str] = []
-        for token in raw.split():
-            if token.startswith("--"):
-                flags.append(token.split("=", 1)[0])
-            elif _NOT_A_VERB.match(token) or not re.fullmatch(r"[a-z][a-z0-9-]*", token):
-                break
-            else:
-                words.append(token)
+        words, flags = _split_ref(raw)
         if words:
             yield raw, words, flags
 
@@ -156,6 +193,8 @@ def test_no_shipped_prompt_teaches_a_command_that_does_not_exist(root) -> None:
         for raw, words, flags in _refs_in(text, _BARE_REF):
             command, tail = _resolve(root, words)
             if command is None:
+                if _platform_scoped_out(tail):
+                    continue
                 broken.append(f"{path.name}: `navig {raw}` — no such command (`{tail[0]}`)")
                 continue
             accepted: set[str] = set()

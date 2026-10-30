@@ -39,9 +39,19 @@ PRIVATE_NAVIG_PATHS: tuple[str, ...] = (
     ".navig/refs/",  # the /inbox distillery's notes — "private R&D" per space doctor
     ".navig/data/",
     ".navig/logs/",
+    ".navig/devnet/",  # repeater history: request headers (tokens) + response bodies
     ".navig/navig.log",
     ".navig/*.key",
     ".navig/*.pem",
+    # Runtime output navig writes INTO a space: the operation history, caches, the
+    # project index database and navig-menu's cache. The flagship keeps these out
+    # through broader rules (**/.navig/history/, *.db, **/.navig/menu.cache.json).
+    ".navig/history/",
+    ".navig/cache/",
+    ".navig/*.db",
+    ".navig/*.db-wal",
+    ".navig/*.db-shm",
+    ".navig/menu.cache.json",
 )
 
 # Root links: junction on Windows, symlink on POSIX. Ignored so git never walks
@@ -126,6 +136,32 @@ def blanket_navig_rule_outside_block(text: str) -> bool:
     return any(line.strip() in (".navig/", ".navig", "/.navig/", "/.navig") for line in outside.splitlines())
 
 
+def _drop_orphan_block(text: str) -> str:
+    """Remove a managed block that lost ONE of its markers, so a fresh one can go in.
+
+    The orphan marker goes, with the contiguous run of the block's own lines beside it
+    (after a lone start marker, before a lone end marker). Anything else — the
+    operator's rules — stays.
+    """
+    lines = text.splitlines()
+    owned = {line.strip() for line in managed_block().splitlines() if line.strip()}
+    if MANAGED_START in text:
+        i = next(k for k, line in enumerate(lines) if MANAGED_START in line)
+        j = i + 1
+        while j < len(lines) and lines[j].strip() in owned:
+            j += 1
+    else:
+        j = next(k for k, line in enumerate(lines) if MANAGED_END in line)
+        i = j
+        while i > 0 and lines[i - 1].strip() in owned:
+            i -= 1
+        j += 1
+    del lines[i:j]
+    if not any(line.strip() for line in lines):
+        return ""
+    return "\n".join(lines).strip("\n") + "\n"
+
+
 def reconcile(space_path: Path) -> list[str]:
     """Bring a space's ``.gitignore`` to the current layout. Additive; returns what it did.
 
@@ -149,29 +185,42 @@ def reconcile(space_path: Path) -> list[str]:
     except OSError as exc:
         return [f"⚠ .gitignore unreadable ({exc.__class__.__name__}) — left untouched"]
 
-    if LEGACY_SCAFFOLD_HEAD in existing:
-        existing = existing.replace(LEGACY_SCAFFOLD_HEAD, "", 1)
-        gi.write_text(existing, encoding="utf-8")
-        actions.append(
-            "retire the old scaffold head in .gitignore — .navig/plans, skills and wiki are "
-            "committable now (private state stays ignored)"
-        )
+    # A write can fail too (read-only file, a directory in the slot): report it like an
+    # unreadable file instead of aborting `navig wire` / `space doctor --fix`.
+    try:
+        if LEGACY_SCAFFOLD_HEAD in existing:
+            existing = existing.replace(LEGACY_SCAFFOLD_HEAD, "", 1)
+            gi.write_text(existing, encoding="utf-8")
+            actions.append(
+                "retire the old scaffold head in .gitignore — .navig/plans, skills and wiki are "
+                "committable now (private state stays ignored)"
+            )
 
-    block = managed_block()
-    if MANAGED_START in existing and MANAGED_END in existing:
-        s = existing.index(MANAGED_START)
-        e = existing.index(MANAGED_END) + len(MANAGED_END)
-        new = (existing[:s].rstrip("\n") + "\n" + block.strip("\n") + "\n"
-               + existing[e:].lstrip("\n")).strip("\n") + "\n"
-        if new != existing:
+        block = managed_block()
+        if MANAGED_START in existing and MANAGED_END in existing:
+            s = existing.index(MANAGED_START)
+            e = existing.index(MANAGED_END) + len(MANAGED_END)
+            new = (existing[:s].rstrip("\n") + "\n" + block.strip("\n") + "\n"
+                   + existing[e:].lstrip("\n")).strip("\n") + "\n"
+            if new != existing:
+                gi.write_text(new, encoding="utf-8")
+                actions.append("refresh .gitignore (managed block)")
+            existing = new
+        elif MANAGED_START in existing or MANAGED_END in existing:
+            # One marker lost: neither the in-place refresh nor the append applies, so the
+            # doctor's advertised fix would otherwise be a no-op that leaves it failing.
+            kept = _drop_orphan_block(existing)
+            new = (kept.rstrip("\n") + "\n" + block) if kept else block
             gi.write_text(new, encoding="utf-8")
-            actions.append("refresh .gitignore (managed block)")
-        existing = new
-    elif MANAGED_START not in existing:
-        new = (existing.rstrip("\n") + "\n" + block) if existing else block
-        gi.write_text(new, encoding="utf-8")
-        actions.append("update .gitignore (managed block)")
-        existing = new
+            actions.append("repair .gitignore (managed block had lost a marker)")
+            existing = new
+        else:
+            new = (existing.rstrip("\n") + "\n" + block) if existing else block
+            gi.write_text(new, encoding="utf-8")
+            actions.append("update .gitignore (managed block)")
+            existing = new
+    except OSError as exc:
+        return [*actions, f"⚠ .gitignore not writable ({exc.__class__.__name__}) — not updated"]
 
     if blanket_navig_rule_outside_block(existing):
         actions.append(
@@ -198,6 +247,21 @@ def blanket_navig_rule_lines(text: str) -> list[int]:
     ]
 
 
+def retirement_plan(text: str) -> list[int]:
+    """1-based line numbers :func:`retire_blanket_navig_rules` would remove, sorted.
+
+    The blanket rules plus a comment line directly above one that mentions navig (its
+    label). The doctor's confirmation preview prints exactly this list, so the operator
+    sees every line the write will delete.
+    """
+    lines = text.splitlines()
+    doomed = {n - 1 for n in blanket_navig_rule_lines(text)}
+    for i in sorted(doomed):
+        if i > 0 and lines[i - 1].strip().startswith("#") and "navig" in lines[i - 1].lower():
+            doomed.add(i - 1)
+    return [i + 1 for i in sorted(doomed)]
+
+
 def retire_blanket_navig_rules(space_path: Path) -> list[str]:
     """Remove the operator's own blanket ``.navig/`` rule(s) outside the managed block.
 
@@ -206,17 +270,22 @@ def retire_blanket_navig_rules(space_path: Path) -> list[str]:
     explicit confirmation, and only then. Returns the exact lines removed, for the
     report. A comment directly above a removed rule that only labelled it (the scaffold's
     ``# ── navig: machine-local …`` header, or ``# navig session artifacts``) goes with it.
+
+    The blanket rule may be the ONLY thing ignoring ``.navig/vault`` and the other private
+    paths, so the managed block is laid down first when it is absent — removing the rule
+    must never leave private state committable.
     """
     gi = space_path / ".gitignore"
     text = gi.read_text(encoding="utf-8")
+    if blanket_navig_rule_lines(text) and not (MANAGED_START in text and MANAGED_END in text):
+        reconcile(space_path)
+        text = gi.read_text(encoding="utf-8")
+        if not (MANAGED_START in text and MANAGED_END in text):
+            return []  # could not install the block — keep the blanket rule
     lines = text.splitlines()
-    doomed = {n - 1 for n in blanket_navig_rule_lines(text)}
+    doomed = {n - 1 for n in retirement_plan(text)}
     if not doomed:
         return []
-    # a comment line immediately above a doomed rule that mentions navig is its label
-    for i in sorted(doomed):
-        if i > 0 and lines[i - 1].strip().startswith("#") and "navig" in lines[i - 1].lower():
-            doomed.add(i - 1)
     removed = [lines[i] for i in sorted(doomed)]
     kept = [line for i, line in enumerate(lines) if i not in doomed]
     gi.write_text("\n".join(kept).rstrip("\n") + "\n", encoding="utf-8")

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Any
 
 from navig.connectors.errors import ConnectorAuthError, ConnectorNotFoundError
 from navig.providers.oauth import (
@@ -258,7 +259,10 @@ class ConnectorAuthManager:
 
         Single vault read (one list call) instead of N per-connector lookups —
         used by the Deck connector-list endpoint to stay O(1) per connector.
-        Includes expired tokens (still "connected", just needs refresh).
+        Includes expired tokens that carry a refresh token (still "connected", just
+        needs refresh), but drops an OAuth credential that is expired AND has no
+        refresh token — the same usability rule as :meth:`is_connected`, so the
+        listing never reports (or selects) a connector whose hydration must fail.
         """
         out: dict[str, str] = {}
         try:
@@ -271,6 +275,9 @@ class ConnectorAuthManager:
             provider = getattr(cred, "provider", None)
             if not provider:
                 continue
+            creds = self._load_from_vault(provider)
+            if creds is not None and not (creds.refresh or not creds.is_expired):
+                continue  # expired with no refresh token: needs re-auth, not connected
             meta = getattr(cred, "metadata", None) or {}
             out[provider] = meta.get("email") or ""
         return out
@@ -349,7 +356,14 @@ class ConnectorAuthManager:
             )
 
         got = (result.credentials.email or "").strip().lower()
-        if wanted and got and got != wanted:
+        if wanted and not got:
+            # The identity lookup failed: the token could belong to anyone, and with no
+            # email it would land in the default slot over the first linked account.
+            raise ConnectorAuthError(
+                connector_id,
+                f"could not verify which account signed in (wanted {wanted}) — nothing was saved; retry",
+            )
+        if wanted and got != wanted:
             raise ConnectorAuthError(
                 connector_id,
                 f"the browser signed in as {got}, not {wanted} — nothing was saved; retry and pick {wanted}",
@@ -427,12 +441,15 @@ class ConnectorAuthManager:
         """
         slot = self.resolve_account(connector_id, account) if account else None
         cred = self._vault.get(connector_id, profile_id=profile_for(slot))
-        if cred is None:
+        if cred is None or (slot is not None and not self._is_direct(cred, slot)):
             return False
         if not self._vault.delete(cred.id):
             raise ConnectorAuthError(connector_id, "the stored credential could not be removed")
         logger.info("Revoked credentials for %s%s", connector_id, f" ({slot})" if slot else "")
         if slot is None:
+            # A legacy row the vault's cross-profile fallback still returns for the default
+            # slot would reconnect the account the user just disconnected.
+            self._purge_fallback_rows(connector_id)
             self._promote_next_account(connector_id)
         return True
 
@@ -452,10 +469,44 @@ class ConnectorAuthManager:
 
     # -- Vault helpers (private) -------------------------------------------
 
+    @staticmethod
+    def _is_direct(cred: Any, account: str | None) -> bool:
+        """False when *cred* came from the vault's cross-profile fallback, not *account*'s slot.
+
+        ``Vault.get`` answers a missing profile with a ``default``-profile row. An
+        unreadable profile (a test double) is taken as direct.
+        """
+        prof = getattr(cred, "profile_id", None)
+        if not isinstance(prof, str) or not prof:
+            meta = getattr(cred, "metadata", None)
+            prof = meta.get("profile_id") if isinstance(meta, dict) else None
+        if not isinstance(prof, str) or not prof:
+            return True
+        return prof == profile_for(account)
+
+    def _purge_fallback_rows(self, connector_id: str) -> None:
+        """Delete OAuth rows the default slot only reaches through the vault fallback."""
+        for _ in range(8):  # bounded: each pass deletes one row or stops
+            cred = self._vault.get(connector_id, profile_id=profile_for(None))
+            if (
+                cred is None
+                or self._is_direct(cred, None)
+                or cred.credential_type != CredentialType.OAUTH
+                or not self._vault.delete(cred.id)
+            ):
+                return
+            logger.info("%s: removed a legacy fallback credential", connector_id)
+
     def _load_from_vault(self, connector_id: str, account: str | None = None) -> OAuthCredentials | None:
-        """Load OAuth credentials from vault, or return None."""
+        """Load OAuth credentials from vault, or return None.
+
+        A named *account* is a strict lookup: a row the vault returned from its
+        cross-profile fallback is somebody else's account, never this one.
+        """
         try:
             cred = self._vault.get(connector_id, profile_id=profile_for(account))
+            if cred and account and not self._is_direct(cred, account):
+                return None
             if cred and cred.credential_type == CredentialType.OAUTH:
                 return OAuthCredentials.from_dict(cred.data)
         except Exception as exc:
@@ -473,6 +524,12 @@ class ConnectorAuthManager:
         update. A single ``add`` is atomic and preserves the id.
         """
         profile = profile_for(account)
+        prev = None
+        if account is None:  # only the default slot ever loads a fallback row
+            try:
+                prev = self._vault.get(connector_id, profile_id=profile)
+            except Exception:  # noqa: BLE001 — the save itself must not depend on this read
+                prev = None
         self._vault.add(
             provider=connector_id,
             credential_type=CredentialType.OAUTH.value,
@@ -485,4 +542,12 @@ class ConnectorAuthManager:
                 "stored_at": time.time(),
             },
         )
+        if (
+            prev is not None
+            and not self._is_direct(prev, account)
+            and prev.credential_type == CredentialType.OAUTH
+        ):
+            # The credential we loaded (and just replaced) lived in a fallback profile:
+            # migrate it, so no stale refresh token survives beside the new row.
+            self._vault.delete(prev.id)
         logger.debug("Saved credentials to vault for %s", connector_id)

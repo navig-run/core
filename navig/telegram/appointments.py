@@ -101,6 +101,10 @@ def classify(text: str, now: datetime) -> tuple[datetime, str, bool] | None:
         return None
     if strip_remind_verb(body) is not None:
         return None
+    if _CHANGE_RE.search(body):
+        # "Cancel my appointment on …" / "Move it from X to Y" asks to CHANGE one —
+        # capturing it would add a todo named "Cancel …" or save the obsolete time.
+        return None
     words = body.split()
     if len(words) < _MIN_WORDS:
         return None
@@ -108,6 +112,8 @@ def classify(text: str, now: datetime) -> tuple[datetime, str, bool] | None:
     if found is None:
         return None
     when, start, end = found
+    if find_when(" ".join(words[:start] + words[end:]), now) is not None:
+        return None  # two moments: which one is meant is the agent's call, not ours
     title = _title(words[:start] + words[end:])
     if not title:
         from navig.telegram.reminder_card import shorten  # noqa: PLC0415
@@ -123,6 +129,14 @@ _APPOINTMENT_RE = re.compile(
     r"(?<!\w)(rdv|rendez-vous|r[ée]union|visio|entretien|m[ée]decin|dentiste|docteur|"
     r"appointment|meeting|interview|doctor|dentist|call with|"
     r"встреч|созвон|врач|стоматолог|при[её]м|собеседован|запис[ьа]н|к врачу)",
+    re.IGNORECASE,
+)
+
+
+#: A request to cancel or move an appointment, not a new one. Matched as word STARTS.
+_CHANGE_RE = re.compile(
+    r"(?<!\w)(cancel|call off|reschedul|postpon|move (?:my|the|our|it)|annul|d[ée]plac|"
+    r"report(?:e|er|ez|é)(?!\w)|отмен|перен[её]с|перенос)",
     re.IGNORECASE,
 )
 

@@ -59,19 +59,27 @@ def _mtime_key(path: Path) -> str | None:
         return None
 
 
-def _iter_inbox_files(dirs: list[Path]):
+def _iter_inbox_files(dirs: list[Path], inconclusive: list[Path] | None = None):
     """Yield ``(path, change_key)`` for each regular, non-hidden file across *dirs*.
 
     Resilient to a directory or file disappearing (or becoming unreadable) mid-scan — a
     ``TOCTOU`` between listing and access skips that entry rather than raising, so one
     vanished file can never stop the watcher.
+
+    When *inconclusive* is given, every directory that could not be listed and every file
+    that could not be stat'd is appended to it: their absence from this scan is NOT proof
+    they are gone, so the caller must not forget what it had already seen of them.
     """
     for d in dirs:
         if not d.is_dir():
+            if inconclusive is not None:
+                inconclusive.append(d)  # missing, or a mount that is offline this tick
             continue
         try:
             entries = list(d.iterdir())
         except OSError:
+            if inconclusive is not None:
+                inconclusive.append(d)
             continue  # dir removed / unreadable this tick — retry on the next scan
         for path in entries:
             try:
@@ -82,6 +90,8 @@ def _iter_inbox_files(dirs: list[Path]):
             key = _mtime_key(path)
             if key is not None:
                 yield path, key
+            elif inconclusive is not None:
+                inconclusive.append(path)
 
 
 # ── WatchfilesBackend ─────────────────────────────────────────
@@ -130,7 +140,10 @@ class _PollingBackend:
 
     def _scan(self) -> None:
         current: set[str] = set()
-        for path, key in _iter_inbox_files(self._dirs):
+        inconclusive: list[Path] = []
+        for path, key in _iter_inbox_files(self._dirs, inconclusive):
+            if key in current:
+                continue  # the same dir listed twice — one callback per file per scan
             current.add(key)
             if key not in self._seen:
                 try:
@@ -140,6 +153,14 @@ class _PollingBackend:
         # Rebuild from what's actually present so keys for files routed out of the inbox don't
         # accumulate forever — the set was previously append-only (unbounded growth in a
         # long-running daemon). A file that reappears with the same mtime is genuinely new again.
+        # Keys under a dir or file this scan could not read are KEPT: a transient permission
+        # error or mount outage must not make every existing item fire again once it clears.
+        if inconclusive:
+            held = {str(p) for p in inconclusive}
+            for key in self._seen:
+                key_path = key.rsplit(":", 1)[0]
+                if key_path in held or str(Path(key_path).parent) in held:
+                    current.add(key)
         self._seen = current
 
     def run(self) -> None:
@@ -190,6 +211,11 @@ class InboxWatcher:
             self._dirs.append(_project_inbox_dir(project_root))
         if extra_dirs:
             self._dirs.extend(extra_dirs)
+        # A dir named twice (extra_dirs repeating the default inbox) is watched once.
+        unique: dict[Path, Path] = {}
+        for d in self._dirs:
+            unique.setdefault(d.resolve(), d)
+        self._dirs = list(unique.values())
 
         # Ensure directories exist
         for d in self._dirs:

@@ -26,7 +26,11 @@ from pathlib import Path
 
 import typer
 
-from navig.cli.registration import extract_non_global_tokens
+from navig.cli.registration import (
+    _GLOBAL_FLAGS,
+    _VALUE_CONSUMING_GLOBAL_FLAGS,
+    extract_non_global_tokens,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -129,9 +133,13 @@ _SKIP_RECORD_RESOURCES: frozenset[str] = frozenset([
 _SKIP_RECORD_PAIRS: frozenset[tuple[str, str]] = frozenset([
     ("trigger", "test"), ("trigger", "history"),
 ])
-#: Bare flags that turn the invocation into a help/version screen. `-h` is NOT
-#: here: on this CLI it is the short form of `--host` and consumes a value.
-_SKIP_RECORD_FLAGS: frozenset[str] = frozenset(["--help", "--version", "-v"])
+#: Bare flags that turn the invocation into a help screen, wherever they appear.
+#: `-h` is NOT here: on this CLI it is the short form of `--host` and consumes a value.
+_SKIP_RECORD_FLAGS: frozenset[str] = frozenset(["--help"])
+#: The ROOT version flag — a version screen only BEFORE the first command token. After a
+#: subcommand `-v` is that command's own option: `navig stack down -v` is `--volumes`
+#: (data loss), and skipping it left the ledger and in-flight marker blind to it.
+_SKIP_RECORD_ROOT_FLAGS: frozenset[str] = frozenset(["--version", "-v"])
 _SKIP_FACT_CMDS: frozenset[str] = frozenset([
     "memory", "kg", "index", "history", "version", "help",
     "--help", "--version",
@@ -161,11 +169,11 @@ _RESOURCE_ALIASES: dict[str, str] = {
 #: Resources whose second token is a free-form payload (a shell command),
 #: never a subcommand — the read-verb rule must not apply to them
 #: (`navig run list` executes `list` remotely; it is not a listing).
+#: `local` is NOT one: it is a Typer group (`local show`, `local ports`, …).
 _FREE_ARG_RESOURCE_TYPES: dict[str, str] = {
     "run": "remote_command",
     "exec": "remote_command",
     "ssh": "remote_command",
-    "local": "local_command",
 }
 
 #: Actions that are pure reads wherever they appear on the CLI surface.
@@ -197,7 +205,24 @@ _EXACT_OPERATION_TYPES: dict[tuple[str, str], str] = {
     ("host", "use"): "host_switch",
     ("config", "set"): "config_change",
     ("flow", "run"): "workflow_run",
+    # `navig local` inspection verbs that are not generic read verbs.
+    ("local", "ports"): "read_query",
+    ("local", "firewall"): "read_query",
+    ("local", "interfaces"): "read_query",
+    ("local", "ping"): "read_query",
+    ("local", "dns"): "read_query",
 }
+
+#: (resource, action) pairs whose side effect hinges on an option: the verb reads,
+#: but the flag makes it write a local file. Keyed on the resource ("*" = any).
+#: The flags are looked up in the RAW argv — ``extract_non_global_tokens`` drops
+#: every ``--long`` option, so the token view cannot see them.
+_FLAG_OPERATION_TYPES: tuple[tuple[str, str, frozenset[str], str], ...] = (
+    # `file show <remote> --download <local>` writes a local copy.
+    ("file", "show", frozenset({"--download", "-d"}), "file_download"),
+    # `github diff a b --output r.txt` (and any other `diff -o`) writes a report file.
+    ("*", "diff", frozenset({"--output", "-o"}), "file_create"),
+)
 
 #: Resource → default OperationType value when no action rule matched.
 _RESOURCE_OPERATION_TYPES: dict[str, str] = {
@@ -210,6 +235,22 @@ _RESOURCE_OPERATION_TYPES: dict[str, str] = {
 # =============================================================================
 # 1. OPERATION RECORDER
 # =============================================================================
+
+
+def _dry_run_after_command(raw_argv: list[str]) -> bool:
+    """True when ``--dry-run`` follows the command verb (the command parses it)."""
+    skip_next = False
+    for i, token in enumerate(raw_argv):
+        if skip_next:
+            skip_next = False
+            continue
+        if token in _VALUE_CONSUMING_GLOBAL_FLAGS:
+            skip_next = True
+            continue
+        if token in _GLOBAL_FLAGS or token.startswith("--"):
+            continue
+        return "--dry-run" in raw_argv[i + 1 :]
+    return False
 
 
 def init_operation_recorder(
@@ -234,11 +275,13 @@ def init_operation_recorder(
         command_str = " ".join(raw_argv)
 
         non_global = extract_non_global_tokens(raw_argv)
-        op_type = _classify_operation_type(non_global)
-        if "--dry-run" in raw_argv:
+        op_type = _classify_operation_type(non_global, raw_argv)
+        if _dry_run_after_command(raw_argv):
             # A dry run resolves no secrets, opens no connection and writes nothing
             # (that is its contract on `apply`, `space init`, `kill`, …) — it must not
             # sit in the ledger wearing the red label of the command it previews.
+            # Only a `--dry-run` the command itself parses counts: the global flag
+            # before the verb is not honoured by every command, so it keeps the risk.
             op_type = OperationType.READ_QUERY
 
         skip = _should_skip_record(raw_argv, non_global)
@@ -279,6 +322,8 @@ def _should_skip_record(raw_argv: list[str], tokens: list[str]) -> bool:
     """
     if any(tok in _SKIP_RECORD_FLAGS for tok in raw_argv):
         return True
+    if _has_root_version_flag(raw_argv):
+        return True
     if not tokens:
         return False
     resource = _RESOURCE_ALIASES.get(tokens[0], tokens[0])
@@ -288,7 +333,37 @@ def _should_skip_record(raw_argv: list[str], tokens: list[str]) -> bool:
     return (resource, action) in _SKIP_RECORD_PAIRS
 
 
-def _classify_operation_type(tokens: list[str]):
+def _has_root_version_flag(raw_argv: list[str]) -> bool:
+    """True when ``--version``/``-v`` comes before the first command token."""
+    from navig.cli.registration import _VALUE_CONSUMING_GLOBAL_FLAGS
+
+    skip_next = False
+    for tok in raw_argv:
+        if skip_next:
+            skip_next = False
+            continue
+        if tok in _SKIP_RECORD_ROOT_FLAGS:
+            return True
+        if tok in _VALUE_CONSUMING_GLOBAL_FLAGS:
+            skip_next = True
+            continue
+        if tok.startswith("-"):
+            continue
+        return False  # the first command token — a later -v belongs to the command
+    return False
+
+
+def _has_flag(raw_argv: list[str], flags: frozenset[str]) -> bool:
+    """True when any of *flags* appears in *raw_argv* (also as ``--flag=value``)."""
+    for tok in raw_argv:
+        if tok in flags:
+            return True
+        if tok.startswith("--") and tok.split("=", 1)[0] in flags:
+            return True
+    return False
+
+
+def _classify_operation_type(tokens: list[str], raw_argv: list[str] | None = None):
     """Derive the OperationType from the resolved command tokens.
 
     *tokens* is the global-flag-stripped argv (``extract_non_global_tokens``),
@@ -297,8 +372,10 @@ def _classify_operation_type(tokens: list[str]):
     Rules, in priority order:
 
     1. explicit (resource, action) pairs — `file get` is a download even
-       though bare `get` is a read verb everywhere else;
-    2. free-payload resources (`run`/`exec`/`ssh`/`local`) — their second
+       though bare `get` is a read verb everywhere else; then flag-dependent
+       pairs (`file show --download`, `diff --output`), checked against
+       *raw_argv* when the caller passes it;
+    2. free-payload resources (`run`/`exec`/`ssh`) — their second
        token is a shell command, not a subcommand;
     3. read-only resources and read verbs → READ_QUERY (no side effect);
     4. resource defaults (db/docker/service);
@@ -315,6 +392,10 @@ def _classify_operation_type(tokens: list[str]):
     exact = _EXACT_OPERATION_TYPES.get((resource, action))
     if exact is not None:
         return OperationType(exact)
+    if raw_argv:
+        for res, act, flags, op in _FLAG_OPERATION_TYPES:
+            if res in ("*", resource) and act == action and _has_flag(raw_argv, flags):
+                return OperationType(op)
     free_arg = _FREE_ARG_RESOURCE_TYPES.get(resource)
     if free_arg is not None:
         return OperationType(free_arg)

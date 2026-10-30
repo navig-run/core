@@ -144,3 +144,20 @@ def test_no_anchor_on_the_machine_is_one_green_row_not_silence(monkeypatch, tmp_
 @pytest.mark.skipif(doctor.sys.platform == "win32", reason="elsewhere the section must be silent")
 def test_the_section_is_silent_off_windows() -> None:
     assert doctor.check_desktop_apps() == []
+
+
+@pytest.mark.skipif(doctor.sys.platform != "win32", reason="the rows are Windows-only by design")
+def test_the_bundled_product_binary_name_is_found(monkeypatch, tmp_path: Path) -> None:
+    """A real NSIS install ships `NAVIG Anchor.exe` (the productName), not the cargo
+    name — looking only for `navig-anchor.exe` reported an installed Anchor as absent."""
+    bundled = tmp_path / "la" / "NAVIG Anchor" / "NAVIG Anchor.exe"
+    bundled.parent.mkdir(parents=True)
+    bundled.write_bytes(b"MZ")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "la"))
+    monkeypatch.setenv("ProgramFiles", str(tmp_path / "pf"))
+
+    rows = doctor.check_desktop_apps()
+    by_label = {row.label: row for row in rows}
+
+    assert "Anchor installed" in by_label, rows
+    assert str(bundled) in by_label["Anchor installed"].detail

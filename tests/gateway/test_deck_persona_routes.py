@@ -51,7 +51,9 @@ def isolated(tmp_path, monkeypatch):
     reset_config_manager()
     ConfigSingleton._instance = None
     store = runtime_mod.RuntimeStore(tmp_path / "runtime.db")
-    monkeypatch.setattr(runtime_mod, "_store", store)
+    # The seam the product calls, not the private singleton (see get_runtime_store's
+    # path-keyed cache in navig/store/runtime.py).
+    monkeypatch.setattr(runtime_mod, "get_runtime_store", lambda db_path=None: store)
     yield tmp_path
     store.close()
     reset_config_manager()

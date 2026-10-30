@@ -48,6 +48,8 @@ logger = logging.getLogger(__name__)
 PREFIX_GREETING = "ngr"
 PREFIX_TIP = "ntp"
 PREFIX_OUTPOST = "nop"
+#: The Resolve button an alert card carries (`navig.notify.notify_card.RESOLVE_PREFIX`).
+PREFIX_ACK = "nak"
 
 #: The daily tip's header glyph — the notification type it replaces is "reminder".
 TIP_GLYPH = "⏰"
@@ -163,7 +165,13 @@ def greeting_card(
     )
     remember(PREFIX_GREETING, day, notice, now=moment)
     return (
-        Screen(title=notice.title, body=notice.body, kind=SUMMARY, open_label="Open brief"),
+        Screen(
+            title=notice.title,
+            body=notice.body,
+            kind=SUMMARY,
+            open_label="Open brief",
+            rich_body=_rich(notice.body),
+        ),
         Context(PREFIX_GREETING, day),
     )
 
@@ -185,7 +193,10 @@ def tip_card(
         detail = f"{body}\n\nTry:\n`{example}`" if body else f"Try:\n`{example}`"
     notice = Notice(title=f"{TIP_GLYPH} {title}", body=body, detail=detail)
     remember(PREFIX_TIP, day, notice, now=moment)
-    return Screen(title=notice.title, body=notice.body, kind=SUMMARY), Context(PREFIX_TIP, day)
+    return (
+        Screen(title=notice.title, body=notice.body, kind=SUMMARY, rich_body=_rich(notice.body)),
+        Context(PREFIX_TIP, day),
+    )
 
 
 def outpost_card(
@@ -220,8 +231,17 @@ def outpost_card(
         open_label="View",
     )
     remember(PREFIX_OUTPOST, key, notice, now=moment)
+    summary_rich = f"<p><b>{_inline(host)}</b> · checked {checked.strftime('%Y-%m-%d %H:%M')}</p>"
+    if failures:
+        summary_rich += f"<p><b>{len(failures)} check(s) failing</b></p>"
     return (
-        Screen(title=notice.title, body=notice.body, kind=SUMMARY, open_label="View"),
+        Screen(
+            title=notice.title,
+            body=notice.body,
+            kind=SUMMARY,
+            open_label="View",
+            rich_body=summary_rich,
+        ),
         Context(PREFIX_OUTPOST, key),
     )
 
@@ -287,9 +307,15 @@ def _screen_for(action: Any, prefix: str, *, missing: str) -> Screen | None:
     detail = str(payload.get("detail") or "") or body
     open_label = str(payload.get("open_label") or "Open")
     if action.action in ("open", "view"):
-        return Screen(title=title, body=detail, kind=DETAIL)
+        return Screen(title=title, body=detail, kind=DETAIL, rich_body=_rich(detail))
     if action.action == "back":
-        return Screen(title=title, body=body, kind=SUMMARY, open_label=open_label)
+        return Screen(
+            title=title,
+            body=body,
+            kind=SUMMARY,
+            open_label=open_label,
+            rich_body=_rich(body),
+        )
     return None
 
 
@@ -305,11 +331,30 @@ async def handle_outpost(action: Any) -> Screen | None:
     return _screen_for(action, PREFIX_OUTPOST, missing="This alert is no longer available")
 
 
+async def handle_ack(action: Any) -> Screen | None:
+    """The operator cleared an alert: record it, and say so where the card was.
+
+    The card is edited in place, so the chat keeps one line of history — "✓ Resolved" —
+    instead of an alert that still looks live. The record is keyed on the alert's own
+    words, so the monitor's next run with the same condition stays quiet while a
+    different condition still arrives.
+    """
+    from navig.notify import acks
+
+    key = (action.key or "").strip()
+    if not key:
+        return result_screen("That press is not understood", "")
+    if not acks.acknowledge(key):
+        return result_screen("Could not save that", "This alert may be sent again.")
+    return result_screen("✓ Resolved", "This alert will not be sent again unless it changes.")
+
+
 def register() -> None:
-    """Register the three prefixes. Idempotent — re-registering replaces handlers."""
+    """Register the four prefixes. Idempotent — re-registering replaces handlers."""
     register_card_action(PREFIX_GREETING, handle_greeting)
     register_card_action(PREFIX_TIP, handle_tip)
     register_card_action(PREFIX_OUTPOST, handle_outpost)
+    register_card_action(PREFIX_ACK, handle_ack)
 
 
 # ── text helpers ────────────────────────────────────────────────────────────
@@ -351,6 +396,140 @@ def _example_for(feature: str) -> str:
     except Exception:  # noqa: BLE001 — the tip still reads without its example
         logger.debug("notice_cards: feature lookup failed for %s", feature, exc_info=True)
     return ""
+
+
+# ── the rich projections ────────────────────────────────────────────────────
+#
+# A notice body is written for a chat that has no markup: plain sentences, a few
+# ``Label: value`` lines, sometimes ``✗`` items or a command in backticks. The
+# rich projection below reads those shapes back into the tags a rich client can
+# draw — a sheet, a list, a copyable command — so Open reveals a card rather than
+# a wall. The classic body is untouched: it stays the fallback for a chat that
+# cannot take rich messages.
+
+#: Line markers a notice body may use for a list item.
+_BULLETS = ("•", "-", "*", "✗", "✕", "✓", "✔")
+#: Glyphs that keep their own emphasis when they lead a list item.
+_GLYPHS = frozenset("✗✕✓✔")
+#: ``Label: value`` — the shape a pair of detail lines becomes a sheet from.
+_LABEL_RE = re.compile(r"^([A-Z][\w .()/-]{0,23}):\s+(.+)$")
+#: A bare URL in a notice body becomes a tap target.
+_URL_RE = re.compile(r"(https?://\S+)")
+
+
+def _inline(text: str) -> str:
+    """Escape one line, then re-add the markup the classic body cannot carry."""
+    from navig.telegram.card_doc import esc  # noqa: PLC0415 — the kit is optional
+
+    out = esc(text)
+    out = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", out)
+    out = re.sub(r"`([^`]+)`", r"<code>\1</code>", out)
+    return _URL_RE.sub(r'<a href="\1">\1</a>', out)
+
+
+def _sheet(lines: list[str]) -> str | None:
+    """Two or more ``Label: value`` lines → a bordered two-column table."""
+    from navig.telegram.card_doc import esc  # noqa: PLC0415 — the kit is optional
+
+    if len(lines) < 2:
+        return None
+    pairs = [_LABEL_RE.match(line) for line in lines]
+    if not all(pairs):
+        return None
+    rows = "".join(
+        f"<tr><th>{esc(match.group(1))}</th><td>{_inline(match.group(2))}</td></tr>"
+        for match in pairs
+        if match is not None
+    )
+    return f"<table bordered striped>{rows}</table>"
+
+
+def _list(lines: list[str]) -> str | None:
+    """A block whose every line opens with a bullet → a real ``<ul>``."""
+    if not all(line[:1] in _BULLETS for line in lines):
+        return None
+    items: list[str] = []
+    for line in lines:
+        mark, _, rest = line.partition(" ")
+        if mark in _GLYPHS:
+            items.append(f"<li><b>{mark}</b> {_inline(rest)}</li>")
+        elif mark in _BULLETS:
+            items.append(f"<li>{_inline(rest)}</li>")
+    return "<ul>" + "".join(items) + "</ul>"
+
+
+def _command(line: str) -> bool:
+    """A line that is nothing but a backticked command — it becomes a code block."""
+    return len(line) > 2 and line.startswith("`") and line.endswith("`") and "`" not in line[1:-1]
+
+
+def _lines(lines: list[str]) -> str:
+    """One block of ordinary lines: paragraphs with real breaks, code, small headings."""
+    from navig.telegram.card_doc import esc  # noqa: PLC0415 — the kit is optional
+
+    parts: list[str] = []
+    paragraph: list[str] = []
+
+    def flush() -> None:
+        if paragraph:
+            parts.append("<p>" + "<br/>".join(_inline(line) for line in paragraph) + "</p>")
+            paragraph.clear()
+
+    for line in lines:
+        if _command(line):
+            flush()
+            command = esc(line.strip("`"))
+            parts.append(f'<pre><code class="language-bash">{command}</code></pre>')
+        elif line.endswith(":") and len(line) <= 60:
+            flush()
+            parts.append(f"<p><b>{esc(line[:-1])}</b></p>")
+        else:
+            paragraph.append(line)
+    flush()
+    return "".join(parts)
+
+
+def _rich(text: str) -> str:
+    """The rich twin of one notice body: sheets, lists, commands, links, emphasis.
+
+    Blocks are split on blank lines and read by shape: a run of ``Label: value``
+    lines becomes a sheet (host and check time, a job's Name/Status), a trailing
+    run of bullets becomes a list under whatever sentence or heading led it
+    (today's first moves, the failing checks), a lone backticked line becomes a
+    copyable command block, a line ending in a colon becomes a heading, and the
+    rest is a paragraph whose newlines are real breaks rather than a swallowed
+    space.
+    """
+    blocks: list[list[str]] = []
+    current: list[str] = []
+    for raw in str(text or "").splitlines():
+        line = raw.strip()
+        if line:
+            current.append(line)
+        elif current:
+            blocks.append(current)
+            current = []
+    if current:
+        blocks.append(current)
+
+    parts: list[str] = []
+    for lines in blocks:
+        sheet = _sheet(lines)
+        if sheet:
+            parts.append(sheet)
+            continue
+        cut = len(lines)
+        while cut > 0 and lines[cut - 1][:1] in _BULLETS:
+            cut -= 1
+        if cut < len(lines):
+            if cut:
+                parts.append(_lines(lines[:cut]))
+            listed = _list(lines[cut:])
+            if listed:
+                parts.append(listed)
+            continue
+        parts.append(_lines(lines))
+    return "".join(parts)
 
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")

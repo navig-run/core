@@ -58,3 +58,15 @@ def test_the_flagship_ignores_the_root_plans_link_and_commits_the_plans() -> Non
         "the flagship stopped committing .navig/plans — the scaffold's default no longer "
         "mirrors the product's own practice; decide again rather than let them drift"
     )
+
+
+def test_the_flagship_ignores_the_devnet_repeater_history() -> None:
+    """navig-devnet appends every request (headers included — bearer tokens, cookies) to
+    `<space>/.navig/devnet/http_history.jsonl`; in this tree that must never be committable."""
+    for path in (".navig/devnet/http_history.jsonl", "apps/os/.navig/devnet/http_history.jsonl"):
+        verdict = subprocess.run(
+            ["git", "-C", str(REPO), "check-ignore", "-q", path],
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        assert verdict.returncode == 0, f"{path} is not ignored by the flagship .gitignore"
+    assert ".navig/devnet/" in gi.PRIVATE_NAVIG_PATHS

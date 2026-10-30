@@ -166,6 +166,44 @@ def _is_backup_file(path: Path) -> bool:
     return BACKUP_INFIX in path.name or path.suffix in (".bak", ".orig", ".tmp")
 
 
+def _is_legacy_host_config(data: object) -> bool:
+    """``HostManager.list_hosts``' rule for a flat ``apps/<name>.yaml``.
+
+    That one directory holds two kinds of file: a legacy HOST (no ``host`` field, or one
+    holding an address — it contains a dot) and a flat-layout APP (``host`` names the
+    host it belongs to). Export counts, import and inspect must all classify them the
+    same way the live config does, or an archive reports and restores the wrong thing.
+    """
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        return False
+    host_value = data.get("host", "")
+    return not host_value or "." in str(host_value)
+
+
+def _read_flat_apps_dir(
+    apps_dir: Path, load: Any
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """Classify the flat ``apps/*.yaml`` files of an archive into legacy hosts and apps.
+
+    Returns ``(hosts, apps)`` shaped like the readers' ``hosts_data`` / ``apps_data``
+    (``apps`` is ``{host: {app: config}}``). ``load`` reads one file. A file that is
+    neither a host nor an app bound to a host (a non-mapping) is left out.
+    """
+    hosts: dict[str, Any] = {}
+    apps: dict[str, dict[str, Any]] = {}
+    if not apps_dir.is_dir():
+        return hosts, apps
+    for yaml_file in sorted(apps_dir.glob("*.yaml")):
+        data = load(yaml_file)
+        if _is_legacy_host_config(data):
+            hosts[yaml_file.stem] = data if data is not None else {}
+        elif isinstance(data, dict):
+            apps.setdefault(str(data["host"]), {})[yaml_file.stem] = data
+    return hosts, apps
+
+
 # ── the brain scope: config PLUS the state a brain runs on ───────────────────
 #
 # A config export is portable to any machine; a brain also needs its
@@ -489,14 +527,29 @@ def _create_archive(output_path: Path, include_secrets: bool = False, *, brain: 
         # Count what is ACTUALLY in the staging dir, after redaction dropped anything
         # it could not prove clean. Counting the config directory again instead — which
         # is what the summary used to do — reports files that never made it in.
-        counts = {
-            "hosts": len(list((tmpdir_path / "hosts").glob("*.yaml")))
-            if (tmpdir_path / "hosts").is_dir()
-            else 0,
-            "apps": len(list((tmpdir_path / "apps").rglob("*.yaml")))
-            if (tmpdir_path / "apps").is_dir()
-            else 0,
-        }
+        # A flat apps/<name>.yaml is a legacy HOST or a flat-layout app — classified
+        # with list_hosts' own rule, or a legacy-layout export reports 0 hosts (and the
+        # zero-host guard then fails a populated backup).
+        import yaml
+
+        def _load_quiet(p: Path) -> object:
+            try:
+                return yaml.safe_load(p.read_text(encoding="utf-8"))
+            except (OSError, ValueError, yaml.YAMLError):
+                return []  # unreadable: counted as an app, as before
+
+        staged_hosts = tmpdir_path / "hosts"
+        staged_apps = tmpdir_path / "apps"
+        host_names = {p.stem for p in staged_hosts.glob("*.yaml")} if staged_hosts.is_dir() else set()
+        app_total = 0
+        if staged_apps.is_dir():
+            app_total = sum(1 for p in staged_apps.rglob("*.yaml") if p.parent != staged_apps)
+            for p in staged_apps.glob("*.yaml"):
+                if _is_legacy_host_config(_load_quiet(p)):
+                    host_names.add(p.stem)
+                else:
+                    app_total += 1
+        counts = {"hosts": len(host_names), "apps": app_total}
         manifest["counts"] = counts
 
         # Write manifest
@@ -578,7 +631,19 @@ _REDACTION_MARKERS = ("***REDACTED***", "[REDACTED]")
 
 
 def _is_redaction_marker(value: object) -> bool:
-    return value in _REDACTION_MARKERS
+    """True when ``value`` carries a redaction marker ANYWHERE in it.
+
+    ``redact_dict`` also embeds markers inside otherwise-kept strings
+    (``postgres://u:***REDACTED***@db``, ``sk-***REDACTED***``) and inside lists, so a
+    whole-string match let those partial placeholders overwrite a live credential.
+    """
+    if isinstance(value, str):
+        return any(marker in value for marker in _REDACTION_MARKERS)
+    if isinstance(value, (list, tuple)):
+        return any(_is_redaction_marker(item) for item in value)
+    if isinstance(value, dict):
+        return any(_is_redaction_marker(item) for item in value.values())
+    return False
 
 
 def _restore_redacted_secrets(new_cfg: Any, live_cfg: Any) -> Any:
@@ -1098,6 +1163,19 @@ def import_config(options: dict[str, Any]):
                             with open(yaml_file, encoding='utf-8') as f:
                                 apps_data[host_dir.name][yaml_file.stem] = yaml.safe_load(f)
 
+            # The flat apps/<name>.yaml layout (what the export copies as-is): legacy
+            # hosts and host-bound apps, classified the way the live config does.
+            def _load_strict(p: Path) -> Any:
+                with open(p, encoding='utf-8') as f:
+                    return yaml.safe_load(f)
+
+            flat_hosts, flat_apps = _read_flat_apps_dir(apps_dir, _load_strict)
+            for name, cfg in flat_hosts.items():
+                hosts_data.setdefault(name, cfg)
+            for owner, owned in flat_apps.items():
+                for name, cfg in owned.items():
+                    apps_data.setdefault(owner, {}).setdefault(name, cfg)
+
         # Validate the archive's settings FIRST — a config that will not parse
         # must stop the import before a single host or app is written.
         cfg_text = _read_config_yaml(extract_path) if extract_path is not None else None
@@ -1308,7 +1386,9 @@ def _safe_archive_yaml(path: Path) -> dict[str, Any]:
     try:
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
-    except (OSError, yaml.YAMLError):
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        # UnicodeDecodeError is a ValueError, not an OSError: a file with invalid
+        # UTF-8 bytes escaped this guard and blanked the whole inspect again.
         return {"_unreadable": True}
     return data if isinstance(data, dict) else {"_unreadable": True}
 
@@ -1390,6 +1470,12 @@ def inspect_export(options: dict[str, Any]):
                                 data["apps"][host_dir.name][yaml_file.stem] = _safe_archive_yaml(
                                     yaml_file
                                 )
+                flat_hosts, flat_apps = _read_flat_apps_dir(apps_dir, _safe_archive_yaml)
+                for name, cfg in flat_hosts.items():
+                    data["hosts"].setdefault(name, cfg)
+                for owner, owned in flat_apps.items():
+                    for name, cfg in owned.items():
+                        data["apps"].setdefault(owner, {}).setdefault(name, cfg)
 
         if json_output:
             ch.raw_print(json.dumps(data, indent=2, default=str))
@@ -1419,11 +1505,16 @@ def inspect_export(options: dict[str, Any]):
         total_apps = sum(len(a) for a in apps.values())
         ch.subheader(f"Apps ({total_apps})")
         for host_name, host_apps in apps.items():
-            for app_name in host_apps:
+            for app_name, app_config in host_apps.items():
+                if not isinstance(app_config, dict) or app_config.get("_unreadable"):
+                    ch.warning(f"  {host_name}/{app_name}: unreadable (corrupt file in archive)")
+                    continue
                 ch.info(f"  {host_name}/{app_name}")
 
     except Exception as e:
         ch.error(f"Failed to inspect export: {e}")
+        # Exit honesty: an inspect that could not read the export is not a success.
+        raise typer.Exit(1) from e
 
     finally:
         # Cleanup decrypted file
@@ -1477,3 +1568,5 @@ def delete_export(options: dict[str, Any]):
             ch.raw_print(json.dumps({"success": False, "error": str(e)}))
         else:
             ch.error(f"Failed to delete: {e}")
+        # The file is still there — the shell must see that, in both output modes.
+        raise typer.Exit(1) from e

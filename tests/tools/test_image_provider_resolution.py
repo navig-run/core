@@ -46,8 +46,18 @@ def test_smart_default_maps_google_key_to_gemini():
     assert _resolve_default_provider({"google": "AIza..."}) is ImageProvider.GEMINI_FLASH
 
 
-def test_openai_key_keeps_openai_default():
-    assert _resolve_default_provider({"openai": "sk-x", "recraft": "r"}) is ImageProvider.OPENAI
+def test_openai_key_defaults_to_gpt_image_not_dalle():
+    # DALL-E 3 is retired: a configured OpenAI key must route to gpt-image.
+    assert _resolve_default_provider({"openai": "sk-x"}) is ImageProvider.OPENAI_GPT_IMAGE
+    assert (
+        _resolve_default_provider({"openai": "sk-x", "recraft": "r"})
+        is ImageProvider.OPENAI_GPT_IMAGE
+    )
+
+
+def test_explicit_openai_still_reaches_dalle(monkeypatch):
+    monkeypatch.setenv("IMAGE_PROVIDER", "openai")
+    assert _resolve_default_provider({"openai": "sk-x"}) is ImageProvider.OPENAI
 
 
 def test_ambiguous_multiple_keys_keeps_openai_default():

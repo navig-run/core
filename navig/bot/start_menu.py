@@ -393,7 +393,11 @@ ACTION_COMMANDS: dict[str, dict] = {
         "prompt": "Which app? Send:\n`navig app use <name>`",
     },
     "app_current": {"cmd": "app show", "type": "navig"},
-    "app_info": {"cmd": "app info", "type": "navig"},
+    "app_info": {
+        "cmd": None,
+        "type": "prompt",
+        "prompt": "Which app? Send:\n`navig app info <name>`",
+    },
     "app_edit": {
         "cmd": None,
         "type": "prompt",

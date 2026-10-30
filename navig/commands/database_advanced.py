@@ -368,8 +368,9 @@ def list_users_cmd(options: dict[str, Any]):
             ch.console.print(table)
             ch.dim(f"\nTotal: {len(users)} users")
 
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
         ch.error("mysql client not found.")
+        raise typer.Exit(1) from exc
     finally:
         if config_file and os.path.exists(config_file):
             try:

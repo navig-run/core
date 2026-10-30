@@ -349,6 +349,25 @@ def test_image_params_translate_per_provider(provider, size, quality, style):
         assert any("style 'vivid'" in n for n in req.notes)
 
 
+def test_quality_survives_an_unresolved_provider():
+    """A preset used without --provider must not lose its quality.
+
+    The provider is resolved after presets (config, or the only installed key),
+    so a per-provider map cannot apply at translation time. Dropping the word
+    there made `--preset` a no-op for quality unless the caller also typed
+    --provider, which is how the operator's "high" preset produced medium art.
+    """
+    req = translate_image("", "p", {"quality": "high"}, "")
+    assert req.quality == "high"
+    assert any("passed through" in n for n in req.notes)
+
+
+def test_an_unknown_quality_word_is_still_dropped_without_a_provider():
+    req = translate_image("", "p", {"quality": "ultra"}, "")
+    assert req.quality is None
+    assert any("'ultra'" in n for n in req.notes)
+
+
 def test_gemini_gets_the_aspect_in_the_prompt():
     req = translate_image("gemini_flash", "p", {"aspect": "9:16"}, "")
     assert req.size is None and "Aspect ratio 9:16." in req.prompt

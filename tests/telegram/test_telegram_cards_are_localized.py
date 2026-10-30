@@ -43,10 +43,15 @@ from navig.gateway.channels import telegram_extensions
 
 TELEGRAM_DIR = Path(telegram_pkg.__file__).parent
 
-#: Calls whose string arguments the operator reads.
+#: Calls whose string arguments the operator reads. The channel methods, plus the
+#: shapes the card modules actually send through: the raw ``_api_call("sendMessage",
+#: …)`` and the module-local ``_edit`` / ``_send_prompt`` helpers (habit, todo, body,
+#: extension, agenda), which take the text positionally. ``edit_message`` already
+#: matches ``edit_message_text`` (the match is a substring).
 SEND = (
     "send_message", "answer_callback", "edit_message", "send_photo", "send_video",
     "send_document", "send_rich_message", "reply_text",
+    "_api_call", "_edit", "_send_prompt",
 )
 
 #: A literal is prose when it carries two words. Shorter fragments are separators,
@@ -60,7 +65,10 @@ PROSE = re.compile(r"[A-Za-z]{2,}\s+[A-Za-z]{2,}")
 LETTER = re.compile(r"[A-Za-z]")
 
 #: Literals that reach a send call and are verified NOT to be language.
-ALLOWED = frozenset({"\n\n"})
+ALLOWED = frozenset({
+    "\n\n",
+    " — /todo",  # appointments' plain fallback names the command a user types
+})
 
 
 def scope() -> list[Path]:
@@ -86,10 +94,55 @@ def _docstrings(tree: ast.Module) -> set[str]:
     return out
 
 
+def _segments(node: ast.AST) -> list[ast.Constant]:
+    """The literal text a composed value contributes: a constant, an f-string's own
+    segments, both sides of a ``+`` and both arms of a conditional.
+
+    It does NOT descend into calls or ``{…}`` fields: ``_t("key")`` and
+    ``_t("key") or "Tasks"`` are the locale lookup and its fallback, not text the
+    module wrote for the operator.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node]
+    if isinstance(node, ast.JoinedStr):
+        return [v for v in node.values if isinstance(v, ast.Constant)]
+    if isinstance(node, ast.BinOp):
+        return _segments(node.left) + _segments(node.right)
+    if isinstance(node, ast.IfExp):
+        return _segments(node.body) + _segments(node.orelse)
+    return []
+
+
+def _local_assignments(tree: ast.Module) -> tuple[dict[int, ast.AST], dict[tuple[int, str], list]]:
+    """(innermost enclosing function of every node, values assigned to each local name).
+
+    A card is often composed before the send — ``card = "…"; send_message(c, card)`` —
+    and a walk of the send call alone sees only the name.
+    """
+    owner: dict[int, ast.AST] = {}
+    assigned: dict[tuple[int, str], list] = {}
+    for func in ast.walk(tree):
+        if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for node in ast.walk(func):
+            owner[id(node)] = func  # an inner function walks later and wins
+            if isinstance(node, ast.Assign):
+                targets, value = node.targets, node.value
+            elif isinstance(node, (ast.AugAssign, ast.AnnAssign)) and node.value is not None:
+                targets, value = [node.target], node.value
+            else:
+                continue
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    assigned.setdefault((id(func), target.id), []).append(value)
+    return owner, assigned
+
+
 def _scan(path: Path) -> tuple[list[str], list[str], int, int]:
     """(message offenders, button offenders, send calls seen, buttons seen)."""
     tree = ast.parse(path.read_text(encoding="utf-8"))
     docs = _docstrings(tree)
+    owner, assigned = _local_assignments(tree)
     messages: list[str] = []
     buttons: list[str] = []
     sends = seen_buttons = 0
@@ -100,9 +153,17 @@ def _scan(path: Path) -> tuple[list[str], list[str], int, int]:
                 node.func.id if isinstance(node.func, ast.Name) else "")
             if any(s in name for s in SEND):
                 sends += 1
-                for sub in ast.walk(node):
-                    if not (isinstance(sub, ast.Constant) and isinstance(sub.value, str)):
-                        continue
+                literals = [
+                    sub for sub in ast.walk(node)
+                    if isinstance(sub, ast.Constant) and isinstance(sub.value, str)
+                ]
+                func = owner.get(id(node))
+                if func is not None:
+                    for arg in [*node.args, *(k.value for k in node.keywords)]:
+                        if isinstance(arg, ast.Name):
+                            for value in assigned.get((id(func), arg.id), []):
+                                literals += _segments(value)
+                for sub in literals:
                     value = sub.value
                     if value in docs or value in ALLOWED:
                         continue
@@ -114,12 +175,9 @@ def _scan(path: Path) -> tuple[list[str], list[str], int, int]:
                 if not (isinstance(key, ast.Constant) and key.value == "text"):
                     continue
                 seen_buttons += 1
-                if (
-                    isinstance(value_node, ast.Constant)
-                    and isinstance(value_node.value, str)
-                    and LETTER.search(value_node.value)
-                ):
-                    buttons.append(f"{path.name}:{value_node.lineno}: {value_node.value[:70]!r}")
+                for sub in _segments(value_node):
+                    if sub.value not in ALLOWED and LETTER.search(sub.value):
+                        buttons.append(f"{path.name}:{sub.lineno}: {sub.value[:70]!r}")
 
     return messages, buttons, sends, seen_buttons
 
@@ -186,19 +244,26 @@ def test_the_rules_would_catch_what_they_are_written_for(tmp_path: Path) -> None
     sample.write_text(
         "async def go(channel, chat_id):\n"
         "    await channel.send_message(chat_id, 'Could not read that video.')\n"
+        "    await _edit(channel, 1, 2, 'Could not save that.', None)\n"
+        "    text = 'Hello there'\n"
+        "    await channel.send_message(chat_id, text)\n"
         "    kb = [\n"
         "        {'text': 'Download', 'callback_data': 'x'},\n"
         "        {'text': '✕', 'callback_data': 'y'},\n"
         "        {'text': '\U0001F3A7', 'callback_data': 'z'},\n"
+        "        {'text': f'{MARK_OFF} Switch off', 'callback_data': 'w'},\n"
+        "        {'text': f\"\U0001F4CB {_t('pim.rv.tasks') or 'Tasks'}\", 'callback_data': 'v'},\n"
         "    ]\n"
         "    return kb\n",
         encoding="utf-8",
     )
     messages, buttons, sends, seen = _scan(sample)
-    assert len(messages) == 1, f"the message rule missed it: {messages}"
-    assert len(buttons) == 1, f"expected only the worded button, got: {buttons}"
-    assert "Download" in buttons[0]
-    assert sends == 1 and seen == 3, "the fixture did not exercise both shapes"
+    assert len(messages) == 3, f"the message rule missed one: {messages}"
+    assert any("Could not save" in m for m in messages), "a module-local _edit was not read"
+    assert any("Hello there" in m for m in messages), "a variable passed to a send was not traced"
+    assert len(buttons) == 2, f"expected only the two worded buttons, got: {buttons}"
+    assert "Download" in buttons[0] and "Switch off" in buttons[1]
+    assert sends == 3 and seen == 5, "the fixture did not exercise every shape"
 
 
 def test_the_command_surface_is_out_of_scope_and_says_why() -> None:

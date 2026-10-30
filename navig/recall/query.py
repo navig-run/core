@@ -19,6 +19,7 @@ Two rules every caller inherits:
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from navig.recall.model import USER_SPEAKERS, Record
@@ -197,6 +198,77 @@ def view(name: str, *, scope: Scope | None = None, status: str | None = None, li
     if for_model:
         recs = _drop_private_records(st, recs, private_sources(st))
     return recs
+
+
+def resurrect(limit: int = 10, *, scope: Scope | None = None, store: RecallStore | None = None,
+              candidates: int = 300) -> list[dict[str, Any]]:
+    """Ideas worth reviving, ranked by a deterministic score — the reasons ARE the score.
+
+    Eligible: type ``idea``, not rejected or superseded, ``impl`` in :data:`UNBUILT_IMPL`
+    (nobody has shown it was built). Weights:
+
+    * **+40** evidence in the owner's own words (``user_typed`` / ``user_answer`` /
+      ``user_plan_verdict``) — the owner engaged with it;
+    * **+min(4·evidence, 24)** — how much of the conversation quoted it;
+    * **+(11−rank)·4** for an audit recovered-idea rank 1–10 (**+10** when tagged
+      ``recovered-idea`` without a rank, **+3** more for audit provenance);
+    * **+min(days/15, 15)** staleness — untouched longer reads as more overdue;
+    * **+5** the status is still open (proposed / exploring / unresolved).
+
+    Ties break oldest-updated first. Days use the local clock (never a UTC calendar day).
+    Nothing here is a model opinion: the same bank always ranks the same way.
+    """
+    st = _store(store)
+    recs = st.list_records(rtype="idea", projects=(scope or Scope()).projects,
+                           impls=UNBUILT_IMPL, exclude_statuses=("rejected", "superseded"),
+                           oldest_first=True, limit=candidates)
+    if not recs:
+        return []
+    stats = st.evidence_stats([r.id for r in recs])
+    now = datetime.now().astimezone()
+    rows: list[dict[str, Any]] = []
+    for rec in recs:
+        count, speakers = stats.get(rec.id, (0, set()))
+        score, reasons = 0, []
+        owner = bool(speakers & USER_SPEAKERS)
+        if owner:
+            score += 40
+            reasons.append("your own words are quoted in it")
+        if count:
+            score += min(count * 4, 24)
+            reasons.append(f"{count} quoted passage{'s' if count != 1 else ''}")
+        tags = set(rec.tags)
+        rank = rec.attrs.get("rank")
+        try:
+            rank_i = int(rank)
+        except (TypeError, ValueError):
+            rank_i = 0
+        if 1 <= rank_i <= 10:
+            score += (11 - rank_i) * 4
+            reasons.append(f"recovered from the audit (rank {rank_i})")
+        elif "recovered-idea" in tags:
+            score += 10
+            reasons.append("recovered from the audit")
+        if "audit" in tags:
+            score += 3
+        days = 0
+        if rec.updated:
+            try:
+                when = datetime.fromisoformat(rec.updated.replace("Z", "+00:00")).astimezone()
+                days = max(0, int((now - when).total_seconds() // 86400))
+            except ValueError:
+                days = 0
+        if days:
+            score += min(days // 15, 15)
+            reasons.append(f"untouched {days}d")
+        if rec.status in ("proposed", "exploring", "unresolved"):
+            score += 5
+        rows.append({"id": rec.id, "title": rec.title, "project": rec.project, "status": rec.status,
+                     "impl": rec.impl, "score": score, "reasons": reasons, "days_stale": days,
+                     "evidence": count, "owner": owner, "audit_rank": rank_i or None,
+                     "updated": rec.updated})
+    rows.sort(key=lambda r: (-r["score"], r["updated"] or "9999"))
+    return rows[: max(1, limit)]
 
 
 def record_detail(record_id: str, *, evidence_limit: int | None = None, for_model: bool = False,

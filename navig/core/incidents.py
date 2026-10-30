@@ -66,6 +66,9 @@ BRAIN_OWNERSHIP_REFUSED = "brain_ownership_refused"
 KNOWLEDGE_DB_LEGACY_READ = "knowledge_db_legacy_read"
 KNOWLEDGE_DB_RETIRE_FAILED = "knowledge_db_retire_failed"
 RETENTION_SWEPT = "retention_swept"
+# Upper-case on purpose: navig-browser recorded it under this literal before it had a
+# constant, and entries already in the log must keep rendering.
+PROFILE_PORT_REALLOCATED = "PROFILE_PORT_REALLOCATED"
 
 # Human-readable, operator-facing summaries (doctor prints these, not the raw ids).
 DESCRIPTIONS: dict[str, str] = {
@@ -185,6 +188,10 @@ DESCRIPTIONS: dict[str, str] = {
         "the boot retention sweep moved stale local records into the trash — nothing was "
         "deleted; recover anything you still need from the reported trash directory"
     ),
+    PROFILE_PORT_REALLOCATED: (
+        "a browser profile's debug port had been reserved by the OS, so the profile was "
+        "moved to a free port — its login is kept; update anything that pinned the old port"
+    ),
 }
 
 
@@ -280,6 +287,11 @@ def summarize(event: str, data: dict[str, Any] | None = None) -> str:
         # operator cannot restore what they do not know exists. `doctor` used to
         # surface it for exactly one hardcoded filename (config.yaml.corrupt); any
         # producer that passes ``backup`` now gets it for free.
+        # A port move names which profile moved and where — the description alone
+        # cannot say which pinned port just went stale.
+        if data.get("profile") and data.get("old_port") and data.get("new_port"):
+            text = (f"{text} [{data['profile']}: port {data['old_port']} → "
+                    f"{data['new_port']}]")
         backup = data.get("backup")
         if backup:
             text = f"{text} — original preserved at {backup}"

@@ -62,6 +62,9 @@ def repo_root() -> Path:
                 return parent
             if text.startswith("gitdir:"):
                 gitdir = Path(text[len("gitdir:"):].strip())
+                if not gitdir.is_absolute():
+                    # Relative to the `.git` file, not to wherever the hook's cwd drifted.
+                    gitdir = (dot.parent / gitdir).resolve()
                 # <main>/.git/worktrees/<name>  ->  <main>
                 if gitdir.parent.name == "worktrees" and gitdir.parent.parent.name == ".git":
                     return gitdir.parent.parent.parent
@@ -182,6 +185,8 @@ LOST_WORK_DAYS = 7
 LOST_WORK_SHOWN = 5
 #: Candidates judged per briefing -- each costs a handful of batched git calls.
 LOST_WORK_JUDGED = 12
+#: Same-subject reachable commits compared per candidate (by patch id).
+LOST_WORK_TWINS = 20
 #: The subjects git gives a stash's commits -- a dropped stash, not lost work.
 _STASH_SHAPED = re.compile(r"(?:WIP on|index on|untracked files on) |On [^\s:]+: ")
 _SQUASH_SUFFIX = re.compile(r" \(#\d+\)$")
@@ -225,14 +230,21 @@ def _row_superseded(
     twin_of: dict[str, list[str]],
     twin_blobs: dict[str, str],
     touched_twins: set[str],
+    hunks_on_ref: bool,
 ) -> bool:
     """One row of the supersession test (see ``_superseded``). Keyword-only so the
     caller's loop variables are bound by value -- a closure over them is the classic
     loop-capture bug (ruff B023)."""
     if status == "D":
-        return path not in on_ref or path in since
+        return path not in on_ref
     if path in on_ref:
-        return on_ref[path] == in_commit.get(path) or path in since
+        if on_ref[path] == in_commit.get(path):
+            return True
+        if status == "A":
+            return path in since  # the file it created came into being again: a redo
+        # A file that already existed: any later edit of it proves nothing -- an
+        # unrelated comment fix hid a lost function (review F2952). Its hunks must be.
+        return hunks_on_ref
     mine = in_commit.get(path)
     return any(twin_blobs.get(t) == mine or t in touched_twins for t in twin_of.get(path, []))
 
@@ -240,9 +252,10 @@ def _row_superseded(
 def _superseded(root: Path, refs: list[str], sha: str, when: str) -> bool:
     """Is this commit's work on one of ``refs`` by another road (a squash, a redo, a move)?
 
-    True when, on some ref, every file it touched is: the identical blob, a file ref
-    has changed since the commit (a later edit of the same work), or -- for a deletion
-    -- already gone. For a file the commit ADDED that ref lacks, the ref may simply
+    True when, on some ref, every file it touched is: the identical blob, a file it
+    CREATED that ref has changed since the commit (a redo of the same work), a file it
+    edited whose hunks ref already carries (``_hunks_on_ref`` -- a later edit of the
+    same file is not evidence by itself), or -- for a deletion -- already gone. For a file the commit ADDED that ref lacks, the ref may simply
     have received it at a new path: this repo renames paths as a workflow (a manual
     moved blackbook/ -> cookbook/ with edits -- 59 of its paths went absent and a path
     check alone called the work "lost"; 14 of the 59 are provable as this move). What a
@@ -306,6 +319,9 @@ def _superseded(root: Path, refs: list[str], sha: str, when: str) -> bool:
             else set()
         )
 
+        edited = [p for s, p in rows if s == "M" and p in on_ref and on_ref[p] != in_commit.get(p)]
+        hunks_on_ref = bool(edited) and _hunks_on_ref(root, ref, sha, edited)
+
         if all(
             _row_superseded(
                 s,
@@ -316,11 +332,44 @@ def _superseded(root: Path, refs: list[str], sha: str, when: str) -> bool:
                 twin_of=twin_of,
                 twin_blobs=twin_blobs,
                 touched_twins=touched_twins,
+                hunks_on_ref=hunks_on_ref,
             )
             for s, p in rows
         ):
             return True
     return False
+
+
+def _hunks_on_ref(root: Path, ref: str, sha: str, paths: list[str]) -> bool:
+    """Are the changes ``sha`` made to ``paths`` already in ``ref``'s copies of them?
+
+    Proven the way git would: the commit's patch, reversed, applies to ref's blobs in a
+    throwaway index that holds only those paths -- no work tree is touched and the real
+    index is never read. False on any doubt (a reported commit is a look, not a loss).
+    """
+    import tempfile
+
+    def run(args: list[str], data: bytes | None = None, env: dict | None = None) -> bytes | None:
+        # Bytes, not text: a text pipe writes LF as CRLF on Windows and reads CRLF back
+        # as LF, and a patch changed on the way never applies.
+        try:
+            res = subprocess.run(
+                ["git", *args], cwd=str(root), input=data, capture_output=True, timeout=10,
+                env=env, **_spawn_kwargs()
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return res.stdout if res.returncode == 0 else None
+
+    patch = run(["diff", "--no-renames", "--full-index", "--binary", f"{sha}^", sha, "--", *paths])
+    listing = run(["ls-tree", "-r", ref, "--", *paths])
+    if not patch or not listing:
+        return False
+    with tempfile.TemporaryDirectory(prefix="navig-briefing-") as tmp:
+        env = {**os.environ, "GIT_INDEX_FILE": str(Path(tmp) / "index")}
+        if run(["update-index", "--index-info"], listing, env) is None:
+            return False
+        return run(["apply", "--cached", "--check", "-R"], patch, env) is not None
 
 
 def _git_stdin(args: list[str], cwd: Path, text: str) -> str | None:
@@ -336,6 +385,20 @@ def _git_stdin(args: list[str], cwd: Path, text: str) -> str | None:
     return res.stdout if res.returncode == 0 else None
 
 
+def _patch_ids(root: Path, shas: list[str]) -> dict[str, str]:
+    """sha -> stable patch id, for commits that have a patch (an empty one has none)."""
+    if not shas:
+        return {}
+    patches = _git(["log", "-p", "--no-walk=unsorted", "--no-color", "--no-renames", *dict.fromkeys(shas)], root)
+    out = _git_stdin(["patch-id", "--stable"], root, patches) if patches else None
+    ids: dict[str, str] = {}
+    for line in (out or "").splitlines():
+        pid, _, sha = line.partition(" ")
+        if pid and sha:
+            ids[sha] = pid
+    return ids
+
+
 def lost_work_lines(root: Path, base: str) -> list[str]:
     """Commits from the last LOST_WORK_DAYS that NO ref holds -- kept only by a reflog.
 
@@ -347,7 +410,8 @@ def lost_work_lines(root: Path, base: str) -> list[str]:
 
     Filters, measured in a week of real reflogs (Schema 177 raw orphans -> 2, navig
     479 -> 3): merges are skipped; a commit whose SUBJECT is on a ref (squash suffix
-    "(#123)" ignored) is a rebased/amended copy; a stash-shaped commit is a dropped
+    "(#123)" ignored) with the identical patch is a rebased copy (a same-subject commit
+    with other content is judged like any other); a stash-shaped commit is a dropped
     stash; and a commit whose files are all on ``base`` -- at their path, at a RENAMED
     path (``_superseded``), or on the current tip of the ref whose reflog held it, a
     branch its own session rewrote -- is superseded.
@@ -377,18 +441,26 @@ def lost_work_lines(root: Path, base: str) -> list[str]:
     if not shas:
         return []
     # A squash-merge renames the subject to "<subject> (#123)": compare without it.
-    held = {
-        _SQUASH_SUFFIX.sub("", s)
-        for s in (
-            _git(["log", "--all", f"--since={3 * LOST_WORK_DAYS}.days.ago", "--no-merges", "--format=%s"], root)
-            or ""
-        ).splitlines()
-    }
+    held: dict[str, list[str]] = {}
+    for line in (
+        _git(["log", "--all", f"--since={3 * LOST_WORK_DAYS}.days.ago", "--no-merges", "--format=%H\t%s"], root)
+        or ""
+    ).splitlines():
+        sha, _, subject = line.partition("\t")
+        held.setdefault(_SQUASH_SUFFIX.sub("", subject), []).append(sha)
     shown = _git(["log", "--no-walk=sorted", "--format=%H\t%h\t%cI\t%cr\t%s", *shas[:300]], root) or ""
+    rows = [(line.split("\t", 4) + [""] * 4)[:5] for line in shown.splitlines()]
+    rows = [r for r in rows if not _STASH_SHAPED.match(r[4])]
+    # A shared subject only NOMINATES a rebased/amended copy: `fix tests` or `work` names
+    # unrelated changes too, and the subject alone hid a real loss (review F2953). The
+    # copy is confirmed by an identical patch; anything else is judged on its content.
+    nominated = {r[0]: held[r[4]][:LOST_WORK_TWINS] for r in rows if r[4] in held}
+    pids = _patch_ids(root, [*nominated, *(t for ts in nominated.values() for t in ts)])
     candidates = []
-    for line in shown.splitlines():
-        full, short, when, age, subject = (line.split("\t", 4) + [""] * 4)[:5]
-        if subject in held or _STASH_SHAPED.match(subject):
+    for full, short, when, age, subject in rows:
+        if full in nominated and full in pids and any(
+            pids.get(t) == pids[full] for t in nominated[full]
+        ):
             continue
         candidates.append((short, when, age, subject, homes.get(full)))
     lost = [
@@ -462,7 +534,7 @@ def _set_aside_line(root: Path, base: str, name: str) -> str:
     return (
         f"[!] SET-ASIDE WORK not restored: {name} ({ahead} commit(s), {n_files} file(s)"
         f"{', ' + when if when else ''}) - {base} does NOT have it. Restore it "
-        f"(git cherry-pick --no-commit {name}, resolve, commit) before building on "
+        f"(git cherry-pick --no-commit {base}..{name}, resolve, commit) before building on "
         f"{base}, or delete it deliberately once proven redundant."
     )
 
@@ -560,7 +632,7 @@ def briefing(root: Path) -> str:
                         else:
                             behind_note = (
                                 f" - [!] {n.strip()} commit(s) behind origin/{default}; rebase before "
-                                f"more work lands here (`git -C {p} rebase origin/{default}`)"
+                                f"more work lands here (`git -C \"{p}\" rebase origin/{default}`)"
                             )
             marker = (
                 " - [!] SIBLING checkout OUTSIDE the repo (forbidden; should live in .dev/worktrees/)"
@@ -749,9 +821,14 @@ def _cached_with_age(text: str, mtime: float, now: float) -> str:
     return first + note + ("\n" + rest if rest else "")
 
 
-def _claim_refresh(root: Path) -> bool:
+def _claim_refresh(root: Path) -> str | None:
     """One refresher at a time: ten sessions opening together must not start ten
-    full briefings. A lock older than REFRESH_LOCK_STALE_S is a dead refresher's."""
+    full briefings. A lock older than REFRESH_LOCK_STALE_S is a dead refresher's.
+
+    Returns the owner token written into the lock (None when another refresher holds
+    it). Only that token releases the lock: a slow refresher whose lock was reclaimed
+    as stale must not delete its successor's when it finally ends (review F2485).
+    """
     lock = _cache_path(root).with_suffix(".refresh.lock")
     lock.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -760,20 +837,29 @@ def _claim_refresh(root: Path) -> bool:
     except OSError:
         pass
     try:
-        os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-        return True
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except OSError:
-        return False
-
-
-def _release_refresh(root: Path) -> None:
+        return None
+    token = f"{os.getpid()}-{os.urandom(8).hex()}"
     try:
-        _cache_path(root).with_suffix(".refresh.lock").unlink()
+        os.write(fd, token.encode("ascii"))
+    finally:
+        os.close(fd)
+    return token
+
+
+def _release_refresh(root: Path, token: str | None = None) -> None:
+    """Drop the refresh lock -- only while it is still ``token``'s, when one is given."""
+    lock = _cache_path(root).with_suffix(".refresh.lock")
+    try:
+        if token is not None and lock.read_text(encoding="ascii", errors="replace") != token:
+            return  # reclaimed as stale: the lock now belongs to another refresher
+        lock.unlink()
     except OSError:
         pass
 
 
-def _spawn_refresh(root: Path) -> subprocess.Popen | None:
+def _spawn_refresh(root: Path, token: str | None = None) -> subprocess.Popen | None:
     """Start `<this file> --refresh` fully detached, so the hook can return while
     it runs and Claude Code's pipe is never held open by it."""
     kwargs: dict = {
@@ -794,25 +880,31 @@ def _spawn_refresh(root: Path) -> subprocess.Popen | None:
         try:
             if flags:
                 kwargs["creationflags"] = flags
-            return subprocess.Popen([sys.executable, os.path.abspath(__file__), "--refresh"], **kwargs)
+            argv = [sys.executable, os.path.abspath(__file__), "--refresh", *([token] if token else [])]
+            return subprocess.Popen(argv, **kwargs)
         except OSError:
             continue  # breakaway refused by the job: retry without it
     return None
 
 
-def refresh(root: Path) -> None:
+def refresh(root: Path, token: str | None = None) -> None:
     """Compute the full briefing and cache it (the detached child's job)."""
     try:
         _write_cache(root, briefing(root))
     finally:
-        _release_refresh(root)
+        _release_refresh(root, token)
 
 
 def bounded_briefing(root: Path, budget_s: float = FOREGROUND_BUDGET_S) -> str:
     """A briefing within budget_s: fresh if the refresh finishes in time, else
     the last cached one marked with its age, else a pointer to the full tool."""
     started = time.time()
-    proc = _spawn_refresh(root) if _claim_refresh(root) else None
+    token = _claim_refresh(root)
+    proc = _spawn_refresh(root, token) if token else None
+    if token and proc is None:
+        # No child will ever release it: every later session would wait out the stale
+        # window on a refresh that is not running (review F2484).
+        _release_refresh(root, token)
     if proc is not None:  # else another session is refreshing: serve the cache now
         try:
             proc.wait(timeout=budget_s)
@@ -834,7 +926,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         root = repo_root()
         if "--refresh" in args:
-            refresh(root)
+            rest = args[args.index("--refresh") + 1:]
+            refresh(root, rest[0] if rest and not rest[0].startswith("-") else None)
         elif "--sync" in args:
             print(briefing(root))  # the old unbounded behaviour, for debugging
         else:

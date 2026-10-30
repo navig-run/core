@@ -321,19 +321,20 @@ class UplinkClient:
         while not self._stop:
             try:
                 await self._connect_and_serve()
-                # Reset the backoff ONLY if the connection was actually stable. A
-                # half-open edge that accepts the handshake then immediately CLOSEs
-                # returns here "normally" too — resetting on that produced a ~1/sec
-                # reconnect storm. connected_at is set once the WS is up, so its age
-                # is how long we were online.
-                connected_at = self.state.connected_at
-                if connected_at is not None and (_now() - connected_at) >= _BACKOFF_STABLE_S:
-                    backoff = _BACKOFF_INITIAL_S
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
                 self._mark_error(repr(exc))
                 logger.warning("lighthouse uplink dropped: %r", exc)
+            # Reset the backoff ONLY if the connection was actually stable. A
+            # half-open edge that accepts the handshake then immediately CLOSEs
+            # returns "normally" too — resetting on that produced a ~1/sec
+            # reconnect storm. connected_at is set once the WS is up, so its age
+            # is how long we were online. Checked on BOTH exits: a long healthy
+            # session that ends in an error must reconnect promptly as well.
+            connected_at = self.state.connected_at
+            if connected_at is not None and (_now() - connected_at) >= _BACKOFF_STABLE_S:
+                backoff = _BACKOFF_INITIAL_S
             if self._stop:
                 break
             # The connection is down (clean close or error) and we're about to back

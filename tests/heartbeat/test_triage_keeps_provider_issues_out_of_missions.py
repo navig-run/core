@@ -25,12 +25,15 @@ PROVIDER = [
     "[MEDIUM] provider openai returned 429 rate limit exceeded",
     "[HIGH] model gpt-x has been retired by the provider",
     "[HIGH] API key for groq is invalid or expired",
+    "[HIGH] LLM endpoint returned 503",
 ]
 ACTIONABLE = [
     "[HIGH] host web-1 unreachable (ssh timed out after 2.0s)",
     "[MEDIUM] disk / on web-1 at 91% used",
     "[CRITICAL] service nginx crashed on web-2",
     "[HIGH] certificate for example.com expires in 3 days",
+    # A bare "endpoint" is a service, not an LLM provider (review F2148).
+    "[CRITICAL] nginx health endpoint returned 503",
 ]
 
 

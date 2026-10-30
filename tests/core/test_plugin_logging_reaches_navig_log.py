@@ -137,6 +137,31 @@ def test_a_plugin_record_is_redacted_like_any_other(navig_log):
     assert "hunter2ismysecret" not in text
 
 
+def test_a_plugin_record_is_redacted_on_the_console_too(navig_log):
+    """Regression: once re-parented, a plugin's plain-Logger records also reach the stderr
+    console handler (the daemon's journal), whose formatter did not redact at all."""
+    import io
+
+    console = next(
+        h for h in logging.getLogger("navig").handlers if getattr(h, "navig_console", False)
+    )
+    stream = io.StringIO()
+    console.setStream(stream)
+    bind_plugin_logging("navig_console_secret_pkg")
+
+    try:
+        raise RuntimeError("token=hunter2ismysecret in the traceback")
+    except RuntimeError:
+        logging.getLogger("navig_console_secret_pkg.mod").exception(
+            "connecting with password=hunter2ismysecret")
+
+    console.flush()
+    text = stream.getvalue()
+    assert "connecting with" in text, "the record never reached the console — untested"
+    assert "in the traceback" in text, "the traceback never reached the console — untested"
+    assert "hunter2ismysecret" not in text
+
+
 # ── …and the loader must actually CALL it ────────────────────────────────────
 #
 # A helper that is written, tested and wired to nothing is this repo's most
@@ -202,3 +227,27 @@ def test_a_plugin_that_logs_while_registering_is_not_lost(monkeypatch, navig_log
 
     assert seen == ["register ran"], "the fake plugin never registered"
     assert "REGISTERED-EARLY" in _read(navig_log)
+
+
+def test_a_cli_command_entry_point_binds_its_logging(monkeypatch, navig_log):
+    """`navig.commands` entry points load through the CLI fast path, not the plugin
+    loader — `navig download` must still log into navig.log.
+
+    Review: https://github.com/navig-run/labs/pull/1127#discussion_r3858266600
+    """
+    import typer
+
+    from navig.cli import registration as reg
+
+    sub = typer.Typer()  # its __module__ is typer's — the package must come from the ep
+    ep = _FakeEntryPoint("navig-cmd", sub, "navig_cmd_pkg.cli")
+    monkeypatch.setattr(reg, "_entry_point_commands", lambda: {"fakecmd": ep})
+    monkeypatch.setattr(reg, "_ep_hidden", lambda *a, **k: False)
+
+    already: set[str] = set()
+    reg._try_register_ep(typer.Typer(), "fakecmd", already)
+
+    assert already == {"fakecmd"}, "the fake command never registered"
+    assert logging.getLogger("navig_cmd_pkg").parent is logging.getLogger("navig")
+    logging.getLogger("navig_cmd_pkg.engine").error("CLI-ENTRY-POINT-RECORD")
+    assert "CLI-ENTRY-POINT-RECORD" in _read(navig_log)

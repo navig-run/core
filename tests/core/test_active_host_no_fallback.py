@@ -109,3 +109,17 @@ def test_cached_choice_that_does_not_verify_stops_the_chain(project_dir: Path) -
     p.active_host_file.parent.mkdir(parents=True)
     p.active_host_file.write_text("cybesis-vps\n", encoding="utf-8")
     assert ContextManager(p).get_active_host(return_source=True) == (None, "unresolvable")
+
+
+def test_the_unresolvable_diagnostic_goes_to_stderr_not_stdout(
+    project_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review #1451: `navig --raw host show --current` prints only the raw host on
+    stdout; the diagnostic printed through the stdout console contaminated it."""
+    p = _Provider(project_dir, existing={"navig-cloud"}, local_active="cybesis-vps", global_active=None)
+
+    assert ContextManager(p).get_active_host() is None
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "cybesis-vps" in captured.err

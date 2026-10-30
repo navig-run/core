@@ -13,6 +13,7 @@
     PATCH  /api/deck/planner/tasks/{id}
     DELETE /api/deck/planner/tasks/{id}
     POST   /api/deck/planner/tasks/{id}/done | /reopen | /move {list_id}
+    GET    /api/deck/planner/items/{id}            one task or appointment, any date
     GET    /api/deck/planner/agenda                ?days=30 &proposed=1|0
     POST   /api/deck/planner/agenda                {title, start_at, end_at?, location?, with_whom?, leads?, notes?}
     PATCH  /api/deck/planner/agenda/{id}
@@ -141,7 +142,8 @@ async def handle_planner_today(request: "web.Request") -> "web.Response":
 
 @_guard
 async def handle_planner_lists(request: "web.Request") -> "web.Response":
-    return _ok(await _run(_svc().lists))
+    # ?archived=1 includes archived lists — Settings needs them to offer Restore.
+    return _ok(await _run(_svc().lists, include_archived=_flag(request, "archived")))
 
 
 @_guard
@@ -238,6 +240,14 @@ async def handle_planner_task_create(request: "web.Request") -> "web.Response":
         space=body.get("space") or None,
     )
     return _ok(service.present(item), 201)
+
+
+@_guard
+async def handle_planner_item_get(request: "web.Request") -> "web.Response":
+    """One task or appointment by id, whatever its date — a reminder knows only its
+    card id, and the agenda window ends two hours in the past."""
+    service = _svc()
+    return _ok(service.present(await _run(service.get, request.match_info["id"])))
 
 
 @_guard

@@ -445,6 +445,24 @@ def test_plugin_shipped_block_discovered(space, monkeypatch):
     assert block is not None and block.id == "plugblock"
 
 
+def test_project_block_overrides_a_plugin_block_with_the_same_id(space, monkeypatch):
+    """A plugin's block must not shadow the operator's local `.navig/blocks` override."""
+    import navig.plugins.package as pkg
+    from navig.blocks.loader import find_block
+
+    pdir = space / "fake_plugin" / "blocks"
+    (pdir / "dup").mkdir(parents=True)
+    (pdir / "dup" / "BLOCK.md").write_text(
+        _MATERIALIZE.format(id="dup"), encoding="utf-8")
+    monkeypatch.setattr(pkg, "plugin_capability_dirs",
+                        lambda kind: [pdir] if kind == "blocks" else [])
+    local = _write_block(space, "dup", _MATERIALIZE.format(id="dup"))
+
+    block = find_block("dup")
+    assert block is not None
+    assert block.source_path.resolve() == local.resolve()
+
+
 # ── Requirements gate (declared `requires:` tools/plugins) ────────────
 
 
@@ -491,6 +509,27 @@ def test_unmet_requirements_plugin(monkeypatch):
     assert policy.unmet_requirements({"plugins": ["installed-plugin"]}) == []
     out = policy.unmet_requirements({"plugins": ["missing-plugin"]})
     assert len(out) == 1 and "missing-plugin" in out[0]
+
+
+@pytest.mark.parametrize("where", ["user", "project"])
+def test_plugin_installed_matches_the_manifest_id_in_user_and_project_roots(
+        tmp_path, monkeypatch, where):
+    """A package whose folder differs from its manifest `name`, or a trusted project
+    plugin, ships discoverable blocks — so it must also satisfy `requires.plugins`."""
+    import navig.plugins.package as pkg
+    from navig.blocks import policy
+
+    root = tmp_path / "some-folder-name"
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "canon-plugin-id"}), encoding="utf-8")
+    user, project = ([root], []) if where == "user" else ([], [root])
+    monkeypatch.setattr(pkg, "installed_plugin_roots", lambda **kw: user)
+    monkeypatch.setattr(pkg, "project_plugin_roots", lambda *a, **kw: project)
+
+    assert policy._plugin_installed("canon-plugin-id") is True
+    assert policy._plugin_installed("some-folder-name") is True   # dir name still works
+    assert policy._plugin_installed("not-a-plugin-xyz") is False
 
 
 def test_apply_fails_fast_on_unmet_requirement(space, monkeypatch):
@@ -923,6 +962,37 @@ def test_block_verify_warns_but_does_not_refuse(space):
     assert res.exit_code == 0                       # still valid
     assert "advisory" in res.stdout.lower()
     assert "msstore" in res.stdout
+
+
+@pytest.mark.parametrize("requires", ["requires: []\n", "requires: [adb]\n"])
+def test_block_verify_rejects_a_non_mapping_requires(space, requires):
+    """The raw shape is checked before coercion: `[]` used to become {} and pass,
+    `[adb]` used to escape as a bare ValueError traceback."""
+    from typer.testing import CliRunner
+
+    from navig.commands.block import block_app
+
+    bf = _write_block(space, "undeclared", _UNDECLARED_TOOL.format(requires=requires))
+    res = CliRunner().invoke(block_app, ["verify", str(bf)])
+    assert res.exit_code == 1
+    assert res.exception is None or isinstance(res.exception, SystemExit)
+    # Whitespace-normalized: Rich wraps the message at the console width, and a long
+    # path prefix (a worktree checkout) breaks "must be a mapping" across a newline.
+    assert "must be a mapping" in " ".join(res.output.split())
+
+
+def test_block_verify_reports_non_list_tools_without_a_traceback(space):
+    """`tools: 1` is a validation problem — the advisory lint must not crash on it."""
+    from typer.testing import CliRunner
+
+    from navig.commands.block import block_app
+
+    bf = _write_block(space, "undeclared",
+                      _UNDECLARED_TOOL.format(requires="requires:\n  tools: 1\n"))
+    res = CliRunner().invoke(block_app, ["verify", str(bf)])
+    assert res.exit_code == 1
+    assert res.exception is None or isinstance(res.exception, SystemExit)
+    assert "must be a list" in res.output
 
 
 # ── the guard that was missing: every SHIPPED block is sound ─────────────────
@@ -1490,3 +1560,45 @@ def test_registry_and_legacy_community_sources_are_first_party():
         check_install_trust("someone", "registry", dev_untrusted=False)
     with pytest.raises(TrustError):
         check_install_trust("navig-run", "core", dev_untrusted=False)
+
+
+def test_apply_receipt_write_failure_is_not_recorded_as_success(space, monkeypatch):
+    """A run whose receipt fails to persist must not leave a "successful" ledger line.
+
+    Regression: the claimed RecordedOperation closed (marking success) before the receipt
+    was built and written, so a full disk or unwritable receipt dir logged a failed
+    `navig apply` as successful.
+    """
+    import navig.blocks as blocks_pkg
+    import navig.operation_recorder as recorder_mod
+    from navig.commands.block import apply_command
+
+    _write_block(space, "rcpt-fail", _MATERIALIZE.format(id="rcpt-fail"))
+    recorded: list[object] = []
+
+    class _Rec:
+        def __init__(self, **kw):
+            self.success = None
+            self.output = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            if self.success is None:
+                self.success = exc_type is None
+            recorded.append(self.success)
+            return False
+
+    def _boom(receipt):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(recorder_mod, "RecordedOperation", _Rec)
+    monkeypatch.setattr(blocks_pkg, "persist_receipt", _boom)
+
+    with pytest.raises(OSError, match="disk full"):
+        apply_command(
+            spec="rcpt-fail", input_=None, inputs_file=None, approve=None, yes=True,
+            dry_run=False, json_out=False, workdir=str(space), dev_untrusted=False,
+        )
+    assert recorded == [False]

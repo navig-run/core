@@ -19,6 +19,9 @@ navig-commands:
     description: "Delete the regenerable build folders found under <root>."
     risk: "destructive"
     confirmation_msg: "⚠️  DESTRUCTIVE: this deletes node_modules / target / .next / dist under '{root}'. Every deleted folder must be rebuilt (Rust targets can take 10-30 min). Stop dev servers first. Continue?"
+# Written against a planned command surface that is not implemented yet
+# (KNOWN_MISSING in tests/quality/test_content_command_refs_resolve.py).
+activatable: false
 ---
 
 # Reclaiming disk space from build artifacts

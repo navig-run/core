@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -310,17 +311,45 @@ def nssm_status() -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 
+def _py_str_literal(value: str) -> str:
+    """``value`` as a single-quoted Python literal safe inside the task's ``-c "..."``.
+
+    ``repr()`` switches to double quotes for a string holding a ``'`` — which would end
+    the outer ``-c "..."`` argument — so escape by hand. A valid Windows path never holds
+    a ``"``; a home such as ``C:/Users/<user'name>/.navig`` used to yield a SyntaxError
+    and a task that exited before the daemon started.
+    """
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
 def _task_env_setup(home: Path) -> str:
     """The env assignments the scheduled task bakes in, as executable Python.
 
     Split out so a test can execute exactly these — and only these — without also
     running the log redirection, which would hijack the test session's stdout.
     """
-    h = str(home).replace("\\", "/")
+    h = _py_str_literal(str(home).replace("\\", "/"))
     return (
         "os.environ['NAVIG_SERVICE']='1'; "
-        f"os.environ['NAVIG_CONFIG_DIR']='{h}'; "
-        f"os.environ.setdefault('NAVIG_HOME', '{h}'); "
+        f"os.environ['NAVIG_CONFIG_DIR']={h}; "
+        f"os.environ['NAVIG_HOME']={h}; "
+    )
+
+
+def _task_log_redirect(home: Path, log_name: str) -> str:
+    """Point stdout/stderr at ``<home>/daemon/<log_name>``, best-effort, as one line.
+
+    A ``-c`` one-liner cannot hold a ``try`` statement, so the guarded block goes
+    through ``exec`` with escaped newlines. A boot log that cannot be opened (an ACL,
+    a directory in its place) must fall back to the windowless start, not abort it.
+    """
+    d = _py_str_literal(str(home).replace("\\", "/") + "/daemon")
+    log = _py_str_literal(log_name)
+    return (
+        f"_d={d}; _log=os.path.join(_d, {log}); "
+        "exec('try:\\n os.makedirs(_d, exist_ok=True)\\n"
+        " _f=open(_log, \\'a\\', encoding=\\'utf-8\\', buffering=1)\\n"
+        " sys.stdout=sys.stderr=_f\\nexcept OSError:\\n pass'); "
     )
 
 
@@ -338,7 +367,9 @@ def _task_bootstrap_args(home: Path) -> str:
     the task launches `pythonw -c <bootstrap>`, which sets the vars in os.environ BEFORE any
     navig import, then hands off to the daemon module exactly as `-m navig.daemon.entry`
     would. Forward-slash the home (Windows accepts it) to avoid a trailing-backslash killing
-    the string literal; NAVIG_HOME uses setdefault so an explicit ambient value still wins.
+    the string literal. NAVIG_HOME is assigned too, not setdefault: memory/paths prefers it,
+    so a persistent ambient NAVIG_HOME would otherwise reopen the split brain (NSSM and
+    systemd assign both unconditionally for the same reason).
 
     **stdout/stderr are pointed at daemon/boot.log first.** `pythonw` has no console: its
     streams are None, so a boot that fails leaves the task with `Last Result: 1` and not one
@@ -347,13 +378,10 @@ def _task_bootstrap_args(home: Path) -> str:
     open() and turns the next silent failure into a readable line. Opened line-buffered and
     append-only; a failure to open it must never stop the daemon from starting.
     """
-    h = str(home).replace("\\", "/")
     return (
         f'-c "import os, sys; '
         f"{_task_env_setup(home)}"
-        f"os.makedirs(r'{h}/daemon', exist_ok=True); "
-        f"_f=open(r'{h}/daemon/boot.log', 'a', encoding='utf-8', buffering=1); "
-        f"sys.stdout=sys.stderr=_f; "
+        f"{_task_log_redirect(home, 'boot.log')}"
         f"import runpy; runpy.run_module('navig.daemon.entry', run_name='__main__', alter_sys=True)\""
     )
 
@@ -362,13 +390,10 @@ def _task_restart_args(home: Path) -> str:
     """The `-c` bootstrap the RESTART task runs: `navig service restart`, with the
     same env baking as the daemon task and stdout to daemon/restart.log (pythonw
     has no console; a restart that fails must leave a readable line)."""
-    h = str(home).replace("\\", "/")
     return (
         f'-c "import os, sys; '
         f"{_task_env_setup(home)}"
-        f"os.makedirs(r'{h}/daemon', exist_ok=True); "
-        f"_f=open(r'{h}/daemon/restart.log', 'a', encoding='utf-8', buffering=1); "
-        f"sys.stdout=sys.stderr=_f; "
+        f"{_task_log_redirect(home, 'restart.log')}"
         f"sys.argv=['navig', 'service', 'restart']; "
         f"import runpy; runpy.run_module('navig', run_name='__main__', alter_sys=True)\""
     )
@@ -419,9 +444,39 @@ def _schtasks_restart_xml() -> str:
 </Task>"""
 
 
-def _schtasks_xml() -> str:
-    """Generate a Task Scheduler XML definition."""
+def _schtasks_xml(start_now: bool = True) -> str:
+    """Generate a Task Scheduler XML definition.
+
+    ``start_now=False`` (``service install --no-start``) promises "will start on next
+    login", but the repeating TimeTrigger below starts at 2020-01-01 — it would launch
+    the daemon within five minutes of the install. A deferred install therefore carries
+    the watchdog on the LOGON trigger instead (same PT5M repetition, armed only once
+    the next login fires it) and registers no TimeTrigger.
+    """
     from xml.sax.saxutils import escape as _xml_escape
+
+    logon_repetition = (
+        ""
+        if start_now
+        else """
+      <Repetition>
+        <Interval>PT5M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>"""
+    )
+    time_trigger = (
+        """
+    <TimeTrigger>
+      <Repetition>
+        <Interval>PT5M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+      <StartBoundary>2020-01-01T00:00:00</StartBoundary>
+      <Enabled>true</Enabled>
+    </TimeTrigger>"""
+        if start_now
+        else ""
+    )
 
     home = _navig_home()
     python = _xml_escape(_pythonw_exe())
@@ -437,7 +492,7 @@ def _schtasks_xml() -> str:
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>
-      <Enabled>true</Enabled>
+      <Enabled>true</Enabled>{logon_repetition}
     </LogonTrigger>
     <!-- A repeating trigger, deliberately, and ONLY because the bootstrap is now
          idempotent. Read this before changing either half.
@@ -466,15 +521,7 @@ def _schtasks_xml() -> str:
 
          If you ever remove the idempotency guard in navig/daemon/entry.py, remove
          this trigger in the SAME change. tests/daemon/test_autostart_watchdog.py
-         pins them together so that cannot be done by accident. -->
-    <TimeTrigger>
-      <Repetition>
-        <Interval>PT5M</Interval>
-        <StopAtDurationEnd>false</StopAtDurationEnd>
-      </Repetition>
-      <StartBoundary>2020-01-01T00:00:00</StartBoundary>
-      <Enabled>true</Enabled>
-    </TimeTrigger>
+         pins them together so that cannot be done by accident. -->{time_trigger}
   </Triggers>
   <Principals>
     <Principal>
@@ -537,7 +584,9 @@ def _refuse_task_mutation(operation: str) -> tuple[bool, str] | None:
     the operation may proceed. Set ``NAVIG_ALLOW_TASK_MUTATION=1`` to opt in -- for a
     test that genuinely means to exercise Task Scheduler on a throwaway machine.
     """
-    if "pytest" not in sys.modules:
+    # `PYTEST_CURRENT_TEST` covers the CLI a test drives through `subprocess`: the child
+    # has a fresh `sys.modules` without pytest but inherits the environment.
+    if "pytest" not in sys.modules and not os.environ.get("PYTEST_CURRENT_TEST"):
         return None
     if os.environ.get("NAVIG_ALLOW_TASK_MUTATION") == "1":
         return None
@@ -556,7 +605,7 @@ def task_scheduler_install(start_now: bool = True) -> tuple[bool, str]:
         return refusal
     _ensure_dirs()
     xml_path = daemon_dir() / "navig-task.xml"
-    xml_path.write_text(_schtasks_xml(), encoding="utf-16")
+    xml_path.write_text(_schtasks_xml(start_now=start_now), encoding="utf-16")
 
     try:
         subprocess.run(
@@ -689,6 +738,18 @@ def task_scheduler_run() -> tuple[bool, str]:
         return refusal
     if sys.platform != "win32":
         return False, "Task Scheduler is Windows-only"
+    # The task's bootstrap pins the config home it was installed for. Running it for a
+    # DIFFERENT home starts that other brain; the caller then waits on its own pid file,
+    # times out and direct-spawns — two brains from one `service start`. Refuse instead,
+    # so the caller's fallback starts the right one.
+    task_home = task_scheduler_config_dir()
+    if task_home is not None and os.path.normcase(os.path.abspath(task_home)) != os.path.normcase(
+        os.path.abspath(_navig_home())
+    ):
+        return False, (
+            f"Task '{TASK_NAME}' runs the config at {task_home}, not {_navig_home()} — "
+            "not running it"
+        )
     try:
         r = subprocess.run(
             ["schtasks", "/run", "/tn", TASK_NAME],
@@ -834,8 +895,13 @@ _TASK_RESULT_NOT_A_FAILURE = frozenset({
     # 5-minute firing is refused with this code. Measured on the operator's
     # machine 2026-09-05 — a healthy install with the uplink online reported
     # "last run FAILED (result 2147946720)" on every check.
-    2147946720,
+    #
+    # It is NOT listed here: 0x800710E0 is the generic ERROR_REQUEST_REFUSED, and a
+    # refusal by policy or a task condition while the daemon is down must stay a
+    # failure. ``task_scheduler_health`` excuses it only while an instance is Running
+    # (see _TASK_RESULT_REFUSED).
 })
+_TASK_RESULT_REFUSED = 2147946720
 
 
 def task_scheduler_health() -> dict:
@@ -855,9 +921,10 @@ def task_scheduler_health() -> dict:
     locale bug waiting to happen. ``Get-ScheduledTaskInfo`` returns PROPERTY
     names, which are the same in every locale.
 
-    Returns ``{installed, last_result, next_run, can_recover, problems[]}``.
+    Returns ``{installed, last_result, next_run, enabled, can_recover, problems[]}``.
     Never raises; on any failure it reports ``installed=None`` (unknown), which
-    callers must render as a warning rather than as health.
+    callers must render as a warning rather than as health. Only a confirmed
+    "no such task" (``ObjectNotFound``) reports ``installed=False``.
     """
     out: dict = {
         "installed": None, "last_result": None, "next_run": None,
@@ -868,10 +935,16 @@ def task_scheduler_health() -> dict:
     try:
         ps = (
             f"$ErrorActionPreference='Stop';"
-            f"$t=Get-ScheduledTask -TaskName '{TASK_NAME}';"
+            # Only ObjectNotFound means "not installed". Access denied, a stopped
+            # Schedule service or a failing cmdlet is UNKNOWN — reading those as
+            # absent printed "Not installed / Fix: navig service install".
+            f"try{{$t=Get-ScheduledTask -TaskName '{TASK_NAME}'}}"
+            f"catch{{if($_.CategoryInfo.Category -eq 'ObjectNotFound')"
+            f"{{[pscustomobject]@{{missing=$true}}|ConvertTo-Json -Compress;exit 0}};throw}};"
             f"$i=$t|Get-ScheduledTaskInfo;"
             f"[pscustomobject]@{{"
             f"last=$i.LastTaskResult;"
+            f"state=[string]$t.State;"
             f"next=$(if($i.NextRunTime){{$i.NextRunTime.ToString('o')}}else{{''}});"
             # A DISABLED task still reports a NextRunTime -- Windows computes the
             # schedule regardless of whether it will act on it. Without this field the
@@ -895,12 +968,21 @@ def task_scheduler_health() -> dict:
             timeout=20,
         )
         if r.returncode != 0:
-            out["problems"].append("not installed")
-            out["installed"] = False
+            detail = (r.stderr or r.stdout or "").strip().splitlines()
+            out["problems"].append(
+                f"could not read the task (exit {r.returncode}"
+                + (f": {detail[0][:200]}" if detail else "")
+                + ")"
+            )
             return out
         data = json.loads((r.stdout or "{}").strip() or "{}")
     except Exception as exc:  # noqa: BLE001
         out["problems"].append(f"could not read the task ({exc})")
+        return out
+
+    if data.get("missing"):
+        out["problems"].append("not installed")
+        out["installed"] = False
         return out
 
     out["installed"] = True
@@ -921,7 +1003,12 @@ def task_scheduler_health() -> dict:
             "DISABLED — it will not fire, so it cannot start or recover the daemon "
             "(re-enable with: navig service start)"
         )
-    if out["last_result"] not in _TASK_RESULT_NOT_A_FAILURE:
+    refused_by_ignore_new = (
+        out["last_result"] == _TASK_RESULT_REFUSED
+        # An older reply carries no state; keep the measured steady-state behaviour.
+        and str(data.get("state", "Running")).lower() == "running"
+    )
+    if out["last_result"] not in _TASK_RESULT_NOT_A_FAILURE and not refused_by_ignore_new:
         out["problems"].append(f"last run FAILED (result {out['last_result']})")
     if not out["next_run"]:
         out["problems"].append("no next run scheduled — it cannot restart a dead daemon")
@@ -965,6 +1052,48 @@ def _task_xml_enabled(xml_text: str) -> bool | None:
         # install as "state could not be read", i.e. swap one dishonest answer for
         # another.
         return True
+    return None
+
+
+def task_scheduler_config_dir() -> Path | None:
+    """The ``NAVIG_CONFIG_DIR`` the installed daemon task bakes into its bootstrap.
+
+    ``TASK_NAME`` is one machine-level object, but its bootstrap pins the config home it
+    was installed for (:func:`_task_env_setup`). A CLI running against ANOTHER home (a
+    portable config) that runs this task starts the install-time brain, waits on its own
+    pid file, times out, and direct-spawns a second one. Callers compare this with
+    :func:`_navig_home` before using the task.
+
+    ``None`` = could not tell: not Windows, not installed, unreadable, or a legacy task
+    whose bootstrap bakes no home.
+    """
+    if sys.platform != "win32":
+        return None
+    from xml.etree import ElementTree
+
+    try:
+        result = subprocess.run(
+            ["schtasks", "/query", "/tn", TASK_NAME, "/xml", "ONE"],
+            capture_output=True,
+            encoding=console_encoding(),
+            errors="replace",
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        # S314: schtasks.exe output, a local system binary — see _task_xml_enabled.
+        root = ElementTree.fromstring((result.stdout or "").lstrip(chr(0xFEFF)))  # noqa: S314
+    except ElementTree.ParseError:
+        return None
+    for element in root.iter():
+        if element.tag.rsplit("}", 1)[-1] != "Arguments":
+            continue
+        m = re.search(r"os\.environ\['NAVIG_CONFIG_DIR'\]='([^']*)'", element.text or "")
+        if m:
+            return Path(m.group(1))
     return None
 
 
@@ -1012,8 +1141,9 @@ def task_scheduler_enabled_state() -> tuple[bool | None, bool | None, str]:
 def task_scheduler_status() -> tuple[bool, str]:
     """Report whether the autostart task will actually fire.
 
-    Returns ``(enabled, detail)``; ``enabled`` is what the status line renders as
-    Active / Inactive.
+    Returns ``(enabled, detail)``. ``status()`` derives its Active / Inactive headline
+    from :func:`task_scheduler_health`, not from this boolean; this function feeds the
+    Detail line and other callers that need a yes/no answer.
 
     **This used to be ``running = "running" in stdout.lower()``** over
     ``schtasks /query /v``. That output contains the FIELD LABEL
@@ -1043,8 +1173,24 @@ def task_scheduler_status() -> tuple[bool, str]:
 
 
 def has_systemd() -> bool:
-    """Check if systemd is available on this system."""
-    return shutil.which("systemctl") is not None
+    """True when systemd is actually supervising this boot, not merely installed.
+
+    ``systemctl`` on the PATH is not enough: a container image, a WSL2 distro without
+    ``systemd=true`` and a chroot all ship the binary while PID 1 is something else, and
+    ``systemctl enable/start`` there fails with "System has not been booted with systemd
+    as init system". ``/run/systemd/system`` exists only when systemd is running.
+    """
+    if shutil.which("systemctl") is None:
+        return False
+    return _systemd_is_running()
+
+
+def _systemd_is_running() -> bool:
+    """``/run/systemd/system`` exists only while systemd is PID 1 of this boot.
+
+    Factored out so the answer can be pinned in a test without a container.
+    """
+    return Path("/run/systemd/system").is_dir()
 
 
 # Where a distro package installs units (`navig-agent@.service` comes from the `navig`
@@ -1510,6 +1656,36 @@ def launchd_uninstall() -> tuple[bool, str]:
         return False, f"launchd uninstall failed: {e}"
 
 
+def launchd_installed() -> bool:
+    """A LaunchAgent plist is on disk (it may be loaded or not)."""
+    return has_launchd() and _launchd_plist_path().exists()
+
+
+def launchd_start() -> tuple[bool, str]:
+    """Start the installed agent THROUGH launchd.
+
+    After a clean `navig service stop` the agent stays loaded but stopped
+    (KeepAlive SuccessfulExit=false), so a later start must go back through
+    launchd — a directly spawned daemon is one launchd neither owns nor
+    restarts. Bootstrap first when the agent is not loaded, then kickstart.
+    """
+    plist = _launchd_plist_path()
+    if not plist.exists():
+        return False, "LaunchAgent not installed"
+    domain = _launchd_domain()
+    try:
+        if _launchctl("print", f"{domain}/{LAUNCHD_LABEL}").returncode != 0:
+            r = _launchctl("bootstrap", domain, str(plist))
+            if r.returncode != 0:
+                return False, f"launchctl bootstrap failed: {(r.stderr or r.stdout).strip()}"
+        r = _launchctl("kickstart", f"{domain}/{LAUNCHD_LABEL}")
+        if r.returncode != 0:
+            return False, f"launchctl kickstart failed: {(r.stderr or r.stdout).strip()}"
+        return True, f"LaunchAgent '{LAUNCHD_LABEL}' started"
+    except Exception as e:  # noqa: BLE001
+        return False, f"launchd start failed: {e}"
+
+
 def launchd_status() -> tuple[bool, str]:
     """(loaded-and-running, detail) from `launchctl print`."""
     if not _launchd_plist_path().exists():
@@ -1521,6 +1697,81 @@ def launchd_status() -> tuple[bool, str]:
     pid = next((line.split("=", 1)[1].strip() for line in r.stdout.splitlines()
                 if line.strip().startswith("pid =")), None)
     return running, f"state: {'running' if running else 'not running'}" + (f" (pid {pid})" if pid else "")
+
+
+def managed_launchd_job() -> str | None:
+    """The LaunchAgent label when launchd OWNS this daemon — loaded, not merely installed.
+
+    The macOS counterpart of :func:`supervising_systemd_unit`. A plist on disk that is
+    not loaded supervises nothing, so this answers None and lifecycle code takes the
+    direct path — exactly as it does on a Linux box with no unit.
+    """
+    if not has_launchd() or not _launchd_plist_path().exists():
+        return None
+    try:
+        r = _launchctl("print", f"{_launchd_domain()}/{LAUNCHD_LABEL}")
+    except Exception:  # noqa: BLE001
+        return None
+    return LAUNCHD_LABEL if r.returncode == 0 else None
+
+
+def supervising_launchd_job() -> str | None:
+    """Reads like its systemd twin: the label that supervises this daemon, or None."""
+    return managed_launchd_job()
+
+
+def _launchd_failure(r: subprocess.CompletedProcess, shown: str) -> str:
+    """The one-line reason from a failed launchctl call, plus the command to run by hand."""
+    lines = (getattr(r, "stderr", "") or getattr(r, "stdout", "") or "").strip().splitlines()
+    reason = lines[-1] if lines else f"exit {r.returncode}"
+    return f"{reason} — run: {shown}"
+
+
+def launchd_job_action(action: str) -> tuple[bool, str]:
+    """``start`` / ``stop`` / ``restart`` a loaded LaunchAgent THROUGH launchctl.
+
+    The mapping is launchd's, not an imitation of systemd:
+
+    - ``stop`` is ``bootout``. A job with ``KeepAlive`` cannot be stopped by killing its
+      process — launchd respawns it within a second, so a ``kill`` reads as a failed
+      stop. Unloading is the only stop launchd honors; the plist stays on disk (that is
+      what ``navig service uninstall`` removes) and ``start`` loads it again.
+    - ``restart`` is ``kickstart -k``: launchd kills and respawns the job itself, outside
+      the daemon's process tree, so asking for a restart from INSIDE the daemon works.
+    - ``start`` reloads an unloaded plist (``bootstrap``), then kickstarts it.
+    """
+    if action not in ("start", "stop", "restart"):
+        return False, f"unknown launchd action {action!r}"
+    if not has_launchd():
+        return False, "launchd is only available on macOS"
+    plist = _launchd_plist_path()
+    if not plist.exists():
+        return False, "LaunchAgent not installed"
+    domain = _launchd_domain()
+    target = f"{domain}/{LAUNCHD_LABEL}"
+    shown = f"launchctl {action} {target}"
+    try:
+        if action == "stop":
+            shown = f"launchctl bootout {target}"
+            r = _launchctl("bootout", target)
+        elif action == "restart":
+            shown = f"launchctl kickstart -k {target}"
+            r = _launchctl("kickstart", "-k", target)
+        else:
+            if _launchctl("print", target).returncode != 0:
+                shown = f"launchctl bootstrap {domain} {plist}"
+                r = _launchctl("bootstrap", domain, str(plist))
+                if r.returncode != 0:
+                    return False, _launchd_failure(r, shown)
+            shown = f"launchctl kickstart {target}"
+            r = _launchctl("kickstart", target)
+    except subprocess.TimeoutExpired:
+        return False, f"{shown} did not finish in time"
+    except OSError as e:
+        return False, str(e)
+    if r.returncode == 0:
+        return True, shown
+    return False, _launchd_failure(r, shown)
 
 
 # ---------------------------------------------------------------------------
@@ -1541,6 +1792,41 @@ def detect_best_method() -> str:
     if has_nssm() and is_admin():
         return "nssm"
     return "task"
+
+
+#: The kernel's version file (POSIX only) — a constant so a test can supply its own.
+_PROC_VERSION_PATH = Path("/proc/version")
+
+
+def manual_supervision_hint() -> str:
+    """What the operator can do when no supported service manager is running.
+
+    WSL2 and container hosts reach `method == "manual"` while the platform looks like
+    plain Linux, so the advice names the platform-specific way to get a supervisor back
+    instead of only suggesting a supervisor the host cannot run.
+    """
+    if sys.platform == "win32":
+        return '\nOn Windows, enable the Task Scheduler backend: navig service install --method task'
+    if sys.platform == "darwin":
+        return (
+            "\nlaunchctl was not found, which a normal macOS always has — "
+            "check PATH before relying on launchd."
+        )
+    proc_version = _PROC_VERSION_PATH
+    if proc_version.exists():
+        try:
+            version = proc_version.read_text(encoding="utf-8", errors="replace").lower()
+        except OSError:
+            version = ""
+        if "microsoft" in version:
+            return (
+                "\nThis looks like WSL: enable systemd in /etc/wsl.conf "
+                "([boot] systemd=true), restart WSL, then re-run navig service install."
+            )
+    return (
+        "\nsystemd is not running here (a container or a chroot host): run the daemon "
+        "under your own supervisor (supervisord, s6, tini) with: python -m navig.daemon.entry"
+    )
 
 
 def install(method: str | None = None, start_now: bool = True) -> tuple[bool, str]:
@@ -1578,6 +1864,7 @@ def install(method: str | None = None, start_now: bool = True) -> tuple[bool, st
             "No supported service manager found.\n"
             "Run manually: python -m navig.daemon.entry\n"
             "Or create a systemd/supervisor unit pointing at that command."
+            f"{manual_supervision_hint()}"
         )
     else:
         return False, f"Unknown method: {method}. Use 'nssm', 'task', 'systemd' or 'launchd'"
@@ -1623,12 +1910,16 @@ def uninstall(method: str | None = None) -> tuple[bool, str]:
     return False, f"Unknown method: {method}"
 
 
-def _child_is_live(pid: object) -> bool | None:
+def _child_is_live(pid: object, create_time: object = None) -> bool | None:
     """Is the child's pid a running process NOW — True / False / None (could not tell).
 
     state.json is a snapshot written at boot and after a restart, never in
     between, so its ``alive`` flag is what was true THEN. A child that died and
     sits in its restart back-off carries ``alive: True`` and a dead pid.
+
+    ``create_time`` (recorded by the supervisor when it spawned the child) is the
+    identity check: a dead child's pid recycled by an unrelated process is still
+    "running", so a creation time that does not match answers False.
     """
     try:
         pid_i = int(pid)  # type: ignore[arg-type]
@@ -1642,7 +1933,16 @@ def _child_is_live(pid: object) -> bool | None:
         return None
     try:
         proc = psutil.Process(pid_i)
-        return bool(proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE)
+        if not (proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE):
+            return False
+        if create_time is not None:
+            try:
+                expected = float(create_time)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                return True  # an unreadable marker is no evidence of a different process
+            if abs(proc.create_time() - expected) > 1.0:
+                return False  # the pid was recycled by another process
+        return True
     except psutil.NoSuchProcess:
         return False
     except (psutil.Error, OSError):
@@ -1749,7 +2049,7 @@ def status(method: str | None = None) -> tuple[bool, str]:
         for child in state.get("children", []):
             # Verify the pid NOW; the snapshot's `alive` is what was true when
             # the file was written. Never print ALIVE over a guess.
-            live = _child_is_live(child.get("pid"))
+            live = _child_is_live(child.get("pid"), child.get("create_time"))
             if live is None:
                 # Cannot check the pid (typically an elevated daemon seen from a
                 # plain shell): say so, and say how — "unverified" alone reads
@@ -1767,8 +2067,10 @@ def status(method: str | None = None) -> tuple[bool, str]:
 
     # Platform-specific service checks
     if sys.platform == "win32":
+        nssm_active = False
         if method in (None, "nssm") and has_nssm():
             running_ns, detail_ns = nssm_status()
+            nssm_active = bool(running_ns)
             lines.append(f"NSSM service: {'Active' if running_ns else 'Inactive'}")
             summary = _summary_line(detail_ns)
             if summary:
@@ -1781,8 +2083,13 @@ def status(method: str | None = None) -> tuple[bool, str]:
             # green while the daemon was dead. Report what it can actually do.
             health = task_scheduler_health()
             if health.get("installed") is False:
-                lines.append("Task Scheduler: Not installed")
-                lines.append("  Fix: navig service install")
+                if method is None and nssm_active:
+                    # NSSM is the working backend; `service install` here would
+                    # reinstall it or register a redundant second one.
+                    lines.append("Task Scheduler: Not installed (NSSM is the active backend)")
+                else:
+                    lines.append("Task Scheduler: Not installed")
+                    lines.append("  Fix: navig service install")
             elif health.get("installed") is None:
                 lines.append("Task Scheduler: UNKNOWN (could not read the task)")
                 for problem in health.get("problems", []):

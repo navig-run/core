@@ -184,7 +184,10 @@ class DeployEngine:
         # ── Success ─────────────────────────────────────────────────
         result.success = True
         result.phases = phases
-        result.snapshot = self._snapshot
+        # A dry run's snapshot record only DESCRIBES the snapshot it would take; keep
+        # it out of the result (and so the persisted history), or `deploy status`
+        # later shows a path that was never created.
+        result.snapshot = None if dry_run else self._snapshot
         result.finished_at = datetime.now(tz=timezone.utc)
 
         # Persist snapshot state for future rollbacks

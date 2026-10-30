@@ -148,6 +148,9 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     # lens: Tampermonkey-compatible site augmentations, one store for every browser host.
     "lens": ("navig.commands.lens", "lens_app"),
     "lenses": ("navig.commands.lens", "lens_app"),             # hidden alias
+    # webflow: browser procedures recorded in the NAVIG Dock, replayed with no model.
+    "webflow": ("navig.commands.webflow", "webflow_app"),
+    "webflows": ("navig.commands.webflow", "webflow_app"),     # hidden alias
     "quick": ("navig.commands.suggest", "quick_app"),
     "q": ("navig.commands.suggest", "quick_app"),             # hidden alias
     "hosts": ("navig.commands.local", "hosts_app"),
@@ -229,6 +232,10 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "day": ("navig.commands.life_dashboard", "life_dashboard_app"),
     "life": ("navig.commands.life_dashboard", "life_dashboard_app"),
     "doctor": ("navig.commands.doctor", "doctor_app"),
+    # The node-side of distributed work: claim a queued Mission addressed to THIS machine,
+    # run it, and finish it with a signed receipt. `runtime` is served over HTTP only (there
+    # is no `navig runtime` verb), so this is where a node acts on that API.
+    "missions": ("navig.commands.missions", "missions_app"),
     "docker": ("navig.commands.docker", "docker_app"),
     "prompts": ("navig.commands.prompts", "prompts_app"),
     # Universal presets (Text/Image/Audio/Video) — same database as the prompt library.
@@ -337,6 +344,7 @@ _ALIAS_COMMANDS: frozenset[str] = frozenset({
     "goals",        # → goal
     "day",          # → life
     "lenses",       # → lens
+    "webflows",     # → webflow
     "links",        # → bookmarks (navig-bookmarks plugin; deprecated). Its own wrapper Typer —
                     #   it adds the deprecation notice — around the plugin's command objects.
     # Deprecated, replaced by a SUBcommand (so no visible top-level group serves it).
@@ -543,7 +551,8 @@ def _register_external_commands(
     # Fast path: target is a known external command → import only it
     # ------------------------------------------------------------------
     if target in _EXTERNAL_CMD_MAP:
-        _try_register_one(target_app, target, already)
+        if not _space_gated_builtin(target, _space_disabled_module_ids()):
+            _try_register_one(target_app, target, already)
         return
 
     # ------------------------------------------------------------------
@@ -595,8 +604,11 @@ def _register_external_commands(
     # ------------------------------------------------------------------
     # Fallback: register everything (bare `navig`, `--help`, etc.)
     # ------------------------------------------------------------------
+    # Tooling (`register_all`) wants the whole surface, whatever space is active.
+    space_off = set() if register_all else _space_disabled_module_ids()
     for cmd_name in _EXTERNAL_CMD_MAP:
-        _try_register_one(target_app, cmd_name, already)
+        if not _space_gated_builtin(cmd_name, space_off):
+            _try_register_one(target_app, cmd_name, already)
 
     # Plugin-provided commands (navig.commands entry-points). Runs AFTER the
     # built-in map so a hardcoded name wins the idempotency race during any
@@ -706,6 +718,24 @@ def _space_disabled_module_ids() -> set[str]:
     except Exception as exc:  # noqa: BLE001 — never break the CLI over a state file
         logger.debug("[navig] per-space CLI gate skipped: %s", exc)
         return set()
+
+
+# Built-in verbs a space can never switch off: the ones that turn a module back on.
+_SPACE_GATE_EXEMPT: frozenset[str] = frozenset({
+    "space", "spaces", "module", "modules", "config", "plugin", "plugins", "doctor",
+})
+
+
+def _space_gated_builtin(cmd_name: str, space_off: set[str]) -> bool:
+    """True when the active space turned *cmd_name*'s module OFF (recorded for suggest).
+
+    The same by-name gate :func:`_entry_point_commands` applies to plugin verbs, so a
+    built-in module (``finance``) in ``modules_disabled`` loses its CLI verb too.
+    """
+    if cmd_name in _SPACE_GATE_EXEMPT or cmd_name not in space_off:
+        return False
+    _DISABLED_EP_CMDS[cmd_name] = f"space:{cmd_name}"
+    return True
 
 
 # command name → providing (disabled) plugin id; filled by _entry_point_commands()
@@ -834,6 +864,24 @@ def ensure_group_registered(
     return name in already
 
 
+def _bind_ep_logging(ep: object) -> None:
+    """Put a `navig.commands` entry point's package inside NAVIG's logging tree.
+
+    The CLI loads these entry points itself and never goes through
+    ``load_entry_point_plugins()``, so without this a plugin command's records
+    (``navig download`` → ``navig_download``) never reach ``navig.log``. The
+    package comes from the entry point's declared module: the loaded object is a
+    ``typer.Typer`` whose ``__module__`` names typer, not the plugin.
+    """
+    try:
+        from navig.core.logging import bind_plugin_logging
+
+        if package := str(getattr(ep, "module", "") or "").split(".", 1)[0]:
+            bind_plugin_logging(package)
+    except Exception:  # noqa: BLE001 — never block a command over its logging
+        pass
+
+
 def _try_register_ep(
     target_app: typer.Typer,  # type: ignore[name-defined]
     cmd_name: str,
@@ -852,6 +900,7 @@ def _try_register_ep(
         return
     try:
         sub = ep.load()  # type: ignore[attr-defined]
+        _bind_ep_logging(ep)
         target_app.add_typer(
             sub,
             name=cmd_name,

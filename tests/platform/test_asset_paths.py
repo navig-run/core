@@ -56,7 +56,8 @@ ALLOWED_ESCAPES: dict[str, str] = {
     "daemon/supervisor.py": (
         "src_dir — records the editable root and its `git rev-parse HEAD` in the daemon's boot "
         "record. Looking outside the package IS the feature: from a wheel there is no checkout, "
-        "so the probe finds nothing and the install is reported as non-git — the right answer."
+        "so the probe finds nothing (an enclosing repo that does not TRACK navig/ is rejected by "
+        "_tracks_navig_source) and the install is reported as non-git — the right answer."
     ),
     "commands/doctor.py": (
         "src_dir — compares the RUNNING daemon's boot commit against the checkout's HEAD, which "
@@ -75,6 +76,15 @@ ALLOWED_ESCAPES: dict[str, str] = {
     ),
     "commands/agent.py": ".env — dev convenience; a repo-root .env is a source-checkout concept.",
     "commands/onboard.py": ".env — dev convenience; same as commands/agent.py.",
+    "commands/init.py": (
+        "repo_root (aliased via navig_package_dir) — prefers the checkout's "
+        "navig.instructions.md / .github/instructions copy; every candidate is probed with "
+        ".exists() and the packaged navig/resources/navig.instructions.md is the installed path."
+    ),
+    "tools/web.py": (
+        "navig_root.parent / docs (aliased) — docs-search fallback to the repo's docs/ tree in a "
+        "source checkout; probed with .exists(), and the search returns no results when absent."
+    ),
     # ── deliberately degrade, with a clear message or a correct fallback ──
     "commands/config.py": (
         "config/defaults.yaml — best-effort source attribution for `navig config show` only "
@@ -107,13 +117,17 @@ ALLOWED_ESCAPES: dict[str, str] = {
 }
 
 
-def _levels_up(node: ast.AST) -> int | None:
+def _levels_up(node: ast.AST, names: dict[str, int] | None = None) -> int | None:
     """How many ``.parent`` steps above its own file does this expression resolve to?
 
     ``Path(__file__)`` → 0 (the file itself) · ``.parent`` → 1 (its directory) ·
     ``.parents[k]`` → +k+1 (``parents[0]`` *is* ``.parent``) · ``.resolve()`` → unchanged.
+    A bare name resolves through *names* (see :func:`_anchored_names`), so
+    ``d = Path(__file__).parent; d.parent`` is 2.
     Returns None when the expression is not anchored at ``Path(__file__)``.
     """
+    if isinstance(node, ast.Name):
+        return None if names is None else names.get(node.id)
     # Path(__file__) — and pathlib.Path(__file__), which an earlier version of this
     # detector missed, hiding commands/matrix.py entirely.
     if isinstance(node, ast.Call):
@@ -131,21 +145,56 @@ def _levels_up(node: ast.AST) -> int | None:
             return None
         # <expr>.resolve() / <expr>.absolute()  — level unchanged
         if isinstance(func, ast.Attribute) and func.attr in ("resolve", "absolute"):
-            return _levels_up(func.value)
+            return _levels_up(func.value, names)
         return None
     # <expr>.parent
     if isinstance(node, ast.Attribute) and node.attr == "parent":
-        base = _levels_up(node.value)
+        base = _levels_up(node.value, names)
         return None if base is None else base + 1
     # <expr>.parents[k]
     if isinstance(node, ast.Subscript):
         value = node.value
         if isinstance(value, ast.Attribute) and value.attr == "parents":
-            base = _levels_up(value.value)
+            base = _levels_up(value.value, names)
             idx = node.slice
             if base is not None and isinstance(idx, ast.Constant) and isinstance(idx.value, int):
                 return base + idx.value + 1
     return None
+
+
+def _anchored_names(tree: ast.AST) -> dict[str, int]:
+    """Names bound to a file-anchored path anywhere in the module, with their level.
+
+    ``navig_root = Path(__file__).parent.parent`` followed by ``navig_root.parent / "docs"``
+    evaded the detector, because only a direct ``Path(__file__)`` chain was followed.
+    Module-scoped on purpose, like ``_home_bound_names`` in test_no_hardcoded_home.py: the
+    AST alone cannot do real scope analysis, and a name rebound elsewhere keeps its deepest
+    level. Iterated to a fixpoint so aliases of aliases resolve too.
+
+    A self-referential walk (``p = p.parent`` in a loop) has no static level, so it is
+    skipped rather than counted up without bound; the pass count is capped for the same
+    reason when two names feed each other.
+    """
+    assigns = [
+        (t.id, n.value)
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Assign)
+        for t in n.targets
+        if isinstance(t, ast.Name)
+        and not any(isinstance(x, ast.Name) and x.id == t.id for x in ast.walk(n.value))
+    ]
+    names: dict[str, int] = {}
+    changed = True
+    for _ in range(len(assigns) + 1):
+        if not changed:
+            break
+        changed = False
+        for name, value in assigns:
+            level = _levels_up(value, names)
+            if level is not None and level > names.get(name, -1):
+                names[name] = level
+                changed = True
+    return names
 
 
 def _module_depth(py: Path) -> int:
@@ -164,9 +213,10 @@ def _escapes(py: Path) -> list[tuple[int, int]]:
     except (SyntaxError, UnicodeDecodeError):  # pragma: no cover — not our concern here
         return []
     limit = _module_depth(py) + 1
+    names = _anchored_names(tree)
     out: list[tuple[int, int]] = []
     for node in ast.walk(tree):
-        level = _levels_up(node)
+        level = _levels_up(node, names)
         if level is not None and level > limit:
             out.append((getattr(node, "lineno", 0), level))
     return out
@@ -233,3 +283,20 @@ def test_the_guard_actually_detects_an_escape(tmp_path) -> None:
     ok = 'from pathlib import Path\nD = Path(__file__).parent.parent / "data" / "x.json"\n'
     levels_ok = [lv for n in ast.walk(ast.parse(ok)) if (lv := _levels_up(n)) is not None]
     assert max(levels_ok) <= limit
+
+
+def test_the_guard_follows_an_aliased_anchor() -> None:
+    """Binding ``Path(__file__)`` to a name first must not hide the escape."""
+    src = (
+        "from pathlib import Path\n"
+        "d = Path(__file__).resolve().parent\n"
+        "e = d.parent\n"
+        "X = e.parent / 'docs'\n"
+    )
+    tree = ast.parse(src)
+    names = _anchored_names(tree)
+    assert names == {"d": 1, "e": 2}
+    levels = [lv for n in ast.walk(tree) if (lv := _levels_up(n, names)) is not None]
+    assert max(levels) == 3                  # escapes a module one directory deep (limit 2)
+    # without the alias map the old detector saw nothing past the first line
+    assert max(lv for n in ast.walk(tree) if (lv := _levels_up(n)) is not None) == 1

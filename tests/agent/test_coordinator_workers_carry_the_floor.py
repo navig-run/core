@@ -35,14 +35,22 @@ import pytest
 _CORE = Path(__file__).resolve().parents[2]
 _COORDINATOR = _CORE / "navig" / "agent" / "coordinator.py"
 
-#: Entry points that talk to a model directly, with no soul/guardrail assembly.
-_RAW_LLM_CALLS = {
+#: Entry points that talk to a model directly, with no soul/guardrail assembly. The
+#: ``navig.llm.generate`` entry points and the coordinator's own wrappers around them
+#: (``_call_worker_model`` / ``_call_orchestrator`` delegate straight to ``run_llm``) are
+#: the realistic "cheaper worker" bypass, so they are listed by name;
+#: ``test_every_coordinator_raw_wrapper_is_listed`` keeps the wrapper list from going stale.
+_RAW_LLM_ENTRY_POINTS = {
     "llm_generate",
+    "llm_generate_stream",
+    "run_llm",
+    "complete_raw",
     "chat_completion",
     "create_completion",
     "complete_stream",
     "generate_text",
 }
+_RAW_LLM_CALLS = _RAW_LLM_ENTRY_POINTS | {"_call_worker_model", "_call_orchestrator"}
 
 
 def _worker_executor() -> ast.AsyncFunctionDef | ast.FunctionDef:
@@ -102,4 +110,26 @@ def test_the_guard_reads_the_real_function() -> None:
     assert len(called) >= 3, (
         f"only {len(called)} calls found in _run_worker_conversation — the AST scan is "
         "reading the wrong node, so these assertions prove nothing."
+    )
+
+
+def test_every_coordinator_raw_wrapper_is_listed() -> None:
+    """Anti-staleness: a coordinator helper that wraps a raw model call is a bypass too."""
+    tree = ast.parse(_COORDINATOR.read_text(encoding="utf-8"))
+    wrappers = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name != "_run_worker_conversation"
+        and _called_names(node) & _RAW_LLM_ENTRY_POINTS
+    }
+    assert "_call_worker_model" in wrappers, (
+        "_call_worker_model no longer wraps a raw navig.llm.generate call — re-read "
+        "coordinator.py and update _RAW_LLM_CALLS so this guard still names real helpers."
+    )
+    missing = wrappers - _RAW_LLM_CALLS
+    assert not missing, (
+        f"coordinator.py helpers {sorted(missing)} call a raw model entry point directly. "
+        "Add them to _RAW_LLM_CALLS so _run_worker_conversation cannot reach the model "
+        "through them without the soul/guardrail floor."
     )

@@ -31,12 +31,16 @@ from typing import Any
 
 from navig.pim.clock import from_utc_iso, to_local
 from navig.pim.dates import format_local, humanize_delta
+from navig.telegram.card_doc import Bullets, Card, Details, Heading, Para, Raw, Table
 
 __all__ = [
     "BUCKETS",
+    "agenda_card",
     "bucket_label",
     "bucket_of",
+    "category_card",
     "category_label",
+    "detail_card",
     "group_by_bucket",
     "render_agenda",
     "render_category_summary",
@@ -170,30 +174,55 @@ def todo_line(todo: dict[str, Any], now: datetime, *, show_date: bool = True) ->
     return "   ".join(parts)
 
 
-def render_agenda(
+def _row_html(todo: dict[str, Any], now: datetime, *, show_date: bool = True) -> str:
+    """One task as inline HTML for a list bullet — no marker, no indent.
+
+    ``todo_line`` keeps the flat-text marker for the plain render; a rich list has its
+    own bullets, so marking the row twice would read as a broken list.
+    """
+    parts = [f"<b>{_esc(todo.get('title'))}</b>"]
+    category = str(todo.get("category") or "")
+    if category:
+        parts.append(f"🗂 {_esc(category_label(category))}")
+    due = to_local(from_utc_iso(todo.get("due_at")))
+    if due is not None and show_date:
+        stamp = f"{due:%H:%M}" if due.date() == now.date() else format_local(due, now)
+        parts.append(f"{_esc(stamp)} · <i>{_esc(humanize_delta(due, now))}</i>")
+    if todo.get("recur"):
+        recur = todo["recur"]
+        parts.append(f"🔁 {_esc(_t(f'pim.recur.{recur}') or recur)}")
+    if todo.get("origin") in _proposed_origins():
+        parts.append("✨")
+    return "  ·  ".join(parts)
+
+
+def agenda_card(
     todos: list[dict[str, Any]],
     now: datetime,
     *,
     title: str | None = None,
     empty_hint: str | None = None,
-) -> str:
-    """The default view: everything open, grouped, soonest first.
+) -> Card:
+    """The task list as structure — one definition, rendered rich or flat.
 
-    `title` and `empty_hint` default to None rather than to an English literal: a
-    default ARGUMENT is evaluated once at import and cannot follow `/lang`, which is
-    exactly how a localized function keeps rendering English.
+    A section heading per bucket and a bullet per task: the rich render gets real
+    ``<h3>`` sections and a list that reads as a list, the classic render keeps the
+    bold headings and ``•`` rows the operator already knows.
     """
     open_todos = [t for t in todos if not t.get("completed_at")]
     heading = title or f"📋 {_t('pim.title.todo') or 'TODO'}"
     count = _t("pim.count.open", n=len(open_todos)) or f"{len(open_todos)} open"
-    header = f"<b>{_esc(heading)}</b> · {count}"
+    card = Card(title=heading, meta=count)
+
     if not open_todos:
         hint = empty_hint or _t("pim.empty.default") or (
             "Nothing here. Send /todo &lt;something&gt; to capture one."
         )
-        return f"{header}\n\n<i>{hint}</i>"
+        # Locale hints ship with their own &lt; &gt; entities — escaping again would
+        # print "&amp;lt;something&amp;gt;" on the card.
+        card.add(Para(Raw(hint), style="italic"))
+        return card
 
-    lines = [header]
     grouped = group_by_bucket(open_todos, now)
     for key, _emoji in BUCKETS:
         rows = grouped.get(key)
@@ -201,79 +230,106 @@ def render_agenda(
             continue
         suffix = ""
         if key == "today":
-            # Built from the locale files, never strftime: `%a`/`%b` are the C
-            # locale's names, so this printed "Fri 05 Sep" in every language.
             suffix = f" · {format_local(now.replace(hour=0, minute=0), now)}"
         elif key == "inbox":
             suffix = f" · {_t('pim.inbox.no_date') or 'no date yet'}"
-        lines.append(f"\n<b>{bucket_label(key)}</b> ({len(rows)}){suffix}")
-        lines.extend(todo_line(t, now, show_date=key != "inbox") for t in rows)
-    return "\n".join(lines)
+        card.add(Heading(f"{bucket_label(key)} ({len(rows)}){suffix}"))
+        card.add(Bullets([
+            Raw(_row_html(t, now, show_date=key != "inbox")) for t in rows
+        ]))
+    return card
 
 
-def render_category_summary(categories: list[dict[str, Any]], now: datetime) -> str:
-    """The category picker, with open counts.
-
-    Categories with nothing in them still appear: an empty category you can file INTO
-    is useful, while one that only shows up once it already has something is a picker
-    that is empty exactly when you first need it.
-    """
+def category_card(categories: list[dict[str, Any]], now: datetime) -> Card:
+    """The category picker with open counts, as structure."""
     del now  # signature parity with the other renderers; nothing here is time-dependent
-    title = f"<b>🗂 {_esc(_t('pim.title.categories') or 'BY CATEGORY')}</b>"
+    card = Card(title=f"🗂 {_t('pim.title.categories') or 'BY CATEGORY'}")
     if not categories:
-        empty = _t("pim.empty.categories") or "No categories yet."
-        return f"{title}\n\n<i>{_esc(empty)}</i>"
-    lines = [title]
+        card.add(Para(_t("pim.empty.categories") or "No categories yet.", style="italic"))
+        return card
+    rows: list[list[str | Raw]] = []
     for row in categories:
         name = category_label(str(row.get("name") or ""))
         count = int(row.get("open") or 0)
-        marker = (
+        marker: str | Raw = (
             (_t("pim.count.open", n=count) or f"{count} open")
             if count
-            else f"<i>{_esc(_t('pim.category.empty') or 'empty')}</i>"
+            else Raw(f"<i>{_esc(_t('pim.category.empty') or 'empty')}</i>")
         )
-        lines.append(f"  🗂 <b>{_esc(name)}</b> — {marker}")
-    return "\n".join(lines)
+        rows.append([Raw(f"🗂 <b>{_esc(name)}</b>"), marker])
+    card.add(Table(rows=rows))
+    return card
 
 
-def render_detail(todo: dict[str, Any], now: datetime) -> str:
-    """One task, everything about it.
+def detail_card(todo: dict[str, Any], now: datetime) -> Card:
+    """One task, everything about it, as a two-column sheet.
 
-    Reached by tapping a row. Shows the state that the list has no room for —
-    reminders, recurrence, which space it came from — because a setting the operator
-    cannot SEE is one they cannot tell is wrong.
+    The list has room for a title and a countdown; a task's settings — category,
+    recurrence, lead time, which space proposed it — do not fit there. A key/value
+    table is the shape that keeps them scannable instead of a stack of emoji lines.
     """
-    lines = [f"<b>{_esc(todo.get('title'))}</b>"]
+    card = Card(title=str(todo.get("title") or ""))
+    rows: list[list[str | Raw]] = []
 
     due = to_local(from_utc_iso(todo.get("due_at")))
     if due is not None:
-        lines.append(f"📅 {_esc(format_local(due, now))} · <i>{_esc(humanize_delta(due, now))}</i>")
+        rows.append(["📅", Raw(
+            f"{_esc(format_local(due, now))} · <i>{_esc(humanize_delta(due, now))}</i>"
+        )])
     else:
-        lines.append(f"📥 <i>{_esc(_t('pim.detail.inbox') or 'in the inbox — no date yet')}</i>")
+        rows.append(["📥", Raw(
+            f"<i>{_esc(_t('pim.detail.inbox') or 'in the inbox — no date yet')}</i>"
+        )])
 
     if todo.get("category"):
-        lines.append(f"🗂 {_esc(category_label(str(todo['category'])))}")
+        rows.append(["🗂", Raw(_esc(category_label(str(todo["category"]))))])
     if todo.get("recur"):
         recur = todo["recur"]
         word = _t(f"pim.recur.{recur}") or recur
-        lines.append(f"🔁 {_esc(_t('pim.detail.repeats', recur=word) or f'repeats {word}')}")
+        rows.append(["🔁", Raw(_esc(_t("pim.detail.repeats", recur=word) or f"repeats {word}"))])
 
     leads = todo.get("remind_before") or []
     if leads:
         from navig.pim.dates import describe_lead  # noqa: PLC0415 — keeps `navig help` fast
 
-        lines.append("🔔 " + _esc(", ".join(describe_lead(x) for x in leads)))
+        rows.append(["🔔", Raw(_esc(", ".join(describe_lead(x) for x in leads)))])
     elif due is not None:
-        lines.append(f"🔔 <i>{_esc(_t('pim.detail.no_reminder') or 'no reminder set')}</i>")
+        rows.append(["🔔", Raw(f"<i>{_esc(_t('pim.detail.no_reminder') or 'no reminder set')}</i>")])
 
     if todo.get("space"):
         space = _t("pim.detail.space", space=todo["space"]) or f"space: {todo['space']}"
-        lines.append(f"🧩 {_esc(space)}")
+        rows.append(["🧩", Raw(_esc(space))])
+
+    # A key/value sheet, not a data grid: no rules, no stripes.
+    card.add(Table(rows=rows, bordered=False, striped=False))
+
     if todo.get("origin") in _proposed_origins():
         suggested = _t("pim.detail.suggested") or "suggested from your spaces"
-        lines.append(f"✨ <i>{_esc(suggested)}</i>")
+        card.add(Para(f"✨ {suggested}", style="italic"))
     if todo.get("notes"):
-        lines.append(f"\n{_esc(todo['notes'])}")
+        card.add(Details(_t("pim.detail.notes") or "Notes", [Para(str(todo["notes"]))]))
     if todo.get("completed_at"):
-        lines.append(f"\n✅ <i>{_esc(_t('pim.detail.done') or 'done')}</i>")
-    return "\n".join(lines)
+        card.add(Para(f"✅ {_t('pim.detail.done') or 'done'}", style="italic"))
+    return card
+
+
+def render_agenda(
+    todos: list[dict[str, Any]],
+    now: datetime,
+    *,
+    title: str | None = None,
+    empty_hint: str | None = None,
+) -> str:
+    """The task list as classic ``sendMessage`` HTML (see :func:`agenda_card`)."""
+    return agenda_card(todos, now, title=title, empty_hint=empty_hint).classic_html()
+
+
+def render_category_summary(categories: list[dict[str, Any]], now: datetime) -> str:
+    """The category picker, classic render."""
+    return category_card(categories, now).classic_html()
+
+
+def render_detail(todo: dict[str, Any], now: datetime) -> str:
+    """One task, classic render."""
+    return detail_card(todo, now).classic_html()
+

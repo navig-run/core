@@ -46,6 +46,7 @@ missing "loaded:" line is not an outage.
 from __future__ import annotations
 
 import configparser
+import posixpath
 import re
 import sys
 from dataclasses import asdict, dataclass, field
@@ -238,7 +239,10 @@ def _is_gateway_cmdline(cmd: list[str]) -> bool:
     """
     if not cmd:
         return False
-    head = Path(cmd[0]).name.lower()
+    # Both separators: a cmdline recorded on Windows (`C:\venv\Scripts\pythonw.exe`)
+    # has no basename under POSIX rules — `Path(...).name` returns the WHOLE string, so the
+    # `python`/`navig` prefix test failed and a real gateway read as unknown off Windows.
+    head = posixpath.basename(str(cmd[0]).replace("\\", "/")).lower()
     if not (head.startswith("python") or head.startswith("navig")):
         return False
     args = cmd[1:]

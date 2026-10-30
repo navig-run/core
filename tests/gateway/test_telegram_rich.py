@@ -203,5 +203,140 @@ async def test_send_message_short_body_single_call():
     assert len(calls) == 1
 
 
+# ── in-body buttons vs reply_markup: a card must not draw its buttons twice ──
+
+CARD_WITH_BODY_BUTTONS = (
+    "<h2>Evening</h2>"
+    "<p>Three things to close the day.</p>"
+    '<tg-button-row align="left">'
+    '<button data="eve:log_shipped" style="success">Log it</button>'
+    "</tg-button-row>"
+)
+CARD_WITHOUT_BODY_BUTTONS = "<h2>Evening</h2><p>Three things to close the day.</p>"
+KEYBOARD = [[{"text": "Log it", "callback_data": "eve:log_shipped"}]]
+
+
+class _Resp:
+    status = 200
+
+    def __init__(self, payload: dict):
+        self._payload = payload
+
+    async def json(self) -> dict:
+        return self._payload
+
+
+class _Post:
+    def __init__(self, resp: _Resp):
+        self._resp = resp
+
+    async def __aenter__(self) -> _Resp:
+        return self._resp
+
+    async def __aexit__(self, *exc) -> bool:  # noqa: ANN002
+        return False
+
+
+class _Session:
+    """Records every ``post`` and answers with one canned Telegram result."""
+
+    def __init__(self, sent: list, payload: dict):
+        self.sent = sent
+        self.payload = payload
+
+    def post(self, url: str, json: dict | None = None) -> _Post:  # noqa: A002
+        self.sent.append((url, json))
+        return _Post(_Resp(self.payload))
+
+
+def _rich_channel():
+    from navig.gateway.channels.telegram import TelegramChannel
+
+    ch = TelegramChannel.__new__(TelegramChannel)
+    ch.base_url = "https://api.telegram.test"
+    ch._rich_messages_enabled = lambda: True  # type: ignore[method-assign]
+    return ch
+
+
+async def test_rich_send_omits_the_keyboard_when_the_body_draws_its_buttons():
+    """``<tg-button-row>`` renders in the bubble, so the keyboard would duplicate it."""
+    ch = _rich_channel()
+    sent: list = []
+    ch._session = _Session(sent, {"ok": True, "result": {"message_id": 9}})
+
+    out = await ch.send_rich_message(1, html=CARD_WITH_BODY_BUTTONS, keyboard=KEYBOARD)
+
+    assert out == {"message_id": 9}
+    assert sent[0][0].endswith("/sendRichMessage")
+    assert "reply_markup" not in sent[0][1]
+
+
+async def test_rich_send_keeps_the_keyboard_when_the_body_has_no_buttons():
+    ch = _rich_channel()
+    sent: list = []
+    ch._session = _Session(sent, {"ok": True, "result": {"message_id": 9}})
+
+    await ch.send_rich_message(1, html=CARD_WITHOUT_BODY_BUTTONS, keyboard=KEYBOARD)
+
+    assert sent[0][1]["reply_markup"]["inline_keyboard"] == KEYBOARD
+
+
+async def test_the_classic_fallback_still_carries_the_keyboard():
+    """``sendMessage`` has no in-body buttons — dropping the keyboard would lose the actions."""
+    ch = _rich_channel()
+    ch._rich_messages_enabled = lambda: False  # type: ignore[method-assign]
+    ch._session = object()  # send_rich_message bails out without one
+    calls: list[dict] = []
+
+    async def fake_send(chat_id, text, **kwargs):
+        calls.append({"chat_id": chat_id, "text": text, **kwargs})
+        return {"message_id": 5}
+
+    ch.send_message = fake_send  # type: ignore[method-assign]
+
+    await ch.send_rich_message(
+        1, html=CARD_WITH_BODY_BUTTONS, fallback_html="Evening", keyboard=KEYBOARD
+    )
+
+    assert calls[0]["text"] == "Evening"
+    assert calls[0]["keyboard"] == KEYBOARD
+
+
+async def test_editing_a_rich_card_drops_the_keyboard_its_body_already_draws():
+    ch = _rich_channel()
+    calls: list[tuple[str, dict]] = []
+
+    async def fake_api(method, data):
+        calls.append((method, dict(data)))
+        return {"message_id": 7}
+
+    ch._api_call = fake_api  # type: ignore[method-assign]
+
+    await ch.edit_rich_message(
+        1, 7, html=CARD_WITH_BODY_BUTTONS, fallback_html="Evening", keyboard=KEYBOARD
+    )
+
+    assert calls[0][0] == "editMessageText"
+    assert calls[0][1]["rich_message"]["html"] == CARD_WITH_BODY_BUTTONS
+    assert "reply_markup" not in calls[0][1]
+
+
+async def test_editing_a_rich_card_keeps_the_keyboard_its_body_does_not_draw():
+    ch = _rich_channel()
+    calls: list[tuple[str, dict]] = []
+
+    async def fake_api(method, data):
+        calls.append((method, dict(data)))
+        return {"message_id": 7}
+
+    ch._api_call = fake_api  # type: ignore[method-assign]
+
+    await ch.edit_rich_message(
+        1, 7, html=CARD_WITHOUT_BODY_BUTTONS, fallback_html="Evening", keyboard=KEYBOARD
+    )
+
+    assert calls[0][1]["reply_markup"]["inline_keyboard"] == KEYBOARD
+
+
 if __name__ == "__main__":
     unittest.main()

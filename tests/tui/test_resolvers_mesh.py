@@ -81,3 +81,26 @@ def test_mesh_leader_falls_back_to_node_id_when_hostname_blank(monkeypatch):
     badge = resolve_mesh()
 
     assert "leader: navig-srv03" in badge.detail
+
+
+def test_mesh_ignores_offline_peers_still_in_cache(monkeypatch):
+    """A peer that stopped heartbeating stays in get_peers() until eviction (15 min)
+    but is health=="offline" after 2 min — it must not make the mesh read healthy."""
+    dead = _Node("navig-srv04", "srv04", health="offline")
+    monkeypatch.setattr(reg_mod, "get_registry", lambda: _Reg(peers=[dead], leader=None))
+
+    badge = resolve_mesh()
+
+    assert badge.status == "missing"
+    assert "single-node" in badge.detail
+
+
+def test_mesh_counts_only_live_peers(monkeypatch):
+    live = _Node("navig-srv05", "srv05")
+    dead = _Node("navig-srv06", "srv06", health="offline")
+    monkeypatch.setattr(reg_mod, "get_registry", lambda: _Reg(peers=[live, dead], leader=live))
+
+    badge = resolve_mesh()
+
+    assert badge.status == "ok"
+    assert "2 nodes" in badge.detail  # self + the one live peer

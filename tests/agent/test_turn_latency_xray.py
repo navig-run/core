@@ -432,7 +432,9 @@ async def test_trace_renders_with_the_latency_block_and_fits(
 
     assert chan.sent, "trace sent nothing"
     msg = chan.sent[0]
-    assert "<b>Latency</b>" in msg, msg[:400]
+    # /trace renders the card (navig/telegram/trace_card.py), whose header is
+    # "Recent trace"; the per-turn latency table lives inside it.
+    assert "<b>Recent trace</b>" in msg, msg[:400]
     assert "│" in msg, "stage bars missing from /trace"
     assert len(msg) <= 4096, f"/trace exceeds the Telegram cap: {len(msg)}"
 
@@ -610,4 +612,5 @@ async def test_trace_renders_when_the_ledger_reader_breaks(monkeypatch):
     await chan._handle_trace(chat_id=1, user_id=1)  # must not raise
     assert chan.sent, "/trace failed to send when the ledger broke"
     assert "<b>Latency</b>" not in chan.sent[0]
-    assert "Recent Trace" in chan.sent[0]
+    # The card renders the section title in sentence case (navig/telegram/trace_card.py).
+    assert "Recent trace" in chan.sent[0]

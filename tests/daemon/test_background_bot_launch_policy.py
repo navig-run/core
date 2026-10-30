@@ -71,10 +71,55 @@ def test_an_installed_service_is_started_instead_of_a_detached_worker(monkeypatc
     monkeypatch.setattr(launch, "service_is_installed", lambda: True)
     started: list[dict] = []
     monkeypatch.setattr("navig.commands.service.service_start", lambda **kw: started.append(kw))
+    monkeypatch.setattr("navig.daemon.entry._load_config", lambda: {"telegram_bot": True})
 
     how = launch.start_bot_in_background(gateway=False, port=None, ch=_Ch())
 
     assert how == "service" and started == [{"foreground": False, "logs": False}]
+    assert no_spawn == []
+
+
+@pytest.mark.parametrize(
+    ("cfg", "gateway", "port"),
+    [
+        # A default `service install` runs the bot WITHOUT a gateway; `navig start`
+        # asks for one by default.
+        ({"telegram_bot": True, "gateway": False}, True, None),
+        # A service configured without the bot starts no bot at all.
+        ({"telegram_bot": "false", "gateway": True}, False, None),
+        # `service start` takes no --port: the service would bind its own.
+        ({"telegram_bot": True, "gateway": True, "gateway_port": 8789}, True, 9001),
+    ],
+)
+def test_the_service_is_used_only_when_it_provides_the_requested_bot_mode(
+    monkeypatch, no_spawn, cfg, gateway, port
+):
+    monkeypatch.setattr(launch, "supervisor_runs_the_bot", lambda: None)
+    monkeypatch.setattr(launch, "service_is_installed", lambda: True)
+    monkeypatch.setattr("navig.daemon.entry._load_config", lambda: cfg)
+    monkeypatch.setattr(
+        "navig.commands.gateway._load_gateway_cli_defaults", lambda: (8789, None), raising=False
+    )
+    started: list[dict] = []
+    monkeypatch.setattr("navig.commands.service.service_start", lambda **kw: started.append(kw))
+
+    how = launch.start_bot_in_background(gateway=gateway, port=port, ch=_Ch())
+
+    assert how == "spawned" and started == []
+    assert len(no_spawn) == 1
+
+
+def test_the_service_is_used_when_it_runs_the_bot_and_the_gateway(monkeypatch, no_spawn):
+    monkeypatch.setattr(launch, "supervisor_runs_the_bot", lambda: None)
+    monkeypatch.setattr(launch, "service_is_installed", lambda: True)
+    monkeypatch.setattr(
+        "navig.daemon.entry._load_config",
+        lambda: {"telegram_bot": True, "gateway": True, "gateway_port": 8789},
+    )
+    started: list[dict] = []
+    monkeypatch.setattr("navig.commands.service.service_start", lambda **kw: started.append(kw))
+
+    assert launch.start_bot_in_background(gateway=True, port=8789, ch=_Ch()) == "service"
     assert no_spawn == []
 
 
@@ -106,6 +151,25 @@ def test_supervisor_runs_the_bot_respects_the_daemon_config(monkeypatch):
 
     monkeypatch.setattr(supervisor.NavigDaemon, "is_running", staticmethod(lambda: False))
     assert launch.supervisor_runs_the_bot() is None
+
+
+def test_the_ownership_probes_read_string_flags_like_the_daemon(monkeypatch):
+    """The daemon treats `telegram_bot: "false"` as disabled; Python truthiness called
+    that string enabled, so `bot status` claimed a supervised bot that was not running
+    and `bot stop` stopped the unrelated daemon. Same for the gateway flag."""
+    from navig.daemon import entry, supervisor
+
+    monkeypatch.setattr(supervisor.NavigDaemon, "is_running", staticmethod(lambda: True))
+    monkeypatch.setattr(supervisor.NavigDaemon, "read_pid", staticmethod(lambda: 99))
+    monkeypatch.setattr(
+        entry, "_load_config", lambda: {"telegram_bot": "false", "gateway": "false"}
+    )
+    assert launch.supervisor_runs_the_bot() is None
+    assert launch.supervisor_runs_the_gateway() is None
+
+    monkeypatch.setattr(entry, "_load_config", lambda: {"telegram_bot": "yes", "gateway": "on"})
+    assert launch.supervisor_runs_the_bot() == 99
+    assert launch.supervisor_runs_the_gateway() == 99
 
 
 def test_service_is_installed_reads_the_task_on_windows(monkeypatch):
@@ -159,6 +223,40 @@ def test_gateway_background_uses_the_service_only_when_it_runs_a_gateway(monkeyp
     monkeypatch.setattr(entry, "_load_config", lambda: {"gateway": True})
     assert launch.start_gateway_in_background(port=None, host=None, ch=_Ch()) == "service"
     assert started == [{"foreground": False, "logs": False}]
+
+
+@pytest.mark.parametrize(("port", "host"), [(9100, None), (None, "0.0.0.0"), (9100, "0.0.0.0")])
+def test_gateway_background_keeps_explicit_endpoint_flags_over_the_service(
+    monkeypatch, no_spawn, port, host
+):
+    """`service start` takes no --port/--host: delegating dropped them silently."""
+    from navig.daemon import entry
+
+    monkeypatch.setattr(launch, "supervisor_runs_the_gateway", lambda: None)
+    monkeypatch.setattr(launch, "service_is_installed", lambda: True)
+    monkeypatch.setattr(entry, "_load_config", lambda: {"gateway": True, "gateway_port": 8789})
+    started: list = []
+    monkeypatch.setattr("navig.commands.service.service_start", lambda **kw: started.append(kw))
+
+    assert launch.start_gateway_in_background(port=port, host=host, ch=_Ch()) == "spawned"
+    assert started == []
+    cmd = no_spawn[0]
+    if port is not None:
+        assert cmd[cmd.index("--port") + 1] == str(port)
+    if host is not None:
+        assert cmd[cmd.index("--host") + 1] == host
+
+
+def test_gateway_background_uses_the_service_when_the_port_matches(monkeypatch, no_spawn):
+    from navig.daemon import entry
+
+    monkeypatch.setattr(launch, "supervisor_runs_the_gateway", lambda: None)
+    monkeypatch.setattr(launch, "service_is_installed", lambda: True)
+    monkeypatch.setattr(entry, "_load_config", lambda: {"gateway": True, "gateway_port": 8789})
+    monkeypatch.setattr("navig.commands.service.service_start", lambda **kw: None)
+
+    assert launch.start_gateway_in_background(port=8789, host=None, ch=_Ch()) == "service"
+    assert no_spawn == []
 
 
 def test_gateway_stop_under_the_daemon_refuses_and_says_why(monkeypatch):

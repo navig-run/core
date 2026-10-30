@@ -46,6 +46,29 @@ def test_categorize_error_keyword_without_status():
     assert fp.categorize_error("The model qwen3-coder is deprecated") == fp.DEAD_MODEL
 
 
+def test_a_403_that_says_out_of_credit_is_billing_not_a_bad_key():
+    """Measured on the brain 2026-10-27: xAI answers a VALID key with
+    ``403 permission-denied: Your team … has either used all available credit``.
+    Classifying that as AUTH made the notice read "key rejected (auth error)" and
+    sent the operator to re-mint a credential that was never the problem."""
+    real = (
+        "error:PermissionDeniedError: {\"code\":\"permission-denied\","
+        "\"error\":\"Your team 8eb09566 has either used all available credit.\"} (status=403)"
+    )
+    assert fp.categorize_error(real) == fp.PAYMENT
+    # A plain forbidden is still a credential problem.
+    assert fp.categorize_error("error:ProviderError: forbidden (status=403)") == fp.AUTH
+    assert fp.categorize_error("error:ProviderError: insufficient credit (status=403)") == fp.PAYMENT
+
+
+def test_payment_text_says_out_of_credits_not_key_rejected():
+    from navig.llm.model_fallback import reason_text
+
+    assert "credit" in reason_text("payment")
+    assert "key" not in reason_text("payment")
+    assert "credit" in fp.describe_category(fp.PAYMENT)
+
+
 def test_categorize_error_exception_object():
     class _PErr(Exception):
         status_code = 429
@@ -62,13 +85,72 @@ def test_categorize_error_error_type_wins_over_missing_status():
     assert fp.categorize_error(_PErr("card declined")) == fp.PAYMENT
 
 
+# ── a 402 is a quota cap, not a bill, when the body says so (2026-10-25) ────
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "error:ProviderError: rate limit exceeded (status=402)",
+        "error:ProviderError: usage limit reached for this plan (status=402)",
+        "error:ProviderError: 402 quota exceeded — too many requests per minute",
+        "error:ProviderError: capacity exceeded, try again later (status=402)",
+    ],
+)
+def test_a_402_that_reports_a_usage_cap_is_rate_limited(message):
+    """Providers answer a plan/usage cap with 402.
+
+    Read as PAYMENT it earns the 600s billing cooldown, a "billing problem (402)" doctor row and
+    a recovery event — for a model that is free again in a minute.
+    """
+    assert fp.categorize_error(message) == fp.RATE_LIMITED
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "error:ProviderError: insufficient credit (status=402)",
+        "error:ProviderError: payment required — update your billing details (status=402)",
+        "error:ProviderError: 402 Payment Required",
+        "error:ProviderError: card declined (status=402)",
+    ],
+)
+def test_a_402_that_mentions_money_stays_billing(message):
+    assert fp.categorize_error(message) == fp.PAYMENT
+
+
+def test_money_wins_when_a_402_message_mentions_both():
+    """No silent reclassification: a billing sentence that also says "rate limit" is still a bill."""
+    both = "error:ProviderError: billing error: rate limit exceeded (status=402)"
+    assert fp.categorize_error(both) == fp.PAYMENT
+
+
+def test_the_quota_cooldown_is_the_short_one():
+    assert fp.COOLDOWN_SECONDS[fp.RATE_LIMITED] < fp.COOLDOWN_SECONDS[fp.PAYMENT]
+
+
+def test_the_reason_text_claims_no_cause_the_record_cannot_know():
+    """The doctor row reads a recorded category, not the body that produced it.
+
+    So it must not print "(429)" for a 402 read as a cap, and it must not assert "billing" for a
+    402 whose text was never kept — "payment or usage cap" is what the record actually supports.
+    """
+    from navig.llm import model_fallback
+
+    rate = model_fallback.reason_text("rate_limited")
+    assert "429" not in rate and "rate-limited" in rate
+    money = model_fallback.reason_text("payment")
+    # The operator's fix is money on the provider account, so the text says credits.
+    assert "402" in money and "credits" in money
+
+
 # ── describe_category (shared humanizer for rotation notices) ────────
 
 
 def test_describe_category_known_phrases():
     assert fp.describe_category(fp.RATE_LIMITED) == "rate-limited"
     assert fp.describe_category(fp.AUTH) == "failing to authenticate"
-    assert fp.describe_category(fp.PAYMENT) == "having a billing issue"
+    assert fp.describe_category(fp.PAYMENT) == "out of credits or having a billing issue"
     assert fp.describe_category("cooldown") == "cooling down from a recent failure"
     # reads correctly in the sentence both surfaces build:
     assert f"was {fp.describe_category(fp.OVERLOADED)}" == "was overloaded"

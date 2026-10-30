@@ -127,13 +127,19 @@ def make_link(link: Path, target: Path) -> None:
 def remove_link(link: Path) -> None:
     """Remove the link itself, never its contents.
 
-    ``os.rmdir`` on a junction or directory symlink unlinks the reparse point and
-    leaves the target untouched — the only safe way to drop one. Refuses to run
-    on a real directory so a mistyped path cannot eat a media tree.
+    On Windows a junction IS a directory, so ``os.rmdir`` unlinks the reparse
+    point. On POSIX a directory symlink is not a directory to ``os.rmdir`` — it
+    raises ``NotADirectoryError`` (errno 20) and the link stays — so ``os.unlink``
+    is the call that removes the link and leaves the target untouched, which is
+    the guarantee this function promises. Refuses to run on a real directory so a
+    mistyped path cannot eat a media tree.
     """
     if not is_link(link):
         raise ValueError(f"refusing to remove a real directory: {link}")
-    os.rmdir(link)
+    if _WINDOWS:
+        os.rmdir(link)
+    else:
+        os.unlink(link)
 
 
 # ───────────────────────────── configuration ────────────────────────────────
@@ -228,13 +234,77 @@ def _config_section() -> dict[str, Any]:
     return media_cfg if isinstance(media_cfg, dict) else {}
 
 
+#: The retired ``navig-studio`` plugin kept the same layout in its own JSON file
+#: (``studio_root`` rather than ``media_root``), optionally relocated by this var.
+LEGACY_STUDIO_CONFIG_ENV = "NAVIG_STUDIO_CONFIG"
+
+
+def _legacy_studio_path() -> Path:
+    override = os.environ.get(LEGACY_STUDIO_CONFIG_ENV)
+    if override:
+        return Path(override).expanduser()
+    from navig.platform import paths  # noqa: PLC0415
+
+    return paths.config_dir() / "studio.json"
+
+
+def _legacy_studio_section() -> dict[str, Any]:
+    """Translate a ``navig-studio`` layout into the ``space.media`` shape.
+
+    Returns ``{}`` when there is no legacy file. A legacy file that exists but
+    cannot be used is an error, not a silent "nothing configured".
+    """
+    import json  # noqa: PLC0415
+
+    path = _legacy_studio_path()
+    if not path.is_file():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise MediaConfigError(f"legacy studio config {path} is unreadable: {exc}") from exc
+    if not isinstance(raw, dict) or "studio_root" not in raw:
+        raise MediaConfigError(f"legacy studio config {path} has no studio_root")
+    section = {k: v for k, v in raw.items() if k != "studio_root"}
+    section["media_root"] = raw["studio_root"]
+    return section
+
+
+def _import_legacy_studio_config() -> dict[str, Any]:
+    """One-time import of a ``navig-studio`` layout into ``space.media``.
+
+    The legacy file is left in place. When the import cannot be saved, the
+    translated layout is still used for this run.
+    """
+    section = _legacy_studio_section()
+    if not section:
+        return {}
+    try:
+        cfg = MediaConfig.from_dict(section)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise MediaConfigError(
+            f"legacy studio config {_legacy_studio_path()} is malformed: {exc}"
+        ) from exc
+    try:
+        save_config(cfg)
+    except Exception as exc:  # noqa: BLE001 — the layout still works for this run
+        import logging  # noqa: PLC0415
+
+        logging.getLogger(__name__).warning(
+            "could not import the legacy studio config into space.media: %s", exc
+        )
+    return section
+
+
 def load_config(*, media_root: Path | None = None) -> MediaConfig:
     """Build the media layout from config, with env and argument overrides.
 
     Lives under ``space.media`` in ``~/.navig/config.yaml`` so it travels with
-    the rest of the space configuration rather than in a file of its own.
+    the rest of the space configuration rather than in a file of its own. A
+    layout left behind by the retired ``navig-studio`` plugin
+    (``~/.navig/studio.json`` or ``$NAVIG_STUDIO_CONFIG``) is imported once.
     """
-    raw = _config_section()
+    raw = _config_section() or _import_legacy_studio_config()
 
     if not raw and media_root is None:
         raise MediaConfigError(
@@ -266,21 +336,17 @@ def load_config(*, media_root: Path | None = None) -> MediaConfig:
 
 
 def save_config(cfg: MediaConfig) -> Path:
-    """Persist the layout into ``space.media`` in ~/.navig/config.yaml."""
+    """Persist the layout into ``space.media`` in ~/.navig/config.yaml.
+
+    Through ``set_global``: it re-reads the file before the write, so a key
+    another process wrote meanwhile survives, and it keeps this process's
+    in-memory and cached config in step with what is now on disk.
+    """
     from navig.config import get_config_manager  # noqa: PLC0415
-    from navig.core.yaml_io import atomic_write_yaml  # noqa: PLC0415
 
     manager = get_config_manager()
-    global_config = dict(manager.global_config or {})
-    space_cfg = global_config.get("space")
-    if not isinstance(space_cfg, dict):
-        space_cfg = {}
-    space_cfg["media"] = cfg.to_dict()
-    global_config["space"] = space_cfg
-
-    config_file = Path(manager.global_config_dir) / "config.yaml"
-    atomic_write_yaml(global_config, config_file, allow_unicode=True)
-    return config_file
+    manager.set_global("space.media", cfg.to_dict())
+    return manager.global_config_path
 
 
 # ─────────────────────────────── the findings ───────────────────────────────
@@ -453,6 +519,29 @@ def git_ignores(repo: Path, target: Path) -> bool | None:
     return None
 
 
+def dir_scoped_rule(project: Path, name: str) -> str | None:
+    """The ``<name>/`` ignore rule that matches a directory but NOT a symlink.
+
+    ``.media/`` has a trailing slash, so git applies it to directories only. A
+    Windows junction is a directory and is ignored; a POSIX symlink is not, so git
+    commits it and ``check-ignore`` keeps answering "not ignored" however many
+    times the rule is appended. This reads the project's ``.gitignore`` for such a
+    rule purely to EXPLAIN a finding git already reported — it never decides that
+    a link is ignored, which only git may say.
+    """
+    for candidate in (project / ".gitignore",):
+        try:
+            for line in candidate.read_text(encoding="utf-8", errors="replace").splitlines():
+                rule = line.strip()
+                if rule.startswith(("!", "#")):
+                    continue
+                if rule.rstrip("/").split("/")[-1] == name and rule.endswith("/"):
+                    return rule
+        except OSError:
+            continue
+    return None
+
+
 def git_tracked(repo: Path, target: Path) -> list[str]:
     """Paths under *target* that git already tracks.
 
@@ -528,7 +617,21 @@ def inspect_link(link: Path, cfg: MediaConfig, *, check_git: bool = True) -> Ent
                 )
             elif git_ignores(repo, link) is False:
                 entry.findings.append(Finding.UNIGNORED)
-                entry.detail = f"{prefix}not ignored by {repo.name}'s git"
+                detail = f"{prefix}not ignored by {repo.name}'s git"
+                rule = (
+                    None
+                    if _WINDOWS
+                    else dir_scoped_rule(project, link.name)
+                )
+                if rule:
+                    # git cannot match a directory rule against a symlink, so the
+                    # operator's existing rule looks right and does nothing here.
+                    detail += (
+                        f" — its `{rule}` rule applies to directories, and on this"
+                        f" system the link is a symlink, so git would commit it;"
+                        f" write `{link.name}` without the trailing slash"
+                    )
+                entry.detail = detail
 
     return entry
 
@@ -615,8 +718,13 @@ def ensure_ignored(project: Path, cfg: MediaConfig) -> bool:
         return False
 
     gitignore = project / ".gitignore"
+    # No trailing slash on purpose. `.media/` applies to directories only: it
+    # ignores a Windows junction but NOT a POSIX symlink, where git would then
+    # commit the link while this function reported success — a fix that fixes
+    # nothing off Windows (2026-10-30, outpost). The slash-less pattern matches
+    # both a directory and a symlink on every platform.
     block = (
-        f"\n# media link (-> the media tree) — not repo content\n{cfg.link_name}/\n"
+        f"\n# media link (-> the media tree) — not repo content\n{cfg.link_name}\n"
     )
     with gitignore.open("a", encoding="utf-8") as handle:
         handle.write(block)

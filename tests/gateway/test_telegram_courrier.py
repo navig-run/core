@@ -152,6 +152,25 @@ class TestIntake:
         )
         assert "review --needs-review" in chan.sent[0][1]
 
+
+class TestReviewHint:
+    """The hint must name the space that is configured, never a literal that may be stale.
+
+    It used to hardcode `company-paperwork`; the space was renamed to `company` on
+    2026-10-22, so the advice a user got pointed at a space that no longer existed.
+    """
+
+    def test_hint_names_the_configured_space(self, monkeypatch):
+        monkeypatch.setattr(TC, "paper_space", lambda: "company")
+        text = TC.render_result({"scanned": 1, "decisions": {"review": 1}}, None, saved_as="l.pdf")
+        assert "--space company" in text
+        assert "company-paperwork" not in text
+
+    def test_hint_asks_for_a_space_when_none_is_configured(self, monkeypatch):
+        monkeypatch.setattr(TC, "paper_space", lambda: "")
+        text = TC.render_result({"scanned": 1, "decisions": {"review": 1}}, None, saved_as="l.pdf")
+        assert "--space &lt;espace&gt;" in text
+
     def test_missing_config_and_download_failure_are_reported(self, tmp_path, monkeypatch):
         monkeypatch.setattr(TC, "paper_space", lambda: "")
         chan = _Chan()

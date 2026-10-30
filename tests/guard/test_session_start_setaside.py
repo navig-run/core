@@ -63,3 +63,17 @@ def test_restored_set_aside_branch_is_not_flagged(repo: Path) -> None:
     _git(repo, "merge", "-q", "--no-edit", "wip/main-checkout-2026-09-28")
     text = session_start.briefing(repo)
     assert "SET-ASIDE WORK not restored" not in text
+
+
+def test_the_restore_command_applies_every_set_aside_commit(repo: Path) -> None:
+    """A bare branch name cherry-picks only its tip (review F2352): restore the RANGE."""
+    _git(repo, "checkout", "-q", "wip/main-checkout-2026-09-28")
+    (repo / "w2.txt").write_text("y\n")
+    _git(repo, "add", "w2.txt")
+    _git(repo, "commit", "-q", "-m", "second")
+    _git(repo, "checkout", "-q", "main")
+    line = next(
+        l for l in session_start.briefing(repo).splitlines() if "wip/main-checkout-2026-09-28" in l
+    )
+    assert "2 commit(s)" in line
+    assert "git cherry-pick --no-commit main..wip/main-checkout-2026-09-28" in line

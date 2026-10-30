@@ -37,6 +37,26 @@ def _make_proc(stdout: str = "", stderr: str = "", returncode: int = 0):
     return proc
 
 
+def _timeout_proc():
+    """A subprocess stub whose ``communicate`` times out and whose kill path is safe.
+
+    The timeout branch kills the child TREE before re-raising. On POSIX that walks /proc
+    from the child's pid through psutil and compares real integers, so a bare AsyncMock pid
+    raised ``'<' not supported between instances of 'AsyncMock' and 'int'`` and the result
+    read FAILED instead of TIMED_OUT (2026-10-30, outpost). Pair with ``_noop_kill``.
+    """
+    proc = AsyncMock()
+    proc.pid = 4242
+    proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError)
+    proc.returncode = -9
+    return proc
+
+
+async def _noop_kill(_proc):
+    return None
+
+
+
 # ═════════════════════════════════════════════════════════════
 # _needs_b64
 # ═════════════════════════════════════════════════════════════
@@ -214,9 +234,10 @@ class TestExecuteCommand:
             assert result.return_code == 127
 
     async def test_timeout_handling(self):
-        proc = AsyncMock()
-        proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError)
-        with patch("navig.agent.remote_agent.asyncio.create_subprocess_shell", return_value=proc):
+        proc = _timeout_proc()
+        # The timeout branch kills the child tree before re-raising (see _timeout_proc).
+        with patch("navig.agent.remote_agent.asyncio.create_subprocess_shell", return_value=proc), \
+                patch("navig.core.aio_subprocess.kill_process_tree", _noop_kill):
             executor = RemoteAgentExecutor()
             result = await executor.execute_command("sleep 999", timeout=1)
             assert result.state == CommandState.TIMED_OUT
@@ -404,9 +425,9 @@ class TestHostManagement:
             assert "Connection OK" in result.stdout
 
     async def test_verify_host_timeout(self):
-        proc = AsyncMock()
-        proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError)
-        with patch("navig.agent.remote_agent.asyncio.create_subprocess_shell", return_value=proc):
+        proc = _timeout_proc()
+        with patch("navig.agent.remote_agent.asyncio.create_subprocess_shell", return_value=proc), \
+                patch("navig.core.aio_subprocess.kill_process_tree", _noop_kill):
             result = await RemoteAgentExecutor.verify_host("slowhost")
             assert result.state == CommandState.TIMED_OUT
 
@@ -417,9 +438,9 @@ class TestHostManagement:
             assert result.success is True
 
     async def test_set_active_host_timeout(self):
-        proc = AsyncMock()
-        proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError)
-        with patch("navig.agent.remote_agent.asyncio.create_subprocess_shell", return_value=proc):
+        proc = _timeout_proc()
+        with patch("navig.agent.remote_agent.asyncio.create_subprocess_shell", return_value=proc), \
+                patch("navig.core.aio_subprocess.kill_process_tree", _noop_kill):
             result = await RemoteAgentExecutor.set_active_host("unreachable")
             assert result.state == CommandState.TIMED_OUT
 

@@ -128,6 +128,39 @@ def test_a_present_source_file_passes(tmp_path: Path):
     assert data["structure"][0]["source"] == "real.tpl"
 
 
+def test_a_source_escaping_the_template_dir_is_rejected(tmp_path: Path):
+    """A source's contents are copied into the project: `..` must not reach outside."""
+    tpl_dir = tmp_path / "tpl"
+    tpl_dir.mkdir()
+    (tmp_path / "secret.txt").write_text("private", encoding="utf-8")
+    with pytest.raises(ValueError, match="inside the template directory"):
+        _validate(tpl_dir, {"structure": [{"path": "a.txt", "source": "../secret.txt"}]})
+
+
+def test_an_absolute_source_is_rejected(tmp_path: Path):
+    secret = tmp_path / "secret.txt"
+    secret.write_text("private", encoding="utf-8")
+    tpl_dir = tmp_path / "tpl"
+    tpl_dir.mkdir()
+    with pytest.raises(ValueError, match="inside the template directory"):
+        _validate(tpl_dir, {"structure": [{"path": "a.txt", "source": str(secret)}]})
+
+
+def test_generate_refuses_an_escaping_source_even_unvalidated(tmp_path: Path):
+    tpl_dir = tmp_path / "tpl"
+    tpl_dir.mkdir()
+    (tmp_path / "secret.txt").write_text("private", encoding="utf-8")
+    target = tmp_path / "out"
+    with pytest.raises(ValueError, match="inside the template directory"):
+        Scaffolder().generate(
+            {"structure": [{"path": "a.txt", "source": "../secret.txt"}]},
+            target,
+            {},
+            template_dir=tpl_dir,
+        )
+    assert not (target / "a.txt").exists()
+
+
 # ── recursion ──────────────────────────────────────────────────────────────────
 
 
@@ -289,3 +322,78 @@ def test_a_valid_mode_still_creates_a_directory(tmp_path: Path):
     is a platform fact, not a template error."""
     Scaffolder()._create_directory(tmp_path / "d", "0755")
     assert (tmp_path / "d").is_dir()
+
+
+# ── review fixes: raw-typed fields and source compilation ─────────────────────
+
+
+@pytest.mark.parametrize("field", ["path", "content"])
+def test_a_non_string_path_or_content_is_rejected(tmp_path: Path, field: str):
+    """Generation passes `path`/`content` to `from_string()` raw; `content: 123` used to
+    validate (via `str()`) and then raise a TypeError mid-write."""
+    item = {"type": "file", "path": "a.txt", "content": "x"}
+    item[field] = 123
+    with pytest.raises(ValueError) as exc:
+        _validate(tmp_path, {"structure": [item]})
+    assert f"structure[0].{field} must be a string" in str(exc.value)
+
+
+def test_a_non_string_condition_is_still_coerced(tmp_path: Path):
+    data = _validate(tmp_path, {"structure": [{"path": "a.txt", "condition": True}]})
+    assert data["structure"][0]["condition"] is True
+
+
+def test_a_malformed_source_file_is_caught_before_writing(tmp_path: Path):
+    (tmp_path / "bad.j2").write_text("{% if %}", encoding="utf-8")
+    with pytest.raises(ValueError) as exc:
+        _validate(tmp_path, {"structure": [{"path": "a.txt", "source": "bad.j2"}]})
+    assert "structure[0].source 'bad.j2' is not valid Jinja" in str(exc.value)
+
+
+def test_a_non_utf8_source_file_is_caught_before_writing(tmp_path: Path):
+    (tmp_path / "bin.j2").write_bytes(bytes([0xFF, 0xFE, 0x00]))
+    with pytest.raises(ValueError, match="is not UTF-8 text"):
+        _validate(tmp_path, {"structure": [{"path": "a.txt", "source": "bin.j2"}]})
+
+
+def _fail_on_second_copy(monkeypatch):
+    import shutil
+
+    real_copy2 = shutil.copy2
+    calls = {"n": 0}
+
+    def flaky_copy2(src, dst, *a, **k):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError(28, "No space left on device")
+        return real_copy2(src, dst, *a, **k)
+
+    monkeypatch.setattr(shutil, "copy2", flaky_copy2)
+
+
+_TWO_FILES = {
+    "structure": [
+        {"path": "a.txt", "content": "one"},
+        {"path": "b.txt", "content": "two"},
+    ]
+}
+
+
+def test_a_merge_that_fails_partway_leaves_no_new_target(tmp_path: Path, monkeypatch):
+    """Staging can succeed and the copy into the target still fail (disk full)."""
+    target = tmp_path / "out"
+    _fail_on_second_copy(monkeypatch)
+    with pytest.raises(OSError):
+        Scaffolder().generate(_TWO_FILES, target, {})
+    assert not target.exists(), "a failed merge left a half-populated new target"
+
+
+def test_a_merge_that_fails_partway_removes_only_what_it_added(tmp_path: Path, monkeypatch):
+    target = tmp_path / "existing"
+    target.mkdir()
+    (target / "mine.txt").write_text("do not touch", encoding="utf-8")
+    _fail_on_second_copy(monkeypatch)
+    with pytest.raises(OSError):
+        Scaffolder().generate(_TWO_FILES, target, {})
+    assert sorted(p.name for p in target.iterdir()) == ["mine.txt"]
+    assert (target / "mine.txt").read_text(encoding="utf-8") == "do not touch"

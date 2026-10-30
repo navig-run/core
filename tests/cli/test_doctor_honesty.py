@@ -213,6 +213,56 @@ def test_other_rows_do_not_print_a_green_not_checked(label):
 # ── Config-Health incidents: a self-heal is never a green tick ────────────────
 
 
+def _literal_ok_and_warn_check_lines(source: str) -> list[int]:
+    """Lines of every `_check(...)` whose `ok` AND `warn` are both a literal True.
+
+    Each parameter is resolved from EITHER form, following `_check(label, ok, detail="",
+    warn=False, ...)`: `ok` is args[1] or the `ok=` keyword, `warn` is args[3] or the
+    `warn=` keyword. Reading `ok` only positionally and `warn` only as a keyword let
+    `_check("X", ok=True, warn=True)` and `_check("X", True, "d", True)` pass.
+    """
+    import ast
+
+    def _param(node: ast.Call, index: int, keyword: str) -> ast.expr | None:
+        if len(node.args) > index:
+            return node.args[index]
+        return next((kw.value for kw in node.keywords if kw.arg == keyword), None)
+
+    def _is_true(expr: ast.expr | None) -> bool:
+        return isinstance(expr, ast.Constant) and expr.value is True
+
+    lines: list[int] = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+        if name != "_check":
+            continue
+        if _is_true(_param(node, 1, "ok")) and _is_true(_param(node, 3, "warn")):
+            lines.append(getattr(node, "lineno", -1))
+    return lines
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        '_check("X", True, "d", warn=True)',
+        '_check("X", ok=True, detail="d", warn=True)',
+        '_check("X", True, "d", True)',
+        '_check("X", ok=True, warn=True)',
+    ],
+)
+def test_literal_ok_warn_detector_catches_every_argument_form(call):
+    """Anti-vacuity: the guard below must see `ok`/`warn` positionally AND by keyword."""
+    assert _literal_ok_and_warn_check_lines(call) == [1], call
+
+
+def test_literal_ok_warn_detector_allows_a_runtime_ok():
+    assert _literal_ok_and_warn_check_lines('_check("X", path.exists(), "d", True)') == []
+    assert _literal_ok_and_warn_check_lines('_check("X", ok=probe(), warn=True)') == []
+
+
 def test_no_check_pairs_literal_ok_true_with_warn_true():
     """`_check(..., ok=True, ..., warn=True)` is always a bug: `_check` renders ✓ whenever
     ok=True and IGNORES warn=, so the author wanted ⚠ but shipped a green ✓. That is exactly
@@ -222,31 +272,9 @@ def test_no_check_pairs_literal_ok_true_with_warn_true():
     Only a *literal* True is an offender — `_check(expr, ..., warn=True)` with a runtime
     boolean (e.g. `uv_exe.exists()`) is the correct soft-check idiom and must stay allowed.
     """
-    import ast
     import inspect
 
-    tree = ast.parse(inspect.getsource(doctor))
-    offenders: list[int] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
-        name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
-        if name != "_check":
-            continue
-        ok_is_literal_true = (
-            len(node.args) >= 2
-            and isinstance(node.args[1], ast.Constant)
-            and node.args[1].value is True
-        )
-        warn_is_true = any(
-            kw.arg == "warn"
-            and isinstance(kw.value, ast.Constant)
-            and kw.value.value is True
-            for kw in node.keywords
-        )
-        if ok_is_literal_true and warn_is_true:
-            offenders.append(getattr(node, "lineno", -1))
+    offenders = _literal_ok_and_warn_check_lines(inspect.getsource(doctor))
     assert not offenders, (
         "_check(ok=True, warn=True) renders ✓ (warn is ignored) — meant ⚠, shipped green. "
         f"Offending doctor.py lines: {offenders}"
@@ -339,10 +367,10 @@ def _fake_approval_modules(monkeypatch, *, pending: int, stale: int):
     import types
 
     journal = types.SimpleNamespace(
-        list_pending=lambda: {f"p{i}": {"asked_at": _time.time() - 120} for i in range(pending)}
+        list_pending=lambda **_kw: {f"p{i}": {"asked_at": _time.time() - 120} for i in range(pending)}
     )
     resume = types.SimpleNamespace(
-        list_resumable=lambda: {f"s{i}": {} for i in range(stale)},
+        list_resumable=lambda **_kw: {f"s{i}": {} for i in range(stale)},
         is_too_old=lambda e: True,
         max_age_seconds=lambda: 3600,
     )

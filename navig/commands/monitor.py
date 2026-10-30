@@ -171,17 +171,30 @@ def _enumerate_partitions() -> list[Any]:
     ``GetDriveTypeW``, both measured at 0.000s — and lets us skip the drive types
     that hang (REMOTE, CDROM) before anything touches them.
     """
-    if os.name != "nt" or not hasattr(os, "listdrives"):
+    if os.name != "nt":
         return list(psutil.disk_partitions(all=False))
     try:
         import ctypes
 
-        get_drive_type = ctypes.windll.kernel32.GetDriveTypeW
+        kernel32 = ctypes.windll.kernel32
+        get_drive_type = kernel32.GetDriveTypeW
     except Exception:  # noqa: BLE001 — no ctypes/kernel32: fall back
         return list(psutil.disk_partitions(all=False))
 
+    if hasattr(os, "listdrives"):
+        drives = list(os.listdrives())
+    else:
+        # Python < 3.12 has no os.listdrives(); read the same mount table from the
+        # GetLogicalDrives() bitmask (bit 0 = A:) rather than falling back to the
+        # disk_partitions() call that hangs on a cold mapped drive.
+        try:
+            mask = int(kernel32.GetLogicalDrives())
+        except Exception:  # noqa: BLE001 — no bitmask: fall back
+            return list(psutil.disk_partitions(all=False))
+        drives = [f"{chr(ord('A') + i)}:\\" for i in range(26) if mask & (1 << i)]
+
     out: list[Any] = []
-    for drive in os.listdrives():
+    for drive in drives:
         try:
             kind = get_drive_type(str(drive))
         except Exception:  # noqa: BLE001

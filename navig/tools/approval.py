@@ -189,6 +189,11 @@ DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
         "cdp_stop",
         "cdp_login",
         "cdp_inject",
+        # Writes a remote page's bytes to local disk: the FILENAME is the page's
+        # (a Content-Disposition of "..\..\x.exe" is observable) and the agent never sees
+        # the content it vouches for. Mirrored in mcp/tools/cdp.py `_tool_safety`, which
+        # `tests/quality/test_agent_gate_parity.py` keeps in step.
+        "cdp_download",
         # Runs an installed CLI command (navig.mcp.tools.capabilities): it may publish,
         # send mail or delete. The MCP gate narrows this per command; the agent gate
         # cannot see the path, so it keeps the worst case.
@@ -1000,6 +1005,8 @@ def bind_approval_manager(manager: Any | None, audit_log: Any | None = None) -> 
                     channel=channel,
                     user_id=user_id,
                     description=description,
+                    # An agent turn is the one continuation a late Approve can re-enter.
+                    resumable=True,
                 )
             )
         except Exception:  # noqa: BLE001 — an approval-flow crash must fail closed

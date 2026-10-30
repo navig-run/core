@@ -150,7 +150,10 @@ class NavigConsoleFormatter(logging.Formatter):
         comp_padded = comp.ljust(self._COMP_WIDTH)
 
         session = getattr(record, "session_tag", "") or ""
-        msg = record.getMessage()
+        # Redact here too, not only in the file handler: a plugin's plain ``logging.Logger``
+        # (re-parented by bind_plugin_logging) never passes StructuredLogger's redaction,
+        # and this handler writes to stderr — the daemon's journal.
+        msg = redact_sensitive_text(record.getMessage())
 
         line = (
             f"{self._paint(self._TS_STYLE, ts)}  "
@@ -160,9 +163,9 @@ class NavigConsoleFormatter(logging.Formatter):
         )
 
         if record.exc_info:
-            line += "\n" + self.formatException(record.exc_info)
+            line += "\n" + redact_sensitive_text(self.formatException(record.exc_info))
         if record.stack_info:
-            line += "\n" + self.formatStack(record.stack_info)
+            line += "\n" + redact_sensitive_text(self.formatStack(record.stack_info))
         return line
 
 
@@ -266,13 +269,15 @@ class StructuredLogger(logging.Logger):
         #
         # The Mapping branch exists because the widened annotation now genuinely permits a
         # caller to invoke `_log(level, msg, mapping)` directly — which the old generator
-        # would have flattened to its KEYS. Redact the values, keep it a mapping.
+        # would have flattened to its KEYS. Redact the values, keep it a mapping — and
+        # wrap it as `(mapping,)`, the shape `LogRecord.__init__` unwraps (it indexes
+        # `args[0]`; a bare mapping raised `KeyError(0)`).
         if args:
             if isinstance(args, Mapping):
-                args = {
+                args = ({
                     k: redact_sensitive_text(v) if isinstance(v, str) else v
                     for k, v in args.items()
-                }
+                },)
             else:
                 args = tuple(
                     redact_sensitive_text(a) if isinstance(a, str) else a for a in args
@@ -409,7 +414,24 @@ def _bridge_loguru() -> None:
         std = logging.getLogger(name if name == "navig" or name.startswith("navig.") else f"navig.{name}")
         exc = record["exception"]
         exc_info = (exc.type, exc.value, exc.traceback) if exc else None
-        std.log(int(record["level"].no), redact_sensitive_text(str(record["message"])), exc_info=exc_info)
+        # `std.log()` would first apply the logger's effective level — INFO on the
+        # `navig` root — and drop every DEBUG/TRACE before the DEBUG file handler saw it.
+        # Hand the record to `handle()` instead so each HANDLER's level decides (the
+        # console stays at its policy; `navig.log` keeps DEBUG). TRACE (5) is clamped to
+        # DEBUG, the nearest level a navig handler accepts.
+        levelno = max(int(record["level"].no), logging.DEBUG)
+        std.handle(
+            std.makeRecord(
+                std.name,
+                levelno,
+                str(record["file"].path),
+                int(record["line"]),
+                redact_sensitive_text(str(record["message"])),
+                (),
+                exc_info,
+                func=str(record["function"]),
+            )
+        )
 
     try:
         _loguru.remove()

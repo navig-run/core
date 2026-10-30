@@ -182,7 +182,9 @@ async def test_a_timeout_leaves_a_resumable_record():
     ids: list[str] = []
     mgr.on_request(lambda req: ids.append(req.id))
 
-    await mgr.request_approval("tool deploy", channel="telegram", user_id="42")
+    await mgr.request_approval(
+        "tool deploy", channel="telegram", user_id="42", resumable=True
+    )
 
     assert ids
     assert resume.take(ids[0]) is not None, (
@@ -201,7 +203,9 @@ async def test_a_decision_made_IN_TIME_leaves_no_resumable_record():
     mgr.on_request(lambda req: ids.append(req.id))
 
     task = asyncio.create_task(
-        mgr.request_approval("tool deploy", channel="telegram", user_id="42")
+        mgr.request_approval(
+            "tool deploy", channel="telegram", user_id="42", resumable=True
+        )
     )
     for _ in range(100):
         await asyncio.sleep(0.01)
@@ -224,9 +228,128 @@ async def test_a_late_DENIAL_never_resumes():
     ids: list[str] = []
     mgr.on_request(lambda req: ids.append(req.id))
 
-    await mgr.request_approval("tool deploy", channel="telegram", user_id="42")
+    await mgr.request_approval(
+        "tool deploy", channel="telegram", user_id="42", resumable=True
+    )
     assert ids
 
     await mgr.respond(ids[0], approved=False)
 
     assert resume.take(ids[0]) is None, "a denial left the action resumable"
+
+
+async def test_a_non_agent_request_leaves_no_resumable_record(monkeypatch):
+    """Missions, gateway policy checks and the approval API are not agent turns.
+
+    Their continuation is gone once they stop waiting, so a record for them would make a
+    late Approve start an unrelated agent turn instead of the approved work.
+    """
+    import navig.core.background as bg
+    from navig.approval import resume
+
+    started: list[object] = []
+
+    def _fake_spawn(coro, **_kw):
+        started.append(coro)
+        coro.close()
+
+    monkeypatch.setattr(bg, "spawn", _fake_spawn)
+
+    mgr = _manager()
+    ids: list[str] = []
+    mgr.on_request(lambda req: ids.append(req.id))
+
+    await mgr.request_approval("mission:remediate", channel="telegram", user_id="42")
+
+    assert ids
+    assert resume.peek(ids[0]) is None, "a non-agent request left a resumable record"
+    await mgr.respond(ids[0], approved=True)
+    assert started == [], "a late Approve of a non-agent request started a resume"
+
+
+async def test_a_timeout_that_AUTO_APPROVED_leaves_no_resumable_record(monkeypatch):
+    """default_action=approve lets the caller proceed on timeout; a late Approve must not
+    run the action a second time."""
+    import navig.core.background as bg
+    from navig.approval import resume
+
+    started: list[object] = []
+
+    def _fake_spawn(coro, **_kw):
+        started.append(coro)
+        coro.close()
+
+    monkeypatch.setattr(bg, "spawn", _fake_spawn)
+
+    mgr = _manager()
+    mgr.policy.default_action = "approve"
+    ids: list[str] = []
+    mgr.on_request(lambda req: ids.append(req.id))
+
+    approved = await mgr.request_approval(
+        "tool deploy", channel="telegram", user_id="42", resumable=True
+    )
+
+    assert approved is True, "precondition: the timeout auto-approved"
+    assert resume.peek(ids[0]) is None, "an auto-approved timeout is still resumable"
+    await mgr.respond(ids[0], approved=True)
+    assert started == [], "a late Approve re-ran an action that already proceeded"
+
+
+async def test_the_default_re_entry_uses_the_sessions_own_history(monkeypatch):
+    """The re-entered turn must see the asking session's conversation, not 'default'."""
+    import navig.agent.conv.agent as conv_agent
+    from navig.approval import resume
+
+    built: list[object] = []
+
+    class _FakeAgent:
+        def __init__(self, *a, history=None, **kw):
+            built.append(history)
+
+        async def run_agentic(self, message, *, session_key=""):
+            return "done"
+
+    monkeypatch.setattr(conv_agent, "ConversationalAgent", _FakeAgent)
+
+    await resume._default_run_turn(
+        {"tool_name": "tool deploy", "session_key": "telegram:user:42"}
+    )
+
+    assert built, "no agent was constructed"
+    history = built[0]
+    assert history is not None, "the re-entered turn fell back to the shared default history"
+    assert history._user_id == "telegram_user_42"
+
+
+# ── delivery goes back to the requester ──────────────────────────────────────
+
+
+def test_the_resume_notification_type_is_registered():
+    """Unregistered, the router treats it as unknown and drops it to the deck feed only."""
+    from navig.notify import prefs
+
+    assert prefs._is_known_type("approval_resume")
+
+
+async def test_the_result_is_routed_to_the_channel_that_asked(monkeypatch):
+    import navig.notify as notify
+    from navig.approval import resume
+
+    _record("r-route")
+    sent: list[dict] = []
+
+    async def fake_dispatch(type_key, title, body="", **kwargs):
+        sent.append({"type": type_key, **kwargs})
+        return {}
+
+    monkeypatch.setattr(notify, "dispatch", fake_dispatch)
+
+    async def run_turn(entry):
+        return "deployed"
+
+    assert await resume.resume_after_approval("r-route", run_turn=run_turn) is True
+
+    assert sent and sent[0]["type"] == "approval_resume"
+    assert sent[0]["only_channels"] == ["deck", "telegram"]
+    assert sent[0]["data"]["user_id"] == "42"

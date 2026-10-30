@@ -159,6 +159,41 @@ def test_joining_survives_mismatched_clips(tmp_path: Path) -> None:
 
 
 @requires_ffmpeg
+def test_the_re_encode_fallback_keeps_audio_when_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With `-an` on the re-encode fallback the joined file had no sound and `master()`
+    # (the next step of `navig video cut`) refused it. The stream copy is made to fail so
+    # the fallback is what runs, whatever this ffmpeg build tolerates.
+    import navig.media.video_edit as ve
+    from navig.media.video_edit import _has_audio
+
+    real_exec = ve._exec
+
+    def no_copy(cmd: list[str], *args: object, **kwargs: object) -> None:
+        if "copy" in cmd:
+            raise VideoEditError("stream copy refused (test)")
+        real_exec(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(ve, "_exec", no_copy)
+
+    def talking(path: Path, w: int, h: int, fps: int) -> Path:
+        subprocess.run(
+            [shutil.which("ffmpeg"), "-nostdin", "-y", "-f", "lavfi",
+             "-i", f"testsrc=size={w}x{h}:rate={fps}:duration=1",
+             "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(path)],
+            capture_output=True, check=True,
+        )
+        return path
+
+    parts = [talking(tmp_path / "a.mp4", 640, 360, 30), talking(tmp_path / "b.mp4", 320, 240, 25)]
+    result = join(parts, tmp_path / "joined.mp4", keep_audio=True)
+    assert result.filters == "concat:encode"
+    assert _has_audio(result.path)
+
+
+@requires_ffmpeg
 def test_a_crossfade_is_shorter_than_a_hard_cut(tmp_path: Path) -> None:
     # The overlap has to actually remove time — an xfade that just concatenates is the
     # failure this catches, and it looks fine frame by frame.
@@ -470,6 +505,52 @@ def test_an_unknown_motion_is_refused_rather_than_silently_static(tmp_path) -> N
         still(art, tmp_path / "o.mp4", secs=1.0, motion="ken-burns")
 
 
+def test_an_unknown_motion_is_named_even_without_ffmpeg(tmp_path, monkeypatch) -> None:
+    # The argument the caller can fix comes first: a typo must not read as "install ffmpeg".
+    from navig_media_core.media import video_edit as ve
+
+    monkeypatch.setattr(ve.shutil, "which", lambda _tool: None)
+    art = tmp_path / "a.png"
+    art.write_bytes(b"\x89PNG")
+    with pytest.raises(ValueError, match="unknown motion"):
+        ve.still(art, tmp_path / "o.mp4", secs=1.0, motion="bogus")
+
+
+@pytest.mark.parametrize("effect", ["fade:offset=0", "fade;[0:v]null", "fade[x]", ""])
+def test_a_transition_effect_that_is_not_a_name_is_refused_before_ffmpeg(
+    tmp_path, monkeypatch, effect
+) -> None:
+    # It is interpolated into the filtergraph: ':' adds options, ';' / '[' add filters.
+    from navig_media_core.media import video_edit as ve
+
+    def no_ffmpeg(*_a, **_k):
+        raise AssertionError("ffmpeg must not be reached with a bad effect")
+
+    monkeypatch.setattr(ve, "probe", no_ffmpeg)
+    monkeypatch.setattr(ve, "_require", no_ffmpeg)
+    parts = []
+    for name in ("a.mp4", "b.mp4"):
+        (tmp_path / name).write_bytes(b"\x00")
+        parts.append(tmp_path / name)
+    with pytest.raises(VideoEditError, match="not an xfade transition name"):
+        ve.join(parts, tmp_path / "out.mp4", transition="xfade", effect=effect)
+
+
+def test_a_clip_a_few_ms_short_is_still_looped(monkeypatch: pytest.MonkeyPatch) -> None:
+    # `-t` truncates but never synthesises frames: a clip 30 ms short that is not looped
+    # stays short, and a reel of them drifts against the voice.
+    import navig.media.video_edit as ve
+
+    cmds: list[list[str]] = []
+    monkeypatch.setattr(ve, "_require", lambda _name: "ffmpeg")
+    monkeypatch.setattr(ve, "probe", lambda _p, *a, **k: {"width": 1080, "height": 1920,
+                                                           "duration": 2.97})
+    monkeypatch.setattr(ve, "_exec", lambda cmd, *_a: cmds.append(cmd))
+    result = ve.fit_duration(Path("in.mp4"), Path("out.mp4"), secs=3.0)
+    assert "-stream_loop" in cmds[0]
+    assert result.filters == "loop"
+
+
 class TestTimeoutScalesWithLength:
     """A flat ffmpeg timeout fits one clip length and fails the other.
 
@@ -512,6 +593,28 @@ class TestTimeoutScalesWithLength:
 
         budgets = [timeout_for(s) for s in (30, 120, 300, 600, 1200)]
         assert budgets == sorted(budgets)
+
+    @staticmethod
+    def _deadline(monkeypatch: pytest.MonkeyPatch, **kwargs: object) -> int:
+        """The timeout ``apply_filter`` hands ffmpeg for a (mocked) 60-second input."""
+        import navig.media.video_edit as ve
+
+        seen: list[int] = []
+        monkeypatch.setattr(ve, "_require", lambda _name: "ffmpeg")
+        monkeypatch.setattr(ve, "probe", lambda _p, *a, **k: {"width": 1080, "height": 1920,
+                                                               "duration": 60.0})
+        monkeypatch.setattr(ve, "_exec", lambda _cmd, _dst, timeout, _subj: seen.append(timeout))
+        ve.apply_filter(Path("in.mp4"), Path("out.mp4"), "hue=s=0", **kwargs)
+        return seen[0]
+
+    def test_an_explicit_short_timeout_is_the_actual_deadline(self, monkeypatch):
+        # A caller enforcing a 5 s cancellation limit must not silently get 600 s.
+        assert self._deadline(monkeypatch, timeout=5) == 5
+
+    def test_the_default_timeout_still_scales_with_the_material(self, monkeypatch):
+        from navig.media.video_edit import timeout_for
+
+        assert self._deadline(monkeypatch) == timeout_for(60.0)
 
 
 # ── excerpt / master: the video twins (plan-21 B0) ────────────────────────────

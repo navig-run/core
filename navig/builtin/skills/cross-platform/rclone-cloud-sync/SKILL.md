@@ -16,6 +16,9 @@ examples:
   - "Copy files from one remote to another"
   - "What remotes do I have configured?"
 os: [windows, linux, mac]
+# Written against a planned command surface that is not implemented yet
+# (KNOWN_MISSING in tests/quality/test_content_command_refs_resolve.py).
+activatable: false
 ---
 
 # rclone Cloud Sync

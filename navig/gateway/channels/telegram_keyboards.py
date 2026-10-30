@@ -72,7 +72,6 @@ def styled(button: dict[str, str], style: str | None) -> dict[str, str]:
     return button
 
 
-
 class ContentCategory(str, Enum):
     """Categories used to decide which keyboard profile to use."""
 
@@ -240,6 +239,7 @@ class CallbackStore:
     def put(self, key: str, entry: Any, ttl: int | None = None) -> None:
         self._expire_old()
         if len(self._store) >= self._max:
+
             def _created_at_value(item: tuple[str, Any]) -> float:
                 value = item[1]
                 if isinstance(value, dict):
@@ -354,13 +354,17 @@ class ResponseKeyboardBuilder:
                 profile = KeyboardProfile(profile_override)
             except ValueError:
                 profile = choose_profile(
-                    ai_response, category,
-                    has_approval=has_approval, has_suggestions=has_suggestions,
+                    ai_response,
+                    category,
+                    has_approval=has_approval,
+                    has_suggestions=has_suggestions,
                 )
         else:
             profile = choose_profile(
-                ai_response, category,
-                has_approval=has_approval, has_suggestions=has_suggestions,
+                ai_response,
+                category,
+                has_approval=has_approval,
+                has_suggestions=has_suggestions,
             )
 
         if profile == KeyboardProfile.NONE:
@@ -375,7 +379,10 @@ class ResponseKeyboardBuilder:
             )
         elif profile == KeyboardProfile.EXPAND:
             rows = self._build_expand_rows(
-                msg_hash, user_message, ai_response, category,
+                msg_hash,
+                user_message,
+                ai_response,
+                category,
                 explore_questions=list(explore_questions or []),
             )
         elif profile == KeyboardProfile.FEEDBACK:
@@ -599,12 +606,17 @@ class ResponseKeyboardBuilder:
                 if len(cb) <= MAX_CALLBACK_DATA:
                     # Full-width row: room for a longer label than a half-row button.
                     # Blue — these are the main way to continue the conversation.
-                    rows.append([
-                        styled(
-                            {"text": button_label(q, MAX_EXPLORE_BUTTON_TEXT), "callback_data": cb},
-                            STYLE_PRIMARY,
-                        )
-                    ])
+                    rows.append(
+                        [
+                            styled(
+                                {
+                                    "text": button_label(q, MAX_EXPLORE_BUTTON_TEXT),
+                                    "callback_data": cb,
+                                },
+                                STYLE_PRIMARY,
+                            )
+                        ]
+                    )
 
         return rows
 
@@ -635,8 +647,11 @@ class ResponseKeyboardBuilder:
 
         Actions
         -------
-        log_shipped   — prompts user to log what shipped; captures next reply
-        plan_tomorrow — prompts user for tomorrow's anchor; captures next reply
+        log_shipped   — redraws the card as a picker of the last things logged; a tap
+                        logs those words (``eve:set:shipped:<i>``), "type something
+                        new" arms the reply capture (``eve:type:shipped``)
+        plan_tomorrow — the same picker, for tomorrow's anchor
+        cancel        — puts the evening card back the way it was
         backup_check  — runs ``navig backup show`` and replies with a Refresh button
         dnd_on        — activates DND (chat_mode=sleep + notifications_enabled=False)
         dnd_off       — reverts DND (chat_mode=work + notifications_enabled=True)
@@ -644,66 +659,35 @@ class ResponseKeyboardBuilder:
         import asyncio as _asyncio
 
         from navig.core.i18n import t as _t
-        from navig.telegram import briefing_cards
 
         action = cb_data.split(":", 1)[1] if ":" in cb_data else cb_data
 
-        if action == "log_shipped":
-            await self._answer(cb_id, _t("briefing.toast.shipped"))
-            try:
-                from navig.store.runtime import get_runtime_store
-
-                store = get_runtime_store()
-                state = store.get_ai_state(user_id) or {}
-                ctx = dict(state.get("context") or {})
-                ctx["eve_pending"] = {"active": True, "type": "shipped"}
-                store.set_ai_state(
-                    # `set_ai_state` has no `channel` parameter and REQUIRES `mode`; this call
-                    # raised TypeError every time. `persona` must be passed too — the UPSERT
-                    # does `persona = excluded.persona`, so omitting it erases the user's
-                    # persona. Shape matches the canonical callers in telegram.py.
-                    user_id=user_id,
-                    chat_id=chat_id,
-                    mode=state.get("mode") or "active",
-                    persona=state.get("persona"),  # None keeps the stored persona
-                    context=ctx,
-                )
-            except Exception as exc:
-                logger.debug("eve_pending set failed: %s", exc)
-            await self.channel.send_message(
-                chat_id, briefing_cards.prompt_html("shipped"), parse_mode="HTML")
+        if action in ("log_shipped", "plan_tomorrow"):
+            # The evening card IS the screen. Pressing its button redraws that same
+            # message as the picker, so the operator never gets a question where he
+            # expected an answer — and a cancel puts the card back where it was.
+            kind = "shipped" if action == "log_shipped" else "priority"
+            await self._eve_show_picker(kind, cb_id, chat_id, message_id, user_id)
             return
 
-        if action == "plan_tomorrow":
-            await self._answer(cb_id, _t("briefing.toast.priority"))
-            try:
-                from navig.store.runtime import get_runtime_store
+        if action.startswith("type:"):
+            await self._eve_ask(action.split(":", 1)[1], cb_id, chat_id, message_id, user_id)
+            return
 
-                store = get_runtime_store()
-                state = store.get_ai_state(user_id) or {}
-                ctx = dict(state.get("context") or {})
-                ctx["eve_pending"] = {"active": True, "type": "priority"}
-                store.set_ai_state(
-                    # `set_ai_state` has no `channel` parameter and REQUIRES `mode`; this call
-                    # raised TypeError every time. `persona` must be passed too — the UPSERT
-                    # does `persona = excluded.persona`, so omitting it erases the user's
-                    # persona. Shape matches the canonical callers in telegram.py.
-                    user_id=user_id,
-                    chat_id=chat_id,
-                    mode=state.get("mode") or "active",
-                    persona=state.get("persona"),  # None keeps the stored persona
-                    context=ctx,
-                )
-            except Exception as exc:
-                logger.debug("eve_pending set failed: %s", exc)
-            await self.channel.send_message(
-                chat_id, briefing_cards.prompt_html("priority"), parse_mode="HTML")
+        if action == "cancel":
+            await self._answer(cb_id, "")
+            await self._eve_render_evening(chat_id, message_id)
+            return
+
+        if action.startswith("set:"):
+            await self._eve_pick(action, cb_id, chat_id, message_id, user_id)
             return
 
         if action == "backup_check":
             await self._answer(cb_id, _t("briefing.toast.backup"))
-            _refresh_kb = [[{"text": _t("briefing.button.refresh"),
-                             "callback_data": "eve:backup_check"}]]
+            _refresh_kb = [
+                [{"text": _t("briefing.button.refresh"), "callback_data": "eve:backup_check"}]
+            ]
             try:
                 import subprocess as _subprocess
                 from datetime import datetime as _dt
@@ -733,8 +717,10 @@ class ResponseKeyboardBuilder:
                 logger.warning("eve:backup_check error: %s", exc)
                 await self.channel.send_message(
                     chat_id,
-                    "⚠️ " + html.escape(_t("briefing.backup.failed", command="\x00")).replace(
-                        "\x00", "<code>navig backup show</code>"),
+                    "⚠️ "
+                    + html.escape(_t("briefing.backup.failed", command="\x00")).replace(
+                        "\x00", "<code>navig backup show</code>"
+                    ),
                     parse_mode="HTML",
                     keyboard=_refresh_kb,
                 )
@@ -783,6 +769,302 @@ class ResponseKeyboardBuilder:
 
         # Unknown action — acknowledge silently
         await self._answer(cb_id, "")
+
+    # ── Evening card: the screens behind its buttons ──────────────────────
+    #
+    # "✅ What got done" used to answer with a sentence asking the operator to type
+    # what he shipped. At 18:00 that is the worst possible request: the day is a
+    # blur, the keyboard is a phone, and the answer already exists — he logged it on
+    # previous evenings. The button now redraws the same message as a picker of the
+    # last few things he logged, one tap each, with "type something new" and
+    # "cancel" as the two ways out. Every path edits in place.
+
+    async def _eve_edit_card(self, chat_id: int, message_id: int, card: Any) -> None:
+        """Draw *card* in the message the button lives on (fresh message as fallback)."""
+        edited = None
+        try:
+            edited = await self.channel.edit_rich_message(
+                chat_id,
+                message_id,
+                html=card.rich_html(),
+                fallback_html=card.classic_html(),
+                keyboard=card.keyboard(),
+            )
+        except Exception as exc:  # noqa: BLE001 — a card edit never owns the callback
+            logger.debug("eve card edit failed: %s", exc)
+        if edited is not None:
+            return
+        try:
+            await self.channel.send_message(
+                chat_id, card.classic_html(), parse_mode="HTML", keyboard=card.keyboard()
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("eve card send failed: %s", exc)
+
+    async def _handle_reminder_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Done / +1 h on a reminder ping (``rem:{action}:{id}``).
+
+        Both actions reshape the message the button lives on: the ping becomes the
+        record of what happened, instead of a dead card with live-looking buttons.
+        """
+        import asyncio as _asyncio
+        from datetime import datetime as _dt
+        from datetime import timezone as _tz
+
+        from navig.core.i18n import t as _t
+
+        bits = cb_data.split(":")
+        action = bits[1] if len(bits) > 1 else ""
+        try:
+            reminder_id = int(bits[2])
+        except (IndexError, ValueError):
+            await self._answer(cb_id, _t("reminder.toast.expired"))
+            return
+
+        def _store():
+            from navig.store.runtime import get_runtime_store
+
+            return get_runtime_store()
+
+        store = _store()
+        row = store.get_reminder(reminder_id) if hasattr(store, "get_reminder") else None
+        if not row or int(row.get("completed") or 0):
+            await self._answer(cb_id, _t("reminder.toast.closed"))
+            return
+
+        msg = str(row.get("message") or "").strip()
+        header = _t("notify.reminder.header")
+
+        if action == "done":
+            store.complete_reminder(reminder_id)
+            await self._rem_show(chat_id, message_id, header, msg, state=_t("reminder.state.done"))
+            await self._answer(cb_id, _t("reminder.toast.done"))
+            return
+
+        if action == "snooze":
+            stamp = await _asyncio.to_thread(store.snooze_reminder, reminder_id, seconds=3600)
+            due_unix = None
+            if stamp:
+                try:
+                    due_unix = int(
+                        _dt.fromisoformat(str(stamp).rstrip("Z"))
+                        .replace(tzinfo=_tz.utc)
+                        .timestamp()
+                    )
+                except Exception:  # noqa: BLE001 — a bad stamp only loses the countdown
+                    due_unix = None
+            await self._rem_show(
+                chat_id,
+                message_id,
+                header,
+                msg,
+                state=_t("reminder.state.snoozed"),
+                due_unix=due_unix,
+            )
+            await self._answer(cb_id, _t("reminder.toast.snoozed"))
+            return
+
+        await self._answer(cb_id, _t("reminder.toast.expired"))
+
+    async def _rem_show(
+        self,
+        chat_id: int,
+        message_id: int,
+        header: str,
+        msg: str,
+        *,
+        state: str,
+        due_unix: int | None = None,
+    ) -> None:
+        """Redraw the tapped ping in place with *state* appended; never raise."""
+        try:
+            from navig.telegram.reminder_card import state_card
+
+            card = state_card(header, msg, state=state, due_unix=due_unix)
+        except Exception as exc:  # noqa: BLE001 — the toast already told the operator
+            logger.debug("reminder state card build failed: %s", exc)
+            return
+        try:
+            edited = await self.channel.edit_rich_message(
+                chat_id,
+                message_id,
+                html=card.rich_html(),
+                fallback_html=card.classic_html(),
+                keyboard=card.keyboard(),
+            )
+            if edited is not None:
+                return
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("reminder state edit failed: %s", exc)
+        try:
+            await self.channel.send_message(
+                chat_id,
+                card.classic_html(),
+                parse_mode="HTML",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("reminder state fallback send failed: %s", exc)
+
+    def _eve_picks_write(self, user_id: int, chat_id: int, kind: str, picks: list[str]) -> None:
+        """Remember what the picker's numbered buttons meant.
+
+        A callback payload is capped at 64 bytes, so the button carries an index and
+        the words stay here. Written at render time, because the list the operator is
+        looking at is the list the tap has to mean.
+        """
+        try:
+            from navig.store.runtime import get_runtime_store
+
+            store = get_runtime_store()
+            state = store.get_ai_state(user_id) or {}
+            ctx = dict(state.get("context") or {})
+            saved = dict(ctx.get("eve_picks") or {})
+            saved[kind] = list(picks)
+            ctx["eve_picks"] = saved
+            store.set_ai_state(
+                # `set_ai_state` has no `channel` parameter and REQUIRES `mode`; `persona`
+                # must be passed too, or the UPSERT erases the stored persona.
+                user_id=user_id,
+                chat_id=chat_id,
+                mode=state.get("mode") or "active",
+                persona=state.get("persona"),
+                context=ctx,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("eve_picks not saved: %s", exc)
+
+    def _eve_pick_text(self, user_id: int, kind: str, index: int) -> str:
+        try:
+            from navig.store.runtime import get_runtime_store
+
+            state = get_runtime_store().get_ai_state(user_id) or {}
+            saved = (state.get("context") or {}).get("eve_picks") or {}
+            return str((saved.get(kind) or [])[index])
+        except Exception:  # noqa: BLE001 — a stale tap is answered, not crashed
+            return ""
+
+    async def _eve_render_evening(self, chat_id: int, message_id: int) -> None:
+        """Put the evening card back, showing whatever is logged right now."""
+        from datetime import datetime as _dt
+
+        from navig.telegram import briefing_cards
+
+        shipped = ""
+        priority = ""
+        try:
+            from navig.agent.proactive import eve_log
+
+            today = eve_log.get_today()
+            shipped = str(today.get("shipped") or "")
+            priority = str(today.get("priority") or "")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("eve_log read failed: %s", exc)
+        card = briefing_cards.evening_card(_dt.now(), shipped=shipped, priority=priority)
+        await self._eve_edit_card(chat_id, message_id, card)
+
+    async def _eve_show_picker(
+        self, kind: str, cb_id: str, chat_id: int, message_id: int, user_id: int
+    ) -> None:
+        from datetime import datetime as _dt
+
+        from navig.core.i18n import t as _t
+        from navig.telegram import briefing_cards
+
+        if kind not in briefing_cards.PICK_KINDS:
+            await self._answer(cb_id, "")
+            return
+        picks = (
+            briefing_cards.recent_shipped()
+            if kind == "shipped"
+            else briefing_cards.recent_priorities()
+        )
+        self._eve_picks_write(user_id, chat_id, kind, picks)
+        if cb_id:
+            await self._answer(cb_id, _t("briefing.toast.pick"))
+        await self._eve_edit_card(
+            chat_id, message_id, briefing_cards.pick_card(_dt.now(), kind, picks)
+        )
+
+    async def _eve_pick(
+        self, action: str, cb_id: str, chat_id: int, message_id: int, user_id: int
+    ) -> None:
+        """A numbered choice was tapped: log those exact words, redraw the card."""
+        from navig.core.i18n import t as _t
+        from navig.telegram import briefing_cards
+
+        parts = action.split(":", 2)
+        kind = parts[1] if len(parts) > 1 else ""
+        raw_index = parts[2] if len(parts) > 2 else ""
+        if kind not in briefing_cards.PICK_KINDS or not raw_index.isdigit():
+            await self._answer(cb_id, "")
+            return
+        text = self._eve_pick_text(user_id, kind, int(raw_index))
+        if not text:
+            # The stored list is gone (a restart, a different chat): never log a
+            # guess. Re-open the picker so the tap costs one step, not a wrong entry.
+            await self._answer(cb_id, _t("briefing.toast.pick_stale"))
+            await self._eve_show_picker(kind, "", chat_id, message_id, user_id)
+            return
+        try:
+            from navig.agent.proactive import eve_log
+
+            if kind == "shipped":
+                eve_log.save_shipped(text)
+            else:
+                eve_log.save_priority(text)
+        except Exception as exc:  # noqa: BLE001 — an unwritten entry is reported, not shown
+            logger.warning("eve pick save failed: %s", exc)
+            await self._answer(cb_id, _t("briefing.toast.pick_stale"))
+            return
+        await self._answer(cb_id, _t("briefing.toast.picked"))
+        await self._eve_render_evening(chat_id, message_id)
+
+    async def _eve_ask(
+        self, kind: str, cb_id: str, chat_id: int, message_id: int, user_id: int
+    ) -> None:
+        """Free text: arm the reply capture and ask once, then restore the card."""
+        from navig.core.i18n import t as _t
+        from navig.telegram import briefing_cards
+
+        if kind not in briefing_cards.PICK_KINDS:
+            await self._answer(cb_id, "")
+            return
+        await self._answer(
+            cb_id, _t("briefing.toast.shipped" if kind == "shipped" else "briefing.toast.priority")
+        )
+        try:
+            from navig.store.runtime import get_runtime_store
+
+            store = get_runtime_store()
+            state = store.get_ai_state(user_id) or {}
+            ctx = dict(state.get("context") or {})
+            ctx["eve_pending"] = {"active": True, "type": kind}
+            store.set_ai_state(
+                # `set_ai_state` has no `channel` parameter and REQUIRES `mode`; this call
+                # raised TypeError every time. `persona` must be passed too — the UPSERT
+                # does `persona = excluded.persona`, so omitting it erases the user's
+                # persona. Shape matches the canonical callers in telegram.py.
+                user_id=user_id,
+                chat_id=chat_id,
+                mode=state.get("mode") or "active",
+                persona=state.get("persona"),  # None keeps the stored persona
+                context=ctx,
+            )
+        except Exception as exc:
+            logger.debug("eve_pending set failed: %s", exc)
+        await self.channel.send_message(
+            chat_id, briefing_cards.prompt_html(kind), parse_mode="HTML"
+        )
+        # The picker's job is done; the prompt is the live message now. Put the
+        # evening card back so the chat does not keep a stale question menu.
+        await self._eve_render_evening(chat_id, message_id)
 
     async def _handle_morning_callback(
         self,
@@ -866,10 +1148,10 @@ _FOLLOWUP_CB_PREFIX: str = "ask_followup:"
 # into <site>?" the follow-up "yes" landed tool-less and answered "can't access web
 # directly". Instead we attach a button that fetches the URL on tap and posts an
 # LLM summary — the capability the prose promised, delivered for real.
-_WEBFETCH_CB_PREFIX: str = "wf:"          # callback_data prefix (short; URL is stored)
-_WEBFETCH_STORE_PREFIX: str = "wf_url:"   # CallbackStore key prefix → {url, query}
+_WEBFETCH_CB_PREFIX: str = "wf:"  # callback_data prefix (short; URL is stored)
+_WEBFETCH_STORE_PREFIX: str = "wf_url:"  # CallbackStore key prefix → {url, query}
 _WEBFETCH_SUMMARY_PREFIX: str = "wf_sum:"  # CallbackStore key prefix → cached {body}
-_WEBFETCH_SUMMARY_TTL: int = 900           # 15 min, matching web_fetch's own cache
+_WEBFETCH_SUMMARY_TTL: int = 900  # 15 min, matching web_fetch's own cache
 _WEBFETCH_SUMMARY_PROMPT: str = (
     "You are reading a web page for a user.\n"
     "URL: {url}\nTitle: {title}\n"
@@ -908,9 +1190,7 @@ async def _read_url_content(url: str, *, max_chars: int = 6000) -> tuple[str, st
     try:
         from navig.tools.web import web_fetch
 
-        result = await asyncio.to_thread(
-            web_fetch, url, extract_mode="text", max_chars=max_chars
-        )
+        result = await asyncio.to_thread(web_fetch, url, extract_mode="text", max_chars=max_chars)
         if result.success:
             text = (result.text or "").strip()
             title = (result.title or "").strip()
@@ -1018,6 +1298,7 @@ def build_read_site_buttons(
         if btn:
             out.append(btn)
     return out
+
 
 # ── Explore questions (contextual follow-ups injected into REASON-mode responses)
 # The LLM appends a pipe-delimited list after a fixed marker line.
@@ -1328,7 +1609,9 @@ class CallbackHandler:
             # a press dropped here looked like nothing happened at all.
             logger.warning(
                 "callback dropped: chat_id=%s cb_data=%r message=%s",
-                chat_id, cb_data, "present" if message.get("message_id") else "MISSING",
+                chat_id,
+                cb_data,
+                "present" if message.get("message_id") else "MISSING",
             )
             await self._answer(cb_id, "⚠️ Invalid callback")
             return
@@ -1345,18 +1628,27 @@ class CallbackHandler:
             # ── Process killer confirmation (kill_confirm:* / kill_cancel) ──
             if cb_data == "kill_cancel":
                 await self._answer(cb_id, "Cancelled")
+                # The old branch edited the text and left `reply_markup` alone, so the
+                # "🛑 Kill N" button survived the cancel and a second press killed later.
+                # An empty keyboard is the only payload that removes it.
                 try:
-                    await self.channel._api_call(
-                        "editMessageText",
-                        {
-                            "chat_id": chat_id,
-                            "message_id": message_id,
-                            "text": "🛑 <i>Kill cancelled.</i>",
-                            "parse_mode": "HTML",
-                        },
-                    )
-                except Exception:
-                    pass
+                    from navig.telegram import kill_card
+
+                    await kill_card.cancel(self.channel, chat_id, message_id)
+                except Exception:  # noqa: BLE001 — a cancel must never raise
+                    try:
+                        await self.channel._api_call(
+                            "editMessageText",
+                            {
+                                "chat_id": chat_id,
+                                "message_id": message_id,
+                                "text": "🛑 <i>Kill cancelled.</i>",
+                                "parse_mode": "HTML",
+                                "reply_markup": {"inline_keyboard": []},
+                            },
+                        )
+                    except Exception:
+                        pass
                 return
             if cb_data.startswith("kill_confirm:"):
                 await self._answer(cb_id, "Killing…")
@@ -1368,35 +1660,45 @@ class CallbackHandler:
             # ── TikTok (tk:dl / tk:an) — download or AI-analyse a shared link ──
             if cb_data.startswith("tk:"):
                 await self._answer(cb_id, "Working…")
-                try:
-                    from navig.telegram import tiktok_actions as _tt
+                # The card replies to the user's message, so Telegram hands us
+                # that original text right here. Pass it: the handler's other
+                # route is a catalog lookup, which is absent when the operator
+                # has telegram.catalog.enabled off — the buttons must not
+                # depend on an unrelated subsystem being switched on.
+                _src = message.get("reply_to_message") or {}
+                # A card that lives in a business chat carries the connection
+                # id — the tap's sends (video/analyse/transcript/errors) must
+                # go back AS the business account, or Telegram rejects them
+                # the same way it rejected cards before this existed.
+                _bcid = message.get("business_connection_id")
 
-                    # The card replies to the user's message, so Telegram hands us
-                    # that original text right here. Pass it: the handler's other
-                    # route is a catalog lookup, which is absent when the operator
-                    # has telegram.catalog.enabled off — the buttons must not
-                    # depend on an unrelated subsystem being switched on.
-                    _src = message.get("reply_to_message") or {}
-                    # A card that lives in a business chat carries the connection
-                    # id — the tap's sends (video/analyse/transcript/errors) must
-                    # go back AS the business account, or Telegram rejects them
-                    # the same way it rejected cards before this existed.
-                    _bcid = message.get("business_connection_id")
-                    _ch = self.channel
-                    if _bcid:
-                        from navig.telegram.business import BusinessSender
+                async def _run_tiktok_tap() -> None:
+                    try:
+                        from navig.telegram import tiktok_actions as _tt
 
-                        _ch = BusinessSender(self.channel, _bcid)
-                    await _tt.handle_callback(
-                        _ch, cb_data, chat_id, message_id, user_id,
-                        source_text=_src.get("text") or _src.get("caption") or "",
-                    )
-                except Exception as _tk_exc:  # noqa: BLE001
-                    # WARNING with traceback, not debug: this catch swallowed
-                    # the owner's live ⬇️ tap with zero visible trace
-                    # (gateway.log, 2026-10-20) — the failure class this
-                    # whole log block exists to end.
-                    logger.warning("tiktok callback failed: %s", _tk_exc, exc_info=True)
+                        _tk_ch = self.channel
+                        if _bcid:
+                            from navig.telegram.business import BusinessSender
+
+                            _tk_ch = BusinessSender(self.channel, _bcid)
+                        await _tt.handle_callback(
+                            _tk_ch, cb_data, chat_id, message_id, user_id,
+                            source_text=_src.get("text") or _src.get("caption") or "",
+                        )
+                    except Exception as _tk_exc:  # noqa: BLE001
+                        # WARNING with traceback, not debug: this catch swallowed
+                        # the owner's live ⬇️ tap with zero visible trace
+                        # (gateway.log, 2026-10-20) — the failure class this
+                        # whole log block exists to end.
+                        logger.warning("tiktok callback failed: %s", _tk_exc, exc_info=True)
+
+                # Off the update loop. Long polling awaits each update in turn, so
+                # an inline worker (a download runs for tens of seconds) stalled the
+                # whole bot AND queued a second tap until the first had released its
+                # in-flight slot — the duplicate download the slot exists to stop.
+                from navig.core.background import spawn
+
+                spawn(_run_tiktok_tap(), name="tiktok-callback")
                 return
 
             # ── Extensions card (xt:*) — switch bot features on and off ──
@@ -1556,7 +1858,7 @@ class CallbackHandler:
                     from navig.llm.mode_repair import outcome_text, repair_modes
 
                     outcomes = await _aio.to_thread(
-                        repair_modes, cb_data[len("hbfix:"):].split(",")
+                        repair_modes, cb_data[len("hbfix:") :].split(",")
                     )
                     any_ok = any(o.ok for o in outcomes)
                     reply = outcome_text(outcomes)
@@ -1590,7 +1892,7 @@ class CallbackHandler:
 
                     from navig.llm.liveness import probe_modes
 
-                    modes = [m for m in cb_data[len("hbchk:"):].split(",") if m]
+                    modes = [m for m in cb_data[len("hbchk:") :].split(",") if m]
                     results = await _aio.to_thread(probe_modes, modes)
                     reply, all_ok = recheck_text(results)
                 except Exception as _hc_err:  # noqa: BLE001
@@ -1710,6 +2012,131 @@ class CallbackHandler:
                 await self._answer(cb_id, toast)
                 return
 
+            if cb_data.startswith("nt:"):
+                # The DNS and SSL cards re-run their own probe, so a record that
+                # changed five minutes ago is one press from current, in place.
+                toast = ""
+                try:
+                    from navig.telegram import nettools_card as _nt
+
+                    _parsed = _nt.parse_callback(cb_data)
+                    if _parsed is None:
+                        toast = "⚠️ Unknown network action"
+                    else:
+                        _kind, _domain, _port = _parsed
+                        _addr = _domain if _port == 443 else f"{_domain}:{_port}"
+                        if _kind == "dns":
+                            await self.channel._handle_dns(
+                                chat_id, user_id, text=f"/dns {_domain}", message_id=message_id
+                            )
+                            toast = f"Re-read {_domain}"[:64]
+                        else:
+                            await self.channel._handle_ssl(
+                                chat_id, user_id, text=f"/ssl {_addr}", message_id=message_id
+                            )
+                            toast = f"Re-read {_addr}"[:64]
+                except Exception as _nt_err:
+                    logger.warning(
+                        "Network card callback error: chat_id=%s callback=%s err=%s",
+                        chat_id,
+                        cb_data,
+                        _nt_err,
+                    )
+                    toast = "⚠️ Network probe failed"
+                await self._answer(cb_id, toast)
+                return
+
+            if cb_data.startswith("cli:"):
+                # A command card re-runs itself: the answer replaces the card it came
+                # from, so a check the operator repeats does not stack up in the chat.
+                toast = ""
+                try:
+                    from navig.telegram import cli_card as _cli_card
+
+                    _parsed = _cli_card.parse_callback(cb_data)
+                    if _parsed is None:
+                        toast = "⚠️ Unknown command action"
+                    else:
+                        _action, _command = _parsed
+                        if _action in {"run", "explain"}:
+                            await self.channel._handle_cli_command(
+                                chat_id,
+                                user_id,
+                                {"chat_id": chat_id, "user_id": user_id},
+                                _command,
+                                message_id=message_id,
+                                explain=_action == "explain",
+                            )
+                            toast = (
+                                f"Ran navig {_command}" if _action == "run" else "Explained above"
+                            )[:64]
+                        elif _action == "close":
+                            await self.channel._api_call(
+                                "deleteMessage",
+                                {"chat_id": chat_id, "message_id": message_id},
+                            )
+                            toast = "Closed"
+                        else:
+                            toast = "⚠️ Unknown command action"
+                except Exception as _cli_err:
+                    logger.warning(
+                        "CLI card callback error: chat_id=%s callback=%s err=%s",
+                        chat_id,
+                        cb_data,
+                        _cli_err,
+                    )
+                    toast = "⚠️ Command action failed"
+                await self._answer(cb_id, toast)
+                return
+
+            if cb_data.startswith("hm:"):
+                toast = ""
+                try:
+                    from navig.telegram import menu_card
+
+                    toast = await menu_card.handle_callback(
+                        self.channel, cb_data, chat_id, message_id, user_id
+                    )
+                except Exception as _hm_err:
+                    logger.warning(
+                        "Menu callback error: chat_id=%s callback=%s err=%s",
+                        chat_id,
+                        cb_data,
+                        _hm_err,
+                    )
+                    toast = "⚠️ Menu action error"
+                await self._answer(cb_id, toast)
+                return
+
+            if cb_data.startswith("wh:"):
+                # A WHOIS card re-reads its own domain and redraws itself, so a
+                # stale record is one press away from current without a new message.
+                toast = ""
+                try:
+                    from navig.telegram import whois_card as _whois_card
+
+                    _domain = _whois_card.parse_refresh(cb_data)
+                    if not _domain:
+                        toast = "⚠️ Unknown WHOIS action"
+                    else:
+                        await self.channel._handle_whois(
+                            chat_id,
+                            user_id,
+                            text=f"/whois {_domain}",
+                            message_id=message_id,
+                        )
+                        toast = f"Re-read {_domain}"
+                except Exception as _wh_err:
+                    logger.warning(
+                        "WHOIS callback error: chat_id=%s callback=%s err=%s",
+                        chat_id,
+                        cb_data,
+                        _wh_err,
+                    )
+                    toast = "⚠️ WHOIS lookup failed"
+                await self._answer(cb_id, toast)
+                return
+
             if cb_data.startswith("fmt:"):
                 toast = ""
                 try:
@@ -1775,6 +2202,7 @@ class CallbackHandler:
                         from navig.gateway.channels.telegram_messengers_mixin import (
                             TelegramMessengersMixin,
                         )
+
                         handler = functools.partial(
                             TelegramMessengersMixin._handle_messengers_callback, self.channel
                         )
@@ -1792,6 +2220,7 @@ class CallbackHandler:
                             from navig.gateway.channels.telegram_messengers_mixin import (
                                 TelegramMessengersMixin,
                             )
+
                             await TelegramMessengersMixin._handle_messengers(
                                 self.channel, chat_id, user_id, message_id
                             )
@@ -1804,6 +2233,7 @@ class CallbackHandler:
                         from navig.gateway.channels.telegram_messengers_mixin import (
                             TelegramMessengersMixin,
                         )
+
                         handler = functools.partial(
                             TelegramMessengersMixin._handle_messengers_callback, self.channel
                         )
@@ -1912,6 +2342,11 @@ class CallbackHandler:
                 await self._handle_evening_callback(cb_id, cb_data, chat_id, message_id, user_id)
                 return
 
+            # ── Reminder ping buttons (rem:{done|snooze}:{id}) ──
+            if cb_data.startswith("rem:"):
+                await self._handle_reminder_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
+
             # ── Morning briefing action buttons (morn:*) — no store needed ──
             if cb_data.startswith("morn:"):
                 await self._handle_morning_callback(cb_id, cb_data, chat_id, message_id, user_id)
@@ -1923,7 +2358,7 @@ class CallbackHandler:
                     cb_id=cb_id,
                     chat_id=chat_id,
                     user_id=user_id,
-                    followup_key=_FOLLOWUP_STORE_PREFIX + cb_data[len(_FOLLOWUP_CB_PREFIX):],
+                    followup_key=_FOLLOWUP_STORE_PREFIX + cb_data[len(_FOLLOWUP_CB_PREFIX) :],
                 )
                 return
 
@@ -1933,7 +2368,7 @@ class CallbackHandler:
                     cb_id=cb_id,
                     chat_id=chat_id,
                     user_id=user_id,
-                    url_key=_WEBFETCH_STORE_PREFIX + cb_data[len(_WEBFETCH_CB_PREFIX):],
+                    url_key=_WEBFETCH_STORE_PREFIX + cb_data[len(_WEBFETCH_CB_PREFIX) :],
                 )
                 return
 
@@ -1988,7 +2423,9 @@ class CallbackHandler:
                 if code_blocks:
                     code_text = "\n\n".join(block.strip("`").strip() for block in code_blocks)
                     await self._answer(cb_id, "📋 Code extracted")
-                    await self.channel.send_message(chat_id, f"<pre>{html.escape(code_text[:3900])}</pre>", parse_mode="HTML")
+                    await self.channel.send_message(
+                        chat_id, f"<pre>{html.escape(code_text[:3900])}</pre>", parse_mode="HTML"
+                    )
                 else:
                     await self._answer(cb_id, "No code blocks found")
                 return
@@ -2254,6 +2691,7 @@ class CallbackHandler:
                 import functools as _ft
 
                 from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
                 await _ft.partial(TelegramCommandsMixin._handle_space, self.channel)(
                     chat_id=chat_id, user_id=user_id, text=f"/space {target}"
                 )
@@ -2571,16 +3009,12 @@ class CallbackHandler:
                 from navig.agent.model_router import _resolve_provider_api_key
                 from navig.config import get_config_manager as _gcm
 
-                _has_api_key = bool(
-                    _resolve_provider_api_key(prov_id, _gcm().global_config or {})
-                )
+                _has_api_key = bool(_resolve_provider_api_key(prov_id, _gcm().global_config or {}))
             except Exception:
                 pass
             _safe_prov_name = html.escape(prov_name)
             if _has_api_key:
-                _warn_msg = (
-                    f"⚠️ No models found for {_safe_prov_name} — use /models to assign models manually."
-                )
+                _warn_msg = f"⚠️ No models found for {_safe_prov_name} — use /models to assign models manually."
             else:
                 _warn_msg = (
                     f"🔑 <b>API key required for {_safe_prov_name}.</b>\n"
@@ -2703,8 +3137,10 @@ class CallbackHandler:
 
                 _manifest_d = _gp(prov_id_d)
                 _dname = (
-                    getattr(_manifest_d, "display_name", None) or prov_id_d
-                ) if _manifest_d else prov_id_d
+                    (getattr(_manifest_d, "display_name", None) or prov_id_d)
+                    if _manifest_d
+                    else prov_id_d
+                )
                 _demoji = getattr(_manifest_d, "emoji", "") if _manifest_d else ""
             except Exception:
                 _dname = prov_id_d
@@ -2734,7 +3170,9 @@ class CallbackHandler:
                     show_models=False,
                 )
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Picker refresh after deactivation failed for %s: %s", prov_id_d, exc)
+                logger.warning(
+                    "Picker refresh after deactivation failed for %s: %s", prov_id_d, exc
+                )
             return
 
         # Providers that open a full model↔tier picker
@@ -2793,7 +3231,9 @@ class CallbackHandler:
                     except Exception:
                         # Callback already answered; fall back to providers hub silently.
                         try:
-                            await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
+                            await self.channel._handle_providers(
+                                chat_id, user_id, message_id=message_id
+                            )
                         except TypeError:
                             await self.channel._handle_providers(chat_id)
             except Exception as exc:  # noqa: BLE001
@@ -2807,7 +3247,9 @@ class CallbackHandler:
                 except Exception:
                     # Callback already answered; fall back to providers hub silently.
                     try:
-                        await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
+                        await self.channel._handle_providers(
+                            chat_id, user_id, message_id=message_id
+                        )
                     except TypeError:
                         await self.channel._handle_providers(chat_id)
             return
@@ -3688,14 +4130,11 @@ class CallbackHandler:
     ) -> None:
         """Handle /trace action buttons: refresh, providers, model, close."""
         if cb_data == "trace_refresh":
-            await self._answer(cb_id, "🔄 Refreshing...")
-            # Delete the old trace message before sending a fresh one to avoid accumulation
-            await self.channel._api_call(
-                "deleteMessage",
-                {"chat_id": chat_id, "message_id": message_id},
-            )
+            await self._answer(cb_id, "🔄 Refreshing…")
+            # Refresh redraws the message it was pressed on. It used to delete and
+            # re-send, which left a trail of dead traces in a busy chat.
             try:
-                await self.channel._handle_trace(chat_id, user_id)
+                await self.channel._handle_trace(chat_id, user_id, message_id=message_id)
             except Exception as exc:
                 logger.debug("Trace refresh failed: %s", exc)
         elif cb_data == "trace_providers":
@@ -3952,6 +4391,29 @@ class CallbackHandler:
             self, cb_id, cb_data, chat_id, message_id, user_id
         )
 
+    # The evening card's screens are methods on ResponseKeyboardBuilder, but callbacks
+    # reach them through this class by unbound call — so each one needs a stub here.
+    async def _eve_edit_card(self, *args, **kwargs):
+        return await ResponseKeyboardBuilder._eve_edit_card(self, *args, **kwargs)
+
+    async def _eve_show_picker(self, *args, **kwargs):
+        return await ResponseKeyboardBuilder._eve_show_picker(self, *args, **kwargs)
+
+    async def _eve_pick(self, *args, **kwargs):
+        return await ResponseKeyboardBuilder._eve_pick(self, *args, **kwargs)
+
+    async def _eve_ask(self, *args, **kwargs):
+        return await ResponseKeyboardBuilder._eve_ask(self, *args, **kwargs)
+
+    async def _eve_render_evening(self, *args, **kwargs):
+        return await ResponseKeyboardBuilder._eve_render_evening(self, *args, **kwargs)
+
+    def _eve_picks_write(self, *args, **kwargs):
+        return ResponseKeyboardBuilder._eve_picks_write(self, *args, **kwargs)
+
+    def _eve_pick_text(self, *args, **kwargs):
+        return ResponseKeyboardBuilder._eve_pick_text(self, *args, **kwargs)
+
     async def _handle_morning_callback(
         self,
         cb_id: str,
@@ -3964,6 +4426,22 @@ class CallbackHandler:
         await ResponseKeyboardBuilder._handle_morning_callback(
             self, cb_id, cb_data, chat_id, message_id, user_id
         )
+
+    async def _handle_reminder_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Delegate to ResponseKeyboardBuilder._handle_reminder_callback."""
+        await ResponseKeyboardBuilder._handle_reminder_callback(
+            self, cb_id, cb_data, chat_id, message_id, user_id
+        )
+
+    async def _rem_show(self, *args, **kwargs):
+        return await ResponseKeyboardBuilder._rem_show(self, *args, **kwargs)
 
     async def _handle_heard_callback(
         self,
@@ -4275,7 +4753,10 @@ class CallbackHandler:
                         followup_question,
                     )
                     followup_row = [
-                        styled({"text": _FOLLOWUP_BTN_LABEL, "callback_data": followup_cb}, STYLE_PRIMARY)
+                        styled(
+                            {"text": _FOLLOWUP_BTN_LABEL, "callback_data": followup_cb},
+                            STYLE_PRIMARY,
+                        )
                     ]
                     # `keyboard` is a BARE list-of-rows from builder.build() (or None),
                     # which send_message wraps as {"inline_keyboard": keyboard}. Append
@@ -4307,9 +4788,7 @@ class CallbackHandler:
             await self._answer(cb_id, "⏳ Question expired")
             return
 
-        async with self._single_flight(
-            ("ask_followup", chat_id, user_id, followup_key)
-        ) as may_run:
+        async with self._single_flight(("ask_followup", chat_id, user_id, followup_key)) as may_run:
             if not may_run:
                 await self._answer(cb_id, "Already answering that one…")
                 return
@@ -4353,7 +4832,9 @@ class CallbackHandler:
 
         if not response:
             failed = (
-                "❌ Не удалось ответить на этот вопрос." if is_ru else "❌ Couldn't answer the follow-up question."
+                "❌ Не удалось ответить на этот вопрос."
+                if is_ru
+                else "❌ Couldn't answer the follow-up question."
             )
             edit = getattr(self.channel, "edit_message", None)
             if placeholder_id is not None and edit is not None:
@@ -4410,7 +4891,9 @@ class CallbackHandler:
         finalize = getattr(self.channel, "_finalize_streamed_message", None)
         send_response = getattr(self.channel, "_send_response", None)
         if placeholder_id is not None and finalize is not None:
-            if await finalize(chat_id, placeholder_id, response, original_text=original_text, user_id=user_id):
+            if await finalize(
+                chat_id, placeholder_id, response, original_text=original_text, user_id=user_id
+            ):
                 return
             try:
                 await self.channel.delete_message(chat_id, placeholder_id)

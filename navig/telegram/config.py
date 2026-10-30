@@ -127,9 +127,33 @@ def _cfg():
 
 def is_enabled() -> bool:
     try:
-        return bool(_cfg().get(CFG_ENABLED, False))
+        from navig.core.coerce import coerce_bool
+
+        # `navig config set telegram.user.enabled false` stores the STRING "false",
+        # which bool() reads as on - the personal-account client then started anyway.
+        return coerce_bool(_cfg().get(CFG_ENABLED, False), default=False)
     except Exception:  # noqa: BLE001
         return False
+
+
+def require_auth_enabled(raw: object) -> bool:
+    """Is sign-in enforced for this raw config value?  Fail CLOSED.
+
+    `navig config set telegram.require_auth false` stores the string `"false"`,
+    which `coerce_bool` correctly reads as off. But an EMPTY value — a cleared
+    or never-filled key — is also read by `coerce_bool` as `False`, and for this
+    switch that would open the bot and the Mini App to everyone because of a
+    value nobody wrote as "off". Empty and missing therefore mean "unset":
+    sign-in stays on. Only an explicit off (`false` / `0` / `no` / `off`) opens.
+
+    Every reader of `telegram.require_auth` routes through here so the bot, the
+    deck, the CLI display and the OS switch can never disagree (§10).
+    """
+    from navig.core.coerce import coerce_bool
+
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return True
+    return coerce_bool(raw, default=True)
 
 
 def set_enabled(value: bool) -> None:

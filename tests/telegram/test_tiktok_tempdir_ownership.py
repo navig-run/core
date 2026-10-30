@@ -245,3 +245,34 @@ class TestSweep:
             t.tempfile, "gettempdir", lambda: (_ for _ in ()).throw(OSError("nope"))
         )
         t._sweep_stale_tempdirs()  # must not raise
+
+
+class TestSweepSparesKeptFiles:
+    """A detached clip's directory holds a file whose path we printed; a later
+    process's sweep used to delete it once it was six hours old."""
+
+    async def test_a_detached_clip_marks_its_directory(self, monkeypatch, _temp_root):
+        def _boom(*a, **kw):
+            raise OSError("nowhere to move to")
+
+        monkeypatch.setattr("navig.platform.paths.media_dir", _boom)
+        monkeypatch.setattr(t.shutil, "move", _boom)
+        _patch_fetch(monkeypatch)
+        async with t._fetched("u") as clip:
+            clip.keep("videos")
+        assert (Path(clip.workdir) / t._KEEP_MARKER).exists()
+
+    def test_an_old_marked_directory_survives_the_sweep(self, _temp_root):
+        kept = _temp_root / f"{t._TMP_PREFIX}kept"
+        kept.mkdir()
+        (kept / "clip.mp4").write_bytes(b"x")
+        (kept / t._KEEP_MARKER).write_text("clip.mp4", encoding="utf-8")
+        stale = _temp_root / f"{t._TMP_PREFIX}old"
+        stale.mkdir()
+        for d in (kept, stale):
+            os.utime(d, (time.time() - t._SWEEP_AGE_S - 60,) * 2)
+
+        t._sweep_stale_tempdirs()
+
+        assert (kept / "clip.mp4").exists(), "the sweep deleted a file we printed"
+        assert not stale.exists()

@@ -446,6 +446,10 @@ def deploy_status(
     rolled = entry.get("rolled_back", False)
     elapsed = f"{entry.get('elapsed_seconds', 0):.1f}s"
     snap = (entry.get("snapshot") or {}).get("path", "-")
+    if entry.get("dry_run"):
+        # History written before dry runs stopped recording their planned snapshot
+        # still carries a path that was never created.
+        snap = "- (dry run)"
     ref = entry.get("git_ref") or "-"
     err = entry.get("error", "")
 

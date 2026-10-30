@@ -291,8 +291,11 @@ def cheat_reason(old: list[str], new: list[str], *, test_fix: bool) -> str | Non
     if [s.rstrip() for s in old] == [s.rstrip() for s in new]:
         return "the answer changed nothing"
     markers = _CHEAT_MARKERS + (_TEST_CHEAT_MARKERS if test_fix else ())
+    # Ruff honours an upper- or mixed-case suppression comment too: compare case-insensitively
+    # (the markers are lowercase).
+    old_lower, new_lower = old_text.lower(), new_text.lower()
     for marker in markers:
-        if new_text.count(marker) > old_text.count(marker):
+        if new_lower.count(marker) > old_lower.count(marker):
             return f"the answer silenced the check (added `{marker}`) instead of fixing it"
     old_code = sum(1 for s in old if s.strip())
     new_code = sum(1 for s in new if s.strip())
@@ -328,6 +331,10 @@ def ruff_diagnostics(
     if select:
         cmd += ["--extend-select", select]
     run = _run([*cmd, *targets], root, timeout=300)
+    # `--exit-zero` only zeroes the status for lint FINDINGS; a ruff that could not run
+    # (invalid config, crash, timeout) still exits nonzero, usually with no stdout — which
+    # `run.out or "[]"` would read as a clean tree, skipping every fix.
+    _require_ruff_ok(run, "ruff check")
     try:
         data = json.loads(run.out or "[]")
     except json.JSONDecodeError as exc:
@@ -354,7 +361,16 @@ def ruff_autofix(ruff: list[str], root: Path, select: str | None) -> None:
     cmd = [*ruff, "check", "--fix", "--exit-zero", "--quiet"]
     if select:
         cmd += ["--extend-select", select]
-    _run([*cmd, "."], root, timeout=600)
+    _require_ruff_ok(_run([*cmd, "."], root, timeout=600), "ruff --fix")
+
+
+def _require_ruff_ok(run: _Run, what: str) -> None:
+    """Raise unless a ``--exit-zero`` ruff invocation actually ran."""
+    if run.timed_out:
+        raise SweepError(f"{what} timed out")
+    if run.rc != 0:
+        detail = (run.err or run.out).strip()[:300]
+        raise SweepError(f"{what} failed (exit {run.rc}): {detail}")
 
 
 @dataclass
@@ -984,7 +1000,7 @@ class _Sweep:
             system = _TEST_SYSTEM
         else:
             window = pick_window(src, line, max_fn=60, pad=12)
-            check = self._lint_check(rel, diag)
+            check = self._lint_check(rel, diag, window, line)
             offending = src.lines[line - 1].strip() if 0 < line <= len(src.lines) else ""
             prompt = (
                 f"File: {rel}\nError {diag.code} on snippet line {line - window[0]} "
@@ -1015,15 +1031,34 @@ class _Sweep:
             )
         return FixOutcome(diag, "fixed", model, result.attempts, seconds, target_file=rel)
 
-    def _lint_check(self, rel: str, diag: Diagnostic) -> Callable[[], str | None]:
+    def _lint_check(
+        self, rel: str, diag: Diagnostic, window: tuple[int, int], line: int
+    ) -> Callable[[], str | None]:
         ruff, root, select = self._ruff(), self.root, self.opts.lint_select
         before = Counter(d.code for d in ruff_diagnostics(ruff, root, [rel], select))
+        # A per-rule count is not enough: with two same-rule diagnostics in the snippet, the
+        # model can fix the OTHER one and the count still drops. Remember the targeted line so
+        # the check can tell whether that diagnostic itself is gone.
+        src = _Source.read(root / rel)
+        size = len(src.lines) if src is not None else 0
+        target = src.lines[line - 1].strip() if src is not None and 0 < line <= size else None
 
         def check() -> str | None:
             after_list = ruff_diagnostics(ruff, root, [rel], select)
             after = Counter(d.code for d in after_list)
             if after[diag.code] >= before[diag.code]:
                 return f"ruff still reports {diag.code}: {diag.message}"
+            now = _Source.read(root / rel) if target is not None else None
+            if now is not None:
+                end = window[1] + len(now.lines) - size  # the snippet's end after the edit
+                for d in after_list:
+                    if (
+                        d.code == diag.code
+                        and d.message == diag.message
+                        and window[0] < d.line <= min(end, len(now.lines))
+                        and now.lines[d.line - 1].strip() == target
+                    ):
+                        return f"ruff still reports {diag.code} at line {d.line}: {diag.message}"
             added = [
                 d for d in after_list if after[d.code] > before[d.code] and d.code != diag.code
             ]

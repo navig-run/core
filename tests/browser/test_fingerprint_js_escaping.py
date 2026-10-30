@@ -93,6 +93,16 @@ def test_numeric_slots_reject_a_string_payload(field, hostile_value, expected) -
     assert hostile_value not in script
 
 
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", "1e309", float("nan")])
+def test_a_non_finite_canvas_noise_falls_back_to_the_default(value) -> None:
+    """`float()` accepts these, but Python formats them as `nan`/`inf` — undeclared JS
+    identifiers, so the shim threw a ReferenceError on every page."""
+    script = fp.to_init_script(_hostile(canvas_noise=value))
+    assert "const noise = 0.0;" in script
+    for token in ("nan", "inf"):
+        assert f"const noise = {token}" not in script.lower()
+
+
 def test_apostrophe_does_not_break_a_normal_value() -> None:
     """The everyday half of the bug: one `'` used to produce a SyntaxError shim."""
     script = fp.to_init_script(_hostile(platform="Someone's Machine"))

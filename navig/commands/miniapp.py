@@ -286,6 +286,34 @@ def redact_key_in_url(url: str) -> str:
 # ── Mini App button health ────────────────────────────────────────────────────
 
 
+def _deck_deployed_elsewhere() -> str:
+    """The Brain's name when ANOTHER machine deploys this deck, else ``""``.
+
+    A client install does not run ``navig miniapp deploy`` — its Brain does — so the
+    ``deck.bundle_sig`` recorded here is frozen at the moment this machine stopped
+    owning the deck. Comparing that leftover with the live button produced a ✗ telling
+    the operator to run ``navig miniapp register``, which on a client would rewrite the
+    button with a cache-bust no deploy ever produced. The honest answer is that the
+    comparison is not this machine's to make.
+
+    ``""`` when no usable brain link exists: then this install owns its deck and the
+    signature really is authoritative.
+    """
+    try:
+        from navig.brain.link import read_brain_link_state
+
+        state = read_brain_link_state()
+    except Exception:  # noqa: BLE001 — a health check must never crash its caller
+        return ""
+    if not state.is_usable:
+        return ""
+    # The name lives on the parsed link; `declared_brain` is only filled in for a file
+    # that could not be parsed.
+    return str(
+        getattr(getattr(state, "link", None), "brain_name", "") or state.declared_brain or ""
+    ).strip()
+
+
 def miniapp_button_health(*, timeout: float = 6.0) -> tuple[bool, str, bool] | None:
     """Does the bot's Mini App button point at the CURRENT deck bundle?
 
@@ -378,7 +406,16 @@ def miniapp_button_health(*, timeout: float = 6.0) -> tuple[bool, str, bool] | N
         )
 
     have_sig = (parse_qs(parts.query).get("v") or [""])[0].strip()
+    brain = _deck_deployed_elsewhere()
     if not want_sig:
+        if brain:
+            return (
+                False,
+                f"no deck.bundle_sig recorded here — this install is a CLIENT of {brain}, "
+                "which deploys the deck, so the button's cache-bust cannot be checked from "
+                "this machine; run `navig miniapp status` on the Brain",
+                True,
+            )
         return (
             False,
             "no deck.bundle_sig recorded, so the button's cache-bust cannot be "
@@ -393,6 +430,16 @@ def miniapp_button_health(*, timeout: float = 6.0) -> tuple[bool, str, bool] | N
             False,
         )
     if have_sig != want_sig:
+        if brain:
+            return (
+                False,
+                f"button cache-bust v={have_sig} and this machine's recorded bundle "
+                f"signature ({want_sig}) disagree — this install is a CLIENT of {brain}, "
+                "which deploys the deck, so the record here is a leftover from when this "
+                "machine owned it and the button cannot be judged from here; run "
+                "`navig miniapp status` on the Brain",
+                True,
+            )
         return (
             False,
             f"button cache-bust v={have_sig} is stale (deployed bundle is {want_sig}), "

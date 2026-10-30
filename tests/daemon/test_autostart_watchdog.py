@@ -229,3 +229,68 @@ def test_an_unreadable_task_is_unknown_never_healthy(monkeypatch) -> None:
     h = sm.task_scheduler_health()
     assert h["installed"] is None
     assert h["problems"]
+
+
+def test_a_failed_query_is_unknown_not_absent(monkeypatch) -> None:
+    """A non-zero PowerShell exit (access denied, Schedule service down) used to read
+    as "not installed", and status suggested `navig service install` over a task that
+    was merely unreadable. Only ObjectNotFound is absence; the rest is unknown."""
+    import subprocess as _sp
+
+    monkeypatch.setattr(sm.sys, "platform", "win32")
+    monkeypatch.setattr(
+        _sp, "run",
+        lambda *a, **k: _sp.CompletedProcess(a[0] if a else [], 1, "", "Access is denied.\n"),
+    )
+    monkeypatch.setattr(sm, "subprocess", _sp)
+    h = sm.task_scheduler_health()
+    assert h["installed"] is None
+    assert any("Access is denied." in p for p in h["problems"]), h["problems"]
+
+
+def test_only_object_not_found_reads_as_not_installed(monkeypatch) -> None:
+    import subprocess as _sp
+
+    monkeypatch.setattr(sm.sys, "platform", "win32")
+    monkeypatch.setattr(
+        _sp, "run",
+        lambda *a, **k: _sp.CompletedProcess(a[0] if a else [], 0, '{"missing":true}', ""),
+    )
+    monkeypatch.setattr(sm, "subprocess", _sp)
+    h = sm.task_scheduler_health()
+    assert h["installed"] is False
+    assert h["problems"] == ["not installed"]
+
+
+def test_a_deferred_install_arms_no_timer_before_the_next_login() -> None:
+    """`service install --no-start` promises "will start on next login". The
+    TimeTrigger starts at 2020-01-01, so registering it launched the daemon within
+    five minutes anyway. Deferred: no TimeTrigger, and the watchdog repetition rides
+    the LOGON trigger so recovery still arms once that login fires."""
+    ns = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
+    root = ET.fromstring(sm._schtasks_xml(start_now=False))  # noqa: S314 - our own XML
+
+    assert root.findall(".//t:Triggers/t:TimeTrigger", ns) == []
+    logon = root.find(".//t:Triggers/t:LogonTrigger", ns)
+    assert logon is not None
+    assert logon.findtext("t:Repetition/t:Interval", namespaces=ns) == "PT5M"
+
+
+def test_task_scheduler_install_passes_start_now_to_the_xml(monkeypatch, tmp_path) -> None:
+    """The install path, not just the generator: a --no-start install writes the
+    deferred definition."""
+    written: list[str] = []
+    monkeypatch.setenv("NAVIG_ALLOW_TASK_MUTATION", "1")
+    monkeypatch.setattr(sm, "daemon_dir", lambda: tmp_path)
+    monkeypatch.setattr(sm, "_ensure_dirs", lambda: None)
+    monkeypatch.setattr(sm, "_schtasks_restart_xml", lambda: "<Task/>")
+    monkeypatch.setattr(
+        sm.subprocess, "run", lambda cmd, **kw: written.append(cmd) or None
+    )
+
+    ok, _msg = sm.task_scheduler_install(start_now=False)
+
+    assert ok
+    xml = (tmp_path / "navig-task.xml").read_text(encoding="utf-16")
+    assert "<TimeTrigger>" not in xml
+    assert not any("/run" in c for c in written), "a deferred install must not /run the task"

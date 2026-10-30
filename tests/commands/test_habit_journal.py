@@ -128,6 +128,20 @@ class TestAppendEntry:
         assert written is False
         assert path.read_text(encoding="utf-8").count("shipped it") == 1
 
+    def test_a_follow_up_that_is_a_substring_of_earlier_prose_is_still_written(self, tracker):
+        """Retry detection compares whole entries: a per-line substring test silently
+        dropped "release" because "shipped the release" was already in the file."""
+        journal.append_entry(tracker, DAY, "shipped the release")
+        path, written = journal.append_entry(tracker, DAY, "release")
+        assert written is True
+        assert "## Evening check-in (added later)\n\nrelease" in path.read_text(encoding="utf-8")
+
+    def test_lines_scattered_across_earlier_entries_are_not_a_retry(self, tracker):
+        journal.append_entry(tracker, DAY, "walked")
+        journal.append_entry(tracker, DAY, "shipped")
+        _, written = journal.append_entry(tracker, DAY, "walked\nshipped")
+        assert written is True
+
     def test_a_second_different_entry_is_marked_as_added_later(self, tracker):
         journal.append_entry(tracker, DAY, "first pass")
         path, written = journal.append_entry(tracker, DAY, "remembered one more thing")

@@ -184,6 +184,95 @@ def test_the_settings_the_literal_dropped_are_named_in_the_source(name: str) -> 
     assert name in _start_source()
 
 
+def _is_gateway_literal(node: ast.AST | None) -> bool:
+    return isinstance(node, ast.Dict) and any(
+        isinstance(k, ast.Constant) and k.value == "gateway" for k in node.keys
+    )
+
+
+def _gateway_literal_calls(tree: ast.AST) -> list[int]:
+    """Line numbers of ``GatewayConfig(...)`` calls fed a literal gateway dict.
+
+    Catches the dict passed inline, through a simple local name assigned a
+    literal in the same scope (the exact former ``gateway_start`` shape:
+    ``raw_config = {"gateway": ...}; GatewayConfig(raw_config)``), as a keyword
+    argument, and through a qualified constructor (``mod.GatewayConfig(...)``).
+    """
+    hits: list[int] = []
+
+    def scan(scope: ast.AST) -> None:
+        # Walk this scope without descending into nested functions; each of
+        # those is scanned on its own so a name binds only where it is assigned.
+        literal_names: set[str] = set()
+        calls: list[ast.Call] = []
+        stack = list(ast.iter_child_nodes(scope))
+        while stack:
+            node = stack.pop()
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                scan(node)
+                continue
+            if isinstance(node, ast.Assign) and _is_gateway_literal(node.value):
+                literal_names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+            elif (
+                isinstance(node, ast.AnnAssign)
+                and isinstance(node.target, ast.Name)
+                and _is_gateway_literal(node.value)
+            ):
+                literal_names.add(node.target.id)
+            elif isinstance(node, ast.Call):
+                calls.append(node)
+            stack.extend(ast.iter_child_nodes(node))
+        for call in calls:
+            func = call.func
+            name = (
+                func.id
+                if isinstance(func, ast.Name)
+                else func.attr
+                if isinstance(func, ast.Attribute)
+                else None
+            )
+            if name != "GatewayConfig":
+                continue
+            values = [*call.args, *(kw.value for kw in call.keywords)]
+            if any(
+                _is_gateway_literal(v) or (isinstance(v, ast.Name) and v.id in literal_names)
+                for v in values
+            ):
+                hits.append(call.lineno)
+
+    scan(tree)
+    return sorted(hits)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'GatewayConfig({"gateway": {"port": 1}})',
+        'def f():\n    raw_config = {"gateway": {"port": 1}}\n    return GatewayConfig(raw_config)',
+        'GatewayConfig(raw={"gateway": {"port": 1}})',
+        'import m\nm.GatewayConfig({"gateway": {}})',
+        'def f():\n    raw: dict = {"gateway": {}}\n    return mod.GatewayConfig(config=raw)',
+    ],
+    ids=["inline", "local-name", "keyword", "qualified", "annotated-keyword-qualified"],
+)
+def test_the_literal_scanner_catches_every_shape(source: str) -> None:
+    """The scanner must see the shapes the original bug could take, or the
+    repo-wide guard below passes over them."""
+    assert _gateway_literal_calls(ast.parse(source)) != []
+
+
+def test_the_literal_scanner_ignores_real_config_and_other_scopes() -> None:
+    source = (
+        "def a():\n"
+        '    raw = {"gateway": {}}\n'
+        "    return raw\n"
+        "def b(raw):\n"
+        "    return GatewayConfig(raw)\n"
+        "GatewayConfig(get_config_manager().global_config)\n"
+    )
+    assert _gateway_literal_calls(ast.parse(source)) == []
+
+
 def test_no_other_caller_builds_a_gateway_literal() -> None:
     """The same shape elsewhere is the same bug. There are NO exemptions.
 
@@ -214,17 +303,8 @@ def test_no_other_caller_builds_a_gateway_literal() -> None:
             tree = ast.parse(py.read_text(encoding="utf-8"))
         except (SyntaxError, UnicodeDecodeError):
             continue
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            func = node.func
-            if not (isinstance(func, ast.Name) and func.id == "GatewayConfig"):
-                continue
-            for arg in node.args:
-                if isinstance(arg, ast.Dict) and any(
-                    isinstance(k, ast.Constant) and k.value == "gateway" for k in arg.keys
-                ):
-                    offenders.append(f"{py.relative_to(root)}:{node.lineno}")
+        for lineno in _gateway_literal_calls(tree):
+            offenders.append(f"{py.relative_to(root)}:{lineno}")
 
     assert scanned > 400, (
         f"only {scanned} files scanned under {root} — the walk found almost "

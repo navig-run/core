@@ -68,3 +68,54 @@ def test_slash_entries_are_not_prefixed_with_navig():
     text = _action_message("status", {"cmd": "/status", "type": "slash"})
     assert "/status" in text
     assert "navig /status" not in text
+
+
+async def test_an_act_button_renders_its_entry_not_the_stub(monkeypatch):
+    """Buttons send ``act:<id>`` while ACTION_COMMANDS is keyed by the bare id; the
+    handler must strip the prefix, and must not hand the payload to the bridge's
+    ``correlation:value`` routing (review F1067)."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+
+    import navig.integrations.telegram_bridge as bridge_mod
+    from navig.integrations.telegram_voice_bot import TelegramVoiceBot, VoiceBotConfig
+
+    bridge = MagicMock()
+    monkeypatch.setattr(bridge_mod, "_bridge_instance", bridge)
+    bot = TelegramVoiceBot(config=VoiceBotConfig(allowed_chat_ids={-123}))
+    query = SimpleNamespace(data="act:status", answer=AsyncMock(), edit_message_text=AsyncMock())
+
+    await bot._handle_callback(SimpleNamespace(callback_query=query), None)
+
+    bridge.resolve_callback.assert_not_called()
+    text = query.edit_message_text.await_args.args[0]
+    assert text == _action_message("status", ACTION_COMMANDS["status"])
+    assert "Action:" not in text
+
+
+def test_placeholders_are_escaped_for_html_parse_mode():
+    """Review F1069: `<hostname>` sent with parse_mode="HTML" is an unsupported tag."""
+    text = _action_message("host_use", ACTION_COMMANDS["host_use"])
+    assert "&lt;hostname&gt;" in text
+    assert "<hostname>" not in text
+    assert _action_message("x<y", {}) == "⚙️ Action: <code>x&lt;y</code>"
+
+
+async def test_the_unresolved_fallback_escapes_the_callback_data(monkeypatch):
+    """Review F1071: the fallback interpolated raw callback data into HTML."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    import navig.bot.start_menu as start_menu
+    import navig.integrations.telegram_bridge as bridge_mod
+    from navig.integrations.telegram_voice_bot import TelegramVoiceBot, VoiceBotConfig
+
+    monkeypatch.setattr(bridge_mod, "_bridge_instance", None)
+    monkeypatch.setattr(start_menu, "get_action_info", lambda _id: None)
+    bot = TelegramVoiceBot(config=VoiceBotConfig(allowed_chat_ids={-123}))
+    query = SimpleNamespace(data="act:x<y&z", answer=AsyncMock(), edit_message_text=AsyncMock())
+
+    await bot._handle_callback(SimpleNamespace(callback_query=query), None)
+
+    text = query.edit_message_text.await_args.args[0]
+    assert text == "⚙️ Action: <code>act:x&lt;y&amp;z</code>"

@@ -182,14 +182,15 @@ async def test_the_watermark_only_advances_on_a_delivered_card(env):
     _seed(555, 1)
     ch = _ch()
     await b.handle_deleted_business_messages(ch, _payload(555, [1]))
+    armed = env.d.get(d.CFG_WATERMARK)                    # the window start arming seeded
 
     ch._api_call = AsyncMock(return_value=None)          # Telegram rejected it
     assert (await d.flush_digest(ch))["sent"] is False
-    assert d.CFG_WATERMARK not in env.d                   # nothing consumed
+    assert env.d.get(d.CFG_WATERMARK) == armed            # nothing consumed
 
     ch._api_call = AsyncMock(return_value={"message_id": 9})
     assert (await d.flush_digest(ch))["sent"] is True
-    assert env.d[d.CFG_WATERMARK]                         # now it moves
+    assert env.d[d.CFG_WATERMARK] > armed                 # now it moves
 
 
 async def test_quiet_hours_hold_the_window_instead_of_eating_it(env, monkeypatch):
@@ -197,10 +198,11 @@ async def test_quiet_hours_hold_the_window_instead_of_eating_it(env, monkeypatch
     _seed(555, 1)
     ch = _ch()
     await b.handle_deleted_business_messages(ch, _payload(555, [1]))
+    armed = env.d.get(d.CFG_WATERMARK)
     monkeypatch.setattr(d, "should_notify", lambda: (False, "quiet hours"))
     res = await d.flush_digest(ch)
     assert res["sent"] is False and res["reason"] == "quiet hours"
-    assert d.CFG_WATERMARK not in env.d     # reported once quiet hours lift, not lost
+    assert env.d.get(d.CFG_WATERMARK) == armed   # reported once quiet hours lift, not lost
     # …and the operator can still ask for it directly.
     assert (await d.flush_digest(ch, force=True))["sent"] is True
 
@@ -430,6 +432,22 @@ def test_the_alerts_cli_drives_the_mode(env):
     assert res.exit_code == 0 and d.mode() == "digest"
 
 
+def test_an_unrecognised_alerts_state_is_rejected_not_turned_on(env):
+    """`alerts of` (a typo) fell to coerce_bool's default=True and re-enabled alerts."""
+    import typer
+    from typer.testing import CliRunner
+
+    from navig.commands._telegram_mtproto import register
+
+    app = typer.Typer()
+    register(app)
+    business = next(g.typer_instance for g in app.registered_groups if g.name == "business")
+    d.set_mode("off")
+    res = CliRunner().invoke(business, ["alerts", "of"])
+    assert res.exit_code == 2, res.output
+    assert d.mode() == "off"
+
+
 # ── clearing what Show revealed ───────────────────────────────────────────────
 #
 # Asked 2026-09-27, under a Show that re-posted two deleted videos: "I want to be
@@ -565,6 +583,35 @@ async def test_a_clear_says_so_when_telegram_keeps_some(env, reveals):
     assert toast.startswith("Cleared 2 of 3"), toast
 
 
+async def test_a_failed_clear_stays_retryable(env, reveals):
+    """A delete that failed (a timeout, a rate limit) must not be forgotten: the
+    entry keeps exactly the failed id, the button stays, and a second tap retries."""
+    ch = _Numbered()
+    _, _, ids = await _show_two_videos(env, ch)
+    *revealed, control_id = ids
+    clr = ch.sent("sendMessage")[-1][1]["reply_markup"]["inline_keyboard"][0][0][
+        "callback_data"
+    ]
+    ch.refuse = {revealed[-1]}
+
+    toast = await d.handle_callback(ch, clr, "777", control_id, 777)
+
+    assert toast.startswith("Cleared 2 of 3"), toast
+    deleted = [p["message_id"] for m, p in ch.calls if m == "deleteMessage"]
+    assert control_id not in deleted, "the button stays while anything is left"
+    entry = d._read_reveals()[f"777:{clr.rsplit(':', 1)[1]}"]
+    assert entry["ids"] == [revealed[-1]], entry
+
+    ch.refuse = set()
+    before = len(ch.calls)
+    toast = await d.handle_callback(ch, clr, "777", control_id, 777)
+
+    retried = [p["message_id"] for m, p in ch.calls[before:] if m == "deleteMessage"]
+    assert retried == [revealed[-1], control_id], retried
+    assert toast == "Cleared 1"
+    assert not d._read_reveals(), "settled once everything is gone"
+
+
 async def test_a_clear_key_from_another_chat_removes_nothing(env, reveals):
     """The key is only a message id, and ids repeat across chats."""
     d._remember_reveal("777", "101", [101, 102])
@@ -622,13 +669,16 @@ async def test_delete_removes_this_card_and_changes_nothing_else(env):
     assert d.mode() == "digest", "deleting a card must not switch alerts off"
 
 
-async def test_a_card_too_old_to_delete_says_so(env):
+async def test_a_refused_delete_does_not_claim_the_card_is_too_old(env):
+    """`_api_call` answers None for a timeout or a rate limit exactly as for the
+    48-hour limit, so the toast offers a retry instead of a permanent verdict."""
     ch = _ch()
-    ch._api_call = AsyncMock(return_value=None)  # Telegram refuses past 48 h
+    ch._api_call = AsyncMock(return_value=None)  # a fresh card, a transient refusal
     toast = await d.handle_callback(
         ch, "bizdel:del", chat_id=777, message_id=42, user_id=777
     )
-    assert "48" in toast, toast
+    assert "try again" in toast, toast
+    assert "older than 48 h" not in toast.split("(")[0], "the cause is not known"
 
 
 # ── NAVIG's own deletions stay out of the record ──────────────────────────────
@@ -643,7 +693,7 @@ async def test_a_deletion_navig_made_itself_is_not_recorded_or_reported(
     env.d[d.CFG_MODE] = "digest"
     _seed(555, 1, text="tyler")
     _seed(555, 2, text="a real message")
-    d.note_own_deletion("bc1", [1])
+    d.note_own_deletion("bc1", [1], chat_id=555)
 
     ch = _ch()
     await b.handle_deleted_business_messages(ch, _payload(555, [1, 2]))

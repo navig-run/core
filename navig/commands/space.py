@@ -732,15 +732,17 @@ def _diagnose_space(space_path: Path, name: str) -> dict:
     try:
         from navig.spaces.resolver import discover_space_paths  # noqa: PLC0415
 
-        known = discover_space_paths(include_disabled=True).values()
-        registered = any(
-            c.path == space_path or c.path.resolve() == space_path.resolve() for c in known
-        )
+        discover_space_paths(include_disabled=True)
         # Registration is best-effort (a space still works locally unindexed) → a soft warning,
         # never a hard "missing" that would fail the exit code.
         from navig.spaces import registry as _registry  # noqa: PLC0415
 
-        other = None if registered else _registry.id_taken_by_another_path(name, space_path)
+        # Read the REGISTRY, not discovery's answer: discovery lists the cwd project even
+        # when its id is held by another folder and no row was written for it, which
+        # rendered a green "registered" over a folder with no row. And the collision is
+        # checked whether or not the folder is registered.
+        registered = _registry.entry_for(space_path) is not None
+        other = _registry.id_taken_by_another_path(name, space_path)
         if other:
             # `--fix` will NOT register this: a second entry under the same id makes every
             # `space use <id>` answer whichever came first. Say who holds it.
@@ -1216,10 +1218,12 @@ def space_create(
     # Resolve the TARGET first, because the name is derived from it when omitted.
     # A name with no --path keeps the historical destination (~/.navig/spaces/<name>);
     # everything else follows the folder.
-    inferred_target = path is None and not name
+    inferred_target = path is None and name is None
     if path is not None:
         space_path = resolve_user_path(path)
-    elif name:
+    elif name is not None:
+        # `is not None`: an explicit "" (an unset `$SPACE_NAME`) is a bad name, not an
+        # omitted one — treating it as omitted scaffolded the invocation directory.
         space_path = _spaces_dir() / _validate_slug(name)
     else:
         space_path = invocation_cwd().resolve()
@@ -1233,7 +1237,7 @@ def space_create(
         )
         raise typer.Exit(1)
 
-    if name:
+    if name is not None:
         name = _validate_slug(name)
     else:
         name = _slug_from_folder(space_path)
@@ -2124,15 +2128,15 @@ def _doctor_interactive_loop(space_path: Path, name: str) -> None:
             ch.success("Wired for all AI assistants.")
         elif action == "retire":
             from navig.spaces.gitignore import (  # noqa: PLC0415
-                blanket_navig_rule_lines,
                 retire_blanket_navig_rules,
+                retirement_plan,
             )
 
             gi_path = space_path / ".gitignore"
             text = gi_path.read_text(encoding="utf-8")
             lines = text.splitlines()
             cons.print("\n[bright_cyan]This would remove from .gitignore:[/]")
-            for n in blanket_navig_rule_lines(text):
+            for n in retirement_plan(text):  # the same plan the write executes
                 cons.print(f"  [dim]{n:>3}[/]  [red]- {lines[n - 1]}[/]")
             cons.print("  [dim]The managed block keeps .navig/{inbox,state,vault,memory,refs,…} "
                        "ignored; plans, skills and wiki become committable.[/]")
@@ -2404,7 +2408,8 @@ def _apply_fix(space_path: Path, name: str) -> int:
         # never create a duplicate id from a repair either; doctor's own row will say why
         if not _registry.id_taken_by_another_path(name, space_path):
             _registry.ensure_registered(
-                space_path, id=name, name=name, source=_registry.source_for(space_path)
+                space_path, id=name, name=name, source=_registry.source_for(space_path),
+                fix_source=True,
             )
     except Exception:  # noqa: BLE001
         pass
@@ -2665,13 +2670,17 @@ def space_register(
     # doctor refuse. `source` was also hardcoded "external" — a folder under
     # ~/.navig/spaces registered by hand was filed as foreign.
     _refuse_if_id_taken(sid, target, hint="rename")
-    entry = space_registry.register(
-        target,
-        id=sid,
-        name=manifest.resolved_name or target.name,
-        source=space_registry.source_for(target),
-        enabled=True,
-    )
+    try:
+        entry = space_registry.register(
+            target,
+            id=sid,
+            name=manifest.resolved_name or target.name,
+            source=space_registry.source_for(target),
+            enabled=True,
+        )
+    except space_registry.RegistryUnavailable as exc:
+        ch.error(f"Could not register {target}", details=f"{exc} (navig space register {target})")
+        raise typer.Exit(1) from exc
     ch.success(f"Registered space '{entry['id']}' (enabled).", details=str(target))
 
 
@@ -2887,17 +2896,30 @@ def space_rename(
     can_move = is_root_space and target.name != new
     if old == new:
         if move_folder and can_move:
+            # A retry after a first `--move-folder` failed: the manifest already says
+            # `new`, but the registry row and the active pointer may still say the old
+            # id — reconcile them here too, not only on the full rename path.
+            was_active = _space_is_active(target, old)
             moved, note = _move_space_folder(target, new)
             if moved is None:
                 ch.error(f"The id is already '{new}', but the folder stayed: {note}")
                 raise typer.Exit(1)
-            if space_registry.entry_for(target) is not None and not space_registry.repath(
-                target, moved
-            ):
-                ch.warning(
-                    f"The folder moved to {moved} but its registry row still names {target}.",
-                    details=f"Run `navig space doctor {moved}` to re-register it.",
-                )
+            row_path = target
+            if space_registry.entry_for(target) is not None:
+                if space_registry.repath(target, moved):
+                    row_path = moved
+                else:
+                    ch.warning(
+                        f"The folder moved to {moved} but its registry row still names {target}.",
+                        details=f"Run `navig space doctor {moved}` to re-register it.",
+                    )
+            try:
+                space_registry.rename(row_path, new)
+            except ValueError as exc:  # a holder appeared — the next discovery re-derives
+                ch.warning(f"Registry row NOT re-keyed: {exc}",
+                           details=f"Run `navig space doctor {moved}`.")
+            if was_active:
+                _set_active_space(new)
             ch.success(f"Folder renamed to match the id '{new}'.", details=str(moved))
             return
         ch.info(f"'{old}' is already the id of {target} — nothing to do.")
@@ -2964,6 +2986,7 @@ def space_rename(
     if follow_md:
         _retarget_navig_md_space(target, old, new)
 
+    row_path = target  # the path the source row is keyed on when the registry is re-keyed
     if move_folder and can_move:
         moved, note = _move_space_folder(target, new)
         if moved is None:
@@ -2974,15 +2997,20 @@ def space_rename(
                         f"'{old}' still resolves here.",
             )
             raise typer.Exit(1)
-        if registered and not space_registry.repath(target, moved):
+        repathed = registered and space_registry.repath(target, moved)
+        if registered and not repathed:
             ch.warning(
                 f"The folder moved to {moved} but its registry row still names {target}.",
                 details=f"Run `navig space doctor {moved}` to re-register it.",
             )
+        elif repathed:
+            # Re-key the SOURCE row: when repath refused, `moved` may hold a stale row
+            # of another space, and renaming by that path would re-key the occupant.
+            row_path = moved
         target = moved
 
     try:
-        space_registry.rename(target, new)
+        space_registry.rename(row_path, new)
     except ValueError as exc:  # a holder appeared between the check and the write
         ch.error(
             f"Manifest renamed, registry NOT: {exc}",
@@ -3059,9 +3087,31 @@ def space_fold(
         ch.error(f"Could not write the fold marker: {exc}", details=str(marker))
         raise typer.Exit(1) from exc
 
+    # A folded sub-space is usable only when entered directly, so the global active
+    # bindings must stop naming it — asked BEFORE forget(), which drops the row
+    # `_space_is_active` reads.
+    was_active = _space_is_active(target, _resolve_space_name(target))
     released = space_registry.forget(str(target), remember=False)
     detail = "released its registry entry" if released else "was not registered"
     ch.success(f"Folded '{target.name}' ({detail}).", details=str(target))
+    if was_active:
+        _set_active_space("default")
+        ch.info("Active space reset to 'default'.")
+    _clear_active_working_dir_inside(target)
+
+
+def _clear_active_working_dir_inside(target: Path) -> None:
+    """Drop the persisted active working dir when it is *target* or lies inside it."""
+    from navig.spaces.active import _active_space_dir_file  # noqa: PLC0415
+
+    f = _active_space_dir_file()
+    try:
+        bound = Path(f.read_text(encoding="utf-8").strip()).resolve()
+        root = target.resolve()
+    except OSError:
+        return
+    if bound == root or root in bound.parents:
+        f.unlink(missing_ok=True)
 
 
 @space_app.command("unfold")

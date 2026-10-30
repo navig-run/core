@@ -164,6 +164,15 @@ def load_registry_for_update() -> dict[str, Any]:
     return _normalize(load_json_for_update(_registry_file(), default=dict(_DEFAULT_REGISTRY)))
 
 
+class RegistryUnavailable(RuntimeError):
+    """``spaces.json`` could not be read for an update, so nothing was written.
+
+    Raised by :func:`register` instead of handing back an entry that exists nowhere —
+    a caller that reports success on it tells the user a space is registered when it
+    is not. The read failure is transient (a lock); retrying later is the remedy.
+    """
+
+
 def _load_for_mutation() -> dict[str, Any] | None:
     """The registry to mutate, or ``None`` when it is transiently unreadable — in which
     case the caller MUST skip its save. Silently wiping every space (and the user's
@@ -196,6 +205,20 @@ def entry_for(path: str | Path) -> dict[str, Any] | None:
     return next((e for e in load_registry()["spaces"] if _norm(e.get("path", "")) == rp), None)
 
 
+def _same_id(held: Any, space_id: str) -> bool:
+    """True when *held* and *space_id* name the same space once canonicalised.
+
+    ``project-space`` and ``project`` are one id: discovery files both under
+    ``normalize_space_name``'s answer, so an exact-string check let a second folder
+    claim an alias and made the canonical lookup ambiguous again.
+    """
+    if not held or not space_id:
+        return held == space_id
+    from navig.spaces.contracts import normalize_space_name  # noqa: PLC0415
+
+    return held == space_id or normalize_space_name(str(held)) == normalize_space_name(space_id)
+
+
 def id_taken_by_another_path(space_id: str, path: str | Path) -> str | None:
     """The path already registered under *space_id*, if it is not *path* — else None.
 
@@ -208,7 +231,7 @@ def id_taken_by_another_path(space_id: str, path: str | Path) -> str | None:
     reg = load_registry()
     rp = _norm(path)
     for e in reg.get("spaces", []):
-        if e.get("id") == space_id and _norm(e.get("path", "")) != rp:
+        if _same_id(e.get("id"), space_id) and _norm(e.get("path", "")) != rp:
             return str(e.get("path", ""))
     return None
 
@@ -240,7 +263,8 @@ def _unforget(reg: dict[str, Any], rp: str) -> bool:
 
 def _id_held_elsewhere(reg: dict[str, Any], space_id: str, rp: str) -> bool:
     return any(
-        e.get("id") == space_id and _norm(e.get("path", "")) != rp for e in reg["spaces"]
+        _same_id(e.get("id"), space_id) and _norm(e.get("path", "")) != rp
+        for e in reg["spaces"]
     )
 
 
@@ -290,7 +314,7 @@ def _claim_id(reg: dict[str, Any], rp: str, space_id: str, name: str | None = No
     """
     holder = next(
         (e for e in reg["spaces"]
-         if e.get("id") == space_id and _norm(e.get("path", "")) != rp),
+         if _same_id(e.get("id"), space_id) and _norm(e.get("path", "")) != rp),
         None,
     )
     if holder is None:
@@ -382,6 +406,9 @@ def register(
     entry points still consult ``id_taken_by_another_path`` first to fail early with
     the other path named — this layer guarantees the invariant even when a caller
     forgets. An explicit register also lifts a previous ``forget``.
+
+    Raises :class:`RegistryUnavailable` when the registry cannot be read for the
+    update — nothing is persisted then, and callers must not report success.
     """
     rp = _norm(path)
     entry = {
@@ -394,7 +421,12 @@ def register(
     }
     reg = _load_for_mutation()
     if reg is None:
-        return entry  # registry locked — not persisted now; usable in-memory, next write persists
+        # Nothing is written and no later write would persist this entry, so handing it
+        # back let `space register` and the deck route report a registration that never
+        # happened. Fail loudly; the lock is transient, a retry succeeds.
+        raise RegistryUnavailable(
+            f"spaces registry is temporarily unreadable — {rp} was not registered; retry"
+        )
     _unforget(reg, rp)
     existing = next((e for e in reg["spaces"] if _norm(e.get("path", "")) == rp), None)
     if existing is not None:
@@ -419,7 +451,8 @@ def register(
 
 
 def _ensure_in(
-    reg: dict[str, Any], rp: str, id: str | None, name: str | None, source: str, auto: bool
+    reg: dict[str, Any], rp: str, id: str | None, name: str | None, source: str, auto: bool,
+    fix_source: bool = False,
 ) -> bool:
     """Apply ``ensure_registered`` to *reg* in memory; True when it changed anything."""
     if auto and rp in forgotten_paths(reg):
@@ -433,6 +466,9 @@ def _ensure_in(
             existing["id"] = id
             if name:
                 existing["name"] = name
+            changed = True
+        if fix_source and not auto and existing.get("source") != source:
+            existing["source"] = source
             changed = True
         return changed
     want = id or Path(rp).name
@@ -457,6 +493,7 @@ def ensure_registered(
     name: str | None = None,
     source: str = "root",
     auto: bool = False,
+    fix_source: bool = False,
 ) -> None:
     """Register *path*, and correct a drifted id. Writes only when something changed.
 
@@ -472,17 +509,21 @@ def ensure_registered(
 
     *auto* marks a call from discovery: it never brings back a forgotten path. Explicit
     callers (switch, doctor --fix, repath) lift the tombstone, as ``register`` does.
+
+    *fix_source* also corrects the ``source`` column of an existing row — for a caller
+    that computed it with ``source_for`` (doctor --fix), so a row an older build filed
+    as ``"root"`` is repaired rather than kept forever.
     """
     rp = _norm(path)
     # Cheap unlocked dry run first: discovery calls this once per space per scan, and
     # almost every call is a no-op that must not take the cross-process lock.
-    if not _ensure_in(load_registry(), rp, id, name, source, auto):
+    if not _ensure_in(load_registry(), rp, id, name, source, auto, fix_source):
         return
     with _registry_lock():
         reg = _load_for_mutation()
         if reg is None:
             return  # registry locked — skip; a corrupt/locked read must not wipe it
-        if _ensure_in(reg, rp, id, name, source, auto):
+        if _ensure_in(reg, rp, id, name, source, auto, fix_source):
             save_registry(reg)
 
 
@@ -519,6 +560,8 @@ def forget(id_or_path: str, *, remember: bool = True) -> bool:
     if not dropped:
         return False
     reg["spaces"] = [e for e in reg["spaces"] if not any(e is d for d in dropped)]
+    if _norm(reg.get("active") or "") in {_norm(e.get("path", "")) for e in dropped}:
+        reg["active"] = None  # never leave the active pointer on a row that is gone
     if remember:
         tomb = reg.get(_FORGOTTEN) if isinstance(reg.get(_FORGOTTEN), list) else []
         known = {_norm(p) for p in tomb if isinstance(p, str)}

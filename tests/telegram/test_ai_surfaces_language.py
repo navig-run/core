@@ -80,6 +80,18 @@ class TestTranslateTarget:
         assert "French" in seen["system"]
         assert "Russian" not in seen["system"]
 
+    async def test_a_named_target_is_never_swapped_for_english(self, monkeypatch):
+        """`translate French` on French text must not come back in English — the
+        user named the target; the reciprocal fallback is the default's alone."""
+        from navig.telegram import ai_actions
+
+        seen = _capture_prompt(monkeypatch)
+
+        await ai_actions.run_text_action("translate", "bonjour", is_owner=True, arg="French")
+
+        assert "French" in seen["system"]
+        assert "into English" not in seen["system"], seen["system"]
+
     async def test_unconfigured_keeps_the_original_english_default(self, monkeypatch):
         """No preference set ⇒ behaviour is exactly what it was before."""
         from navig.telegram import ai_actions

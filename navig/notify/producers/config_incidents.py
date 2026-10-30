@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from pathlib import Path
 from typing import Any
 
 from navig.notify.delivery import all_channels_failed
@@ -45,6 +47,37 @@ _PRIORITY = "high"
 # navig.notify.types.NOTIFICATION_TYPES, or the router resolves zero channels for it and
 # the push is silently dropped (test_config_incident_reporter guards this).
 NOTIFY_TYPE = "config_incident"
+
+# Incidents are often recorded where no reporter runs: the daemon ENTRY process records
+# an ungraceful death (`is_running()` reaping a stale pid file) before the gateway child
+# exists, and the CLI records with no loop at all. Those only reach the JSONL log, so the
+# reporter replays what it missed when it is installed — bounded to this window, so a
+# first install never pushes a month of history.
+_REPLAY_WINDOW_S = 3600.0
+_REPLAY_LIMIT = 20
+
+
+def _cursor_path() -> Path:
+    """Where the newest incident timestamp already pushed (or replayed) is persisted."""
+    from navig.core import incidents
+
+    return incidents._log_path().with_name(f"{incidents.LOG_NAME}.notified")
+
+
+def _read_cursor() -> float | None:
+    try:
+        return float(_cursor_path().read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _write_cursor(ts: float) -> None:
+    try:
+        path = _cursor_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(repr(float(ts)), encoding="utf-8")
+    except OSError:
+        logger.debug("config-incident cursor write failed", exc_info=True)
 
 
 class ConfigIncidentReporter:
@@ -72,6 +105,37 @@ class ConfigIncidentReporter:
             self._loop.call_soon_threadsafe(lambda: spawn(self._deliver(event, title, body)))
         except Exception:  # noqa: BLE001 — a push must never break record()
             pass
+
+    def on_recorded(self, event: str, data: dict) -> None:
+        """The live hook: push, and mark everything recorded so far as handled, so the
+        next install's replay does not push it a second time. Never raises."""
+        self.on_incident(event, data)
+        _write_cursor(time.time())
+
+    def replay_missed(self) -> int:
+        """Push incidents logged since the persisted cursor (at most one window back)
+        while no reporter was listening. Returns how many were handed on. Never raises."""
+        try:
+            from navig.core import incidents
+
+            now = time.time()
+            floor = now - _REPLAY_WINDOW_S
+            cursor = _read_cursor()
+            since = floor if cursor is None else max(cursor, floor)
+            entries = incidents.recent(limit=_REPLAY_LIMIT, max_age_days=None)
+            missed = [e for e in entries if float(e.get("ts") or 0) > since]
+            for entry in reversed(missed):  # oldest first
+                event = entry.get("event")
+                if not isinstance(event, str) or not event:
+                    continue
+                data = entry.get("data")
+                self.on_incident(event, data if isinstance(data, dict) else {})
+            newest = max([since, *(float(e.get("ts") or 0) for e in entries)])
+            _write_cursor(newest)
+            return len(missed)
+        except Exception:  # noqa: BLE001 — a replay must never break the gateway boot
+            logger.debug("config-incident replay failed", exc_info=True)
+            return 0
 
     async def _deliver(self, event: str, title: str, body: str) -> None:
         """Send, then reconcile the throttle reservation with what actually happened.
@@ -125,7 +189,8 @@ def install_config_incident_reporter() -> ConfigIncidentReporter:
 
     loop = asyncio.get_running_loop()
     _reporter = ConfigIncidentReporter(loop)
-    incidents.set_notify_hook(_reporter.on_incident)
+    incidents.set_notify_hook(_reporter.on_recorded)
+    _reporter.replay_missed()
     return _reporter
 
 

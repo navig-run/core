@@ -35,6 +35,12 @@ def _make_remote_ops(stdout: str = "2.4.16", returncode: int = 0):
 
 
 class TestCheckLocal:
+    @pytest.fixture(autouse=True)
+    def _no_git_fetch(self):
+        # check_local fetches upstream on a git checkout; keep these tests off the network.
+        with patch("navig.commands.update._git_commits_behind", return_value=None):
+            yield
+
     def test_returns_version_info(self):
         checker = VersionChecker(_make_source("2.5.0"))
         with patch("navig.update.checker.VersionChecker._latest_cached", return_value="2.5.0"):
@@ -64,6 +70,14 @@ class TestCheckLocal:
         with patch("navig.commands.update._is_navig_git_checkout", return_value=True):
             vi = VersionChecker(_make_source("2.5.0")).check_local()
         assert vi.install_type == "git"
+
+    def test_git_checkout_reports_commits_behind_upstream(self):
+        with (
+            patch("navig.commands.update._is_navig_git_checkout", return_value=True),
+            patch("navig.commands.update._git_commits_behind", return_value=3),
+        ):
+            vi = VersionChecker(_make_source("2.5.0")).check_local()
+        assert vi.commits_behind == 3
 
     def test_install_type_is_pip_for_a_wheel(self):
         with patch("navig.commands.update._is_navig_git_checkout", return_value=False):
@@ -142,6 +156,24 @@ class TestVersionInfo:
         from navig.update.models import VersionInfo
 
         vi = VersionInfo(node_id="x", current="2.5.0", latest="2.5.0")
+        assert not vi.needs_update
+
+    def test_git_checkout_behind_upstream_needs_update_at_same_version(self):
+        # An editable checkout at the released version with newer upstream commits must be
+        # planned for the git pull, not reported "already up-to-date" (review F0447).
+        from navig.update.models import VersionInfo
+
+        vi = VersionInfo(
+            node_id="x", current="2.5.0", latest="2.5.0", install_type="git", commits_behind=2
+        )
+        assert vi.needs_update
+
+    def test_git_checkout_level_with_upstream_is_up_to_date(self):
+        from navig.update.models import VersionInfo
+
+        vi = VersionInfo(
+            node_id="x", current="2.5.0", latest="2.5.0", install_type="git", commits_behind=0
+        )
         assert not vi.needs_update
 
     def test_needs_update_false_with_error(self):

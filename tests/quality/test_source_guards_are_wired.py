@@ -26,6 +26,8 @@ import ast
 import re
 from pathlib import Path
 
+import pytest
+
 CORE_TESTS = Path(__file__).resolve().parents[1]
 REPO = CORE_TESTS.parents[1]
 CI_RUNNER = REPO / "scripts" / "ci-local.mjs"
@@ -433,8 +435,17 @@ def _path_chains(tree: ast.Module) -> list[tuple[ast.AST, list[str]]]:
             continue
         if id(node) in inner:               # an intermediate directory, not the subject
             continue
-        parts: list[str] = []
         cur: ast.AST = node
+        # A computed leaf -- ``.../"resources"/"personas"/name.lower()`` -- still names a
+        # constant directory; skip the dynamic tail and judge the prefix, or the whole
+        # chain is dropped and the guard over that asset dir goes unseen.
+        while (
+            isinstance(cur, ast.BinOp)
+            and isinstance(cur.op, ast.Div)
+            and not (isinstance(cur.right, ast.Constant) and isinstance(cur.right.value, str))
+        ):
+            cur = cur.left
+        parts: list[str] = []
         while (
             isinstance(cur, ast.BinOp)
             and isinstance(cur.op, ast.Div)
@@ -444,9 +455,32 @@ def _path_chains(tree: ast.Module) -> list[tuple[ast.AST, list[str]]]:
             parts.append(cur.right.value)
             cur = cur.left
         parts.reverse()
+        if parts and _ASSET_SUBJECT_ROOT not in parts and _is_navig_package_dir(cur):
+            parts.insert(0, _ASSET_SUBJECT_ROOT)
         if _ASSET_SUBJECT_ROOT in parts:
             chains.append((cur, parts[parts.index(_ASSET_SUBJECT_ROOT):]))
     return chains
+
+
+def _is_navig_package_dir(node: ast.AST) -> bool:
+    """``Path(navig.__file__).parent`` (or ``__import__("navig").__file__``): the package
+    directory itself, i.e. an implicit leading ``navig`` part."""
+    for sub in ast.walk(node):
+        if not (isinstance(sub, ast.Attribute) and sub.attr == "__file__"):
+            continue
+        owner = sub.value
+        if isinstance(owner, ast.Name) and owner.id == _ASSET_SUBJECT_ROOT:
+            return True
+        if (
+            isinstance(owner, ast.Call)
+            and isinstance(owner.func, ast.Name)
+            and owner.func.id == "__import__"
+            and owner.args
+            and isinstance(owner.args[0], ast.Constant)
+            and owner.args[0].value == _ASSET_SUBJECT_ROOT
+        ):
+            return True
+    return False
 
 
 def _subject_is_unselectable_navig_path(text: str) -> bool:
@@ -455,9 +489,9 @@ def _subject_is_unselectable_navig_path(text: str) -> bool:
         tree = ast.parse(text)
     except SyntaxError:
         return False
+    # No early return on an empty root set: ``Path(navig.__file__).parent / ...`` inline,
+    # with no module-level root name, is rooted too -- ``rooted`` sees its ``__file__``.
     roots = _repo_root_names(tree)
-    if not roots:
-        return False
 
     def rooted(node: ast.AST) -> bool:
         src = ast.dump(node)
@@ -520,6 +554,27 @@ def test_the_asset_subject_detector_tells_an_asset_from_a_module() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "src",
+    [
+        # a computed leaf under a constant asset dir
+        "from pathlib import Path\n"
+        "ROOT = Path(__file__).resolve().parents[2]\n"
+        "def read(x):\n"
+        "    return ROOT / 'navig' / 'resources' / x.lower()\n",
+        # the package dir itself as the base, inline, with no module-level root name
+        "from pathlib import Path\n"
+        "def read(name):\n"
+        "    return Path(__import__('navig').__file__).parent / 'resources' / 'personas'"
+        " / name.lower()\n",
+    ],
+    ids=["computed-leaf", "navig-package-base"],
+)
+def test_the_asset_subject_detector_sees_a_dynamic_leaf(src: str) -> None:
+    """A dynamic last component must not hide the constant asset dir in front of it."""
+    assert _subject_is_unselectable_navig_path(src)
+
+
 def test_the_asset_subject_detector_still_finds_something() -> None:
     """Anti-vacuity, both ends."""
     found = _navig_asset_subject_guards()
@@ -531,8 +586,12 @@ def test_the_asset_subject_detector_still_finds_something() -> None:
     # a detector short-circuited to `return True` reports 133 (verified by mutation --
     # I had guessed ~90). The ceiling was 80 when today's count was 60; the count reached
     # 79 through guards added one at a time, and the 80th (the loguru placeholder guard)
-    # tripped it. 110 still sits well below the mutation's 133.
-    assert len(found) < 110, (
+    # tripped it. 110 still sat well below the mutation's 133.
+    #
+    # Re-measured when the detector learned dynamic leaves and the `navig.__file__` base
+    # (107 -> 114, six of them real unwired asset guards): a leaf-blind mutation (every
+    # rooted chain through navig/ counts) reports 131. 125 sits between the two.
+    assert len(found) < 125, (
         f"{len(found)} test files matched -- the asset-subject detector has become too "
         "broad to mean anything (it should find guards, not every rooted test file)."
     )

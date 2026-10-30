@@ -15,8 +15,13 @@ command path AND flags — through the real Click tree rather than checking a na
 
 from __future__ import annotations
 
-import click
 import pytest
+
+from navig.core.click_compat import click_module, is_group, is_option
+
+# The click TYPER runs on; a separately installed copy is a different class hierarchy,
+# so `isinstance(cmd, click.Group)` is False for every group (Typer 0.27 vendors click).
+click = click_module()
 from typer.main import get_command
 
 
@@ -43,7 +48,7 @@ def _resolve(root, words: list[str]):
     """Walk the real Click tree; returns (command, unresolved_tail)."""
     cur = root
     for i, word in enumerate(words):
-        if not isinstance(cur, click.Group):
+        if not is_group(cur):
             return None, words[i:]
         nxt = cur.get_command(click.Context(cur), word)
         if nxt is None:
@@ -74,4 +79,15 @@ def test_menu_command_resolves(root, key: str, cmd: str) -> None:
     assert not rejected, (
         f"menu button {key!r} runs `navig {cmd}`, but that command rejects {rejected} "
         f"— it would exit 2 (accepted: {sorted(accepted)})"
+    )
+
+    # A button carries no positional arguments, so a required one is a usage error too
+    # (`app info` needs an app name — that entry is a `prompt` now).
+    missing = [
+        param.name for param in command.get_params(click.Context(command))
+        if not is_option(param) and param.required
+    ]
+    assert not missing, (
+        f"menu button {key!r} runs `navig {cmd}`, but that command requires {missing} "
+        f"— it would exit 2 with a missing-argument error; make it a `prompt` entry"
     )

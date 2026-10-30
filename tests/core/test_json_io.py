@@ -61,6 +61,17 @@ def test_corrupt_is_quarantined_and_returns_default(tmp_path: Path):
     assert (tmp_path / "s.json.corrupt").read_text(encoding="utf-8") == "{not: valid json,,,"
 
 
+def test_invalid_utf8_is_quarantined_and_returns_default(tmp_path: Path):
+    """Regression: non-UTF-8 bytes raised UnicodeDecodeError (neither OSError nor a JSON
+    error) out of the load, so e.g. the cron scheduler could not start at all."""
+    f = tmp_path / "s.json"
+    raw = b'\xff\xfe{"a": 1}'
+    f.write_bytes(raw)
+    assert load_json_for_update(f, default={}) == {}
+    assert (tmp_path / "s.json.corrupt").read_bytes() == raw
+    assert load_json_safe(f, default=[]) == []
+
+
 def test_type_mismatch_is_treated_as_corrupt(tmp_path: Path):
     """A dict-store file that parsed to a list must NOT be handed back — merging a
     mutation into {} and saving would drop the list's data. Quarantine + default."""

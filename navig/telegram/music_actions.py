@@ -76,13 +76,17 @@ def _format(data: dict) -> str:
 
 async def _resolve_and_send(channel, chat_id: int, url: str, reply_to_message_id: int | None) -> bool:
     """Resolve *url* via song.link and reply with the platform links. Returns True
-    if a reply was sent; False on any resolve/send failure (caller decides UX)."""
+    if a reply was sent; False on any resolve/send failure (caller decides UX).
+
+    A failure is logged at WARNING here: the False return is all a caller sees, so
+    the caller's own ``except`` never fires for it and a DEBUG line is invisible in
+    the live log."""
     try:
         data = await asyncio.to_thread(resolve_links, url)
     except MusicResolveError:
         return False  # not on song.link
     except Exception as exc:  # noqa: BLE001
-        logger.debug("music resolve failed: %s", exc)
+        logger.warning("music resolve failed: %s", exc)
         return False
     try:
         sent = await channel.send_message(
@@ -94,7 +98,7 @@ async def _resolve_and_send(channel, chat_id: int, url: str, reply_to_message_id
         # user's message and they get nothing back.
         return sent is not None
     except Exception as exc:  # noqa: BLE001
-        logger.debug("music send failed: %s", exc)
+        logger.warning("music send failed: %s", exc)
         return False
 
 

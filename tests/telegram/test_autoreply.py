@@ -73,7 +73,7 @@ async def test_maybe_autoreply_generates_and_sends(monkeypatch):
     monkeypatch.setattr(ar, "get_active", lambda cid: {"role": "sales", "lang": "fr"})
     monkeypatch.setattr(ar, "_recent_context", lambda cid, oid, n=12: [("Them", "Bonjour")])
 
-    async def fake_generate(role, lang, ctx, *, target=None):
+    async def fake_generate(role, lang, ctx, *, target=None, **_):
         assert role == "sales" and lang == "fr"
         assert target == "Bonjour", "the message being answered reaches the model"
         return "Bonjour ! Comment puis-je vous aider ?"
@@ -107,6 +107,59 @@ async def test_maybe_autoreply_inactive_is_noop(monkeypatch):
     ch = _channel()
     msg = {"chat": {"id": 555}, "text": "hi"}
     assert await ar.maybe_autoreply(ch, msg, is_owner=False, owner_id=777) is False
+
+
+async def test_a_burst_from_one_chat_coalesces_into_one_more_reply(monkeypatch):
+    """Five quick messages must not start five LLM calls (and five typing delays)."""
+    yield_now = asyncio.sleep
+    monkeypatch.setattr(ar.asyncio, "sleep", AsyncMock())
+    monkeypatch.setattr(ar, "get_active", lambda cid: {"role": "sales", "lang": ""})
+    monkeypatch.setattr(ar, "_recent_context", lambda cid, oid, n=12: [])
+    gate = asyncio.Event()
+    targets: list[str] = []
+
+    async def slow_generate(role, lang, ctx, *, target=None, **_):
+        targets.append(target)
+        await gate.wait()
+        return "ok"
+
+    monkeypatch.setattr(ar, "_generate", slow_generate)
+    ch = _channel()
+    for i in range(5):
+        msg = {"chat": {"id": 556}, "message_id": i, "text": f"m{i}"}
+        assert await ar.maybe_autoreply(ch, msg, is_owner=False, owner_id=777) is True
+        await yield_now(0)
+    gate.set()
+    await _drain_autoreply_tasks()
+    assert targets == ["m0", "m4"], "one in flight, then ONE reply to the latest message"
+    assert 556 not in ar._chat_jobs
+
+
+async def test_replies_across_chats_are_capped(monkeypatch):
+    """Many chats at once share a bounded number of media-reading / model slots."""
+    monkeypatch.setattr(ar, "get_active", lambda cid: {"role": "sales", "lang": ""})
+    monkeypatch.setattr(ar, "_recent_context", lambda cid, oid, n=12: [])
+    gate = asyncio.Event()
+    running = peak = 0
+
+    async def fake_text(channel, msg):
+        nonlocal running, peak
+        running += 1
+        peak = max(peak, running)
+        await gate.wait()
+        running -= 1
+        return ""
+
+    monkeypatch.setattr(ar, "_message_as_text", fake_text)
+    ch = _channel()
+    for cid in range(10):
+        await ar.maybe_autoreply(ch, {"chat": {"id": 1000 + cid}, "text": "hi"},
+                                 is_owner=False, owner_id=777)
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert peak == ar._MAX_CONCURRENT_REPLIES
+    gate.set()
+    await _drain_autoreply_tasks()
 
 
 # ── what a role name means ───────────────────────────────────────────────────
@@ -477,3 +530,98 @@ async def test_a_named_language_is_not_overridden(monkeypatch):
     monkeypatch.setattr(gen_mod, "llm_generate", fake_llm)
     await ar._generate("tyler", "fr", [], target="Сколько стоит доставка?")
     assert "same language as this" not in captured["user"]
+
+
+async def test_the_output_rule_allows_tylers_quoted_closing_line(monkeypatch):
+    """Tyler must close on an aphorism "in quotes"; a later blanket "no quotes" in the
+    system prompt told the model to drop it. Only wrapping the WHOLE reply is barred."""
+    captured = {}
+
+    def fake_llm(messages, **_):
+        captured["system"] = messages[0]["content"]
+        return "ok"
+
+    import navig.llm.generate as gen_mod
+
+    monkeypatch.setattr(gen_mod, "llm_generate", fake_llm)
+    await ar._generate("tyler", "", [], target="hi")
+    assert "in quotes" in captured["system"], "the persona still asks for the quoted line"
+    assert "no quotes" not in captured["system"]
+    assert "do not wrap the whole reply in quotes" in captured["system"]
+
+
+async def test_the_floor_does_not_deny_a_professional_owners_credentials(monkeypatch):
+    """The reply speaks AS the owner. The minimal floor's "you are not a doctor or a
+    licensed adviser" then told a doctor's or lawyer's auto-reply that the owner is
+    not one — the floor must protect without making claims about who the owner is."""
+    captured = {}
+
+    def fake_llm(messages, **_):
+        captured["system"] = messages[0]["content"]
+        return "ok"
+
+    import navig.llm.generate as gen_mod
+    from navig.agent.conv.guardrails import guardrail_floor_impersonation
+
+    monkeypatch.setattr(gen_mod, "llm_generate", fake_llm)
+    await ar._generate("support", "", [], target="Can I take it twice a day?")
+    system = captured["system"]
+    assert "not a doctor" not in system and "licensed adviser" not in system
+    assert system.startswith(guardrail_floor_impersonation())
+    assert "never fabricate" in system and "private data private" in system
+
+
+async def test_a_bot_authored_echo_of_the_owner_is_rewritten_not_answered(monkeypatch):
+    """Telegram can hand back a message this bot sent as the owner with `from` = the
+    bot. Replying `tyler` to it must take the rewrite path (the owner's own words),
+    not answer it as if the counterparty had written it."""
+    monkeypatch.setattr(ar, "_recent_context", lambda cid, oid, n=12: [])
+    monkeypatch.setattr(ar, "_generate", AsyncMock(return_value=""))
+    ch = _channel()
+    ch.bot_token = "4242:secret"
+    msg = _own_msg()
+    msg["reply_to_message"]["from"] = {"id": 4242, "is_bot": True}
+    await ar.maybe_role_reply(ch, msg, is_owner=True, owner_id=777)
+    await _drain_autoreply_tasks()
+    note = ch.send_message.await_args.args[1]
+    assert "your message was left as it was" in note, note
+
+
+def test_a_captionless_photo_does_not_pin_its_english_description():
+    """`[a photo showing: …]` is NAVIG's English; in a Russian chat the sample must be
+    the chat's words, not the description."""
+    photo = {"message_id": 80, "photo": [{"file_id": "x"}]}
+    words = ar._language_words(photo, "[a photo showing: a red car]")
+    assert words == ""
+    sample = ar._language_sample("[a photo showing: a red car]",
+                                 [("Them", "смотри какая машина")], False, words)
+    assert sample == "смотри какая машина"
+
+
+def test_spoken_and_written_media_words_still_carry_the_language():
+    voice = {"message_id": 80, "voice": {"file_id": "x"}}
+    assert ar._language_words(voice, "[a voice message saying: привет, как дела]") == (
+        "привет, как дела"
+    )
+    shot = {"message_id": 80, "photo": [{"file_id": "x"}]}
+    assert ar._language_words(
+        shot, "[a photo showing: a sign; text in it: fermé le lundi]"
+    ) == "fermé le lundi"
+    assert ar._language_words({"caption": "regarde"}, "regarde\n[a photo showing: x]") == "regarde"
+
+
+async def test_a_captionless_photo_reply_follows_the_conversation_language(monkeypatch):
+    captured = {}
+
+    def fake_llm(messages, **_):
+        captured["user"] = messages[1]["content"]
+        return "ok"
+
+    import navig.llm.generate as gen_mod
+
+    monkeypatch.setattr(gen_mod, "llm_generate", fake_llm)
+    await ar._generate("tyler", "", [("Them", "смотри")], target="[a photo showing: a car]",
+                       lang_words="")
+    assert "same language as this: «смотри»" in captured["user"]
+    await ar._generate("tyler", "", [], target="[a photo showing: a car]", lang_words="")
+    assert "same language as this" not in captured["user"], "no words at all: no English pin"

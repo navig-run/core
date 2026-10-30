@@ -121,3 +121,26 @@ def test_home_navig_is_the_global_layer_not_a_project(temp_dir: Path) -> None:
     if not (Path.home() / ".navig").is_dir():
         pytest.skip("no ~/.navig on this machine — nothing to skip over")
     assert _find_project_navig_root(temp_dir.resolve()) is None
+
+
+def test_temp_dir_stays_outside_a_repo_when_the_system_temp_is_repo_local(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`TMPDIR`/`TEMP` pointed inside a checkout once handed `temp_dir` a directory with a
+    `.git` ancestor, so every "outside a repo" test asserted the opposite there."""
+    import tempfile
+
+    from tests import conftest as ct
+
+    assert _git_ancestor(tmp_path) is not None  # a repo-local "system temp"
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    fixture = getattr(ct.temp_dir, "__wrapped__", ct.temp_dir)
+    gen = fixture()
+    try:
+        d = next(gen)
+    except pytest.skip.Exception:
+        return  # no non-repo parent on this machine: skipping is the honest answer
+    try:
+        assert _git_ancestor(d) is None, f"temp_dir landed inside a repo: {d}"
+    finally:
+        gen.close()

@@ -84,6 +84,29 @@ def test_enumeration_survives_a_drive_that_errors(monkeypatch):
     assert mounts == ["C:\\"]
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows drive-type filtering")
+def test_enumeration_without_listdrives_uses_the_drive_bitmask(monkeypatch):
+    """Review #139: Python 3.10/3.11 has no os.listdrives(); it fell back to the
+    disk_partitions() call that hangs on a cold mapped drive."""
+    import ctypes
+
+    monkeypatch.delattr(os, "listdrives", raising=False)
+
+    def _never(*a, **kw):
+        raise AssertionError("must not call disk_partitions() on Windows")
+
+    monkeypatch.setattr(monitor.psutil, "disk_partitions", _never)
+    # C: and N: present (bits 2 and 13); N: is a network drive.
+    monkeypatch.setattr(ctypes.windll.kernel32, "GetLogicalDrives",
+                        lambda: (1 << 2) | (1 << 13), raising=False)
+    monkeypatch.setattr(
+        ctypes.windll.kernel32, "GetDriveTypeW",
+        lambda d: 4 if str(d).startswith("N") else monitor._DRIVE_FIXED, raising=False,
+    )
+    mounts = [p.mountpoint for p in monitor._enumerate_partitions()]
+    assert mounts == ["C:\\"]
+
+
 def test_system_disk_path_needs_no_enumeration(monkeypatch):
     """get_system_disk is the fast headline path — it must never enumerate."""
 

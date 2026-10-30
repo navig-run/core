@@ -1,9 +1,12 @@
-"""Multi-backend screenshot capture for Windows desktop automation.
+"""Multi-backend screenshot capture for desktop automation.
 
 Backend priority chain (lowest number = highest priority):
-  1. ``dxcam`` (DXGI, priority 10) — fastest; single-monitor region capture.
+  1. ``dxcam`` (DXGI, priority 10) — fastest; single-monitor region capture. Windows.
   2. ``mss``   (cross-process, priority 20) — reliable multi-monitor support.
-  3. ``PIL.ImageGrab`` (priority 100) — always available; slowest.
+  3. ``system`` (priority 30) — the OS command this SESSION has: ``screencapture`` on
+     macOS, ``grim``/``gnome-screenshot``/``spectacle`` on Wayland, ``scrot``/``import``
+     on X11 (see ``navig.platform.capture``). The only tier that works on Wayland.
+  4. ``PIL.ImageGrab`` (priority 100) — needs an X11 display on Linux; slowest.
 
 The active backend is selected once per process via
 ``get_screenshot_backend()``, which reads the ``NAVIG_SCREENSHOT_BACKEND``
@@ -14,9 +17,14 @@ from __future__ import annotations
 
 import abc
 import os
+import subprocess
 import sys
+import tempfile
 from functools import lru_cache
+from pathlib import Path
 from typing import TYPE_CHECKING
+
+from navig.platform import capture as platform_capture
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage
@@ -133,11 +141,53 @@ class _MssBackend(_ScreenshotBackend):
             return Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
 
 
+# ─── system-command backend (macOS + Linux) ──────────────────────────────────
+
+
+class _SystemBackend(_ScreenshotBackend):
+    """Capture through the OS tool this session has, chosen by the platform seam.
+
+    This is the tier that works on Wayland: ``mss`` and Pillow both speak X11, and a
+    Wayland compositor does not serve one (XWayland may exist but the OS capture path
+    does not need it). ``navig.platform.capture`` owns the ordering and the messages.
+    """
+
+    name = "system"
+    priority = 30
+
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def is_available() -> bool:
+        if platform_capture.session() in ("windows", "headless"):
+            return False
+        return platform_capture.choose() is not None
+
+    def capture_region(self, left: int, top: int, right: int, bottom: int) -> "PILImage.Image":
+        from PIL import Image  # noqa: PLC0415
+
+        backend = platform_capture.choose()
+        if backend is None:  # availability is re-checked, so this is a race, not a norm
+            raise RuntimeError(platform_capture.install_hint())
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as handle:
+            output = Path(handle.name)
+        try:
+            argv = backend.argv(str(output), region=(left, top, right, bottom))
+            if argv is None:
+                raise RuntimeError(f"{backend.name} is not a command-line capture backend")
+            result = subprocess.run(argv, capture_output=True)
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout or b"").decode("utf-8", "replace")
+                raise RuntimeError(f"{backend.name} failed: {detail.strip() or result.returncode}")
+            return Image.open(output).convert("RGB")
+        finally:
+            output.unlink(missing_ok=True)
+
+
 # ─── Pillow / ImageGrab backend ───────────────────────────────────────────────
 
 
 class _PillowBackend(_ScreenshotBackend):
-    """Fallback capture via ``PIL.ImageGrab`` (always available)."""
+    """Fallback capture via ``PIL.ImageGrab`` (needs an X11 display on Linux)."""
 
     name = "pillow"
     priority = 100
@@ -145,6 +195,11 @@ class _PillowBackend(_ScreenshotBackend):
     @staticmethod
     @lru_cache(maxsize=1)
     def is_available() -> bool:
+        if platform_capture.session() == "wayland":
+            # ImageGrab's Linux implementation is X11-only: under pure Wayland it raises
+            # OSError("X connection failed") and the caller gets a crash instead of a
+            # capture. The `system` tier covers Wayland.
+            return False
         try:
             from PIL import ImageGrab  # type: ignore[import]  # noqa: F401
 
@@ -232,20 +287,62 @@ def capture(
     return img, be.name
 
 
+def _full_screen_size() -> tuple[int, int] | None:
+    """The virtual desktop's pixel size, or None when nothing on this host knows it."""
+    try:
+        import mss  # type: ignore[import]
+
+        with mss.mss() as sct:
+            monitor = sct.monitors[0]
+            return int(monitor["width"]), int(monitor["height"])
+    except Exception:  # noqa: BLE001 — absence is the answer, not a crash
+        pass
+    try:
+        from PIL import ImageGrab  # type: ignore[import]
+
+        return ImageGrab.grab(all_screens=True).size
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _capture_native_full() -> tuple["PILImage.Image", str]:
+    """Full-screen capture from the OS tool itself — no geometry needed.
+
+    Used when nothing can report the desktop size (a Wayland session without mss):
+    guessing 1920×1080, which this function used to do, produced a silently cropped
+    image on every other resolution.
+    """
+    from PIL import Image  # noqa: PLC0415
+
+    backend = platform_capture.choose()
+    if backend is None:
+        raise RuntimeError(platform_capture.install_hint())
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as handle:
+        output = Path(handle.name)
+    try:
+        argv = backend.argv(str(output))
+        if argv is None:
+            raise RuntimeError(f"{backend.name} is not a command-line capture backend")
+        result = subprocess.run(argv, capture_output=True)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or b"").decode("utf-8", "replace")
+            raise RuntimeError(f"{backend.name} failed: {detail.strip() or result.returncode}")
+        return Image.open(output).convert("RGB"), backend.name
+    finally:
+        output.unlink(missing_ok=True)
+
+
 def capture_full_screen(
     backend: str | _ScreenshotBackend | None = None,
 ) -> tuple["PILImage.Image", str]:
     """Capture the entire virtual desktop.
 
-    Tries ``PIL.ImageGrab.grab(all_screens=True)`` geometry to determine
-    bounds, then delegates to ``capture()``.
+    The bounds come from ``mss`` when it is installed (the only library that reports the
+    whole virtual desktop), then Pillow. When neither knows — which is the normal case on
+    Wayland — the OS tool captures the full screen itself instead of this module guessing
+    a size.
     """
-    try:
-        from PIL import ImageGrab  # type: ignore[import]
-
-        screen = ImageGrab.grab(all_screens=True)
-        w, h = screen.size
-        return capture(0, 0, w, h, backend=backend)
-    except Exception:  # noqa: BLE001
-        # Reasonable fallback for single-monitor setups.
-        return capture(0, 0, 1920, 1080, backend=backend)
+    size = _full_screen_size()
+    if size is not None:
+        return capture(0, 0, size[0], size[1], backend=backend)
+    return _capture_native_full()

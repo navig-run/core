@@ -241,7 +241,7 @@ class YouTubeConnector(BaseConnector):
 
     # ── Fetch: video details ─────────────────────────────────────────────────
 
-    async def fetch(self, resource_id: str, **kwargs: Any) -> Resource | None:
+    async def fetch(self, resource_id: str | None = None, **kwargs: Any) -> Resource | None:
         """Fetch detailed metadata for a video_id.
 
         Args:
@@ -251,8 +251,12 @@ class YouTubeConnector(BaseConnector):
         """
         # `resource_id` is the base-class parameter name (BaseConnector.fetch);
         # 9 of 12 connectors already use it. Bound to the domain name here so the
-        # body, its log lines and its `metadata` keys stay unchanged.
-        video_id = resource_id
+        # body, its log lines and its `metadata` keys stay unchanged. The legacy
+        # `video_id=` keyword is still accepted so keyword callers keep working.
+        legacy = kwargs.pop("video_id", None)
+        video_id = resource_id if resource_id is not None else legacy
+        if video_id is None:
+            raise TypeError("fetch() missing required argument: 'resource_id'")
         self._require_connected()
         parts = ",".join(kwargs.get("parts", ["snippet", "statistics", "contentDetails"]))
         data = _yt_get(

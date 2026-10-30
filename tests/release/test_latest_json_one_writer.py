@@ -134,6 +134,15 @@ def test_the_release_workflow_runs_the_tool_instead_of_its_own_payload() -> None
     assert "%Y-%m-%dT%H:%M:%SZ" not in src, "released_at is a date everywhere, not a datetime"
 
 
+def test_the_release_workflow_lets_the_tool_keep_the_recorded_release_date() -> None:
+    """An explicit --released-at outranks the date already recorded for the version, so a
+    rerun on a later UTC day re-dated an unchanged release."""
+    src = WORKFLOW.read_text(encoding="utf-8")
+    calls = [ln for ln in src.splitlines() if "core/tools/_version_sync.py" in ln and "run:" in ln]
+    assert calls, "the workflow must call the one writer"
+    assert all("--released-at" not in ln for ln in calls), calls
+
+
 def test_the_site_writer_never_fabricates_a_download_url() -> None:
     src = SITE_WRITER.read_text(encoding="utf-8")
     assert "releases/download/" not in src, (

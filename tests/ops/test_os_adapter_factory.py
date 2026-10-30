@@ -42,11 +42,10 @@ class TestDetectOs:
         monkeypatch.setattr(pp, "current_os", lambda: current)
         assert detect_os() == expected
 
-    def test_case_insensitive_input(self):
-        from navig.adapters.os.factory import detect_os
-
-        with patch("platform.system", return_value="WINDOWS"):
-            assert detect_os() == "windows"
+    # There is deliberately no case-folding test: `current_os()` returns a canonical
+    # lowercase name and detect_os does not fold case. The old `test_case_insensitive_input`
+    # patched `platform.system` — a no-op here — so it passed only on a Windows host and
+    # failed on every Linux/macOS runner.
 
 
 # ---------------------------------------------------------------------------

@@ -160,3 +160,36 @@ async def test_a_missing_login_is_no_credential(app):
         assert "navig vault login add shop.com -u grace" in data["error"]
     finally:
         await c.close()
+
+
+# ── the headless path (a goal / a terminal): the same rules, in-process ─────────
+
+
+async def test_the_headless_provider_releases_only_on_an_https_page_of_the_flow(vault):
+    from navig.browser.webflow_runner import StepFailed
+    from navig.webflows import validate_webflow
+    from navig.webflows.headless import secret_provider
+
+    doc = {**validate_webflow(flow(vault={"domain": "shop.com", "username": "ada"})).doc, "id": "wf_vault-flow"}
+    provide = secret_provider(doc, actor="goal")
+    assert await provide("pw", f"{SITE}/login") == PASSWORD
+    for url, why in [("http://shop.com/login", "denied"), ("https://evil.com/login", "denied")]:
+        with pytest.raises(StepFailed) as exc:
+            await provide("pw", url)
+        assert exc.value.category == why and PASSWORD not in str(exc.value)
+    missing = {**doc, "params": [{**doc["params"][0], "vault": {"domain": "shop.com", "username": "grace"}}]}
+    with pytest.raises(StepFailed) as exc:
+        await secret_provider(missing, actor="goal")("pw", f"{SITE}/login")
+    assert exc.value.category == "no_credential"
+    actors = {e.get("actor") for e in vault.get_audit_log(limit=20)}
+    assert "goal:webflow:wf_vault-flow" in actors
+
+
+def test_a_vault_secret_is_only_deferred_with_allow_vault():
+    from navig.webflows import WebflowError, validate_webflow
+    from navig.webflows.headless import resolve_run_values
+
+    doc = validate_webflow(flow(vault={"domain": "shop.com", "username": "ada"})).doc
+    with pytest.raises(WebflowError):
+        resolve_run_values(doc, {}, allow_vault=False)
+    assert resolve_run_values(doc, {}, allow_vault=True) == ({}, {"pw"})

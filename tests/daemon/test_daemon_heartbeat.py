@@ -134,6 +134,82 @@ def test_the_supervisor_loop_actually_beats(isolated, monkeypatch):
     assert sup.NavigDaemon.last_seen_alive() is not None
 
 
+def test_the_heartbeat_keeps_beating_through_a_long_restart_back_off(isolated, monkeypatch):
+    """A crash-looping child reaches MAX_RESTART_DELAY (120 s). The loop used to sleep
+    that delay INLINE before reaching _heartbeat(), so the beat went stale (90 s) during
+    a normal back-off and `doctor` reported a wedged supervisor. Fake clock: no real wait."""
+    import types
+
+    clock = {"now": 1000.0}
+    fake_time = types.SimpleNamespace(**{k: getattr(time, k) for k in dir(time) if not k.startswith("_")})
+    fake_time.monotonic = lambda: clock["now"]
+    monkeypatch.setattr(sup, "time", fake_time)
+
+    real_sleep = asyncio.sleep
+    sleeps: list[float] = []
+
+    async def fake_sleep(delay, *a, **k):
+        sleeps.append(delay)
+        clock["now"] += delay
+        await real_sleep(0)
+
+    monkeypatch.setattr(sup.asyncio, "sleep", fake_sleep)
+
+    class _Crashy:
+        name = "crashy"
+        enabled = True
+        _stopped = False
+        last_start = None
+        restart_at = None
+        starts = 0
+
+        def drain_output(self, *_a):
+            pass
+
+        def poll(self):
+            return 1
+
+        @property
+        def next_restart_delay(self):
+            return 120.0
+
+        def reset_backoff(self):
+            pass
+
+        def start(self, _logger):
+            self.starts += 1
+            return True
+
+    d = _daemon()
+    crashy = _Crashy()
+    d.children = [crashy]
+    beats: list[float] = []
+
+    async def _no_health_server():
+        return None
+
+    monkeypatch.setattr(d, "_start_health_server", _no_health_server)
+    monkeypatch.setattr(d, "_write_state", lambda: None)
+    monkeypatch.setattr(d, "_maybe_rotate_child_logs", lambda: None)
+
+    def spy():
+        beats.append(clock["now"])
+        if clock["now"] > 1000.0 + 400:
+            d._running = False
+
+    monkeypatch.setattr(d, "_heartbeat", spy)
+    d._running = True
+
+    asyncio.run(asyncio.wait_for(d._supervisor_loop(), timeout=20))
+
+    gaps = [b - a for a, b in zip(beats, beats[1:])]
+    assert gaps and max(gaps) < sup.HEARTBEAT_STALE_S, (
+        f"the loop went {max(gaps or [0]):.0f}s without a beat during the back-off"
+    )
+    assert max(sleeps) < sup.HEARTBEAT_STALE_S, f"an inline back-off sleep: {max(sleeps)}"
+    assert crashy.starts >= 2, "the child must still be restarted once its delay elapses"
+
+
 def test_last_seen_alive_is_the_state_file_mtime(isolated):
     tmp, _ = isolated
     d = _daemon()
@@ -173,7 +249,7 @@ def test_started_at_survives_a_child_restart(isolated):
 def test_the_death_is_dated_by_the_last_heartbeat(isolated):
     tmp, recorded = isolated
     (tmp / "supervisor.pid").write_text(str(_dead_pid()), encoding="utf-8")
-    (tmp / "state.json").write_text("{}", encoding="utf-8")
+    (tmp / "state.json").write_text('{"heartbeat_s": 30}', encoding="utf-8")
     _backdate(tmp / "state.json", 300)
 
     assert sup.NavigDaemon.is_running() is False
@@ -195,6 +271,28 @@ def test_a_death_without_a_heartbeat_still_records(isolated):
 
     assert len(recorded) == 1
     assert recorded[0][1]["last_seen_alive"] is None
+
+
+def test_a_state_file_from_before_heartbeats_dates_nothing(isolated, monkeypatch):
+    """A daemon from before heartbeats still leaves a state.json, but its mtime is its
+    last REWRITE — maybe days before the death. It must not date the death, nor close
+    the neighbour-command window at that instant."""
+    tmp, recorded = isolated
+    (tmp / "supervisor.pid").write_text(str(_dead_pid()), encoding="utf-8")
+    (tmp / "state.json").write_text('{"pid": 1, "children": []}', encoding="utf-8")
+    _backdate(tmp / "state.json", 3 * 24 * 3600)
+    windows: list = []
+    monkeypatch.setattr(
+        sup.NavigDaemon,
+        "_commands_before_now",
+        staticmethod(lambda started, last_seen_alive=None: windows.append(last_seen_alive) or []),
+    )
+
+    sup.NavigDaemon.is_running()
+
+    assert len(recorded) == 1
+    assert recorded[0][1]["last_seen_alive"] is None
+    assert windows == [None], "the window must not close at a non-heartbeat mtime"
 
 
 class _Store:

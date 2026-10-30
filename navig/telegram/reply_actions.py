@@ -461,7 +461,8 @@ async def _refine(
 # ── business-chat dispatch (owner-only, private) ─────────────────────────────
 
 
-async def _delete_business_trigger(channel: Any, bcid: str | None, mid: int | None) -> None:
+async def _delete_business_trigger(channel: Any, bcid: str | None, mid: int | None, *,
+                                   chat_id: Any = None) -> None:
     """Best-effort remove the owner's keyword trigger from the business chat so the
     counterparty never sees the bare command word. Business chats require
     ``deleteBusinessMessages`` (needs can_delete on the connection)."""
@@ -469,7 +470,8 @@ async def _delete_business_trigger(channel: Any, bcid: str | None, mid: int | No
         return
     from navig.telegram.deletions import note_own_deletion  # noqa: PLC0415
 
-    note_own_deletion(bcid, [mid])  # our trigger — keep it out of the deletion digest
+    # our trigger — keep it out of the deletion digest
+    note_own_deletion(bcid, [mid], chat_id=chat_id)
     try:
         await channel._api_call(
             "deleteBusinessMessages",
@@ -550,7 +552,7 @@ async def run_business_reply(
             )
         except Exception:  # noqa: BLE001
             pass
-        await _delete_business_trigger(channel, bcid, trigger_id)
+        await _delete_business_trigger(channel, bcid, trigger_id, chat_id=chat_id)
         return True
 
     if action in LLM_ACTIONS:
@@ -569,7 +571,7 @@ async def run_business_reply(
                 await channel.send_message(owner_id, note, parse_mode=None)
             except Exception:  # noqa: BLE001
                 pass
-            await _delete_business_trigger(channel, bcid, trigger_id)
+            await _delete_business_trigger(channel, bcid, trigger_id, chat_id=chat_id)
             return True
         body = f"{llm_label(action)}\n\n{result}"
         if private:
@@ -598,7 +600,7 @@ async def run_business_reply(
                     remember_output(sent.get("message_id"), result)
             except Exception:  # noqa: BLE001
                 pass
-        await _delete_business_trigger(channel, bcid, trigger_id)
+        await _delete_business_trigger(channel, bcid, trigger_id, chat_id=chat_id)
         return True
 
     if action == "save":
@@ -611,7 +613,7 @@ async def run_business_reply(
             )
         except Exception:  # noqa: BLE001
             pass
-        await _delete_business_trigger(channel, bcid, trigger_id)
+        await _delete_business_trigger(channel, bcid, trigger_id, chat_id=chat_id)
         return True
 
     return False  # not reachable given BUSINESS_ACTIONS, but keep total

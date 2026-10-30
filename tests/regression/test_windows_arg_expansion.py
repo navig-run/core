@@ -69,7 +69,7 @@ def test_main_switches_clicks_own_expansion_off():
 
 
 def test_cli_args_is_none_off_windows(monkeypatch):
-    monkeypatch.setattr(cli_args.os, "name", "posix")
+    monkeypatch.setattr(cli_args.sys, "platform", "linux")
     assert cli_args.cli_args() is None
 
 

@@ -383,11 +383,42 @@ def _basename(token: str) -> str:
     return t[:-4] if t.endswith(".exe") else t
 
 
+#: A command that starts with a Windows DRIVE path — `C:\Windows\System32\tasklist.exe`.
+#: Classification is textual: the same string must read the same on any host, because a
+#: mission replay or a log review classifies another machine's commands. Under POSIX
+#: shlex rules every `\` there is an escape, so `C:\Windows\…\tasklist.exe` became one
+#: token `c:windowssystem32tasklist.exe` — not a known read — while the identical
+#: command on Windows read True (2026-10-30, outpost).
+_WINDOWS_HEAD_RE = re.compile(
+    r"""^\s*(?:"(?P<dq>[A-Za-z]:[^"]*)"|'(?P<sq>[A-Za-z]:[^']*)'|(?P<bare>[A-Za-z]:[\\/][\w.\\/-]*))(?P<rest>.*)$""",
+    re.DOTALL,
+)
+
+
+def _windows_split(text: str) -> tuple[str, list[str]] | None:
+    """(verb, args) for a drive-path command, parsed with Windows quoting rules."""
+    m = _WINDOWS_HEAD_RE.match(text)
+    if not m:
+        return None
+    head = m.group("dq") or m.group("sq") or m.group("bare")
+    rest = (m.group("rest") or "").strip()
+    if not head:
+        return None
+    try:
+        args = shlex.split(rest, posix=False) if rest else []
+    except ValueError:
+        return None
+    return _basename(head), args
+
+
 def _split(command: str) -> tuple[str, list[str]] | None:
     """(verb, rest) — or None when the command is not a plain argv."""
     text = (command or "").strip()
     if not text or _COMPOSITION_RE.search(text):
         return None
+    drive_path = _windows_split(text)
+    if drive_path is not None:
+        return drive_path
     try:
         # The same split `bash_exec` performs: POSIX rules off Windows, where a
         # backslash is an escape; on Windows it is a path separator.

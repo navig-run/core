@@ -49,6 +49,7 @@ _COPY: dict[str, dict[str, str]] = {
         "hint": "<i>todo &lt;text&gt; · done N · undo N</i>",
         "owner": "the owner",
         "added_by": "added by {name}",
+        "more": "<i>… and {n} more</i>",
         "owner_only": "Only {owner} can delete items from this list.",
         "not_found": "There is no item #{n} in this list.",
         "full": "This list is full — tick or clear some items first.",
@@ -61,6 +62,7 @@ _COPY: dict[str, dict[str, str]] = {
         "hint": "<i>todo &lt;текст&gt; · готово N · вернуть N</i>",
         "owner": "владелец чата",
         "added_by": "добавил(а) {name}",
+        "more": "<i>… и ещё {n}</i>",
         "owner_only": "Удалять задачи из списка может только {owner}.",
         "not_found": "В списке нет задачи #{n}.",
         "full": "Список заполнен — отметьте или очистите выполненные.",
@@ -73,6 +75,7 @@ _COPY: dict[str, dict[str, str]] = {
         "hint": "<i>todo &lt;texte&gt; · fait N · rouvrir N</i>",
         "owner": "le propriétaire",
         "added_by": "ajouté par {name}",
+        "more": "<i>… et {n} de plus</i>",
         "owner_only": "Seul·e {owner} peut supprimer des éléments de cette liste.",
         "not_found": "Il n'y a pas d'élément n°{n} dans cette liste.",
         "full": "Cette liste est pleine — cochez ou videz des éléments d'abord.",
@@ -158,9 +161,16 @@ def _peer_name(msg: dict[str, Any] | None) -> str:
 # ── the card ─────────────────────────────────────────────────────────────────
 
 
+#: Telegram's message limit, in UTF-16 units. The card is sent with a raw sendMessage
+#: (no splitting), so a card over it is refused and the previous one stays, stale.
+_CARD_MAX = 4096
+
+
 def render(list_id: str, lang: str, *, owner_id: int | None = None, peer_name: str = "") -> str:
     """The list as one message. An item the CONTACT added says so — a Business chat
-    has exactly two people, so "not the owner" is the contact by name."""
+    has exactly two people, so "not the owner" is the contact by name. Open items that
+    would push the card past Telegram's limit are summarised as "… and N more"."""
+    from navig.gateway.channels.base import utf16_len  # noqa: PLC0415
     from navig.pim import service  # noqa: PLC0415
 
     copy = _COPY.get(lang) or _COPY["en"]
@@ -170,30 +180,68 @@ def render(list_id: str, lang: str, *, owner_id: int | None = None, peer_name: s
     lines = [copy["title"].format(open=len(open_items)), ""]
     if not items:
         lines.append(copy["empty"])
+    tail = [f"<code>#{t['list_seq']}</code> ☑ <s>{html.escape(t['title'])}</s>" for t in done_items]
+    tail += ["", copy["hint"]]
+    used = utf16_len("\n".join(lines + tail)) + utf16_len(copy["more"].format(n=len(items))) + 1
+    shown = 0
     for t in open_items:
         line = f"<code>#{t['list_seq']}</code> ☐ {html.escape(t['title'])}"
         if t.get("when_label"):
             line += f" · <i>{html.escape(t['when_label'])}</i>"
         if peer_name and t.get("created_by") and owner_id and int(t["created_by"]) != int(owner_id):
             line += f" <i>({copy['added_by'].format(name=html.escape(peer_name))})</i>"
+        if used + utf16_len(line) + 1 > _CARD_MAX:
+            break
+        used += utf16_len(line) + 1
         lines.append(line)
-    for t in done_items:
-        lines.append(f"<code>#{t['list_seq']}</code> ☑ <s>{html.escape(t['title'])}</s>")
-    lines.append("")
-    lines.append(copy["hint"])
-    return "\n".join(lines)
+        shown += 1
+    if shown < len(open_items):
+        lines.append(copy["more"].format(n=len(open_items) - shown))
+    return "\n".join(lines + tail)
+
+
+def _board_url(channel: Any) -> str:
+    """The Mini App board link, when this install has a deck URL."""
+    try:
+        return str(channel._get_deck_url() or "")
+    except Exception:  # noqa: BLE001 — a missing deck must not stop the list
+        return ""
 
 
 async def _post_card(channel: Any, chat_id: int, bcid: str | None, lst: dict[str, Any]) -> None:
-    """Post the current card and delete the previous one (best-effort)."""
-    from navig.pim import service  # noqa: PLC0415
-    from navig.telegram import biz_commands  # noqa: PLC0415
+    """Post the current list and delete the previous one (best-effort).
 
-    text = render(
-        lst["id"], lst.get("lang") or "en",
-        owner_id=lst.get("owner_id"), peer_name=lst.get("peer_name") or "",
-    )
-    new_id = await biz_commands._send(channel, chat_id, bcid, text)
+    A rich card when the chat can show one: the list is a table, and the only buttons are
+    a copy button and (when a deck exists) a link to the board — a Business chat's other
+    person has no working callback buttons, so the card must not offer any.
+    """
+    from navig.pim import service  # noqa: PLC0415
+    from navig.telegram import biz_card, biz_commands, card_transport  # noqa: PLC0415
+
+    new_id: int | None = None
+    try:
+        items = service.tasks(list_id=lst["id"], include_done=True)
+        card = biz_card.todo_card(
+            items=items,
+            peer_name=lst.get("peer_name") or "",
+            owner_id=lst.get("owner_id"),
+            board_url=_board_url(channel),
+        )
+        sent = await card_transport.send_card(
+            channel, chat_id, card, business_connection_id=bcid
+        )
+        new_id = (sent or {}).get("message_id")
+    except Exception:  # noqa: BLE001 — the text card below is the fallback, not a crash
+        logger.debug("biz_todo card send failed, falling back to text", exc_info=True)
+        new_id = None
+
+    if not new_id:
+        text = render(
+            lst["id"], lst.get("lang") or "en",
+            owner_id=lst.get("owner_id"), peer_name=lst.get("peer_name") or "",
+        )
+        new_id = await biz_commands._send(channel, chat_id, bcid, text)
+
     old_id = lst.get("last_card_msg_id")
     if new_id:
         service.update_list(lst["id"], {"last_card_msg_id": int(new_id)})

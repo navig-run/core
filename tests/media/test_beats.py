@@ -146,3 +146,37 @@ def test_tempo_estimation_prefers_a_human_tempo_over_arithmetic(tmp_path):
     samples = decode(click_track(tmp_path / "pref.wav", 120.0, 30.0))
     bpm, _ = estimate_tempo(onset_envelope(samples))
     assert 100 <= bpm <= 145, f"locked onto a multiple instead of the tempo: {bpm}"
+
+
+def test_missing_ffmpeg_is_a_beat_error(tmp_path, monkeypatch):
+    """Callers catch BeatError only; a missing ffmpeg must not escape as VideoEditError."""
+    from navig_media_core.media import video_edit
+
+    import navig.media.beats as beats_mod
+
+    src = tmp_path / "a.wav"
+    src.write_bytes(b"RIFF")
+    monkeypatch.setattr(video_edit.shutil, "which", lambda _tool: None)
+    with pytest.raises(BeatError, match="ffmpeg"):
+        beats_mod.decode(src)
+
+
+def test_a_stalled_decode_times_out_as_a_beat_error(tmp_path, monkeypatch):
+    """A container that stalls ffmpeg ends as a BeatError instead of hanging forever."""
+    import subprocess
+
+    import navig.media.beats as beats_mod
+
+    src = tmp_path / "a.wav"
+    src.write_bytes(b"RIFF")
+    seen: dict = {}
+    monkeypatch.setattr(beats_mod, "_require", lambda _tool: "ffmpeg")
+
+    def _stall(cmd, **kwargs):
+        seen.update(kwargs)
+        raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout"))
+
+    monkeypatch.setattr(beats_mod.subprocess, "run", _stall)
+    with pytest.raises(BeatError, match="timed out"):
+        beats_mod.decode(src)
+    assert seen.get("timeout") == beats_mod.DECODE_TIMEOUT_S

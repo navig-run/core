@@ -552,7 +552,10 @@ def test_action_priority_param_is_honoured_and_validated(notify_env):
     mgr._send_notification("telegram", trig, ev, {"message": "x", "priority": "critical"})
     assert notify_env.rec.calls[-1].priority == "critical"
 
-    mgr._send_notification("telegram", trig, ev, {"message": "x", "priority": "banana"})
+    # The words differ on purpose: the notify router collapses a repeat of the same
+    # rendered message within dedupe.COLLAPSE_WINDOW_S (300 s), so two identical bodies
+    # would test the dedupe wall instead of the priority fallback.
+    mgr._send_notification("telegram", trig, ev, {"message": "y", "priority": "banana"})
     assert notify_env.rec.calls[-1].priority == "normal", "an invalid priority falls back"
 
 

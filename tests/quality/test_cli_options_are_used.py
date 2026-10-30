@@ -22,8 +22,10 @@ excluding honest stubs it is **28**, of which **12** are in real commands and 12
 were genuinely dead. Gate the ratio, not the count.
 
 Honest stubs are excluded on purpose: a body that says "not yet implemented" and exits is
-telling the user the truth, and its unused parameters are expected. The stub test is on the
-BODY TEXT and its length, not on any annotation the author has to remember to add.
+telling the user the truth, and its unused parameters are expected. So is a superseded verb
+that only calls ``navig.cli.superseded.moved(...)`` (it says where the command went and exits).
+The stub test is on the BODY -- its text and that call -- not on its length (a short command
+can still ignore its flag) and not on any annotation the author has to remember to add.
 
 Why a baseline
 --------------
@@ -44,7 +46,6 @@ from pathlib import Path
 COMMANDS = Path(__file__).resolve().parents[2] / "navig" / "commands"
 
 _STUB = re.compile(r"not yet implemented|not implemented|planned for|coming soon|placeholder", re.I)
-_MIN_REAL_BODY_LINES = 8
 
 #: (file, function, parameter) -> what the user loses, and what wiring it takes.
 _KNOWN_DEAD: dict[tuple[str, str, str], str] = {
@@ -68,11 +69,21 @@ def _is_command(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     )
 
 
-def _scan() -> tuple[list[tuple[str, str, str]], int]:
+def _redirects(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """The body calls ``moved(...)``: a superseded verb that names its replacement and exits."""
+    return any(
+        isinstance(n, ast.Call)
+        and ((isinstance(n.func, ast.Name) and n.func.id == "moved")
+             or (isinstance(n.func, ast.Attribute) and n.func.attr == "moved"))
+        for n in ast.walk(fn)
+    )
+
+
+def _scan(root: Path = COMMANDS) -> tuple[list[tuple[str, str, str]], int]:
     """([(file, function, unused parameter), ...], commands examined)."""
     dead: list[tuple[str, str, str]] = []
     examined = 0
-    for f in sorted(COMMANDS.rglob("*.py")):
+    for f in sorted(root.rglob("*.py")):
         try:
             src = f.read_text(encoding="utf-8", errors="replace")
             tree = ast.parse(src)
@@ -85,7 +96,7 @@ def _scan() -> tuple[list[tuple[str, str, str]], int]:
             examined += 1
             end = fn.end_lineno or fn.lineno
             body = "\n".join(lines[fn.lineno - 1:end])
-            if _STUB.search(body) or (end - fn.lineno) < _MIN_REAL_BODY_LINES:
+            if _STUB.search(body) or _redirects(fn):
                 continue                      # an honest stub; unused params are expected
             # `locals()` / `**kwargs` forwarding consumes every parameter
             if any(isinstance(n, ast.Name) and n.id in ("locals", "kwargs") for n in ast.walk(fn)):
@@ -127,3 +138,22 @@ def test_the_baseline_does_not_rot() -> None:
 def test_every_baselined_entry_says_what_the_user_loses() -> None:
     for key, why in _KNOWN_DEAD.items():
         assert len(why.strip()) > 60, f"{key} has no usable description"
+
+
+def test_a_short_real_command_that_ignores_its_option_is_reported(tmp_path) -> None:
+    """REGRESSION: every command under eight lines was skipped as a "stub" unread, so a
+    concise real command (blackbox_clear is seven) could drop its use of --force unseen."""
+    (tmp_path / "demo.py").write_text(
+        "import typer\n"
+        "app = typer.Typer()\n"
+        "@app.command('clear')\n"
+        "def demo_clear(force: bool = typer.Option(False, '--force')):\n"
+        "    wipe()\n"
+        "@app.command('old')\n"
+        "def demo_old(name: str = typer.Argument('')):\n"
+        "    moved('navig demo old')\n",
+        encoding="utf-8",
+    )
+    dead, examined = _scan(tmp_path)
+    assert examined == 2
+    assert dead == [("demo.py", "demo_clear", "force")]

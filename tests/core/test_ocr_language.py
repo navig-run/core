@@ -220,3 +220,39 @@ class TestTheSharedReaderUsesIt:
             inspect.signature(ocr_mod.extract_ocr_text_from_image_bytes).parameters
         )
         assert params == ["file_bytes"]
+
+
+class TestAFeatureOverrideReachesOcr:
+    """`telegram.tiktok_cards.language` pinned while `user.language` is auto: the
+    feature's language must pick the pack, not only the speech model."""
+
+    def test_the_override_picks_the_pack_and_is_scoped(self, monkeypatch):
+        _installed(monkeypatch, "rus", "eng")
+        assert ocr_mod._LANGUAGE_OVERRIDE.get() == ""
+        with ocr_mod.language_override("Russian"):
+            assert ocr_mod.ocr_language() == "rus+eng"
+        assert ocr_mod._LANGUAGE_OVERRIDE.get() == ""  # nothing leaks past the block
+
+    def test_an_explicit_argument_still_wins(self, monkeypatch):
+        _installed(monkeypatch, "rus", "ukr", "eng")
+        with ocr_mod.language_override("Russian"):
+            assert ocr_mod.ocr_language("Ukrainian") == "ukr+eng"
+
+    def test_a_threaded_read_sees_it(self, monkeypatch):
+        """Every surface reads through `asyncio.to_thread`, which copies the context."""
+        import asyncio
+
+        _installed(monkeypatch, "rus", "eng")
+
+        async def read():
+            with ocr_mod.language_override("Russian"):
+                return await asyncio.to_thread(ocr_mod.ocr_language)
+
+        assert asyncio.run(read()) == "rus+eng"
+
+    def test_the_gap_is_judged_in_the_override(self, monkeypatch):
+        _installed(monkeypatch, "eng")
+        monkeypatch.setattr(ocr_mod, "ocr_unavailable_reason", lambda: None)
+        with ocr_mod.language_override("Russian"):
+            gap = ocr_mod.ocr_language_gap()
+        assert gap is not None and "rus" in gap

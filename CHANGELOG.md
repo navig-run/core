@@ -9,7 +9,1002 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Do NOT add entries here by hand: drop a fragment in changelog.d/<slug>.<kind>.md (see changelog.d/README.md) -->
 <!-- and fold them in with `npm run changelog:assemble`. Direct edits of this block collide on every rebase. -->
 <!-- This file merges by UNION (.gitattributes): two branches inserting at the same line keep both entries on rebase. -->
-<!-- Run: git log v3.31.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+<!-- Run: git log v3.33.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+
+## [3.33.0] — 2026-10-30
+
+### Added
+- **NAVIG OS: a warning before Claude fails, questions answered by tapping in Telegram, and steadier questions in plans.** At startup NAVIG OS now checks once whether its built-in Claude engine accepts each Claude connection's model, and if not, says so in a notice and on the connection in AI settings before you send anything (it re-checks only after an update or a model change). In a linked Telegram chat, a question card with several questions or a multi-select is answered by tapping through it on one message — numbers, Done, Skip, or "You decide" — instead of typing a reply; a session linked to two chats now works in both. In Explore mode Claude always sees the question and plan tools (they were hidden behind tool search), plans start with a short "Decisions" list of your answers, the question row in the chat history reads as the question instead of raw data, and every Claude tool result shows plain text instead of a data wrapper. Fixed: a question asked in the same turn as a plan could stay pending and swallow your next Telegram message; "Accept Plan" did nothing while a question or permission card was open, and is now hidden until you answer; pressing Stop no longer marks the question as an error; after a reload, sessions waiting on you show their badge without being opened; and Explore mode no longer lets an outside tool through just because its name ends like a built-in one ("SubmitPlan", "AskUser", "Read").
+
+### Fixed
+- **No more "Health check: 5 problems" on boxes with no AI** — the daily LLM-mode probe now
+  runs only when the install declares AI intent: `ai.default_provider` (or legacy
+  `ai.provider` / `ai.ollama_host`) in config, or provider detection finding a stored key, a
+  reachable ollama or the Copilot bridge. A fresh `server`-profile install resolves every
+  canonical mode to the shipped default (ollama) and alerted "5 unreachable modes" every day
+  on a machine where unreachable is simply the truth. The check fails open — an unreadable
+  config never silences a real dead-model alarm — and the skip never burns the daily marker,
+  so the first beat after AI is configured probes the same day.
+- **A machine you are meshed with can no longer run commands on your brain through chat.**
+  `/llm/chat` also accepts `gateway.mesh_token` — the fleet secret every peer node holds — and
+  its messages went to the conversational pipeline unchanged, so a message starting with
+  `navig …` ran as a command with no approval step: any LAN peer holding only the peer secret
+  could drive the machine it was peered with. Chat forwarded from a peer is now answered by the
+  assistant instead. Your own path is untouched: requests with the admin token (NAVIG OS, echo,
+  anchor, the deck) still run a `navig …` line exactly as before.
+- **The mailroom watcher can now be seen and revived.** `navig email watch --every N` is one
+  long-lived process on a machine with no NAVIG daemon to supervise it; on 2026-10-27 it died at
+  ~18:00 and nothing noticed for two and a half hours — no crash file, no log line, only mail
+  quietly not being processed. Every pass now writes `watch-heartbeat.json` (pid, start, last
+  pass, pass count, last error), `watch --status` reports `fresh` / `stale` / `never` and exits
+  non-zero when it is not fresh, and `watch --supervise` starts a detached watcher only when the
+  status says the old one is gone — so a periodic task revives it without ever running two. A
+  heartbeat from a dead pid is stale even when the file is seconds old, because the question is
+  whether mail is being processed, not whether a file was touched; a pid whose command line is
+  not `email watch` is not treated as ours.
+- **`navig update run` pulls an editable checkout that is behind upstream.** The plan compared
+  version strings only, so a git checkout at the released version with newer upstream commits
+  was reported "already up-to-date" and never pulled without `--force`. It now fetches and
+  counts the commits HEAD lacks.
+- **A source-level webhook secret is honoured.** `webhooks.sources.<name>.secret` was ignored,
+  so every signed callback for that source was rejected with "Source misconfigured: no secret".
+- **An unresolvable host is a failed fetch.** `web_fetch` and the browser fetch tool let a DNS
+  `gaierror` escape instead of returning an unsuccessful result.
+- **Image-to-video seeds under a linked refs folder are accepted.** A refs dir configured
+  through a junction or symlink no longer rejects the seed images inside it.
+- **`navig tools list --format markdown` works.** It raised a `TypeError` whenever any tool was
+  registered.
+- **A refused tool call cancels the Task its handler scheduled.** `execute()` inside a running
+  loop reported an error while a returned `asyncio.Task` kept running.
+- **Web search finds keys where NAVIG stores them.** Firecrawl uses a bare `firecrawl` vault
+  key (what `navig vault add firecrawl` writes), and SerpApi reads the `serpapi/key` label that
+  onboarding imports.
+- **DuckDuckGo result URLs keep their encoded characters.** Redirect targets were decoded
+  twice, so `q=a%26b` came back as `q=a&b`.
+- **`navig update run` no longer reports success while the daemon runs old code.** When the
+  daemon could not be reloaded (e.g. it runs elevated under a non-interactive run), the node is
+  now marked `restart_pending`: the CLI prints the manual restart step and exits 1, and the
+  JSON result reads `"success": false`. The installed files are kept, not rolled back.
+- **The TUI dashboard SSH badge counts configured hosts.** It called a lister the shared config
+  singleton does not have, so it read "missing" on every install with hosts.
+- **The TUI mesh badge ignores offline peers.** A peer that stopped heartbeating no longer keeps
+  the mesh reading healthy for ~13 minutes until it is evicted.
+- **The TUI task-queue badge follows `gateway.storage_dir`.** It always read the default
+  location, so a moved queue showed "0 pending".
+- **The dashboard help notice shows the `[e]` edit shortcut.** Rich markup was swallowing it.
+- **The setup wizard and review screens honour a late `NAVIG_CONFIG_DIR`.** They bound the
+  config path at import, so the overwrite check and the save could target the original dir.
+- **Body metrics no longer lose a concurrent update.** The CLI, the gateway and the deck each
+  upsert `metrics.csv`; two writers on one snapshot left only the later write. The
+  read-modify-write now holds a cross-process lock (kept in the NAVIG data dir, not the space).
+- **Spaces keep navig runtime files out of git.** The managed `.gitignore` block now ignores
+  `.navig/history/`, `.navig/cache/`, `.navig/*.db` (with `-wal`/`-shm`) and
+  `.navig/menu.cache.json`.
+- **`navig habit` finds the tracker the space declares.** A space's `habits.log_file` (the
+  human-space keeps it at `spaces/growth/habits.csv`) is honoured, falling back to a root
+  `habits.csv` that already holds history. A relative `--space` resolves from the directory
+  navig was run in, not the active space.
+- **Habit check-in taps land in the right tracker.** Each card's tracker is recorded per
+  message and stored as an absolute path, so a newer card for another space in the same chat,
+  or the gateway's different working directory, no longer redirects taps on an older card.
+- **`journal.reflect` and `journal.model` take effect without a restart.** The running daemon
+  reads both live, so turning reflection off or pinning a local model stops private entries
+  from reaching the previous model.
+- **`navig space media config --init` no longer overwrites other config changes.** The
+  layout is saved through `set_global`, which merges a concurrent edit and refreshes caches.
+- **A space id alias is no longer a second space.** `project-space` and `project` are compared
+  canonically when a folder is registered, so `space init` / `navig wire` refuse the duplicate.
+- **A project space wins over a global one that shares its manifest id.** When folder names
+  differed from the id, `resolve_space` answered from the registry and picked the global
+  folder, so `plans next --space` and inbox promotion could read or write the wrong space.
+- **An unreadable active-space file is recorded once per episode.** A lasting lock appended one
+  identical incident per turn; a successful read now ends the episode.
+- **Body-metric averages count each date once.** Legacy files with duplicate dates weighted
+  that day several times; the first row with a value (the one `upsert` edits) wins.
+- **`navig wire` / `space doctor --fix` repair a `.gitignore` block that lost a marker**, and
+  report an unwritable `.gitignore` as a warning instead of aborting.
+- **The doctor's retire preview lists every line it removes**, including the navig label
+  comment above a blanket `.navig/` rule.
+- **`navig habit stats` ignores future-dated rows**, which made the span zero or negative.
+- **Journal entries:** a follow-up that is a substring of earlier prose is no longer dropped as
+  a retry, and an operator's own `## ` subheading no longer cuts the entry short.
+- **A `navig-studio` layout survives the move to `navig space media`.** When `space.media` is
+  unset, `~/.navig/studio.json` (or `$NAVIG_STUDIO_CONFIG`) is translated and imported once;
+  the legacy file is left in place.
+- **`space doctor --fix` repairs the `source` of an already-registered space**, so a project
+  an older build filed as `root` is relabelled `external`.
+- **`navig space register` and `POST /spaces/register` fail while `spaces.json` is locked**
+  (exit 1 / HTTP 503) instead of reporting a registration that was never written.
+- **A registered external, plugin or project space keeps its scope** when resolved through
+  the registry fast path; it was always reported as `global`.
+- **A regular file named like a space no longer resolves as that space.**
+- **The weekly review shows logged `steps` and `deep` values**, and its empty-window warning
+  now looks at the window rather than the whole tracker history.
+- **`plans_dir` survives an unreadable plan folder**, and space progress reads the
+  `CURRENT_PHASE.md` text from the same file whose date it reports.
+- **The TikTok Audio button sends a track Telegram accepts.** `send_audio` labelled every
+  upload `audio/mpeg`, including the `.m4a` it usually is, and a WebM/Opus fallback from the
+  audio ladder went to sendAudio, which takes only MP3 and M4A. The MIME now follows the
+  file extension, an audio-only download is converted to M4A when ffmpeg exists, and any
+  other container is sent as a document.
+- **The TikTok browser tier keeps its promises.** `--watermark` no longer falls back to the
+  clean stream when no watermarked render exists, the CDN size is checked with a HEAD
+  before the buffering GET, and a failed ffmpeg stream copy that left a partial file now
+  falls back to the re-encode instead of shipping corrupt audio.
+- **`navig tt analyse` skips the browser for a post with zero comments.** A post yt-dlp
+  counted at zero comments no longer launches the browser comment fetch.
+- **`navig telegram status` shows the user account without a bot token.** A missing bot
+  token returned before the MTProto section rendered. A session that exists but is not
+  authorized now makes the command exit 1 instead of 0.
+- **`navig vault set`, `vault add` and `config set` never overwrite an unreadable credential.**
+  `vault.get()` answers `None` for a credential it cannot decrypt (a transient lock), and the
+  write paths took that as "absent", replacing the live secret and dropping its other fields.
+  They now refuse (vault) or skip the vault write-through with a warning (config).
+- **`navig telegram contacts tag` / `tag-list` count only contacts that stuck.** The success
+  line counted every accepted write, including the ones reported as not filed; the result
+  data gains a `persisted` count.
+- **`navig telegram business alerts` rejects an unrecognised state.** A typo such as `of`
+  fell to the default and switched deletion alerts on; it now exits 2 and changes nothing.
+- **`navig video cut` refuses an output that resolves onto a source or another output.**
+  With `--force` such an EDL overwrote the original media.
+- **`navig video kinetic` finds its faces outside the per-user Windows font dir.** It also
+  searches `<workspace>/fonts` and the platform font dirs.
+- **`navig video parity` fails a candidate whose audio track ends early.**
+- **`navig text channel sync` reports master episodes with no block in `episodes.py`**, and a
+  custom-named workspace module (`data.shape`) is re-imported per workspace.
+- **`navig telegram business deleted` no longer calls announced rows "not announced".** With
+  `deletions quiet expired off` (or `wipes off`) those rows are announced, so the count now
+  covers only the reasons that are quiet right now.
+- **`navig telegram contacts runs` shows each run's pruned count**, so a prune run no longer
+  reads as `0 written, 0 undone`.
+- **`navig telegram login` names an unreadable vault** instead of sending you to re-run
+  `navig telegram setup` over credentials that are present.
+- **`navig telegram extensions enable <label>` accepts the localized label** the list shows.
+- **`navig text channel data` keeps the live answer when the cache cannot be written.** A
+  read-only workspace returned stale cached numbers, or failed under `--strict`.
+- **`navig text channel lint --strict` fails on every note**, including the lore-order note.
+- **`navig text lyrics sheet` refuses `--start-bar` below 1**; the demo read 0 as missing.
+- **`navig text lyrics fit --beats` reports the nearest beat** in `--json` output and in the
+  multi-file table, not only in the single-file line and the Markdown report.
+- **`navig text lyrics scaffold` reports a malformed bar-map block** as an error instead of a
+  traceback.
+- **The standalone navig-vault atomic write retries like navig's own writer** — the same
+  nested lock retry, so a lock navig survives no longer fails a standalone vault write.
+- **`navig vault set` reports a refused update as a failure.** When the existing secret could
+  not be read or merged, the new value was discarded while the command printed "Updated
+  credential" and exited 0; it now exits 1 and says to retry or delete and re-add.
+- **A legacy numeric or boolean vault secret reads back as its stored text** instead of raising
+  inside `get_secret()` and skipping the credential fallback.
+- **A provider lookup no longer returns nothing when a better-ranked credential is broken.** A
+  corrupt `active` credential, or one that decrypts to invalid UTF-8, now falls through to a
+  readable sibling, and one lookup decrypts and audits the chosen item exactly once.
+- **Website logins match by registrable domain on a standalone navig-vault** with the `web`
+  extra: a login stored for `mail.google.com` is found for `google.com` without navig-browser.
+- **`navig video cut` reports a non-numeric or non-finite `t0`/`t1` as an EDL error (exit 2)**,
+  and renders each output beside it so a failed render never leaves a partial file that the
+  next run reports as cached.
+- **`navig video kinetic render` fails when ffmpeg exits non-zero** instead of printing `wrote`
+  over a missing or truncated MP4.
+- **`navig video parity --frames 1` samples one frame** instead of crashing with a division by
+  zero.
+- **`navig video parity` names the missing `render` extra** (exit 2 with an install hint)
+  instead of a `ModuleNotFoundError` traceback, and two videos of different resolutions now
+  fail the pixel check and continue to audio instead of raising a NumPy `ValueError`.
+- **The `video` skill ships in the `navig-video` wheel.** It sat outside the package, so an
+  installed plugin had no skill to discover.
+- **Vault JSON secrets resolved through the `get_secret` fallback are plaintext**, not a
+  masked `SecretStr`.
+- **TOTP rejects an unsupported algorithm with a clear `ValueError`.** Only sha1, sha256 and
+  sha512 are accepted; `md5` and other `hashlib` names were silently used.
+- **Lighthouse 1.8.1: a Telegram update can no longer be lost on an uplink drop.** The edge
+  ACKs Telegram on hand-off, so it now keeps the delivery queued until the brain answers it
+  and replays it on reconnect (the brain's `update_id` dedup absorbs a duplicate). The same
+  release re-checks the NAVIG OS session cap when a pending socket authenticates (eleven
+  sessions could pass a cap of eight) and measures the OS inbound message cap in UTF-8
+  bytes. Redeploy the edge (`navig lighthouse redeploy`) to pick it up.
+
+## [3.32.0] — 2026-10-27
+
+### Added
+- **The core agent loop gained native repository, planning and question tools.**
+  `file_search` / `grep_search` (git-aware, untracked files included, ReDoS-bounded) and a
+  hash-guarded `edit_file` for coding sessions; session-scoped plan tools with a write gate and
+  human-only `plan_approve` (`navig do --plan`); `ask_user` over the existing request registry;
+  `subagent_list` / `subagent_inspect` / `subagent_interrupt` with `coordinator_run background=true`;
+  read-only `plugin_inspect` / `module_list`; and workspace `AGENTS.md` / `CLAUDE.md` now ride the
+  full system prompt after the guardrails. None of it touches the default `core` toolset schema.
+  Reference: `docs/reference/agent-tool-surface.md`.
+- **`cdp_download` MCP tool**: capture a file the attached page downloads and report its
+  path, size and SHA-256, so exports and attachments behind a page button are reachable
+  from a browser session. Deliberately has **no path argument** — the tool picks the
+  folder, the page's file name is sanitised and never overwrites, and the size is capped —
+  so it cannot turn "a file arrived from this page" into "write bytes anywhere". It is
+  classified `dangerous` for the MCP gate (`_tool_safety`) **and** destructive for the
+  agent gate (`approval.DESTRUCTIVE_TOOLS`), and routed through `navig_browser_debug_act`.
+- **The Dock can reach a brain on another machine, and says why it refuses.** A pinnable address
+  existed and no credential did, so a gateway that is not on loopback rejected every request — while
+  `/health` answered 200, which made "connected" look true. The deck key now travels as
+  `Authorization: Bearer` on requests to the resolved daemon origin only: Lens calls, blob URLs and
+  the discovery port probe are untouched, so a signed-in page never receives the install's token.
+  Options → Address gains a Deck key row (save, clear, test) that never renders the stored value back
+  (`{hasKey, length}` only), and a probe asks `/health` and then `/api/deck/lenses`, so "ok" means an
+  authenticated route accepted the key. Failures are four different sentences instead of one: a 401
+  whose body mentions `initData` is named as `deck.telegram_only` rather than "paste the key" — that
+  flag disables the loopback bypass and the key together, which is exactly what outpost runs today.
+- **One-time codes get their own Telegram card, and a held code stays reachable.** A detected
+  code used to reach the operator only as a line inside a mailroom digest, and a space with no
+  rules sent no digest at all — so "the code never arrived" was the normal outcome, while a
+  refusal left the flow `held` with a reason and no code, `otp flows` listing only `active`
+  flows and `otp code` answering "No flow with a code held". Now every decided code is one
+  card: the masked code, the sender, the flow, and **Use it** (the same browser fill
+  `navig email otp fill` runs) / **Ignore**; a refusal carries its reason and Ignore. The code
+  itself never enters the message — the buttons hold an `mr:` token that resolves server-side,
+  so a forwarded card is inert and the code can only be spent by a press. A plausible code is
+  stored as well as an automatic one, so it can be revealed or filled later; `otp flows` shows
+  status, masked code and why a flow waits, `otp code`/`otp fill` explain a refusal instead of
+  silence, and `otp accept` / `otp reject` end a hold from the CLI. `navig email watch --every N`
+  runs passes forever (a failed pass is logged, not fatal), which is what lets the watcher be a
+  logon task rather than a single pass.
+- **Three defects surfaced by running it live.** `gates.lookalike` indexed past a domain with no
+  dot, so a flow opened as `otp open cloudflare` crashed the whole watch pass with `IndexError`;
+  it now treats a bare label as nothing to imitate. `watch` claimed our own `SENT`/`DRAFT` copy
+  of a message, which shares the Message-ID with the delivered copy — the outgoing copy won the
+  claim, the real delivery looked like a duplicate and was skipped, and the pipeline read a code
+  out of mail we had just sent; those copies are now ignored before the claim. And
+  `import navig_email.flowreg` died on a circular import (`flowreg` → `otp.extractor` →
+  `otp/__init__` → `service` → `flowreg`); the gate helpers are imported inside the call, so the
+  registry opens on its own.
+- **`navig recall resurrect` — the ideas worth reviving, ranked.** A deterministic score over the
+  forgotten ideas (never rejected or superseded, nothing shown to be built): **+40** when your own
+  words are quoted in it, up to **+24** for quoted passages, **+(11−rank)·4** for an audit
+  recovered-idea rank (1–10), **+15** for staleness, **+5** for an open status — ties break
+  oldest-first, and every score prints its reasons, so the ranking is explainable rather than an
+  opinion. `--telegram` sends the digest as one message through the new **`recall_digest`**
+  notification type (Deck + Telegram by default). The MCP tool `recall_resurrect` follows the
+  existing Brain routing (Brain-routed after the next Brain release; until then it reports
+  "upgrade the Brain"), with the same scope rules as every other read.
+- **More Telegram switches reachable from the Mini App.** A new deck route (`/api/deck/telegram/features`) exposes the room catalog, media analysis, TikTok cards and their cover image, music links, rich messages, the restart greeting and the proactive watcher. Each switch shows whether it applies live or after a restart, and whether a parent extension is keeping it from doing anything.
+- **A challenge pauses the run with its real reason (never evasion).** When a step fails
+  looking for an element, the headless runner now inspects the still-open page for challenge
+  markers (CAPTCHA widgets/turnstiles, one-time-code prompts, "verify you are human" walls) and
+  classifies the failure as `challenge`: the run reports `needs_user` (exit 4), keeps its
+  checkpoint resumable and sends the `webflow_needs_user` notification naming the check. This is
+  detection and classification only — nothing is solved, spoofed or auto-filled; the
+  verification stays the person's to do (in the Dock or their browser), then they resume.
+- **`navig webflow` learns repair, resume and rollback.** `run --repair` lets an acting step the
+  site renamed be repaired from a live observation: the proposal must resolve to exactly one
+  visible element through the runner's own matcher (drifted name/test id/id first, recorded
+  position second, otherwise fail closed), a *check* is never repaired, every repair is an
+  incident (`webflow.locator_repair`) and — for a stored flow — a new revision with
+  `provenance.source: repair` (origins, urls and values never change). `run --resume <run_id>`
+  continues an interrupted run from a sanitized checkpoint (`webflows/<id>/runs/<run_id>.json`,
+  verdicts only): the page-aware rules skip what the restored page still proves, re-execute what
+  is idempotent on it, and refuse with `stale` rather than re-click an unproven action.
+  `navig webflow runs` lists checkpoints; `navig webflow rollback <id> -r N` brings an old
+  revision back as a new one (append-only).
+- **A run that needs you pauses instead of failing: exit 4 + one notification.** A secret nobody
+  may fill (non-interactive) or a missing vault login mid-run reports `needs_user`, keeps the
+  checkpoint resumable and sends the new `webflow_needs_user` notify type (registered row +
+  glyph, deck parity, seeded matrix: deck + Telegram by default, routable in Settings like every
+  other type).
+- **`navig webflow` — list, show, run, export, import, delete recorded browser procedures.**
+  `navig webflow run <id> -p name=value [--allow-vault] [--json]` replays a flow headless with
+  no model and exits **0 only when it is verified** (every step passed and a check proved the
+  outcome); 3 = completed without a check, 1 = failed, 130 = stopped, 2 = could not start. A
+  secret is never accepted as an argument: vault-backed secrets fill just in time with
+  `--allow-vault` (https, same site, audited), otherwise a person at the terminal is asked.
+- **A NAVIG agent goal can be reached through a Webflow.** `navig_agent_goal_add` (MCP) takes an
+  optional `webflow: {id | match, params, allow_vault}`, resolves it (an unknown or ambiguous
+  flow returns the candidates and creates nothing; a secret param is refused) and decomposes the
+  goal into one subtask, `navig webflow run … --json`, every part shell-quoted. The goal loop
+  judges it by exit code, so the goal is reported complete only after the flow's check passed.
+
+### Fixed
+- **`navig doctor` names the real reason a shared CI lane is unreachable.** The row used to say "add yourself to navig-ci-users" whether or not the account was already in the group; it now asks the directory (`Get-LocalGroupMember`, `getent group`) and this process's own token (`whoami /groups`, `id -nG`) and states one cause: the account is missing from the group (with the administrator's command), the group is in the database but not in this logon session's token (sign out and back in — no administrator needed), or the token carries the group and the directory's ACL is the blocker (with the exact `icacls` / `setfacl` grant). An unreadable membership says so and still names the next step.
+- **Mini App button health on a client**: the signature comparison needs the machine that deploys the deck, so a client now reports a warning that names the Brain instead of a false "Telegram clients are on an older deck" with `navig miniapp register` advice that would corrupt the button.
+- **`navig doctor` stopped reporting two false failures on a client machine.** A stale
+  `gateway.pid` whose pid number Windows had recycled made doctor announce "a local brain is
+  running" beside a brain link (a two-authority alarm against a browser), and made the runtime
+  inventory state that 36 plugin sources were "not in the daemon's environment" when the
+  daemon's Python had never been read at all. The pid file's process is now verified to be
+  NAVIG (`python -m navig …`), a stale file is named with its new owner in a warning row
+  instead of being trusted, and an unknown daemon yields **one** honest warning rather than a
+  per-plugin claim about an environment nothing measured. Measured here: 42 failed rows → 2,
+  and the two that remain are the shared checkout's version, not a health problem.
+- **`navig doctor` no longer reports a recycled process as the gateway.** `gateway.pid`
+  outlives the gateway that wrote it, and Windows hands the number to somebody else; the
+  runtime-inventory rows then named that process as the daemon — measured on a client
+  whose pid file from 22 Oct named a Chrome renderer, so every plugin row printed
+  `python -m pip install -e …   # into C:\Program Files\Google\Chrome\Application\chrome.exe`.
+  The pid is now trusted only when the process really is a NAVIG gateway (python +
+  `-m navig … gateway`), otherwise the daemon's Python is reported **unknown**, and a
+  repair hint names an interpreter only when that interpreter is the daemon's — never
+  the caller's.
+- **A 402 is classified by what the error says, not by the number alone.** Providers report a plan or usage cap as 402 too, and reading those as a billing failure parked the model in the 600s payment cooldown (a rate limit cools for 60s and clears itself) while `navig doctor` reported a billing problem the operator cannot fix. Billing wording still wins, so no billing error is silently re-read as transient; unrecognised 402s keep the old reading. The reason texts also stopped claiming evidence the switch ledger does not keep — `rate-limited (provider quota)` and `402 from the provider (payment or usage cap)` instead of `rate-limited (429)` and `billing problem (402)`.
+- **`navig os open` says why the web version won't open when the server is down.** With nothing answering the port, Windows printed only `Launch codes need a unix socket, which this platform does not have` — a true sentence about the wrong thing, while the fact that mattered was that the NAVIG OS web server itself was not running (observed 2026-10-21). It now leads with `The NAVIG OS web server is not answering on port <n> — start it with: navig os serve`, and appends the launch-code reason so nothing is hidden. Server up → unchanged (opens or prints the login page).
+- **A plugin that cannot import now names the distribution — and, for an editable install, the
+  checkout it came from.** `pip install -e plugins/<name>` pins the module to a checkout;
+  delete that checkout and the distribution metadata and its `navig.plugins` entry point
+  survive while the import resolves nothing, so every NAVIG command warned only
+  `navig plugin 'router' failed to load: No module named 'navig_router'` — no distribution,
+  no path, nothing to act on. The loader (`navig/core/plugins.py`) now appends
+  `<dist> is installed editable from <path>, which is gone or incomplete — reinstall it from
+  that checkout or remove it (pip uninstall <dist>)`, and a plain reinstall/remove hint when
+  the install is not editable. A plugin that raises on its own still reports its own error
+  with no install advice, because reinstalling it would send the operator the wrong way.
+  Found live: `navig_router` and `navig_tasks` 0.1.0 both pointed at a deleted
+  `.dev/worktrees/distribution` checkout. Pinned by `core/tests/plugins/test_load_hint.py`.
+- **A locked `index.db` no longer kills a Recall run.** The daemon's `recall_ingest` monitor and a
+  backfill hold the same database; when one process kept the write lock past the 5 s `busy_timeout`,
+  `RecallStore` raised `database is locked` out of `BEGIN IMMEDIATE` and a 2.5-hour extraction died.
+  The store now waits **30 s** per attempt and retries a lock error on a bounded backoff
+  (0/1/2/4 s) for its transaction and write paths, while a genuine SQL error still raises
+  immediately — and `reindex`ing, ingesting and extracting all survive a second process writing at
+  the same time.
+- **A fact saved with a secret keeps its sentence punctuation.** The spoken-secret
+  redactor ate trailing `!` and `,` along with the token, so a stored memory read
+  "…password is ***REDACTED***" instead of "…***REDACTED***!". Quotes around the value
+  survive too; an internal comma inside the secret is still redacted whole, and a
+  punctuation-only secret re-emits nothing.
+- **Archived Planner lists can be restored.** `GET /api/deck/planner/lists` takes
+  `?archived=1`, and NAVIG OS Planner Settings asks for it, so an archived business-chat list
+  stays in Settings with its Restore action instead of vanishing on the next reload.
+- **NAVIG OS fixes from review.** Hosted OAuth (os.navig.run) returns to the connected server;
+  Distribution sends PATCH/PUT edits with their real verbs (new `brain:put` transport);
+  Finance Overview can add bank and card accounts again; switching a Planner list no longer
+  shows the previous list's tasks; Studio previews a text variant's output and Library Next
+  rerolls; a task badge's View Output opens the terminal overlay; the browser view stays in
+  the active workspace; the Store ledger hint no longer promises payouts live sync cannot import.
+- **The Deck skill-distill confirm writes exactly the previewed draft.** A preview now returns
+  `source_ops`, every ledger id in the slice; sending them back as `ops` (with the same
+  `last` as the label) writes that slice, so an operation that lands before "Write skill"
+  never reaches a SKILL.md it was not shown in.
+- **`GET /api/deck/planner/items/{id}` reads one task or appointment, whatever its date.**
+  The agenda starts two hours ago, so a reminder snoozed past its appointment reported the
+  appointment as gone; the Planner now looks the item up by id (operator-only).
+- **`navig agent run --timeout` caps the process, not only the call.** A hung AI call kept
+  the CLI alive after `[TIMEOUT]` because the worker pool was joined at interpreter exit.
+- **`navig backup list` / `restore` survive a `metadata.json` with invalid UTF-8 bytes.**
+- **`navig backup watch --notify` retries an alert that reached no channel.** The stale edge
+  was consumed even when every channel failed, so the alarm never repeated.
+- **`navig apply` records a run as successful only after its receipt is written.**
+- **`navig card move` refuses `active` / `review` while the card's dependencies wait**, the
+  same gate the Deck run route enforces.
+- **`navig config schema install --write-vscode-settings` leaves a JSONC settings file
+  alone.** A `settings.json` with comments was quarantined and replaced by one holding only
+  the schema block.
+- **Config archives handle the flat `apps/<name>.yaml` layout.** Legacy host files are
+  counted as hosts (no false "0 hosts exported" failure), and import / inspect now restore
+  and list flat-layout apps and legacy hosts instead of silently skipping them.
+- **A `--replace` import keeps the live secret for partially redacted values** such as
+  `postgres://u:***REDACTED***@db` or a list holding a marker.
+- **`navig backup inspect` / `delete` exit 1 when they fail** instead of printing the
+  error and exiting 0.
+- **`navig --dry-run contribute scan` no longer forks, clones or branches.** The root
+  `--dry-run` flag was ignored; only the subcommand's own option was read.
+- **`navig db show --users` exits 1 when the `mysql` client is missing**, instead of 0.
+- **`navig doctor` names the process on the daemon port.** Any listener on 8765 used to show
+  as "daemon running"; a non-NAVIG listener is now an error naming it.
+- **`navig doctor` reinstalls a declared plugin with a dead editable path** in another
+  Python, instead of suggesting `pip install -e` followed by an uninstall of the same package.
+- **`navig doctor` finds an installed Anchor (`NAVIG Anchor.exe`)**, not only dev builds.
+- **`navig file remove/mkdir/edit --dry-run` no longer claims the host lock.**
+- **Formation agent ids are validated as filenames**, also without `jsonschema`, and
+  `navig formation sync` never writes outside `.navig/agents`.
+- **`navig gateway start` frees its port only from a NAVIG gateway or daemon process**; an
+  unrelated listener without `NAVIG_CONFIG_DIR` is no longer killed.
+- **`navig gateway session show|clear` act on the sessions `session list` returns**, via new
+  `GET`/`DELETE /sessions/{key}` gateway routes.
+- **`navig guard sweep` never kills a protected process through its orphaned parent's tree.**
+- **`navig guard run --kill-mb 0` never kills**, as its help says. It used to force-kill
+  every watched process on the first pass.
+- **`navig guard run` lowers watched builds to below-normal priority on Windows.** It read a
+  `priority_class` attribute psutil does not have, so nothing was ever deprioritized.
+- **`navig guard sweep` is more careful with what it kills and deletes.** A headless browser
+  whose `owner.json` cannot be read is spared. A `--user-data-dir` path with spaces is read
+  whole. Leased processes are spared by the CPU-spinner pass. The CDP-directory pass never
+  falls back to a relative `./Temp` when `LOCALAPPDATA` is unset.
+- **`navig habit spark --send` respects the Habits extension switch**, like `habit checkin`.
+- **`navig --dry-run host remove` removes nothing.** It reports the planned removal.
+- **`navig host remove` clears every selector that names the host**: project-local
+  `active_host`, the legacy `.navig` file, the `host use` cache, and global `active_host` /
+  `default_host`. A re-added host with the same name no longer becomes active on its own.
+- **`navig ledger verify --path <missing> --json` reports `"ok": false`**, matching its
+  exit code 1.
+- **`navig ledger show --json` exits 1 on a broken hash chain**, like the table view. Scripts
+  reading the JSON no longer see a tampered ledger as a success.
+- **`navig links open --profile <name>` reuses that profile's open browser.** A second open
+  used to launch on a new port against the locked profile, time out, and open the page
+  without logging in.
+- **`navig mcp install|enable|disable|remove` honour the global `--dry-run` and `--yes`.**
+  `navig --dry-run mcp install <name>` used to really run `npm install -g`.
+- **Disk monitoring on Windows with Python 3.10/3.11 skips network drives.** Without
+  `os.listdrives` it fell back to `psutil.disk_partitions`, which hangs on a cold mapped drive.
+- **`navig host monitor` honours the global `--json` flag** and prints one parseable document.
+  It used to print the human-readable view.
+- **`navig repo remove` keeps a worktree it cannot confirm git unregistered.** When git
+  refused a dirty worktree and the follow-up listing timed out or failed to start, the folder
+  and its uncommitted work were deleted anyway.
+- **`navig repo remove` rejects a slug that leaves `.dev/worktrees/`** (an absolute path, `..`
+  or a separator). Such a slug could remove a sibling worktree.
+- **`navig repo prune` refuses a symlinked or junctioned `.dev/worktrees`.** It used to treat
+  the link target's folders as orphans and delete data outside the repository.
+- **`navig repo sweep` dates a never-used branch from its reflog entry.** It used the date of
+  the commit the branch was cut from, so a new worktree made from an old commit looked unused.
+- **`navig repo sweep` and `navig repo land` accept a merged PR only if it merged into the
+  default branch.** A PR merged into `develop` or a release branch at the same tip used to
+  count as proof, and the branch was force-deleted.
+- **`navig repo sweep --yes` and `navig repo land --yes` delete a local branch only at the tip
+  they classified.** A branch another session advanced in the meantime is kept, and its new
+  tip is reported.
+- **Remote deletes in `navig repo sweep --remote` and `navig repo land` are leased to the
+  proven sha.** `land` now checks `origin/<branch>` separately and keeps it when it has
+  unmerged commits, so newer pushed work is no longer deleted.
+- **`navig repo sweep` no longer removes a fresh worktree recreated at a fast-forward-merged
+  PR's tip.** For a just-merged PR, the idle window now starts at the merge, not at the last
+  local commit.
+- **`navig repo guard install` wires the agent-lock hook to every tool.** Existing installs
+  are upgraded. A session that only reads now keeps its lock fresh, so another session can
+  no longer take over the main checkout while it is still working.
+- **`navig service start` no longer runs a scheduled task installed for another config
+  home.** Running it started a second brain.
+- **`navig service start` on a running daemon clears a leftover stop flag and watchdog
+  before repairing autostart, but only when run interactively.** Before, the repaired task
+  exited at every boot.
+- **`navig service start` on macOS goes back through launchd.** After a clean `service stop`
+  the LaunchAgent stays loaded but stopped; a start now bootstraps (if needed) and kickstarts
+  it, so the daemon is again owned and crash-restarted by launchd instead of spawned directly.
+- **Retiring a blanket `.navig/` rule keeps private state ignored.** When `.gitignore` has no
+  managed block yet, `space doctor`'s retire action lays the block down first, so
+  `.navig/vault` and credentials never become committable.
+- **`space doctor`'s Registry row reads the registry.** A folder whose id another space holds
+  no longer shows a green "registered" just because discovery listed it as the cwd project.
+- **`navig space init ""` is refused.** An explicitly empty name (an unset `$SPACE_NAME`) is
+  now a bad name, not an omitted one, and no longer scaffolds the invocation directory.
+- **Folding the active space clears its active bindings.** `space fold` resets the active
+  space to `default`, drops a working dir inside the folded folder, and clears the registry's
+  active pointer.
+- **`space rename --move-folder` re-keys the right row.** A retry after a failed move now
+  re-keys the registry row and moves the active pointer, and a stale row at the destination is
+  never re-keyed in place of the source row.
+- **Web mutations with an explicit `--host` claim the host lock.** `navig web enable-site`,
+  `disable-site`, `enable-module`, `disable-module` and `reload` no longer skip the guard when
+  the host is given.
+- **`navig ai models --check` no longer calls a 429/5xx-probed id a live unpriced model.**
+- **`navig app remove` keeps a different cached active app.** When the active app came from
+  `NAVIG_ACTIVE_APP` or a project config, removing it also deleted the unrelated global pointer.
+- **`navig app show <unknown>` exits 2 (not found)**, like every other app handler; an
+  unreadable or invalid configuration still exits 1.
+- **`navig backup system-config` / `web-config` no longer claim the host lock.** They only
+  run `test`/`find` and download over SCP; only `backup hestia` writes to the host.
+- **`navig backup watch --json --notify` stays one JSON document** when the alert fails; the
+  error is reported as `notify_error` in the payload instead of prose on stdout.
+- **`navig body log --weight` rewrites a prompt Telegram refuses to delete**, as `/weigh`
+  does, and keeps it pending when neither works; `prompts_cleared` counts only real clears.
+- **`navig body export` no longer blames a missing earlier window** when it is the current
+  window that has no readings.
+- **`navig card` resolves an exact id only to a board card**, so `deps add` / `subtask add`
+  can no longer wire a todo or appointment into the board.
+- **`navig card claim` / `release` keep `navig mesh agents list` in step**: the registry
+  entry now records the held card, and a claim the registry cannot record is undone.
+- **`navig chat` follow-ups have context.** Each interactive turn now carries the recent
+  transcript; before, every question reached the model alone.
+- **`navig config set active_host` records the host it replaced** (the `navig host use`
+  cache pointer), so `navig undo` restores the right host instead of a stale or empty one.
+- **`navig config show` prints YAML-native values** such as an unquoted date instead of
+  crashing with "Object of type date is not JSON serializable".
+- **`navig config set mcp.trust.servers.<id>.tools …` works on a short-form entry.** A server
+  set as `vetted` is promoted to `{tier: vetted}` first; any other scalar parent is refused
+  with a clear error instead of a TypeError.
+- **`navig config-backup inspect` survives a host or app YAML with invalid UTF-8**, and the
+  text output now flags an unreadable app configuration as it already did for hosts.
+- **`navig connector connect` never stores a field's placeholder.** Pressing Enter on a
+  required URL prompt (Supabase, CyberAIGen) now exits 1; the example is shown as a hint.
+- **`navig context init` asks git whether `.navig/` is ignored**, so an anchored `/.navig/`
+  rule or a comment no longer leaves a subdirectory's `.navig/` trackable.
+- **`navig contribute scan --dry-run` no longer requires a GitHub token**; only the real
+  fork-and-submit path resolves one.
+- **`navig cron run` waits for the job's own timeout** (plus headroom) instead of a fixed
+  300 s, and **`navig cron status`** reports "not initialized" while the scheduler starts.
+- **Telegram commands stop when the named active host cannot be verified.** `/files`, `/cat`,
+  `/hosttest`, `/apps`, `/run`, `/backup` and the monitor cards turned that case into
+  `localhost` and read the gateway machine instead. They now reply with an error.
+- **Host locks are acquired atomically, and a resumed session keeps its lock.** Two sessions
+  that both saw a free host could both claim it. A stale registry entry left by a resumed
+  Claude session also made that session's live lock look ended.
+- **`navig evolve sweep` refuses more disguised non-fixes.** An upper-case `NOQA` is caught
+  like `noqa`. A lint fix must also clear the targeted diagnostic, not another one with the
+  same rule.
+- **A non-UTF-8 JSON store is quarantined as `*.corrupt`.** Before, it raised and kept
+  services such as the cron scheduler from starting.
+- **Console log output redacts secrets.** Plugin records written to stderr (the daemon
+  journal) were not masked; only the log file was.
+- **The TikTok language override reaches OCR.** `telegram.tiktok_cards.language` now picks
+  the Tesseract pack for slide and video-frame text and the misread warning, not only speech.
+- **Scaffolding stays inside the tree it generates.** A template path that is absolute or
+  climbs out with `..` is rejected, even under `--dry-run`, and generating into an existing
+  directory no longer resets that directory's permissions to `0700` on Linux and macOS.
+- **Switching `NAVIG_CONFIG_DIR` to an empty directory no longer carries the old config.**
+  Reads used to return the previous directory's values, and a save copied them into it.
+- **Deleting an app clears `default_app` only when the app is really gone, and edits the
+  host where it lives.** An embedded app with the same name keeps its default, and deleting
+  a global default app from inside a project no longer leaves a stale `default_app` behind
+  or creates a project-local copy of the host.
+- **Numeric config values such as `timeout_seconds: 600.0` are kept.** They used to fall
+  back to the default without a warning.
+- **`navig --raw host show --current` prints only the host on stdout.** The "active host
+  could not be verified" error now goes to stderr.
+- **`navig evolve sweep` stops when ruff cannot run.** An invalid ruff config used to read
+  as a clean tree, and every lint fix was skipped.
+- **Host names that differ only in special characters get separate host locks.** `prod us`
+  and `prod_us` shared one lock file.
+- **`navig sync instructions` drops `SKIP:cline` sections from `.cline/memory.md`**, the same
+  way `sync-instructions.ps1` does.
+- **Loguru DEBUG and TRACE lines reach `navig.log` again.** Since loguru was routed into the
+  navig logger, the INFO level on the `navig` root dropped them before the file handler saw
+  them. The console still shows only what its level allows.
+- **`navig scaffold validate` catches more template errors before anything is written.** A
+  `path` or `content` that is not a string (`content: 123`) and a `source` file with broken
+  Jinja or non-UTF-8 bytes are now rejected during validation. Before, they failed partway
+  through generation.
+- **A scaffold condition over missing nested data skips the item.** `{{ options.tests }}`
+  with no `options` variable is false again; it used to stop generation with an error.
+- **Plugins using the standalone SDK no longer crash on a JSON store that is not UTF-8.** The
+  file is copied to `*.corrupt` and the default is used, the same as navig core does.
+- **Concurrent global-config writes no longer erase each other.** The daemon's save and a
+  `navig config set` from another process now share a cross-process lock on `config.yaml`,
+  so a write landing between one writer's refresh and its replace is kept.
+- **The incident log keeps entries appended while it is being trimmed.** The trim rewrote
+  the log from a snapshot and dropped anything appended in between. Python writers now
+  take the same lock, and late appends from the desktop apps are carried over.
+- **A non-UTF-8 config file is refused cleanly.** It raised a raw `UnicodeDecodeError`
+  instead of the `ConfigReadError` callers handle.
+- **OCR keeps text when Tesseract's position arrays are short or missing.** That case
+  raised internally and was reported as no text found.
+- **Scaffold templates cannot read files outside their own directory.** A `source:` that
+  is absolute or escapes with `..` is refused, and a merge into the target that fails
+  partway is rolled back instead of leaving a half-written project.
+- **The daemon entry keeps its launch context across the chdir to its home.** A relative
+  `NAVIG_CONFIG_DIR` is resolved before the chdir (it used to become `<launch>/.navig/.navig`),
+  and the launch directory's `.env` is still loaded first.
+- **A pid file naming a stranger no longer suppresses a daemon start.** The entry's duplicate
+  guard now also checks that the recorded process is a navig daemon.
+- **Background bot and gateway launches use the installed service only when it fits.** They
+  delegate only when its daemon config runs the requested bot and gateway on the requested
+  `--port`/`--host`. Otherwise they spawn directly with the flags the operator typed.
+- **The Windows scheduled task installs cleanly with `--no-start` and keeps one home.** With
+  `--no-start`, the five-minute watchdog is armed by the next login instead of within five
+  minutes, and the bootstrap now sets `NAVIG_HOME` itself instead of keeping an ambient value.
+- **Scoped process kills no longer take a default-config brain for their own.** `config_dir_of`
+  derives a peer's default from the peer's own environment, not the caller's
+  `NAVIG_CONFIG_DIR`.
+- **A status check can no longer delete an elevated daemon's pid file.** A process that
+  cannot be inspected now reads as unknown rather than dead, the command line is read only
+  when a marker is asked for, and `navig service pids` keeps listing an elevated supervisor.
+- **Reaping a stale daemon pid file is atomic.** A relaunching daemon's claim made mid-reap
+  is restored instead of deleted, and two concurrent status checks record one death.
+- **Daemon-death incidents carry the command path only.** A free-form payload such as
+  `navig run 'API_KEY=… deploy'` no longer reaches the incident log or its Telegram push.
+- **Config incidents recorded before the gateway started are now pushed.** The reporter
+  replays incidents from the last hour that no notifier saw, and never pushes one twice.
+- **`navig service start --foreground` logs to the daemon's home.** The entry's chdir now
+  also resets the cached config manager and re-points `navig.log`.
+- **`save_default_config` recreates a daemon config deleted during its read** instead of
+  returning a path that does not exist.
+- **The daemon entry creates a missing home before entering it.** On a fresh install or a
+  new `NAVIG_CONFIG_DIR`, the chdir used to fail silently and leave the daemon in the
+  launch project.
+- **Bot and gateway ownership probes read string flags like the daemon.** With
+  `telegram_bot: "false"`, `bot status` no longer claims a supervised bot, and `bot stop`
+  no longer stops the unrelated daemon. The `gateway` flag gets the same fix.
+- **The Windows scheduled task starts with any home path, even when its boot log fails.** A
+  home such as `C:/Users/<user'name>/.navig` no longer breaks the bootstrap with a syntax
+  error. A `daemon/boot.log` or `restart.log` that cannot be opened no longer stops the start.
+- **`navig service status` reports what it actually read from Task Scheduler.** A query
+  that fails (access denied, Schedule service down) now shows as unknown instead of "Not
+  installed". A refused trigger (`0x800710E0`) counts as healthy only while an instance is
+  running. With NSSM active, a missing scheduled task no longer prompts
+  `navig service install`.
+- **A recycled child pid no longer reads as ALIVE.** The supervisor records each child's
+  creation time, and status and the dashboard compare it before reporting a child as live.
+- **The supervisor heartbeat keeps beating during a restart back-off.** A crash-looping
+  child now waits on a deadline instead of an inline sleep of up to 120 s. That sleep made
+  the beat go stale and `doctor` report a wedged supervisor.
+- **A NAVIG wheel inside another project's `.venv` is no longer read as a git install.** The
+  daemon boot record and the `doctor` freshness row used to take the enclosing repository's
+  HEAD as NAVIG's commit, so a `pip` upgrade could still read as "running current commit".
+- **`doctor` no longer names the wrong daemon log when a child runs from another folder.**
+  With the legacy `bot_script` option, the log location is reported as unknown with the
+  reason, instead of the supervisor's own path.
+- **A state file from before heartbeats no longer dates a daemon death.** Its mtime was only
+  its last rewrite, so the death incident recorded a false "last seen alive" time.
+- **The boot line reports UNEXPLAINED after a crash.** A dead daemon's reaped pid file now
+  leaves evidence for the next boot, which used to say "first start". An exception that
+  escapes the supervisor loop is no longer recorded as a clean stop.
+- **The Telegram worker loop drops the known-benign loop exceptions too.** The noise filter
+  was installed only by `NavigGateway.start()`, which the worker never calls.
+- **daemon: an out-of-range `--health-port` no longer stops the supervisor** — a port such as
+  99999 raised `OverflowError` from `bind()`, which escaped before any child started; it now
+  logs the failure and the daemon continues without the health endpoint, like a busy port.
+- **The agent-lock hook closes nine ways a main-checkout mutation slipped past it.** A quoted
+  subcommand (`git "reset" --hard`) is the verb. A `cd` in a pipeline, in the background or
+  after `||` no longer counts as moving the git verb that follows. A Bash `Set-Location` or
+  `chdir` is not a directory change. `cd ~` after the command reassigns HOME is an unknown
+  location. A worktree path proves a `$VAR` location only when it is that variable's own
+  assignment.
+- **The commit and reset guards inspect the right repository.** The repo comes only from the
+  `cd`s before the git verb and that verb's own global `-C`, so `git commit -C HEAD` and a
+  trailing `cd` no longer point the check at the wrong place. git resolves the commit
+  pathspec, so a commit from a subdirectory is checked. A `git rm --cached` earlier in the
+  same command counts. `git branch -q -f x <start>` and `git branch -f -- x <start>` are
+  recognised as branch moves.
+- **The agent-lock hook judges every command in a chained line.** Each reset, forced branch
+  move and `git worktree add` is checked, not only the first. `git worktree add --orphan`
+  no longer hides its path. A commit through `git -C <main checkout>` is branch-checked,
+  and a switch joined by `;`, `||` or a newline no longer excuses a HEAD that moved. The
+  commit pathspec is read from git's own arguments, so `git commit -m x gen.txt` counts
+  and a `--` inside a quoted message does not. A relative worktree gitdir resolves
+  against its `.git` file.
+- **The lost-work radar wants proof before it goes quiet.** A later edit of the same file
+  hides a lost commit only when the commit's hunks are on the ref. A reachable commit with
+  the same subject hides it only when the patch is identical.
+- **The pathspec-commit guard lets git match what an earlier `git rm --cached` staged.**
+  Magic pathspecs such as `:(top)gen.txt`, quoted operands with spaces and `-gen` after
+  `--` are no longer missed, and a dangling symlink still on disk counts as present.
+- **The unpushed-commit guard judges every unheld commit.** Fifty newer commits already
+  upstream as patch copies no longer hide an older unique one from a branch move.
+- **A git command in a comment or an echoed string is not a HEAD move.** It no longer
+  excuses a commit onto a branch something else moved HEAD to.
+- **The session briefing's commands run as printed.** The set-aside restore command
+  cherry-picks the whole `<base>..<branch>` range, and the rebase hint quotes the
+  worktree path.
+- **The briefing refresh lock belongs to its refresher.** A refresher reclaimed as stale
+  can no longer delete its successor's lock, and a refresh that fails to start releases
+  its claim instead of blocking refreshes for 15 minutes.
+- **The agent lock now guards tree-writing git plumbing.** `git merge-file`, `checkout-index`
+  and `read-tree` rewrite working-tree files but were classified as read-only; they now need
+  the lock like any other mutating verb, while `merge-base` and `merge-tree` stay exempt.
+- **Approval journals are never overwritten from a failed read.** A locked `pending.json` or
+  `resumable.json` used to read as empty, and the next record replaced every other entry.
+  The write is now skipped and the file stays as it was.
+- **A late Approve re-enters only agent-tool requests, and only once.** Missions, gateway
+  policy checks and the approval API no longer leave resume records. A timeout that
+  auto-approved discards its record. A daemon shutdown keeps the records of requests still
+  outstanding, so the restarted daemon can act on them.
+- **A late or post-restart answer that was accepted reports success.** Telegram and the
+  gateway API used to say "expired or not found" while the approved action was starting.
+- **A re-entered turn loads the asking session's conversation**, not the shared default
+  history.
+- **`navig contribute scan` no longer drops its findings when `TELEGRAM_BOT_TOKEN` is set.**
+  The bot-side flow was never wired, so the CLI review now runs in that case too.
+- **The `db-snapshot` block downloads with `navig file get`.** It used to call
+  `navig download`, the TikTok plugin's group, so the step failed and left the dump on the server.
+- **Builtin skills written for unimplemented commands no longer auto-activate.** 16 skills
+  (`navig dev gh`, `navig sys …`, `tunnel start` and others) now carry `activatable: false`.
+- **`navig <command> -v` is recorded in the operation ledger.** Only a root `-v`/`--version`
+  counts as a version screen now. `navig stack down -v` (remove volumes) used to go
+  unrecorded.
+- **`navig --dry-run kill …` no longer kills.** `kill` now honours the root `--dry-run`, and
+  the ledger records a dry run as read-only only when the command itself parsed the flag.
+- **A space's `modules_disabled` now removes built-in CLI verbs too** (`finance`, …), not only
+  plugin verbs. The verbs that turn a module back on (`space`, `module`, `config`, `plugin`,
+  `doctor`) are never gated.
+- **Mini App repair resets keyed per-chat overrides that point off the current entry URL.**
+  An old origin or a stale `v=` signature no longer shadows the freshly registered default.
+- **Connector accounts:** a legacy credential found through the vault's cross-profile fallback
+  is migrated on save and removed on disconnect, so Disconnect sticks. A named `--account`
+  lookup never resolves to the fallback row. A link whose signed-in identity cannot be
+  verified is refused instead of overwriting the default account.
+- **CyberAIGen transport errors no longer chain the raw request URL** into logged tracebacks.
+- **Supabase `act` dispatches the standard create/update/delete action types** that the Deck
+  route and the MCP tool send without `params.op`.
+- **Runtime receipts:** two concurrent `navig receipt record` runs both persist, and every
+  terminal mission transition through `advance_mission` (the public advance route included)
+  leaves exactly one signed receipt.
+- **`navig deploy rollback` no longer takes the site offline during the copy** — the snapshot
+  is copied into a private `mktemp -d` staging dir first and swapped in with two renames, with
+  a long timeout; a fixed `<target>.navig-rollback-tmp` is never `rm -rf`'d any more.
+- **Council workers stop when their agent times out** — the per-agent timeout now reaches the
+  provider HTTP call (`ask_ai_with_context(timeout=…)`), so an abandoned worker returns.
+- **`navig doctor` flags formation manifests that cannot load** — schema-invalid
+  `formation.json` files are reported, not counted as healthy.
+- **Inbox routes read mapping-form `triggers: {keyword: [...]}`** — their keywords now count.
+- **Approval journals: honest reads, safe prunes, routed results** — doctor reports an
+  unreadable journal as COULD NOT VERIFY; resume records survive a configured window above a
+  day; prunes and writes share a cross-process lock; late-approval results are a registered
+  `approval_resume` type delivered back through the channel that asked.
+- **`import navig.blackbox` exposes `recorder`, `bundle`, … again** — lazily, as attributes.
+- **`navig block verify` reports malformed `requires:` shapes instead of crashing** —
+  `requires: []` / `requires: [adb]` are rejected as "must be a mapping", and `tools: 1`
+  shows its "must be a list" problem rather than a `TypeError` traceback.
+- **Local blocks override plugin blocks of the same id** — user and project `.navig/blocks`
+  now take precedence over a plugin-shipped block during discovery.
+- **`requires.plugins` finds plugins by their manifest id** — in both the user and trusted
+  project plugin roots, not just by user-dir folder name.
+- **The Telegram App Info button asks for the app name** that `navig app info` requires.
+- **`win-perf-tuner` is discoverable on Linux** — its `skill.md` is renamed to `SKILL.md`.
+- **A large water undo no longer swallows later glasses** — the total is floored at zero
+  after each adjustment.
+- **Removing a check-in also clears its asked / nudged marks**, so a re-added item with the
+  same id still gets today's first prompt.
+- **`navig local show` / `ports` / `dns` … are recorded as read-only** in the operation
+  ledger, not as red local commands.
+- **A cancelled prompt is recorded as CANCELLED** — Ctrl-C at a confirm or a declined
+  `confirm(abort=True)` no longer lands in the ledger as a failure (or a distilled pitfall).
+- **`file show --download` and `diff --output` are no longer recorded as reads.** The
+  ledger now labels them a file download and a file write, so `navig ledger show` shows
+  their side effect.
+- **The app picker offers the selected host's apps.** Legacy apps embedded in the host file
+  are listed, and app files that belong to another host are not.
+- **Plugin commands run from the CLI now log to `navig.log`.** Entry-point commands such as
+  `navig download` bind their package into NAVIG's logging tree, as daemon plugins do.
+- **A first `navig lighthouse deploy` no longer reports a deck-key re-identification.**
+  Only a webhook URL derived from an old key counts as evidence that a key existed before.
+- **A cloudflared URL rotation can no longer be undone by an older broker retry.** A retry
+  that is still backing off stops once its URL is no longer the current one.
+- **Cloud shutdown kills a cloudflared child even if its cleanup is cancelled.**
+- **`navig cloud key --rotate` re-points the Mini App button in every mode.** Direct,
+  cloudflared and Tailscale installs used to keep the old key in the button. When
+  Telegram rejects the repoint, it is now reported as a failure.
+- **A Mini App button check that Telegram could not answer is a warning, not a pass.**
+  `navig doctor` now shows it as could-not-verify, and `miniapp register` warns.
+- **The lighthouse uplink reconnects promptly after a long session that ends in an error.**
+  The stable-session backoff reset now applies to error exits as well as clean closes.
+- **Malformed connector catalog rows report a catalog error.** A row that is not a JSON
+  object, or has a field of the wrong type, raises `CatalogError` instead of a traceback.
+- **A half-open circuit breaker admits one probe at a time even with a zero recovery
+  timeout**, and `probe_in_flight` stops reporting a probe once it has expired.
+- **An expired connector token with no refresh token no longer reads as connected.**
+  `navig connector list` and connector selection use the same rule as `is_connected`.
+- **Gmail OAuth reads the client secret from the vault when only the client id is set in
+  the environment.**
+- **Supabase, YouTube and Google Maps `fetch()` accept the old `table=`, `video_id=` and
+  `place_id=` keywords again.**
+- **A Supabase table read flags truncation from a server row cap.** The `Content-Range`
+  total is used when PostgREST returns it.
+- **A mission whose result cannot be canonicalised still gets a signed receipt**, without a
+  result digest, instead of being left terminal with no receipt.
+- **`navig deploy --dry-run` no longer records its planned snapshot**, and
+  `navig deploy status` shows `(dry run)` instead of a snapshot path that was never created.
+- **Council retries take the mode fallback when the error names no provider.** A bare
+  connection or timeout error no longer retries the same default route that just failed.
+- **A heartbeat finding about a non-LLM endpoint stays actionable.** "nginx health endpoint
+  returned 503" now raises a remediation mission; only LLM/model/provider endpoints are
+  informational.
+- **The polling inbox watcher fires once per file per scan**, even when a directory is
+  configured twice, and a transient unreadable directory or file no longer makes existing
+  inbox items fire again once access returns.
+- **The installer's dry-run plan header shows its `DRY RUN:` marker** instead of Rich
+  swallowing a `[dry-run]` tag.
+- **Telegram voice-bot menu buttons show their action** instead of the generic
+  `Action: act:…` stub, and are no longer routed to the bridge's reply callbacks.
+- **A Lens update check never overwrites an agent edit awaiting review.** The row reports
+  `pending` with `pending_kind: "agent"` until a person decides.
+- **The deck shim Worker compiles its header-rule regexes once** at module init rather than
+  on every request.
+- **A rejected broker register reports the one attempt it made**, in the log and in the
+  `broker_register_failed` incident, instead of the configured retry count.
+- **A scalar `comms.matrix.features` value no longer crashes feature-gated Matrix commands**;
+  a non-mapping block reads as the defaults.
+- **`navig store` shows why a legacy plugin is broken** — its load error is no longer dropped.
+- **An explicit `unrouted_fallback: ""` in inbox routes stays empty** instead of being
+  replaced by the inferred default channel.
+- **Matrix `ask()` no longer leaks a message callback per question.**
+- **Telegram voice-bot menu replies escape `<hostname>`-style placeholders**, which Telegram
+  rejected as unsupported HTML tags.
+- **Telegram appointment capture** leaves "cancel …" / "move … from X to Y" requests and
+  messages naming two moments to the agent instead of saving a wrong appointment.
+- **Business pro-mode auto-replies** are bounded: a burst from one chat coalesces into one
+  more reply to the latest message, and at most four replies read media or call the model
+  at once.
+- **Role replies and rewrites** that time out while applying still remove the ✍️ placeholder
+  (unless it may already be the answer) and tell the owner to check the chat.
+- **Business reminders**: the English article "a" is no longer read as a French clock marker
+  ("buy a 2 litre bottle tomorrow"); "every week at 9" repeats weekly instead of daily; and a
+  reminder that neither the chat nor the owner's DM received is kept and retried.
+- **Reminder channel** replies ("done", "cancel", "snooze") now manage the task they answer —
+  the nested `reply_to_message` id is read.
+- **Contact tagging** stops the run when the retry after a short flood wait is itself
+  flood-limited, instead of continuing to write.
+- **Telegram contacts undo** resolves people by the access hash journaled at write time (a
+  fresh session caches nothing), and `tag-list` journals the note it overwrites so undo
+  restores it instead of emptying it.
+- **Telegram contacts tag-list** stops on a second flood wait while resolving a handle instead
+  of recording a live person as unresolved.
+- **Deletion digest**: arming the first timer persists the window start, so a first isolated
+  deletion is reported; the watermark advances only to the bound the card counted, and a
+  deletion recorded while the card was sending gets its own timer.
+- **TikTok buttons** run off the update loop, so a long download no longer stalls the bot and
+  a second tap gets "Already working" instead of starting a duplicate download.
+- **TikTok temp files**: the stale sweep spares a directory holding a file whose path was
+  printed, and a locked cache file on Windows no longer fails the download.
+- **TikTok video transcript** names a missing navig-audio plugin instead of calling the clip
+  speechless.
+- **Translate** with a named target (`translate French`) no longer falls back to English when
+  the text is already in that language.
+- **Business role replies** keep a persona's quoted closing line (only wrapping the whole
+  reply in quotes is barred), and no longer tell the model a doctor's or lawyer's account is
+  not one: the auto-reply now uses an impersonation-specific guardrail floor.
+- **Role on a bot-authored echo** of the owner's message rewrites it as the owner's own
+  instead of answering it as the counterparty's.
+- **Role rewrites** that fall back to send-then-delete keep the original's thread (read from
+  the catalog, which now records what each business message replied to), and tell the owner
+  when the original could not be deleted and both messages remain.
+- **Role deadline** cancels a typing indicator stuck in Telegram instead of waiting on it, so
+  the give-up runs on time.
+- **Captionless photos** no longer pin a role reply to the English media description; the
+  conversation's language decides.
+- **Business agenda proposals** that Telegram refused are rolled back without a dismissal, so
+  a redelivered message proposes them again.
+- **Business reminders** count an implicit unit beside an explicit one ("in an hour and 30
+  minutes" is 90 minutes), and a clock time keeps its wall time across a DST change.
+- **Business reminders**: the store and expired delivery claims are updated under a
+  cross-process lock, so two supervisor processes settling at once no longer resurrect a
+  delivered reminder or both post one; a double-tapped "+1 h" / "+1 day" snoozes once.
+- **Shared to-do cards** stay within one Telegram message: open items past the 4096-unit
+  limit are summarised as "… and N more" instead of the refused send leaving a stale card.
+- **Weekly body check-in**: asking for a note supersedes an earlier "all fine" on the card,
+  and the once-per-week completion notice is given back when its send fails.
+- **Business deletions** emit `telegram_catalog_update` when recorded, so an open
+  deleted-messages view refreshes; a bulk report fits one message and re-sends at most ten
+  files, counting the rest.
+- **Business-chat albums** (TikTok slideshows) carry the business connection id instead of
+  being rejected and falling back to single photos.
+- **Reminder channel snooze**: replying `snooze 1h` to a task that is already overdue counts
+  from now instead of the stale due time, which landed in the past with no reminder.
+- **Daily chat tidy**: routine and system cards are swept on independent schedules, each at
+  its own hour and tracked separately, so one switch never sweeps the other's cards early
+  or late, and a switched-off schedule's cards are left alone. An unreadable config turns
+  both cleanups off instead of sweeping; unanswered approval cards are kept until their
+  request is answered or expires; a ledger line written during a sweep is no longer lost.
+- **Telegram contacts**: tagging stops and names the contact when the undo journal cannot
+  be written; `contacts undo` waits out a short flood and stops on a long one or a
+  `PEER_FLOOD` instead of firing the rest; `tag-list` writes a missing note to a contact
+  whose surname is already tagged, and paces every username lookup.
+- **Telegram contacts**: `tag-list --mark note` no longer replaces a contact's surname when
+  the entry carries a `last_name`; `prune --tag` also finds a cohort marked only in the
+  note; undoing a prune refuses a username that now belongs to another account; `missing`
+  uses an access hash journalled by a later write, and `--resolve` reports a server or
+  auth failure as unknown (with the error) instead of a deleted or renamed handle.
+- **Deletion digest**: a digest held by quiet hours is re-checked until it sends; a window
+  holding only muted-chat deletions is consumed, so unmuting never announces them later;
+  two processes taking over one stale claim, or counting around a fresh deletion, send
+  one card; a card's Show button reveals only the window that card counted.
+- **Deletion digest**: a trigger word NAVIG deleted in one business chat no longer hides a
+  real deletion with the same message id in another chat; a 🧹 clear that could not remove
+  every revealed message keeps the rest (and its button) for another tap instead of
+  forgetting them; a refused card delete offers a retry instead of claiming the card is
+  older than 48 h.
+- **Habit check-in**: a tap on an older card for a closed day no longer rewrites that day;
+  the day is marked closed only once the closing edit lands; a tap whose card edit Telegram
+  refused says the card did not update instead of reporting plain success; `/stats` shows
+  its empty state for a tracker whose dates are all malformed; and the "All" range keeps the
+  most recent days that fit one Telegram message and says how many earlier ones it left out.
+- **Music links**: a song.link resolve or send failure is logged at WARNING, not DEBUG.
+- **/reminders**: a list cut at its 25-row cap shows `25+` and says only the soonest are
+  listed, instead of presenting 25 as the total.
+- **`/reminders` card** cuts long reminder titles and stops listing rows before the body passes
+  Telegram's edit limit, so Refresh and Cancel no longer fail and leave the card stale.
+- **Reply `save` on a message with no text** names the action in the operator's language
+  instead of an English "Save" inside a Russian or French error.
+- **TikTok actions**: every worker sends the localized "unreadable" and "sign in" hints; the
+  briefing's speech transcript auto-detects the clip's language instead of using the output
+  language; a gated-comments notice no longer says "description only" when the post's own
+  words were read; a briefing without an LLM keeps the transcript its header claims.
+- **TikTok clip cache** clears files an earlier process left behind, so the byte budget covers
+  the whole directory, and never drops a lock that still has a queued waiter.
+- **TikTok photo posts**: a slide that fails to download no longer renumbers the others and is
+  reported on its own, not as the carousel cap; a transcript of slides that could not be
+  fetched says so instead of "no text detected in the slides".
+- **`navig app use/add/edit/clone` exit non-zero when they fail.** A failure caught while
+  saving, switching the active app, clearing the local active app, or opening the editor
+  printed the error and exited 0, so a script could not tell it had failed. These paths now
+  exit 1, and an invalid app passed to `app use` exits 2.
+- **More Telegram replies follow the install's language.** The TikTok card title, the cover and
+  slide captions, the full-caption reply, and the note sent when a deleted file cannot be
+  re-sent were English on every install. They now come from the locale files (en, fr, ru).
+  A business-chat timer started with "таймер" or "minuteur" now says "time's up" and
+  "cancelled" in that language too.
+- **Multi-step agent tool chains pass the approval interlock.**
+  `TaskExecutor.execute_multi_step_action` sent every LLM-produced step straight to the
+  ToolRouter with no approval gate, while its sibling `_execute_step` gated each one. Every
+  step now goes through `gate_agent_tool_call` first and fails closed: a denied or
+  unavailable gate raises `PermissionError` and halts the chain before the tool runs.
+- **A system-service gateway no longer fails startup on its screenshot directory.** The shipped
+  unit makes `/etc/navig` read-only, and screenshots defaulted to `<config_dir>/screenshots`,
+  which the browser controller creates at boot. A system service now keeps them under its
+  data dir (`/var/lib/navig/screenshots`), and an unwritable directory is logged, not fatal.
+- **`navig cdp` actions fail on a `--tab`/`--url` that matches no tab.** `click`, `type`,
+  `eval`, `nav` and the other page verbs used to carry on against whichever tab was active.
+- **`navig cdp stop` never sends `Browser.close` to a browser it cannot attribute.** A stale
+  launch record whose port another browser now holds no longer closes that browser, and a
+  never-started hardened controller kills nothing on stop.
+- **Failed `navig ahk kill/start/notify/volume/mute` exit 1**, and `navig antivirus extensions`
+  no longer reports a clean scan while any profile was unreadable.
+- **`navig contacts import` fails on an unreadable Telegram export** instead of exiting 0 and
+  recording the run as a clean, empty import; the audit row now carries the error.
+- **`navig contacts export` rewrites `--output` when every selected contact is unreachable**
+  (header only) and reports how many it left out, and a malformed route `meta_json` reads as
+  unchecked instead of failing `export`, `liveness` and `resolve` for the whole book.
+- **The contact book canonicalises legacy phone routes** (schema v3): `sms:+1 (555)123-4567`
+  stored before normalisation is rewritten and deduplicated, so it can be removed by its own
+  string; two spellings of one number in `add_contact` store one route instead of raising.
+- **`navig dedupe scan --move` never overwrites an earlier quarantined file**, merges
+  overlapping clusters from different modes into one group, skips FIFOs and device nodes in a
+  recursive scan, and `restore` puts each file back in the root it came from when one
+  quarantine dir served several scans.
+- **`navig-blackbox` standalone finds navig's logs without `LOCALAPPDATA`**, falling back to
+  `<config_dir>/logs` the way navig itself does.
+- **`navig blackbox` bundles include the navig.log the logger is writing.** Inside an app
+  workspace with a local `.navig`, the bundle used to read only the global config dir's log;
+  `read_events` also tails the event stream from the end instead of loading all of it.
+- **`navig cdp launch -e` on a port already serving CDP no longer reports success** unless
+  that browser really has the extension loaded — the flag only applies at startup.
+- **A portless `navig cdp stop`/`detach` skips stale launch records**, so a dead 9222 entry
+  no longer wins over the one live session or makes it look ambiguous.
+- **`navig cdp profile open` applies the profile's saved proxy** (`profile proxy NAME …`).
+- **`navig cdp profile vacuum` keeps Service Worker CacheStorage**, which can hold a PWA's
+  only offline copy of its content.
+- **`navig cdp profile new` and `profile import` stop on a locked profile registry** instead
+  of crashing or reporting an import that registered nothing.
+- **The `profile usage` prune hint quotes an orphan name** with spaces or shell characters.
+- **A port-reallocated profile incident names the profile and both ports** in `navig doctor`
+  and its push, instead of the raw `PROFILE_PORT_REALLOCATED` id.
+- **A non-finite canvas-noise value in a persona capsule falls back to 0.0** rather than
+  emitting `nan`/`inf`, which broke the fingerprint shim on every page.
+- **Camoufox logins persist in the controller's profile.** The Camoufox engine now opens a
+  persistent context in `user_data_dir`, so a TikTok login stalled on 2FA or a CAPTCHA keeps
+  its cookies and partial auth across runs, as the Playwright Firefox path already did.
+- **`navig cdp launch <path>` quiets Chrome, Edge and Brave too.** A launch by executable path
+  is classified by the executable, so it gets the first-run, default-browser and EU
+  search-engine suppression flags and the on-device-model download switch.
+- **`navig cdp stop` finds a known app whose executable has another name.** A recorded
+  `vscode` now matches `Code.exe` / `code` / `Electron`, and Linux Notion `notion-app`, so the
+  sweep stops the real process after its launcher exited.
+- **`navig-calendar add` without CalDAV names the config key on its own** instead of telling a
+  standalone user to run `navig proactive setup`.
+- **`contacts import contacts.json --source <label>` records that label** on the Telegram
+  address-book run; without `--source` it stays `telegram`.
+- **`contacts resolve` with no `--out`/`--write` writes only JSONL to stdout.** Progress,
+  status and the tally go to stderr, so `resolve > dead.jsonl` feeds `flag --from-file`.
+- **`contacts doctor` scopes a shared address to its network**, so equal ids on Discord and
+  Slack are no longer reported as one address with several owners.
+- **`contacts doctor --fix` clears routes it could not move.** A merged contact's route its
+  survivor already owns, and every route on a deleted contact with no survivor, are removed
+  instead of being reported as fixable on every run.
+- **navig-contacts 0.3.0 exports `__version__ = "0.3.0"`** and its changelog has the 0.3.0
+  release notes for `contacts resolve`.
+- **Idle reaping no longer spares a disposable CDP session under a user called "named".** A
+  profile counts as persistent only when `named` sits directly under `cdp-profiles`.
+- **The CDP port probe is honest on Windows.** It no longer sets `SO_REUSEADDR` there, which let
+  it bind, and report as free, a port another `SO_REUSEADDR` listener already held.
+- **`navig contacts route` names the route as stored** (`Telegram: 111` is reported as
+  `telegram:111`), and a spec with an empty network or address is a usage error (exit 2)
+  instead of a traceback.
+- **`navig contacts import` recognises a folder of upper-case `.VCF` files on Linux and macOS.**
+- **Contact backups no longer create the book they back up.** `auto_backup` dropped its insert
+  into a `backup_log` table no schema defines, which always failed silently.
+- **Phone numbers drop an extension written flush against the last digit** (`4567ext.99`,
+  `4567x99`) instead of welding it onto the number.
+- **A space keeps the DevNet repeater history out of git.** `navig devnet http` appends every
+  request, headers included (bearer tokens, cookies), to `.navig/devnet/http_history.jsonl`
+  in the active space, and nothing ignored it. The managed `.gitignore` block now lists
+  `.navig/devnet/`, and so does this repository's own `.gitignore`.
+- **`navig telegram login` and `confirm` no longer put the phone and the login code in shell history.**
+  Both were required positional arguments, so the phone number and a one-time login code were captured
+  by history and by every transcript that echoed the command. The phone is now asked for when omitted,
+  the code is asked for with `hide_input=True`, and a non-interactive caller still gets the argument
+  form with an explicit message rather than an unanswerable prompt.
+- **Switching a Telegram extension off now really switches it off.** With **Reminders** off, due `/remindme` reminders are held instead of still arriving. **Voice notes** off stops transcription. **Paper mail** off answers a `/courrier` photo instead of sending the letter to a vision model. Each one delivers again as soon as you switch it back on.
+- `navig config set telegram.user.enabled false` now actually keeps the personal-account client off (the stored text "false" used to read as on).
+- `navig config set telegram.require_auth false` now actually opens the bot to everyone, as asked (it used to be silently ignored). A missing, empty or unreadable value still keeps sign-in on.
+- **`navig webflow run --resume` continues the revision it started on.** An edited flow's
+  checkpoint now aligns the run to its own revision before parameters resolve (the CLI does it,
+  `run_headless` refuses a mismatch by name), instead of running an old step index against a
+  step list that had moved. The challenge reclassification (CAPTCHA/MFA) now lands on the step
+  itself, so the checkpoint evidence agrees with the report, and an unreadable start page is
+  reported as `the run could not continue: …` (exit 2) instead of a traceback. Skipped and
+  repaired steps print as themselves in the live step list.
 
 ## [3.31.0] — 2026-10-25
 

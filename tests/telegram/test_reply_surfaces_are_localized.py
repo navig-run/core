@@ -127,6 +127,12 @@ async def surfaces(monkeypatch) -> dict[str, str]:
     await _run(ch, "summarize")
     out["no-text error"] = " ".join(ch.sent)
 
+    # save on a target with no readable text: its own no-text branch, whose action
+    # word has no LLM label to fall back on.
+    ch = RecordingChannel()
+    await _run(ch, "save")
+    out["save no-text error"] = " ".join(ch.sent)
+
     # save, both outcomes.
     for ok, name in ((True, "save ok"), (False, "save failed")):
         monkeypatch.setattr(reply_actions, "_save_to_wiki", lambda *_a, _r=ok, **_k: _r)
@@ -165,6 +171,17 @@ async def test_no_english_survives_in_russian(russian, monkeypatch) -> None:
         "these reply surfaces still read English while the language is ru:\n"
         + "\n".join(f"  {n}: {w}" for n, w in offenders.items())
     )
+
+
+@pytest.mark.asyncio
+async def test_save_without_text_names_the_action_in_russian(russian) -> None:
+    """`save` is on the keyword allowlist, so the probe above cannot see an English
+    "Save" interpolated into the Russian no-text error; this pins it directly."""
+    ch = RecordingChannel()
+    await _run(ch, "save")
+    text = " ".join(ch.sent)
+    assert text.strip(), "the save no-text branch sent nothing"
+    assert "Save" not in text, text
 
 
 @pytest.mark.asyncio

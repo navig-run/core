@@ -163,11 +163,13 @@ class TestResolveGithubToken:
         assert token == "ghp_testtoken123"
 
     def test_returns_none_when_nothing_set(self, tmp_path):
-        # Suppress vault import and env var, fake config path
+        # Suppress vault, env var and config path. The vault is patched empty explicitly:
+        # a real install (the operator's box, and this CI host) DOES hold `github_token`,
+        # so "the vault import will silently fail" was never a safe assumption.
         env = {k: v for k, v in os.environ.items() if k != "GITHUB_TOKEN"}
         with patch.dict(os.environ, env, clear=True):
-            with patch("navig_github.commands.github.config_dir", return_value=tmp_path):
-                # no config.yaml at tmp_path; vault import will silently fail
+            with patch("navig_github.commands.github._vault_token", return_value=None), \
+                    patch("navig_github.commands.github.config_dir", return_value=tmp_path):
                 token = _resolve_github_token()
         assert token is None
 
@@ -178,9 +180,11 @@ class TestResolveGithubToken:
         assert token == "mytoken"
 
     def test_empty_env_var_falls_through(self, tmp_path):
+        # Vault patched empty for the same reason as above: an installed vault answers first.
         env = {"GITHUB_TOKEN": ""}
         with patch.dict(os.environ, env, clear=True):
-            with patch("navig_github.commands.github.config_dir", return_value=tmp_path):
+            with patch("navig_github.commands.github._vault_token", return_value=None), \
+                    patch("navig_github.commands.github.config_dir", return_value=tmp_path):
                 token = _resolve_github_token()
         assert token is None
 

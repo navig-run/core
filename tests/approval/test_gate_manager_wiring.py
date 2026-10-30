@@ -164,6 +164,21 @@ async def test_bound_gate_manager_crash_fails_closed(tmp_path):
     assert [r["status"] for r in records] == ["pending_approval", "denied"]
 
 
+async def test_bound_gate_marks_agent_tool_requests_resumable(tmp_path):
+    """Only an agent-tool request may be re-entered by a late Approve."""
+    audit = _audit(tmp_path)
+    seen: list[dict] = []
+
+    class _RecordingManager:
+        async def request_approval(self, **kwargs):
+            seen.append(kwargs)
+            return True
+
+    bind_approval_manager(_RecordingManager(), audit)
+    await get_approval_gate().check("bash_exec", "dangerous")
+    assert seen and seen[0].get("resumable") is True
+
+
 async def test_bind_none_denies_and_audits_approval_unavailable(tmp_path):
     """Gateway whose approval subsystem failed to load: DENY, never warn+run."""
     audit = _audit(tmp_path)
@@ -346,6 +361,105 @@ def test_every_agent_dispatcher_uses_the_fail_closed_interlock():
         "deny, never proceed), or add a written reason to "
         "_UNGATED_DISPATCHERS_OK:\n" + "\n".join(f"  {u}" for u in ungated)
     )
+
+
+def _called_names(node) -> set[str]:
+    import ast
+
+    names: set[str] = set()
+    for n in ast.walk(node):
+        if isinstance(n, ast.Call):
+            f = n.func
+            names.add(f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", ""))
+    return names
+
+
+def _is_dispatch_shape(node) -> bool:
+    """The AST form of `_DISPATCH_SHAPES`: a `_AGENT_REGISTRY.dispatch` reference (it is
+    often passed to `to_thread`, not called) or a `get_tool_router()` call."""
+    import ast
+
+    if isinstance(node, ast.Attribute) and node.attr == "dispatch":
+        return isinstance(node.value, ast.Name) and node.value.id == "_AGENT_REGISTRY"
+    if isinstance(node, ast.Call):
+        f = node.func
+        name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", "")
+        return name == "get_tool_router"
+    return False
+
+
+def _ungated_dispatch_functions(src: str) -> list[str]:
+    """`name:line` of every dispatch whose enclosing function(s) never reach the seam.
+
+    A function reaches the seam by calling `gate_agent_tool_call` / `check_sync`, or a
+    function of the same module that does (`generate._maybe_execute_tools` gates through
+    its own `_deny_if_unapproved`). Per FUNCTION, not per module: a module with one
+    gated dispatcher must not vouch for a second, ungated one beside it.
+    """
+    import ast
+
+    tree = ast.parse(src)
+    funcs = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    seams = set(_INTERLOCK_SEAMS)
+    changed = True
+    while changed:
+        changed = False
+        for fn in funcs:
+            if fn.name not in seams and _called_names(fn) & seams:
+                seams.add(fn.name)
+                changed = True
+
+    found: list[str] = []
+
+    def visit(node, chain) -> None:
+        for child in ast.iter_child_nodes(node):
+            sub = chain
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                sub = (*chain, child)
+            elif _is_dispatch_shape(child) and not any(
+                _called_names(fn) & seams for fn in chain
+            ):
+                owner = chain[-1].name if chain else "<module>"
+                found.append(f"{owner}:{child.lineno}")
+            visit(child, sub)
+
+    visit(tree, ())
+    return found
+
+
+def test_every_dispatching_function_reaches_the_interlock():
+    """Module-level presence was a false negative: `executor.py` passed because
+    `_execute_step` is gated, while `execute_multi_step_action` beside it sent every
+    LLM-produced step straight to `ToolRouter.async_execute` with no approval."""
+    ungated = {
+        rel: bad
+        for rel, src in _agent_dispatch_sites().items()
+        if rel not in _UNGATED_DISPATCHERS_OK and (bad := _ungated_dispatch_functions(src))
+    }
+    assert not ungated, (
+        "These functions dispatch agent tools without reaching the approval interlock "
+        "in the same function (or a same-module helper that calls it):\n"
+        + "\n".join(f"  {rel}: {', '.join(bad)}" for rel, bad in sorted(ungated.items()))
+    )
+
+
+def test_the_per_function_check_sees_an_ungated_sibling():
+    """Regression: one gated dispatcher used to vouch for every other one in its module."""
+    src = (
+        "async def gated(step):\n"
+        "    await gate_agent_tool_call(step.tool)\n"
+        "    return await get_tool_router().async_execute(step)\n"
+        "async def sibling(steps):\n"
+        "    router = get_tool_router()\n"
+        "    return [await router.async_execute(s) for s in steps]\n"
+        "def via_helper(step):\n"
+        "    if _deny(step):\n"
+        "        return None\n"
+        "    return _AGENT_REGISTRY.dispatch(step.tool, {})\n"
+        "def _deny(step):\n"
+        "    return check_sync(step.tool)\n"
+    )
+    assert _ungated_dispatch_functions(src) == ["sibling:5"]
 
 
 def test_the_gated_dispatchers_fail_closed():

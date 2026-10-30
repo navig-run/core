@@ -215,7 +215,7 @@ def test_every_emitted_prefix_belongs_to_an_extension(collected) -> None:
         "these callback prefixes are EMITTED but nothing routes them, so every "
         "tap falls through to the callback store and answers Button expired:"
         + "\n  "
-        + "\n  ".join(f"{lit}  (emitted from {', '.join(w)})" for lit, w in dead)
+        + "\n  ".join(f"{lit}  (emitted from {', '.join(w)})" for lit, w in unclaimed)
         + "\n\nAdd a branch in CallbackHandler.handle "
         "(telegram_keyboards.py), or stop emitting the button."
     )

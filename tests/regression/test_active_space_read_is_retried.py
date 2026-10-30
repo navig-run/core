@@ -43,6 +43,11 @@ def isolated_config(tmp_path, monkeypatch):
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "cfg"))
     monkeypatch.setenv("NAVIG_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.delenv("NAVIG_SPACE", raising=False)
+    # Recorded episodes are process-global and keyed by path; pytest can reuse a
+    # tmp_path name once a passed test's dir is cleaned, so start each test clean.
+    from navig.spaces import active
+
+    active._unreadable_episodes.clear()
     yield
 
 
@@ -130,3 +135,34 @@ def test_a_persistent_failure_is_recorded_not_swallowed(chosen_space, monkeypatc
         "A daemon that quietly works in the wrong directory is the failure this "
         "codebase keeps paying for."
     )
+
+
+def test_a_persistent_failure_is_recorded_once_per_episode(chosen_space, monkeypatch):
+    """This resolver runs per turn and per file/skill operation; a lock lasting minutes
+    must not append one identical incident per call. A successful read ends the episode,
+    so the next failure is recorded again."""
+    from navig.core import incidents
+
+    seen: list[str] = []
+    monkeypatch.setattr(incidents, "record", lambda event, **data: seen.append(event))
+
+    real = Path.read_text
+    state = {"locked": True}
+
+    def maybe_locked(self, *a, **kw):
+        if self.name == "active_space_dir.txt" and state["locked"]:
+            raise PermissionError(32, "being used by another process")
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "read_text", maybe_locked)
+    from navig.spaces.active import get_active_working_dir
+
+    for _ in range(3):
+        get_active_working_dir()
+    assert len(seen) == 1, f"one lock episode produced {len(seen)} incidents"
+
+    state["locked"] = False
+    assert get_active_working_dir() == chosen_space
+    state["locked"] = True
+    get_active_working_dir()
+    assert len(seen) == 2, "a new episode after a successful read was not recorded"

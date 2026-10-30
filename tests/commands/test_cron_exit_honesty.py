@@ -256,3 +256,28 @@ def test_add_exec_with_nothing_to_run_is_refused():
         result = runner.invoke(cron_app, ["add", "empty", "hourly", "   ", "--exec"])
     assert result.exit_code == 2
     req.assert_not_called()
+
+
+def test_run_waits_for_the_jobs_own_timeout():
+    """`cron add --timeout 3600` is allowed; `cron run` gave up at a fixed 300s."""
+    responses = [
+        _response(payload={"id": "j1", "timeout_seconds": 3600}),
+        _response(payload={"success": True, "output": "done"}),
+    ]
+    with _patch_request(side_effect=responses) as req:
+        res = runner.invoke(cron_app, ["run", "j1"])
+
+    assert res.exit_code == 0, res.output
+    run_call = req.call_args_list[-1]
+    assert "/cron/jobs/j1/run" in str(run_call)
+    assert run_call.kwargs["timeout"] >= 3600
+
+
+def test_status_with_a_null_cron_section_reports_not_initialized():
+    """HTTP is up before `_start_cron()` finishes: `/status` answers `"cron": null`."""
+    with _patch_request(return_value=_response(payload={"status": "running", "cron": None})):
+        res = runner.invoke(cron_app, ["status"])
+
+    assert res.exit_code == 0, res.output
+    assert "not initialized" in res.output
+    assert "Cron service is running" not in res.output

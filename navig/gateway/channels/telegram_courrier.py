@@ -10,7 +10,7 @@ sent to the bot goes to a cloud vision model when one is configured, which is th
 wrong place for a CAF letter. Two switches in ``~/.navig/config.yaml``::
 
     mailroom:
-      paper_space: company-paperwork   # space name or absolute path — REQUIRED
+      paper_space: company   # space name or absolute path — REQUIRED
       photos: vision                   # or `courrier`: every bare photo is a letter
 
 With ``photos: courrier`` even an uncaptioned photo takes this path (and never the
@@ -239,7 +239,7 @@ def render_result(payload: dict[str, Any], row: dict[str, Any] | None, *, saved_
     return (
         f"🔎 <code>{_esc(saved_as)}</code> reçu mais pas classé automatiquement "
         f"(décisions : {_esc(json.dumps(decisions, ensure_ascii=False))}).\n"
-        f"À vérifier : <code>navig paperwork review --needs-review --space company-paperwork</code>"
+        f"À vérifier : <code>navig paperwork review --needs-review --space {_esc(paper_space() or '<espace>')}</code>"
     )
 
 
@@ -273,7 +273,7 @@ async def handle_courrier_intake(
         await channel.send_message(
             chat_id,
             "⚠️ Aucun espace papier configuré. Dans <code>~/.navig/config.yaml</code> :\n"
-            "<code>mailroom:\n  paper_space: company-paperwork</code>",
+            "<code>mailroom:\n  paper_space: company</code>",
             parse_mode="HTML",
         )
         return

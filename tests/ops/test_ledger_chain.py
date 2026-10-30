@@ -464,6 +464,14 @@ class TestLedgerVerifyCli:
         assert result.exit_code == 1
         assert "nothing was verified" in _flat(result.output)
 
+    def test_missing_named_ledger_json_says_not_ok(self, tmp_path):
+        # Review #1570: the JSON said ok:true while the exit code was 1.
+        result = self._invoke(["verify", "--path", str(tmp_path / "nope.jsonl"), "--json"])
+        assert result.exit_code == 1
+        payload = json.loads(result.output)
+        assert payload["status"] == "missing"
+        assert payload["ok"] is False
+
     def test_json_output_is_one_pure_document(self, tmp_path):
         rec = _make_recorder(tmp_path)
         _write_ops(rec, 5)
@@ -487,6 +495,13 @@ class TestLedgerVerifyCli:
         assert payload["status"] == "broken"
         assert payload["first_broken_line"] == 2
         assert payload["ok"] is False
+
+    def test_show_json_intact_exits_zero(self, tmp_path):
+        rec = _make_recorder(tmp_path)
+        _write_ops(rec, 3)
+        result = self._invoke(["show", "--path", str(_ledger(tmp_path)), "--json"])
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output)["count"] == 3
 
     def test_default_path_resolves_at_call_time(self, tmp_path):
         """No frozen path: the default ledger comes from the recorder at call time."""

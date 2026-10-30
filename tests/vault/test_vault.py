@@ -462,6 +462,63 @@ class TestCredentialsVault:
         monkeypatch.setattr(vault, "get_bytes", lambda label: b"\xff\xfe\x00binary")
         assert vault.get("legacyprov") is None
 
+    def test_legacy_non_string_json_scalar_reads_as_text(self, vault):
+        """A bare numeric secret (b"123456") is valid JSON that decodes to an int; it
+        must come back as the stored TEXT. Pre-fix SecretStr(int) raised TypeError and
+        get_api_key() swallowed it, skipping the credential fallback entirely."""
+        from navig.vault.types import VaultItemKind
+
+        vault.put("numprov", b"123456", kind=VaultItemKind.PROVIDER, provider="numprov")
+        assert vault.get_secret("numprov").reveal() == "123456"
+        assert vault.get_api_key("numprov") == "123456"
+        assert vault.get("numprov").data == {"value": "123456"}
+
+    def test_a_corrupt_active_credential_never_shadows_a_readable_sibling(
+        self, vault, monkeypatch
+    ):
+        """`active` orders the ranking; it must not REPLACE it. Pre-fix the ranking held
+        only the active credentials, so a corrupt active one returned None."""
+        from navig.vault.types import VaultItemKind
+
+        vault.put("acme/good", json.dumps({"api_key": "sk-good"}).encode(),
+                  kind=VaultItemKind.PROVIDER, provider="acme")
+        vault.put("acme/active", json.dumps({"api_key": "sk-x"}).encode(),
+                  kind=VaultItemKind.PROVIDER, provider="acme", metadata={"active": True})
+        real_get_bytes = vault.get_bytes
+
+        def _corrupt_active(label):
+            if label == "acme/active":
+                raise RuntimeError("decrypt failed (simulated corrupt blob)")
+            return real_get_bytes(label)
+
+        monkeypatch.setattr(vault, "get_bytes", _corrupt_active)
+        cred = vault.get("acme")
+        assert cred is not None
+        assert cred.data.get("api_key") == "sk-good"
+
+    def test_an_undecodable_credential_never_shadows_a_readable_sibling(self, vault):
+        """A payload that DECRYPTS but is not UTF-8 is unreadable too: the probe must
+        validate the decode, not only the decryption."""
+        from navig.vault.types import VaultItemKind
+
+        vault.put("acme/good", json.dumps({"api_key": "sk-good"}).encode(),
+                  kind=VaultItemKind.PROVIDER, provider="acme")
+        vault.put("acme/binary", b"\xff\xfe", kind=VaultItemKind.PROVIDER, provider="acme")
+        assert vault._store.get("acme") is None, "fixture must exercise the ranked branch"
+        cred = vault.get("acme")
+        assert cred is not None
+        assert cred.data.get("api_key") == "sk-good"
+
+    def test_a_ranked_lookup_decrypts_and_audits_once(self, vault):
+        """The readability probe's payload is reused: one get() is one 'accessed' row."""
+        from navig.vault.types import VaultItemKind
+
+        item_id = vault.put("acme/one", json.dumps({"api_key": "sk-one"}).encode(),
+                            kind=VaultItemKind.PROVIDER, provider="acme")
+        assert vault.get("acme").data.get("api_key") == "sk-one"
+        accessed = [r for r in vault._store.get_audit(item_id) if r["action"] == "accessed"]
+        assert len(accessed) == 1
+
     def test_get_secret(self, vault):
         """Test getting secrets as SecretStr."""
         from navig.vault import SecretStr

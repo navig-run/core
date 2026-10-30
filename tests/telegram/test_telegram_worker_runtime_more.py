@@ -1,5 +1,25 @@
 import sys
 from types import SimpleNamespace
+
+
+def _fake_loop(**overrides) -> SimpleNamespace:
+    """A loop stub with the APIs the worker actually calls.
+
+    ``_run()`` installs the loop-noise filter, which reads ``get_exception_handler()`` and
+    calls ``set_exception_handler()`` — a stub carrying only ``add_signal_handler`` died with
+    ``AttributeError: 'types.SimpleNamespace' object has no attribute 'get_exception_handler'``
+    (2026-10-30, outpost).
+    """
+    loop = SimpleNamespace(
+        add_signal_handler=lambda *_a, **_k: None,
+        remove_signal_handler=lambda *_a, **_k: None,
+        get_exception_handler=lambda: None,
+        set_exception_handler=lambda _handler: None,
+    )
+    for key, value in overrides.items():
+        setattr(loop, key, value)
+    return loop
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -174,7 +194,7 @@ async def test_run_fully_mocked(mock_config_manager, monkeypatch):
 
     monkeypatch.setattr(tw.asyncio, "Event", ImmediateEvent)
 
-    fake_loop = SimpleNamespace(add_signal_handler=MagicMock(side_effect=NotImplementedError))
+    fake_loop = _fake_loop(add_signal_handler=MagicMock(side_effect=NotImplementedError))
     monkeypatch.setattr(tw.asyncio, "get_running_loop", lambda: fake_loop)
 
     created: list = []

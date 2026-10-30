@@ -74,24 +74,22 @@ def test_vonage_is_covered_too(sdk_absent) -> None:
     assert SmsAdapter(config={"provider": "vonage"}).missing_dependency() == "vonage"
 
 
-def test_the_fixture_actually_hides_an_installed_package() -> None:
+def test_the_fixture_actually_hides_an_installed_package(monkeypatch, request) -> None:
     """Teeth for `sdk_absent` itself: it must hide a package that IS importable.
 
     Otherwise, on a machine where no provider SDK is installed, every test above
     passes without the fixture doing anything — and a fixture that is never
     load-bearing can rot unnoticed. `json` stands in for an installed SDK.
+
+    This runs the REAL fixture, not a copy of its patch: a re-implementation stays
+    green when `sdk_absent` itself regresses to a no-op. The fixture reads the
+    provider table at setup, so the stand-in is registered before requesting it.
     """
-    real = importlib.util.find_spec
-    assert real("json") is not None  # the premise: it is importable here
+    assert importlib.util.find_spec("json") is not None  # the premise: importable here
 
-    def _absent(name: str, *args, **kwargs):
-        return None if name == "json" else real(name, *args, **kwargs)
-
-    # Same shape as the fixture, applied to a package we KNOW is present.
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(importlib.util, "find_spec", _absent)
-        mp.setitem(sms_mod._PROVIDER_PACKAGES, "fakeprov", "json")
-        assert SmsAdapter(config={"provider": "fakeprov"}).missing_dependency() == "json"
+    monkeypatch.setitem(sms_mod._PROVIDER_PACKAGES, "fakeprov", "json")
+    request.getfixturevalue("sdk_absent")
+    assert SmsAdapter(config={"provider": "fakeprov"}).missing_dependency() == "json"
 
 
 def test_a_present_package_reports_nothing(monkeypatch) -> None:

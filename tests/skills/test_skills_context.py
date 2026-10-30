@@ -464,6 +464,24 @@ class TestForceOverrides:
         assert len(active) == 1
         assert active[0].name == "Hidden"
 
+    def test_non_activatable_skill_never_auto_activates(self, tmp_path: Path):
+        """`activatable: false` keeps a skill whose commands are not implemented out of the
+        prompt, however well its keywords match — force-activation still works."""
+        path = _write_skill(
+            tmp_path / "proj" / ".navig" / "skills" / "gh.md",
+            name="Planned",
+            activation_keywords=["github"],
+        )
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("---\n", "---\nactivatable: false\n", 1),
+            encoding="utf-8",
+        )
+
+        ctx = SkillsContext(workspace_dir=str(tmp_path / "proj"))
+        assert all(s.name != "Planned" for s in ctx.activate(user_message="list github issues"))
+        assert ctx.force_activate("Planned") is True
+        assert any(s.name == "Planned" for s in ctx.activate(user_message="anything"))
+
     def test_force_deactivate(self, tmp_path: Path):
         proj = tmp_path / "proj"
         _write_skill(

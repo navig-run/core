@@ -143,6 +143,22 @@ def test_root_version_flag_is_skipped(monkeypatch):
     assert "_operation_record" not in obj
 
 
+def test_root_short_v_is_skipped(monkeypatch):
+    assert "_operation_record" not in _invoke_recorder(["-v"], monkeypatch)
+    assert "_operation_record" not in _invoke_recorder(["--host", "prod", "-v"], monkeypatch)
+
+
+def test_a_subcommand_short_v_is_the_commands_option_and_is_recorded(monkeypatch):
+    """`navig stack down -v` is `--volumes` (data loss) — never a version screen."""
+    from navig.cli.middleware import _should_skip_record
+
+    assert not _should_skip_record(["stack", "down", "-v"], ["stack", "down"])
+    assert _should_skip_record(["-v"], [])
+    assert _should_skip_record(["--version"], [])
+    obj = _invoke_recorder(["stack", "down", "-v"], monkeypatch)
+    assert "_operation_record" in obj
+
+
 def test_short_h_is_the_host_flag_not_help(monkeypatch):
     """`-h` consumes a host name on this CLI; the command behind it is real and recorded."""
     obj = _invoke_recorder(["-h", "prod", "run", "uptime"], monkeypatch)
@@ -171,6 +187,46 @@ def test_a_dry_run_is_recorded_as_read_only(monkeypatch):
     assert "_operation_record" in ctx.obj
     kwargs = fake_recorder.start_operation.call_args.kwargs
     assert kwargs["operation_type"] == OperationType.READ_QUERY
+
+
+def _recorded_type(argv_tail: list[str], monkeypatch):
+    monkeypatch.setattr(middleware_mod.sys, "argv", ["navig", *argv_tail])
+    fake_recorder = MagicMock()
+    fake_recorder.start_operation.return_value = object()
+    ctx = MagicMock()
+    ctx.obj = {}
+    with patch("navig.operation_recorder.get_operation_recorder", return_value=fake_recorder):
+        middleware_mod.init_operation_recorder(ctx=ctx, host=None, app=None, verbose=False)
+    return fake_recorder.start_operation.call_args.kwargs["operation_type"]
+
+
+def test_a_global_dry_run_before_the_verb_keeps_the_commands_risk(monkeypatch):
+    """`navig --dry-run kill node` — the root flag is not proof the command honours it."""
+    from navig.operation_recorder import OperationType
+
+    assert _recorded_type(["--dry-run", "kill", "node"], monkeypatch) != OperationType.READ_QUERY
+    assert _recorded_type(["kill", "node", "--dry-run"], monkeypatch) == OperationType.READ_QUERY
+
+
+def test_kill_honours_the_global_dry_run(monkeypatch):
+    """The root `--dry-run` reaches `kill`: it previews, it never calls a real kill."""
+    import navig.cli as cli_mod
+    from navig.commands import processes
+
+    calls: list[bool] = []
+
+    def _fake_kill_group(target, **kw):
+        calls.append(kw.get("dry_run", False))
+        return {"candidates": [], "killed": [], "failed": []}
+
+    monkeypatch.setattr(processes, "kill_group", _fake_kill_group)
+    ctx = MagicMock()
+    ctx.obj = {"dry_run": True}
+    with pytest.raises(typer.Exit):
+        cli_mod.kill_command(
+            ctx, "node", force=False, dry_run=False, include_self=False, idle_hours=24.0
+        )
+    assert calls == [True], f"kill ran for real under a global --dry-run: {calls}"
 
 
 # ---------------------------------------------------------------------------

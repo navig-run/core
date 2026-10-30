@@ -15,8 +15,23 @@ import pytest
 from navig.lenses.compile import compile_lens
 from navig.lenses.manifest import parse_manifest
 
+
+def _playwright_available() -> bool:
+    """Installed AND inspectable.
+
+    ``find_spec`` raises ``ValueError`` — not ``ImportError`` — when another test left a
+    spec-less stub in ``sys.modules`` (``tests/browser/test_no_playwright_stub_pollution.py``
+    documents that leak), and a bare call in the module-level ``pytestmark`` turned that
+    into a COLLECTION error that aborted the whole run instead of a skip.
+    """
+    try:
+        return importlib.util.find_spec("playwright") is not None
+    except (ImportError, ValueError):
+        return False
+
+
 pytestmark = pytest.mark.skipif(
-    importlib.util.find_spec("playwright") is None, reason="playwright not installed"
+    not _playwright_available(), reason="playwright not installed"
 )
 
 PAGES = {

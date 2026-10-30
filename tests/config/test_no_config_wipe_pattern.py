@@ -109,7 +109,26 @@ def _is_writeback_call(node: ast.Call) -> bool:
     name = _call_name(node)
     if name == "atomic_write_yaml":
         return True
-    return name in {"safe_dump", "dump"} and len(node.args) >= 2
+    if name not in {"safe_dump", "dump"}:
+        return False
+    # `safe_dump(cfg, stream=fh)` is the keyword spelling of the same file write.
+    has_stream = len(node.args) >= 2 or any(kw.arg == "stream" for kw in node.keywords)
+    return has_stream
+
+
+def _written_names(node: ast.Call) -> list[str]:
+    """Names passed as the dict being written — positionally OR as ``data=``.
+
+    ``atomic_write_yaml(data=cfg, filepath=p)`` is a valid call; a detector that read only
+    ``node.args`` let that keyword form persist a tainted dict with the guard green.
+    """
+    names = [arg.id for arg in node.args if isinstance(arg, ast.Name)]
+    names += [
+        kw.value.id
+        for kw in node.keywords
+        if kw.arg == "data" and isinstance(kw.value, ast.Name)
+    ]
+    return names
 
 
 def _find_violations(tree: ast.AST, rel: str) -> list[str]:
@@ -125,10 +144,18 @@ def _find_violations(tree: ast.AST, rel: str) -> list[str]:
                 for target in node.targets:
                     if isinstance(target, ast.Name):
                         tainted[target.id] = node.lineno
+            elif (
+                # `cfg: dict[str, Any] = safe_load_yaml(p) or {}` — the typed spelling of
+                # the same read. An AnnAssign with no value is a bare declaration.
+                isinstance(node, ast.AnnAssign)
+                and node.value is not None
+                and isinstance(node.target, ast.Name)
+                and _is_safe_load_or_default(node.value)
+            ):
+                tainted[node.target.id] = node.lineno
             elif isinstance(node, ast.Call) and _is_writeback_call(node):
-                for arg in node.args:
-                    if isinstance(arg, ast.Name):
-                        writes.append((arg.id, node.lineno))
+                for written in _written_names(node):
+                    writes.append((written, node.lineno))
         for name, lineno in writes:
             if name in tainted:
                 out.append(
@@ -193,6 +220,18 @@ def test_guard_flags_the_pattern_including_inside_a_nested_closure():
         "        cfg = safe_load_yaml(p) or {}\n"
         "        cfg['x'] = 1\n"
         "        atomic_write_yaml(cfg, p)\n"
+    )
+    assert len(_find_violations(ast.parse(src), "synthetic.py")) == 1
+
+
+def test_guard_flags_an_annotated_read_modify_write():
+    """`cfg: dict[str, Any] = safe_load_yaml(p) or {}` is the same wipe in typed form —
+    the guard once tainted plain `Assign` only, so the annotation hid it."""
+    src = (
+        "def persist(p):\n"
+        "    cfg: dict[str, Any] = safe_load_yaml(p) or {}\n"
+        "    cfg['x'] = 1\n"
+        "    atomic_write_yaml(cfg, p)\n"
     )
     assert len(_find_violations(ast.parse(src), "synthetic.py")) == 1
 
@@ -268,3 +307,18 @@ def test_guard_does_not_conflate_two_sibling_closures():
         "        atomic_write_yaml(cfg, p)\n"
     )
     assert _find_violations(ast.parse(src), "synthetic.py") == []
+
+
+def test_guard_flags_a_keyword_argument_writeback():
+    """`atomic_write_yaml(data=cfg, filepath=p)` and `yaml.safe_dump(cfg, stream=fh)` are the
+    keyword spellings of the same write — the detector once inspected `node.args` only."""
+    src = (
+        "def persist(p):\n"
+        "    cfg = safe_load_yaml(p) or {}\n"
+        "    cfg['x'] = 1\n"
+        "    atomic_write_yaml(data=cfg, filepath=p)\n"
+        "def save(p, fh):\n"
+        "    cfg = safe_load_yaml(p) or {}\n"
+        "    yaml.safe_dump(cfg, stream=fh)\n"
+    )
+    assert len(_find_violations(ast.parse(src), "synthetic.py")) == 2

@@ -101,6 +101,15 @@ def test_a_too_old_but_recent_record_is_kept_so_a_late_tap_is_named():
     assert "two-hours" in resume.list_resumable()
 
 
+def test_a_record_inside_a_long_resume_window_is_not_pruned(monkeypatch):
+    """resume_max_age_seconds above a day: a record that may still execute must survive."""
+    monkeypatch.setattr(resume, "max_age_seconds", lambda: 2 * 86400.0)
+    _resumable("thirty-hours", age_s=30 * 3600)
+
+    assert "thirty-hours" in resume.list_resumable()
+    assert not resume.is_too_old(resume.list_resumable()["thirty-hours"])
+
+
 def test_prune_stale_honours_an_explicit_horizon():
     _resumable("x", age_s=3600)
 
@@ -128,3 +137,84 @@ def test_doctor_still_warns_on_a_live_pending_approval():
     rows = doctor.check_pending_approvals()
 
     assert len(rows) == 1 and rows[0].label == "Waiting on you"
+
+
+def test_doctor_reports_a_really_unreadable_journal(monkeypatch):
+    """No monkeypatched list_pending: a real read failure must reach COULD NOT VERIFY.
+
+    The default readers swallow every error into `{}`, so the doctor's warning branch
+    was unreachable on an actual I/O or permission failure.
+    """
+    import navig.core.json_io as json_io
+    from navig.commands import doctor
+
+    _pending("live", expires_in=600)
+
+    def locked(*_a, **_kw):
+        raise PermissionError("locked by another process")
+
+    monkeypatch.setattr(json_io, "read_text_retrying", locked)
+
+    rows = doctor.check_pending_approvals()
+
+    assert len(rows) == 1
+    assert rows[0][1] is False
+    assert "COULD NOT VERIFY" in rows[0][2]
+
+
+def test_the_default_view_still_degrades_to_empty(monkeypatch):
+    import navig.core.json_io as json_io
+
+    _pending("live", expires_in=600)
+    monkeypatch.setattr(
+        json_io, "read_text_retrying", lambda *a, **k: (_ for _ in ()).throw(OSError("x"))
+    )
+
+    assert journal.list_pending() == {}
+
+
+# ── concurrent writers ───────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("store", ["resume", "journal"])
+def test_a_prune_never_overwrites_a_record_written_meanwhile(monkeypatch, store):
+    """A prune is load → filter → save. Unserialized, a record() that landed between its
+    load and its save was erased by the stale snapshot — and that approval could never
+    resume. The writer must wait for the prune's lock, then add to what it saved."""
+    import threading
+
+    if store == "resume":
+        mod = resume
+        _resumable("month-old", age_s=34 * 86400)
+
+        def write():
+            resume.record("fresh", session_key="s", channel="mission", user_id="u", tool_name="x")
+
+        prune = resume.prune_stale
+    else:
+        mod = journal
+        _pending("weeks-old", expires_in=-14 * 86400)
+
+        def write():
+            _pending("fresh", expires_in=600)
+
+        prune = journal.prune_expired
+
+    real_load = mod._load_for_update
+    writer = threading.Thread(target=write)
+    fired = []
+
+    def racing_load():
+        data = real_load()
+        if not fired:  # only the prune's own load races, not the writer's
+            fired.append(1)
+            writer.start()
+            writer.join(0.5)  # unserialized, the write completes right here
+        return data
+
+    monkeypatch.setattr(mod, "_load_for_update", racing_load)
+    assert prune() == 1
+    writer.join(15)
+
+    assert not writer.is_alive()
+    assert "fresh" in mod._load(), "the concurrent record was erased by the prune"

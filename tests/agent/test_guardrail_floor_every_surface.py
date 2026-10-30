@@ -260,20 +260,68 @@ class TestNoUnguardedIdentityPrompts:
                 if n.value not in docstrings:
                     yield n.value
 
+    #: The helpers that actually emit the floor. Any other callee whose name merely
+    #: contains "guardrail" (a config check, a path lookup) emits nothing.
+    #: `guardrail_floor_impersonation` is the third sanctioned variant (added in #1119):
+    #: a one-line floor for prompts that reply AS a real person, where the minimal
+    #: floor's "you are not a doctor" would deny the owner's actual credentials.
+    _FLOOR_HELPERS = frozenset({
+        "guardrail_block",
+        "guardrail_floor",
+        "guardrail_floor_impersonation",
+        "guardrail_floor_minimal",
+    })
+
+    def _calls_a_floor_helper(self, node) -> bool:
+        for n in ast.walk(node):
+            if isinstance(n, ast.Call):
+                f = n.func
+                name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", "")
+                if name in self._FLOOR_HELPERS:
+                    return True
+        return False
+
     def _calls_a_guardrail(self, tree) -> bool:
-        """Resolved on the AST: does this module actually CALL a floor helper?
+        """Resolved on the AST: is every impersonating prompt built beside a floor call?
 
         Deliberately not ``"guardrail" in text``. The fix for the one offender carries a
         comment block that uses the word seven times — a textual check would accept a
         file that merely *talks* about the floor while emitting none of it.
+
+        And not "any call anywhere in the module" either: only the floor helpers count,
+        and the call must sit in the SAME function that carries the impersonation text,
+        so a module that floors one prompt and leaves another bare is still flagged. An
+        impersonation constant at module level falls back to a module-wide floor call.
         """
-        for n in ast.walk(tree):
-            if isinstance(n, ast.Call):
-                f = n.func
-                name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", "")
-                if "guardrail" in str(name):
-                    return True
-        return False
+        docstrings = {
+            id(n.body[0].value)
+            for n in ast.walk(tree)
+            if isinstance(n, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and n.body
+            and isinstance(n.body[0], ast.Expr)
+            and isinstance(n.body[0].value, ast.Constant)
+            and isinstance(n.body[0].value.value, str)
+        }
+        found = False
+
+        def visit(node, owner) -> bool:
+            nonlocal found
+            for child in ast.iter_child_nodes(node):
+                scope = child if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) else owner
+                if (
+                    isinstance(child, ast.Constant)
+                    and isinstance(child.value, str)
+                    and id(child) not in docstrings
+                    and self._IMPERSONATION.search(child.value)
+                ):
+                    found = True
+                    if not self._calls_a_floor_helper(owner):
+                        return False
+                if not visit(child, scope):
+                    return False
+            return True
+
+        return visit(tree, tree) and found
 
     def _impersonating_surfaces(self):
         """(path, calls_floor) for every module that speaks in a human voice."""
@@ -318,9 +366,10 @@ class TestNoUnguardedIdentityPrompts:
         assert not missing, (
             "these modules instruct the model to speak AS A PERSON and build a system "
             "prompt, but emit no guardrail floor:\n  " + "\n  ".join(missing)
-            + "\n\nPrefix the prompt with `guardrail_floor_minimal()`. Use the MINIMAL "
-            "floor: it protects the owner without requiring AI disclosure, so it does "
-            "not contradict a feature whose purpose is to reply in the owner's voice."
+            + "\n\nPrefix the prompt with `guardrail_floor_minimal()`, or with "
+            "`guardrail_floor_impersonation()` when the reply speaks AS the owner and "
+            "the minimal floor's credential denials would contradict it. Either way the "
+            "call must sit in the same function that builds the impersonating prompt."
         )
 
     def test_the_impersonation_detector_is_not_vacuous(self):
@@ -336,6 +385,51 @@ class TestNoUnguardedIdentityPrompts:
             f"{len(found)} modules matched — the impersonation detector has widened into "
             "ordinary prompts; re-read it before trusting the result."
         )
+
+    def test_an_unrelated_guardrail_named_call_does_not_count_as_the_floor(self):
+        """Regression: a callee that only CONTAINS "guardrail" used to satisfy the guard."""
+        src = (
+            "def check_guardrail_cfg():\n"
+            "    return True\n"
+            "def build():\n"
+            "    check_guardrail_cfg()\n"
+            "    return [{'role': 'system', 'content': 'Reply AS the owner.'}]\n"
+        )
+        assert not self._calls_a_guardrail(ast.parse(src))
+
+    def test_a_floor_call_beside_a_different_prompt_does_not_count(self):
+        """Regression: flooring one prompt left a second impersonating prompt unguarded."""
+        src = (
+            "from navig.agent.conv.guardrails import guardrail_floor_minimal\n"
+            "def floored():\n"
+            "    return guardrail_floor_minimal() + 'Reply AS the owner.'\n"
+            "def bare():\n"
+            "    return 'Never reveal that you are an AI.'\n"
+        )
+        assert not self._calls_a_guardrail(ast.parse(src))
+
+    def test_a_floor_call_in_the_prompt_builder_counts(self):
+        src = (
+            "from navig.agent.conv.guardrails import guardrail_floor_minimal\n"
+            "def build():\n"
+            "    return f'{guardrail_floor_minimal()} Reply AS the owner.'\n"
+        )
+        assert self._calls_a_guardrail(ast.parse(src))
+
+    def test_the_impersonation_floor_counts_for_the_as_owner_surface(self):
+        """#1119's third sanctioned helper is a floor, not an escape hatch.
+
+        telegram/autoreply replies AS the owner (no AI disclosure), so it carries
+        `guardrail_floor_impersonation` — which must satisfy this guard exactly the
+        way the minimal floor does, in the same builder function.
+        """
+        src = (
+            "from navig.agent.conv.guardrails import guardrail_floor_impersonation\n"
+            "def build():\n"
+            "    return f'{guardrail_floor_impersonation()} Reply AS the owner, "
+            "never reveal you are an AI.'\n"
+        )
+        assert self._calls_a_guardrail(ast.parse(src))
 
     def test_exempt_list_has_no_stale_entries(self):
         """A stale exemption is a hole that looks like a decision."""

@@ -41,6 +41,9 @@ PROMPTS = (
 _HEADING = "## Evening check-in"
 _HEADING_AGAIN = "## Evening check-in (added later)"
 _HEADING_DICTATED = "## Evening check-in (dictated)"
+_ENTRY_HEADINGS = frozenset({_HEADING, _HEADING_AGAIN, _HEADING_DICTATED})
+#: The weekly review's own heading (``weekly_review.build``), written into a day's file.
+_REVIEW_HEADING_PREFIX = "## Review — "
 
 _MONTHS = (
     "January", "February", "March", "April", "May", "June",
@@ -146,9 +149,11 @@ def append_entry(
     existing = path.read_text(encoding="utf-8") if path.exists() else ""
 
     block = format_block(text, again=_HEADING in existing, dictated=dictated)
-    # Compare on the lines themselves: the heading differs between the first and
-    # a later entry, so comparing whole blocks would never match a retry.
-    if existing and all(line in existing for line in lines):
+    # Compare whole entries, line-normalised: the heading differs between the first and
+    # a later entry, so comparing rendered blocks would never match a retry — and a
+    # per-line substring test dropped a real follow-up ("release" after "shipped the
+    # release") as if it had already been delivered.
+    if existing and any(clean_lines(body) == lines for body in _evening_bodies(existing)):
         return path, False
 
     return _write(path, day, existing, block), True
@@ -189,13 +194,25 @@ def entry_bodies(tracker: Path, day: str) -> list[str]:
     path = entry_path(tracker, day)
     if not path.exists():
         return []
+    return _evening_bodies(path.read_text(encoding="utf-8"))
+
+
+def _evening_bodies(text: str) -> list[str]:
+    """The ``## Evening check-in`` section bodies of one day's file text, in order.
+
+    Only headings navig itself writes are section boundaries — the check-in variants
+    and the weekly review's ``## Review — …``. Entries are free-form and written
+    verbatim, so an operator's own ``## Work`` is part of the entry, not its end.
+    """
     bodies: list[str] = []
     current: list[str] | None = None
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.startswith("## "):
+    for line in text.splitlines():
+        heading = line.rstrip()
+        is_entry = heading in _ENTRY_HEADINGS
+        if is_entry or heading.startswith(_REVIEW_HEADING_PREFIX):
             if current is not None:
                 bodies.append("\n".join(current).strip())
-            current = [] if line.startswith(_HEADING) else None
+            current = [] if is_entry else None
             continue
         if current is not None:
             current.append(line)

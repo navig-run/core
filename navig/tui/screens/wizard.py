@@ -26,9 +26,8 @@ from textual.widgets import (
     Switch,
 )
 
+from navig.tui import config_model
 from navig.tui.config_model import (
-    DEFAULT_CONFIG_FILE,
-    DEFAULT_WORKSPACE_DIR,
     NavigConfig,
     build_config_dict,
 )
@@ -82,7 +81,7 @@ class Step1IdentityWidget(_WizardStepBase):
         yield Input(
             value=self._cfg.workspace_root,
             id="inp-workspace",
-            placeholder=str(DEFAULT_WORKSPACE_DIR),
+            placeholder=str(config_model.DEFAULT_WORKSPACE_DIR),
         )
         yield Label("Theme")
         yield Select(
@@ -519,6 +518,6 @@ class WizardScreen(Screen):  # type: ignore[type-arg]
             from navig.commands.onboard import save_config
 
             cfg_dict = build_config_dict(self._cfg)
-            save_config(cfg_dict, DEFAULT_CONFIG_FILE)
+            save_config(cfg_dict, config_model.DEFAULT_CONFIG_FILE)
         except Exception:  # noqa: BLE001
             pass  # best-effort partial save; failure is silent

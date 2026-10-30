@@ -115,7 +115,18 @@ def test_at_the_threshold_the_note_fires_with_the_count_and_the_command(hook, re
     _advance_main(repo, hook.WORKTREE_BEHIND_WARN)
     text = hook.briefing(repo)
     assert f"{hook.WORKTREE_BEHIND_WARN} commit(s) behind origin/main; rebase before more work lands here" in text
-    assert f"git -C {wt}" in text or f"git -C {wt.as_posix()}" in text.replace("\\", "/")
+    assert f'git -C "{wt.as_posix()}" rebase' in text.replace("\\", "/")
+
+
+def test_the_rebase_command_quotes_a_worktree_path_with_a_space(hook, repo: Path):
+    """`git -C <path>` takes ONE argument: a spaced path must survive copy-paste (F2098)."""
+    wt = repo / ".dev" / "worktrees" / "old dir"
+    wt.parent.mkdir(parents=True, exist_ok=True)
+    _git("worktree", "add", "-q", str(wt), "-b", "feat/old-dir", cwd=repo)
+    _commit(wt, "own.txt")
+    _advance_main(repo, hook.WORKTREE_BEHIND_WARN)
+    text = hook.briefing(repo).replace("\\", "/")
+    assert f'`git -C "{wt.as_posix()}" rebase origin/main`' in text
 
 
 def test_the_note_is_per_worktree(hook, repo: Path):

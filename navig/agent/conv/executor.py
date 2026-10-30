@@ -465,12 +465,31 @@ class TaskExecutor:
 
         Each step is dispatched through the ToolRouter.  Failure of any step
         raises RuntimeError immediately, halting the chain.
+
+        Every step passes the same fail-closed approval interlock as ``_execute_step``
+        first: the ToolRouter has no approval gate of its own, and these steps are
+        LLM-produced. A denied step raises PermissionError and halts the chain.
         """
+        from navig.tools.approval import gate_agent_tool_call
         from navig.tools.router import ToolResultStatus, get_tool_router
 
         _router = get_tool_router()
         outputs: list[str] = []
         for i, step in enumerate(action.steps, 1):
+            try:
+                denial = await gate_agent_tool_call(
+                    step.tool, parameters=step.parameters, reason="multi-step"
+                )
+            except Exception as exc:  # noqa: BLE001 — interlock unavailable → deny
+                logger.error(
+                    "TaskExecutor: approval interlock unavailable for %r"
+                    " — failing closed: %s",
+                    step.tool,
+                    exc,
+                )
+                denial = f"[Denied: approval interlock unavailable for '{step.tool}']"
+            if denial is not None:
+                raise PermissionError(denial)
             result = await _router.async_execute(step)
             if result.status == ToolResultStatus.SUCCESS:
                 outputs.append(f"[{i}] {step.tool}: {result.output}")

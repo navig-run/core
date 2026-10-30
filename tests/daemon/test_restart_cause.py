@@ -84,3 +84,75 @@ def test_record_never_raises_when_the_dir_is_unusable(monkeypatch, tmp_path):
     rc.record("service restart")  # must not raise — a diagnostic can't block a restart
     rc.mark_clean_exit()
     assert rc.boot_cause(had_previous_pid=False).startswith("first start")
+
+
+def test_a_reaped_dead_pid_still_reads_unexplained_at_the_next_boot(monkeypatch, tmp_path):
+    """The running-guard (``is_running``) reaps a dead daemon's pid file BEFORE the boot
+    line checks for it — the reap must leave the evidence behind, or a crash reads as
+    "first start"."""
+    import subprocess
+
+    from navig.daemon import supervisor as sup
+
+    monkeypatch.setattr(sup, "PID_FILE", tmp_path / "supervisor.pid")
+    monkeypatch.setattr(sup, "STATE_FILE", tmp_path / "state.json")
+    from navig.core import incidents
+
+    monkeypatch.setattr(incidents, "record", lambda *_a, **_k: None)
+    p = subprocess.Popen([sys.executable, "-c", "pass"])
+    p.wait()
+    (tmp_path / "supervisor.pid").write_text(str(p.pid), encoding="utf-8")
+
+    assert sup.NavigDaemon.is_running() is False  # reaps the pid file
+    assert not (tmp_path / "supervisor.pid").exists()
+
+    had_previous_pid = (tmp_path / "supervisor.pid").exists()  # what run() computes
+    assert rc.boot_cause(had_previous_pid=had_previous_pid).startswith("UNEXPLAINED")
+    # Consumed: the boot after THAT one is not blamed on the same death.
+    assert rc.boot_cause(had_previous_pid=False).startswith("first start")
+
+
+def _bare_run_daemon(monkeypatch, tmp_path, loop):
+    from navig.daemon import supervisor as sup
+
+    monkeypatch.setattr(sup, "PID_FILE", tmp_path / "supervisor.pid")
+    monkeypatch.setattr(sup, "STATE_FILE", tmp_path / "state.json")
+    monkeypatch.setattr(sup.NavigDaemon, "is_running", staticmethod(lambda: False))
+    monkeypatch.setattr(sup.NavigDaemon, "_enumerate_navig_pids", staticmethod(lambda: []))
+    monkeypatch.setattr(sup.NavigDaemon, "_kill_orphan_daemons", staticmethod(lambda **kw: []))
+    monkeypatch.setattr(sup.signal, "signal", lambda *a, **kw: None)
+    d = sup.NavigDaemon(health_port=0)
+    monkeypatch.setattr(d, "_booting_sibling", lambda candidates=None: None)
+    monkeypatch.setattr(d, "_supervisor_loop", loop(d))
+    return d
+
+
+def test_a_crashed_supervisor_loop_is_not_marked_clean(monkeypatch, tmp_path):
+    """`run()`'s finally ran `_shutdown()`, which wrote the clean marker even while a
+    crash propagated — the next boot then said "stopped cleanly" over a crash."""
+
+    def loop(_d):
+        async def _boom():
+            raise RuntimeError("loop crashed")
+
+        return _boom
+
+    d = _bare_run_daemon(monkeypatch, tmp_path, loop)
+    with pytest.raises(RuntimeError):
+        d.run()
+
+    assert not (tmp_path / rc._CLEAN).exists(), "a crash must not leave a clean marker"
+    assert rc.boot_cause(had_previous_pid=False).startswith("UNEXPLAINED")
+
+
+def test_an_orderly_supervisor_stop_is_still_marked_clean(monkeypatch, tmp_path):
+    def loop(d):
+        async def _stop():
+            d._running = False
+
+        return _stop
+
+    d = _bare_run_daemon(monkeypatch, tmp_path, loop)
+    d.run()
+
+    assert "stopped cleanly" in rc.boot_cause(had_previous_pid=False)

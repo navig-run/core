@@ -150,14 +150,27 @@ class ContextManager:
                 if hit:
                     return hit if return_source else hit[0]
         except UnresolvableActiveHost as exc:
+            # STDERR, not the shared stdout console: this accessor runs under
+            # machine-readable callers (`navig --raw host show --current`, --json
+            # verbs) whose stdout must carry only their own payload.
+            from rich.console import Console
+
             from navig import console_helper as ch
 
-            ch.error(
-                f"Active host '{exc.host}' (from {exc.source}) could not be verified — refusing "
-                "to fall back to another host.",
-                "Its host file is missing or unreadable at this moment. Re-run in a second; if it "
-                f"persists: navig host list · navig host use <name>. Never proceeding on a host "
-                "the operator did not name.",
+            err = Console(stderr=True, highlight=False)
+            mark = ch._safe_symbol("✗", "x")
+            err.print(
+                f"[{ch.Colors.ERROR}]{mark}[/{ch.Colors.ERROR}] Active host '{exc.host}' "
+                f"(from {exc.source}) could not be verified — refusing to fall back to "
+                "another host.",
+                markup=True,
+            )
+            err.print(
+                f"  [{ch.Colors.DIM}]Its host file is missing or unreadable at this moment. "
+                "Re-run in a second; if it persists: navig host list · navig host use "
+                "<name>. Never proceeding on a host the operator did not name."
+                f"[/{ch.Colors.DIM}]",
+                markup=True,
             )
             return (None, "unresolvable") if return_source else None
 

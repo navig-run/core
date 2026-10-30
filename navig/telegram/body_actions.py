@@ -227,7 +227,9 @@ def weekly_answers(path: Path, day: str, chat_id: int | None = None) -> dict[str
         rows = []
     row = next((r for r in rows if r.get("date") == day), {})
     treatment = _treatment_of(row.get("notes") or "")
-    if treatment is None and chat_id is not None:
+    # A note asked for today supersedes an earlier answer: reopening a card that held
+    # "all fine" and choosing "something to report" must not fold it straight back.
+    if chat_id is not None:
         pending = bm.pending_prompt(chat_id)
         if pending and pending[0] == "note" and pending[1] == day:
             treatment = "pending"
@@ -518,11 +520,15 @@ async def _announce_if_done(
         return None
     text = f"<b>{html.escape(t('week.done_title'))}</b>\n{html.escape(weekly_summary(answers))}"
     try:
-        await channel._api_call(
+        sent = await channel._api_call(
             "sendMessage", {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("weekly check-in completion could not be sent: %s", exc)
+        sent = None
+    if sent is None:
+        # Not delivered: give the claim back so the next answer announces it.
+        bm.unclaim_weekly_done(chat_id, day)
         return None
     return text
 
@@ -531,7 +537,9 @@ async def after_note(channel: Any, chat_id: int, day: str) -> str | None:
     """A typed treatment note just landed: redraw the card, announce if done.
 
     Returns the completion text when this note finished the week, so the caller
-    can send that INSTEAD of its generic "✅ saved" — one receipt per answer.
+    can send that INSTEAD of its generic "✅ saved" — one receipt per answer. The
+    week is claimed here; a caller whose send fails gives it back with
+    :func:`body_metrics.unclaim_weekly_done`.
     """
     card = bm.weekly_card(chat_id)
     if card is None or card[1] != day:

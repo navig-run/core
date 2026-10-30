@@ -26,7 +26,7 @@ def _link(cred="cred-1", url="https://example.com/login"):
     return SimpleNamespace(id="L1", url=url, vault_cred_id=cred, title="t")
 
 
-def _run(args, *, link, new=None, login=None):
+def _run(args, *, link, new=None, login=None, launched=None):
     """Drive `links open` with the CDP primitives stubbed; return (result, calls)."""
     from navig.commands.links import links_app
 
@@ -49,6 +49,8 @@ def _run(args, *, link, new=None, login=None):
          patch("navig.browser.cdp_actions.new", _new), \
          patch("navig.browser.cdp_actions.login", _login), \
          patch("navig.browser.cdp_actions.stop", _stop), \
+         patch("navig.browser.cdp_actions.launched",
+               lambda: {"ok": True, "launched": launched or []}), \
          patch("webbrowser.open", lambda url: calls.append(("webbrowser", url))):
         mod.get_links_db.return_value = db
         result = CliRunner().invoke(links_app, ["open", "L1", *args], obj={})
@@ -85,6 +87,33 @@ def test_a_headless_open_logs_in_then_closes_the_browser():
 def test_the_profile_flag_reaches_the_launcher():
     _, calls = _run(["--profile", "work"], link=_link())
     assert calls[1][1]["profile"] == "work"
+
+
+def _work_session(port=9444, live=True, name="work"):
+    return {"port": port, "app": "chrome", "pid": 1,
+            "profile": f"/cfg/cdp-profiles/named/{name}", "live": live}
+
+
+def test_an_open_named_profile_is_reused_not_relaunched():
+    """Review #1441: a headful --profile open leaves its browser running; a second open
+    on the same locked profile must reuse that port, not launch (and time out)."""
+    result, calls = _run(["--profile", "work"], link=_link(), launched=[_work_session()])
+    assert result.exit_code == 0, result.output
+    kinds = [c[0] for c in calls]
+    assert kinds == ["visit", "login"], kinds
+    assert calls[1][1] == 9444
+
+
+def test_a_headless_reuse_does_not_stop_the_operators_browser():
+    _, calls = _run(["--profile", "work", "--headless"], link=_link(),
+                    launched=[_work_session()])
+    assert not any(c[0] in ("new", "stop") for c in calls), calls
+
+
+def test_a_dead_or_other_profile_session_is_not_reused():
+    _, calls = _run(["--profile", "work"], link=_link(),
+                    launched=[_work_session(live=False), _work_session(port=9555, name="home")])
+    assert [c[0] for c in calls] == ["visit", "new", "login"]
 
 
 def test_a_link_without_a_credential_still_opens_plainly():

@@ -185,6 +185,57 @@ def test_fold_command_writes_marker_and_releases_the_id(temp_dir, isolated_regis
     assert "persona" not in _registered_ids(isolated_registry)
 
 
+def test_fold_clears_the_active_bindings_that_name_the_folded_space(
+    temp_dir, isolated_registry, monkeypatch
+):
+    """A space activated with `space switch` and then folded must stop being the global
+    active space — its id and working dir would otherwise keep answering everywhere."""
+    from types import SimpleNamespace
+
+    from navig.commands import space as space_cmd
+    from navig.spaces import registry as space_registry
+    from navig.spaces.active import get_active_working_dir, set_active_working_dir
+
+    monkeypatch.delenv("NAVIG_SPACE", raising=False)
+    monkeypatch.setattr(
+        space_cmd, "get_config_manager",
+        lambda: SimpleNamespace(global_config_dir=str(isolated_registry), global_config={}),
+    )
+    space = _make_space(Path(temp_dir), "persona")
+    space_registry.register(space, id="persona", name="persona", source="external", enabled=True)
+    space_cmd._set_active_space("persona")
+    set_active_working_dir(space)
+    space_registry.mark_active(space)
+    assert space_cmd.resolve_active_space() == "persona"
+
+    space_cmd.space_fold(space)
+
+    assert space_cmd.resolve_active_space() != "persona"
+    elsewhere = Path(temp_dir) / "elsewhere"
+    elsewhere.mkdir()
+    assert get_active_working_dir(cwd=elsewhere).resolve() != space.resolve()
+    assert space_registry.load_registry()["active"] is None
+
+
+def test_fold_leaves_another_active_space_alone(temp_dir, isolated_registry, monkeypatch):
+    from types import SimpleNamespace
+
+    from navig.commands import space as space_cmd
+    from navig.spaces.active import _active_space_dir_file, set_active_working_dir
+
+    monkeypatch.delenv("NAVIG_SPACE", raising=False)
+    monkeypatch.setattr(
+        space_cmd, "get_config_manager",
+        lambda: SimpleNamespace(global_config_dir=str(isolated_registry), global_config={}),
+    )
+    keep = _make_space(Path(temp_dir), "keeper")
+    space_cmd._set_active_space("keeper")
+    set_active_working_dir(keep)
+    space_cmd.space_fold(_make_space(Path(temp_dir), "persona"))
+    assert space_cmd.resolve_active_space() == "keeper"
+    assert _active_space_dir_file().read_text(encoding="utf-8").strip() == str(keep)
+
+
 def test_fold_marker_records_why_and_how_to_undo(temp_dir, isolated_registry):
     """A bare marker is a mystery six months later — it carries its own provenance."""
     from navig.commands.space import space_fold

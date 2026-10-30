@@ -486,9 +486,19 @@ class CloudManager:
             return
 
         url = self.state.tunnel_url
+        # One normalised count for the loop and the backoff —
+        # a 0 or negative value still makes exactly one attempt, and reports it.
+        attempts = max(1, attempts)
         delay = 1.0
         last: Exception | None = None
-        for n in range(max(1, attempts)):
+        tries = 0
+        for n in range(attempts):
+            # cloudflared may have rotated while this attempt backed off; a newer
+            # task owns the new URL, and re-registering ours would overwrite it.
+            if self.state.tunnel_url != url:
+                logger.debug("broker.register for %s superseded by a newer URL", url)
+                return
+            tries = n + 1
             try:
                 await self._broker.register(url, self.tunnel_label or None)
                 self.state.last_heartbeat_at = _now()
@@ -511,7 +521,8 @@ class CloudManager:
                 await asyncio.sleep(delay)
                 delay *= 2
 
-        logger.warning("broker.register failed after %d attempt(s): %r", attempts, last)
+        # Report the tries actually MADE — a rejected URL breaks out after one.
+        logger.warning("broker.register failed after %d attempt(s): %r", tries, last)
         # In lighthouse mode the OUTBOUND UPLINK is the data path, so this is not a
         # system error on an otherwise-healthy brain and does not become last_error —
         # that trained the operator to distrust a green status. It IS recorded, so
@@ -525,7 +536,7 @@ class CloudManager:
                 BROKER_REGISTER_FAILED,
                 url=url,
                 mode=self.mode,
-                attempts=attempts,
+                attempts=tries,
                 error=f"{last!r}"[:200],
             )
         except Exception:  # noqa: BLE001 — an observation must never break the daemon
@@ -667,6 +678,14 @@ class CloudManager:
                 return
             try:
                 await asyncio.wait_for(proc.wait(), timeout=5.0)
+            except asyncio.CancelledError:
+                # `self._proc` is already cleared, so nobody else can reap this
+                # child: escalate now rather than leave a cloudflared running.
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+                raise
             except asyncio.TimeoutError:
                 try:
                     proc.kill()

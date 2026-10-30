@@ -221,3 +221,22 @@ class TestStructuredLogger:
         # The formatted message should not contain the raw secret
         msg = records[0].getMessage()
         assert "y" * 25 not in msg
+
+    def test_direct_log_with_mapping_args_formats(self):
+        """`_log(level, msg, mapping)` — the Mapping branch — must format, not KeyError(0)."""
+        logger = get_logger("batch85_mapping")
+        records = []
+
+        class _Capture(logging.Handler):
+            def emit(self, record):
+                records.append(record)
+
+        handler = _Capture()
+        logger.addHandler(handler)
+        logger.setLevel(logging.DEBUG)
+        try:
+            logger._log(logging.WARNING, "value=%(k)s", {"k": "v"})
+        finally:
+            logger.removeHandler(handler)
+
+        assert [r.getMessage() for r in records] == ["value=v"]

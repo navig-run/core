@@ -25,6 +25,7 @@ A fallback that is never reached cannot fail this; one that IS reached always wi
 from __future__ import annotations
 
 import datetime
+import html
 import re
 from collections.abc import Iterator
 from pathlib import Path
@@ -118,9 +119,18 @@ def russian(monkeypatch) -> Iterator[None]:
     i18n.shared().reset()
 
 
+_TAG = re.compile(r"<[^>]+>")
+
+
 def english_words(text: str) -> list[str]:
-    """The Latin words in *text* that are not on the allowlist."""
-    return sorted({w for w in _WORD.findall(text) if w.lower() not in ALLOWED})
+    """The Latin words in *text* that are not on the allowlist.
+
+    Tags and entities are stripped first: a card renders `<blockquote>` and `&gt;`,
+    and scanning the markup turned this guard into an HTML-element allowlist
+    instead of a check on what the operator reads.
+    """
+    prose = html.unescape(_TAG.sub(" ", text))
+    return sorted({w for w in _WORD.findall(prose) if w.lower() not in ALLOWED})
 
 
 def surfaces(path: Path) -> dict[str, str]:

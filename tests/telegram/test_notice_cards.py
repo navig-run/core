@@ -73,14 +73,15 @@ NOW = datetime(2026, 10, 21, 7, 13)
 
 
 def _greeting() -> tuple[Screen, object]:
-    return notice_cards.greeting_card("NAVIG — Приветствие", "Доброе утро. Пора за работу.", now=NOW)
+    return notice_cards.greeting_card(
+        "NAVIG — Приветствие", "Доброе утро. Пора за работу.", now=NOW
+    )
 
 
 def _tip() -> tuple[Screen, object]:
     return notice_cards.tip_card(
         "NAVIG — А ты знал",
-        "💡 **Server Monitoring**: Real-time health dashboard.\n"
-        "Try: `navig host monitor show`",
+        "💡 **Server Monitoring**: Real-time health dashboard.\nTry: `navig host monitor show`",
         feature="host_monitor",
         now=NOW,
     )
@@ -147,6 +148,11 @@ def _press(channel: FakeChannel, context, action: str) -> dict:
     return channel.payload("editMessageText")
 
 
+def _words(payload: dict) -> str:
+    """The body Telegram carries: the rich html when there is one, else the text."""
+    return payload.get("text") or (payload.get("rich_message") or {}).get("html", "")
+
+
 def test_open_reveals_todays_brief_and_back_returns_to_the_greeting():
     screen, context = _greeting()
     detail = str(notice_cards.recall(context.prefix, context.key)["detail"])
@@ -154,12 +160,12 @@ def test_open_reveals_todays_brief_and_back_returns_to_the_greeting():
     channel = FakeChannel()
 
     opened = _press(channel, context, "open")
-    assert detail.splitlines()[0] in opened["text"]
+    assert detail.splitlines()[0] in _words(opened)
     assert [b["text"] for b in channel.buttons("editMessageText")] == ["Back", "Close"]
 
     channel.calls.clear()
     back = _press(channel, context, "back")
-    assert back["text"] == screen.text()
+    assert _words(back) == screen.rich()
     assert [b["text"] for b in channel.buttons("editMessageText")] == ["Open brief", "Close"]
 
 
@@ -169,8 +175,8 @@ def test_open_reveals_the_full_tip_and_its_example_command():
 
     opened = _press(channel, context, "open")
 
-    assert "Real-time health dashboard" in opened["text"]
-    assert "`navig host monitor show`" in opened["text"]
+    assert "Real-time health dashboard" in _words(opened)
+    assert "navig host monitor show" in _words(opened)
 
 
 def test_view_shows_the_host_check_time_and_failing_checks():
@@ -179,17 +185,20 @@ def test_view_shows_the_host_check_time_and_failing_checks():
 
     opened = _press(channel, context, "view")
 
-    assert "Host: lighthouse" in opened["text"]
-    assert "Checked: 2026-10-21 07:13" in opened["text"]
-    assert "ssh: connection refused" in opened["text"]
-    assert "disk: 96% used" in opened["text"]
+    assert "lighthouse" in _words(opened)
+    assert "2026-10-21 07:13" in _words(opened)
+    assert "ssh: connection refused" in _words(opened)
+    assert "disk: 96% used" in _words(opened)
 
 
-@pytest.mark.parametrize("builder, prefix", [
-    (_greeting, "ngr"),
-    (_tip, "ntp"),
-    (_outpost, "nop"),
-])
+@pytest.mark.parametrize(
+    "builder, prefix",
+    [
+        (_greeting, "ngr"),
+        (_tip, "ntp"),
+        (_outpost, "nop"),
+    ],
+)
 def test_close_collapses_every_one_of_them_in_place(builder, prefix):
     _screen, context = builder()
     channel = FakeChannel()
@@ -227,52 +236,132 @@ def test_all_three_prefixes_register_with_core_and_do_not_collide():
 def test_the_outpost_sender_is_at_most_once_per_window():
     channel = FakeChannel()
 
-    first = asyncio.run(notice_cards.report_outpost_unhealthy(
-        "lighthouse",
-        title="Outpost unhealthy",
-        checks=["ssh: connection refused"],
-        checked_at=datetime(2026, 10, 21, 9, 0),
-        chat_id=42,
-        channel=channel,
-        now=datetime(2026, 10, 21, 9, 0),
-    ))
-    again = asyncio.run(notice_cards.report_outpost_unhealthy(
-        "lighthouse",
-        title="Outpost unhealthy",
-        checks=["ssh: connection refused"],
-        chat_id=42,
-        channel=channel,
-        now=datetime(2026, 10, 21, 10, 0),
-    ))
-    later = asyncio.run(notice_cards.report_outpost_unhealthy(
-        "lighthouse",
-        title="Outpost unhealthy",
-        checks=["ssh: connection refused"],
-        chat_id=42,
-        channel=channel,
-        now=datetime(2026, 10, 21, 16, 30),
-    ))
+    first = asyncio.run(
+        notice_cards.report_outpost_unhealthy(
+            "lighthouse",
+            title="Outpost unhealthy",
+            checks=["ssh: connection refused"],
+            checked_at=datetime(2026, 10, 21, 9, 0),
+            chat_id=42,
+            channel=channel,
+            now=datetime(2026, 10, 21, 9, 0),
+        )
+    )
+    again = asyncio.run(
+        notice_cards.report_outpost_unhealthy(
+            "lighthouse",
+            title="Outpost unhealthy",
+            checks=["ssh: connection refused"],
+            chat_id=42,
+            channel=channel,
+            now=datetime(2026, 10, 21, 10, 0),
+        )
+    )
+    later = asyncio.run(
+        notice_cards.report_outpost_unhealthy(
+            "lighthouse",
+            title="Outpost unhealthy",
+            checks=["ssh: connection refused"],
+            chat_id=42,
+            channel=channel,
+            now=datetime(2026, 10, 21, 16, 30),
+        )
+    )
 
     assert first["sent"] is True
     assert again == {"sent": False, "suppressed": True, "host": "lighthouse"}
     assert later["sent"] is True
-    assert channel.methods().count("sendMessage") == 2
+    sends = [m for m in channel.methods() if m in ("sendMessage", "sendRichMessage")]
+    assert len(sends) == 2
 
 
 def test_the_outpost_sender_does_not_burn_the_window_without_a_chat(monkeypatch):
     from navig.telegram import daily_once as claim
 
-    monkeypatch.setattr(
-        "navig.messaging.notify_operator.resolve_operator_chat_id", lambda: None
-    )
+    monkeypatch.setattr("navig.messaging.notify_operator.resolve_operator_chat_id", lambda: None)
 
-    receipt = asyncio.run(notice_cards.report_outpost_unhealthy(
-        "lighthouse",
-        chat_id=None,
-        channel=FakeChannel(),
-        now=datetime(2026, 10, 21, 9, 0),
-    ))
+    receipt = asyncio.run(
+        notice_cards.report_outpost_unhealthy(
+            "lighthouse",
+            chat_id=None,
+            channel=FakeChannel(),
+            now=datetime(2026, 10, 21, 9, 0),
+        )
+    )
 
     assert receipt["sent"] is False
     assert receipt["suppressed"] is False
     assert claim.last_claim("outpost:lighthouse") is None
+
+
+# ── the rich projection ─────────────────────────────────────────────────────
+#
+# The classic body stays the fallback; these assert the twin a rich chat draws,
+# which is why they read ``screen.rich()`` rather than the edited text.
+
+
+def _opened(prefix: str, context, action: str):
+    handler = {
+        "ngr": notice_cards.handle_greeting,
+        "ntp": notice_cards.handle_tip,
+        "nop": notice_cards.handle_outpost,
+    }[prefix]
+    parsed = cards.parse(cards.encode(prefix, action, context.key))
+    assert parsed is not None
+    return asyncio.run(handler(cards.Action(*parsed)))
+
+
+def test_every_notice_is_sent_with_a_rich_twin():
+    for builder in (_greeting, _tip, _outpost):
+        screen, _context = builder()
+        rich = screen.rich()
+        assert rich is not None
+        assert rich.startswith("<h2>")
+        assert "&lt;" not in rich.split("\n")[0]
+
+
+def test_open_turns_the_tip_into_a_copyable_command():
+    _screen, context = _tip()
+
+    opened = _opened("ntp", context, "open")
+
+    assert '<pre><code class="language-bash">navig host monitor show</code></pre>' in opened.rich()
+    assert "<p><b>Try</b></p>" in opened.rich()
+
+
+def test_view_draws_the_host_as_a_sheet_and_each_failure_as_a_list_item():
+    screen, context = _outpost()
+
+    summary = screen.rich()
+    assert "<b>lighthouse</b>" in summary
+    assert "<b>2 check(s) failing</b>" in summary
+
+    opened = _opened("nop", context, "view")
+    rich = opened.rich()
+    assert "<table bordered striped>" in rich
+    assert "<th>Host</th><td>lighthouse</td>" in rich
+    assert "<th>Checked</th><td>2026-10-21 07:13</td>" in rich
+    assert "<p><b>Failing checks</b></p>" in rich
+    assert "<li><b>✗</b> ssh: connection refused</li>" in rich
+    assert "<li><b>✗</b> disk: 96% used</li>" in rich
+
+
+def test_a_rich_body_turns_sheets_lists_commands_and_links_into_tags():
+    rich = notice_cards._rich(
+        "Status: queued\nRetries: 2\n\n• first move\n• second move\n\n`navig doctor`\n\n"
+        "Read https://navig.run/docs & nothing at all\n\nChecks:"
+    )
+
+    assert "<table bordered striped><tr><th>Status</th><td>queued</td></tr>" in rich
+    assert "<ul><li>first move</li><li>second move</li></ul>" in rich
+    assert '<pre><code class="language-bash">navig doctor</code></pre>' in rich
+    assert '<a href="https://navig.run/docs">https://navig.run/docs</a>' in rich
+    assert "&amp; nothing at all" in rich
+    assert "<p><b>Checks</b></p>" in rich
+
+
+def test_a_rich_body_escapes_its_own_markup_rather_than_trusting_it():
+    rich = notice_cards._rich("<b>not bold</b> and **real bold**")
+
+    assert "&lt;b&gt;not bold&lt;/b&gt;" in rich
+    assert "<b>real bold</b>" in rich

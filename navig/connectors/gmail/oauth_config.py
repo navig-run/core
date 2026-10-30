@@ -125,5 +125,7 @@ def get_gmail_oauth_config() -> OAuthProviderConfig | None:
         client_id = _vault_secret(VAULT_CLIENT_ID_LABEL)
         if not client_id:
             return None
-        client_secret = client_secret or _vault_secret(VAULT_CLIENT_SECRET_LABEL) or None
+    # Each credential falls back on its own: an env client id with the secret kept
+    # only in the vault is a valid split, and must not drop the secret.
+    client_secret = client_secret or _vault_secret(VAULT_CLIENT_SECRET_LABEL) or None
     return build_gmail_oauth_config(client_id, client_secret)

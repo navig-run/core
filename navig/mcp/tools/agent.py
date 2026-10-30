@@ -53,6 +53,22 @@ def register(server: Any) -> None:
                             "type": "object",
                             "description": "Optional metadata object",
                         },
+                        "webflow": {
+                            "type": "object",
+                            "description": (
+                                "Optional: reach this goal by replaying a recorded Webflow. "
+                                "{id} or {match: words from its name/site/description}, "
+                                "params {name: value} (never a secret), allow_vault (bool). "
+                                "The goal completes only when the flow's check verified the "
+                                "outcome. An unknown or ambiguous flow returns the candidates."
+                            ),
+                            "properties": {
+                                "id": {"type": "string"},
+                                "match": {"type": "string"},
+                                "params": {"type": "object"},
+                                "allow_vault": {"type": "boolean"},
+                            },
+                        },
                     },
                     "required": ["description"],
                 },
@@ -366,11 +382,26 @@ def _tool_agent_goal_add(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     if metadata is None or not isinstance(metadata, dict):
         metadata = {}
 
+    subtask = None
+    if args.get("webflow") is not None:
+        # Resolved before the goal exists: an unknown flow creates nothing, and the caller
+        # gets the candidates to choose from instead of a goal that can never finish.
+        from navig.webflows.goals import WebflowGoalError, webflow_subtask
+
+        try:
+            subtask = webflow_subtask(args["webflow"])
+        except WebflowGoalError as exc:
+            return {"error": "; ".join(exc.errors), "webflows": exc.candidates}
+        metadata = {**metadata, "webflow": subtask["command"]}
+
     goal_id = planner.add_goal(description, metadata=metadata)
+    if subtask is not None:
+        planner.decompose_goal(goal_id, [subtask])
     return {
         "ok": True,
         "goal_id": goal_id,
         "storage_dir": str(planner.storage_dir),
+        **({"subtask": subtask} if subtask else {}),
     }
 
 

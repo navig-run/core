@@ -75,6 +75,9 @@ class InterpreterAudit:
     fix_paths: tuple[str, ...] = ()
     #: ``(dist, path)`` — installed editable from a folder that no longer exists.
     dead: tuple[tuple[str, str], ...] = ()
+    #: Subset of ``dead`` the checkout still declares: their remedy is the editable
+    #: reinstall in ``fix_paths``, never an uninstall.
+    reinstall: tuple[str, ...] = ()
 
     @property
     def ok(self) -> bool:
@@ -92,7 +95,7 @@ def list_interpreters() -> list[str]:
     through — plus whatever ``python`` is on PATH. Elsewhere: PATH only.
     """
     found: list[str] = []
-    launcher = shutil.which("py") if os.name == "nt" else None
+    launcher = shutil.which("py") if sys.platform == "win32" else None
     if launcher:
         try:
             out = subprocess.run(
@@ -173,12 +176,20 @@ def _judge(
     below: list[str] = []
     shadowed: list[str] = []
     fix: list[str] = []
+    dead = dead_editables(installed)
+    dead_dists = {d for d, _ in dead}
+    reinstall: list[str] = []
     for dist, source in sorted(sources.items()):
         record = installed.get(dist.lower())
         if record is None:
             continue  # not installed there — not this audit's business
         version, direct_url = record
-        if not _is_editable(direct_url):
+        if dist.lower() in dead_dists:
+            # Still declared, but recorded editable from a deleted folder (another
+            # worktree): reinstall it from this checkout — uninstalling it would leave
+            # a declared package missing.
+            reinstall.append(dist.lower())
+        elif not _is_editable(direct_url):
             shadowed.append(dist)
         else:
             declared = _source_version(source)
@@ -197,7 +208,8 @@ def _judge(
         below_floor=tuple(below),
         shadowed=tuple(shadowed),
         fix_paths=with_local_dependencies(fix, root) if fix else (),
-        dead=dead_editables(installed),
+        dead=dead,
+        reinstall=tuple(reinstall),
     )
 
 

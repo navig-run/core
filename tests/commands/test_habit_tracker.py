@@ -312,6 +312,61 @@ class TestTrackerPathResolution:
         monkeypatch.setenv("NAVIG_INVOCATION_CWD", str(here))
         assert habit._tracker_path(str(target)) == target / "habits.csv"
 
+    def test_relative_space_resolves_from_the_invocation_dir(self, tmp_path, monkeypatch):
+        """main.py chdir's to the active space, so a relative --space must not follow it."""
+        from navig.spaces import habit_tracker
+
+        launched = tmp_path / "a"
+        (launched / "x").mkdir(parents=True)
+        pinned = tmp_path / "b"
+        pinned.mkdir()
+
+        monkeypatch.setenv("NAVIG_INVOCATION_CWD", str(launched))
+        monkeypatch.chdir(pinned)
+
+        assert habit_tracker.tracker_path("./x") == (launched / "x" / "habits.csv").resolve()
+
+    @staticmethod
+    def _space_declaring(root, log_file):
+        (root / ".navig").mkdir(parents=True)
+        (root / ".navig" / "config.yaml").write_text(
+            f"habits:\n  log_file: {log_file}\n", encoding="utf-8"
+        )
+        return root
+
+    def test_active_space_declared_log_file_is_honoured(self, tmp_path, monkeypatch):
+        """human-space keeps its tracker at spaces/growth/habits.csv, not the root."""
+        from navig.commands import habit
+
+        pinned = self._space_declaring(tmp_path / "human-space", "spaces/growth/habits.csv")
+        self._pin_active_space(monkeypatch, pinned)
+        empty = tmp_path / "elsewhere"
+        empty.mkdir()
+        monkeypatch.setenv("NAVIG_INVOCATION_CWD", str(empty))
+
+        assert habit._tracker_path() == pinned / "spaces" / "growth" / "habits.csv"
+
+    def test_explicit_space_dir_declared_log_file_is_honoured(self, tmp_path):
+        from navig.spaces import habit_tracker
+
+        root = self._space_declaring(tmp_path / "human-space", "spaces/growth/habits.csv")
+        assert habit_tracker.tracker_path(str(root)) == (
+            root / "spaces" / "growth" / "habits.csv"
+        ).resolve()
+
+    def test_existing_root_tracker_wins_until_the_declared_file_exists(self, tmp_path):
+        """A root habits.csv with history must not look lost after the rule changes."""
+        from navig.spaces import habit_tracker
+
+        root = self._space_declaring(tmp_path / "human-space", "spaces/growth/habits.csv")
+        self._space_with_tracker(root)
+        assert habit_tracker.tracker_path(str(root)) == (root / "habits.csv").resolve()
+
+        declared = root / "spaces" / "growth" / "habits.csv"
+        declared.parent.mkdir(parents=True)
+        declared.write_text("date,habit,completed,notes\n", encoding="utf-8")
+        assert habit_tracker.tracker_path(str(root)) == declared.resolve()
+
 
 class TestHabitStreak:
     def test_empty_tracker_does_not_crash(self, tracker):

@@ -14,6 +14,9 @@ examples:
   - "Test UDP throughput to my server"
   - "Run a 30-second bandwidth test"
 os: [windows, linux, mac]
+# Written against a planned command surface that is not implemented yet
+# (KNOWN_MISSING in tests/quality/test_content_command_refs_resolve.py).
+activatable: false
 ---
 
 # iperf3 Network Speed Test

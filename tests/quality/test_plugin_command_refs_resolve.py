@@ -40,9 +40,15 @@ import ast
 import re
 from pathlib import Path
 
-import click
 import pytest
 from typer.main import get_command
+
+from navig.core.click_compat import click_module, is_group
+
+# The click TYPER runs on, never a bare `import click` — Typer 0.27 vendors click, and a
+# separately installed copy is a different class hierarchy, so `_resolve` would stop at the
+# root of every app and report every documented flag as rejected.
+click = click_module()
 
 _NOT_A_VERB = re.compile(r'^(?:<|"|\[|\{|\$)')
 _REF = re.compile(r"`navig ([^`\n]+)`")
@@ -115,7 +121,7 @@ def _refs(text: str):
 def _resolve(root, words: list[str]):
     cur = root
     for i, word in enumerate(words):
-        if not isinstance(cur, click.Group):
+        if not is_group(cur):
             return cur, []  # a leaf command — the rest are arguments
         nxt = cur.get_command(click.Context(cur), word)
         if nxt is None:

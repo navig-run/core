@@ -232,3 +232,127 @@ def test_missing_garbage_and_nonsense_pidfiles_read_as_not_running(tmp_path):
     assert si.pid_from_pidfile(tmp_path / "zero.pid") is None
     (tmp_path / "neg.pid").write_text("-1", encoding="utf-8")
     assert si.pid_from_pidfile(tmp_path / "neg.pid") is None
+
+
+# ── config_dir_of: a target with no override gets ITS default, not ours ───────
+
+
+def _fake_psutil(monkeypatch, environ: dict[str, str]) -> None:
+    import sys
+    import types
+
+    class _Proc:
+        def __init__(self, pid):
+            self.pid = pid
+
+        def environ(self):
+            return dict(environ)
+
+    monkeypatch.setitem(sys.modules, "psutil", types.SimpleNamespace(Process=_Proc))
+
+
+def test_a_default_config_peer_is_not_read_as_the_callers_custom_dir(monkeypatch, tmp_path):
+    """THE REGRESSION: the fallback called `paths.config_dir()` in the CALLER, so a CLI
+    run with NAVIG_CONFIG_DIR=/tmp/smoke resolved a default-config brain to /tmp/smoke
+    too — and `kill_other_instances` force-killed the operator's gateway as "ours"."""
+    smoke = tmp_path / "smoke"
+    other_home = tmp_path / "operator"
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(smoke))
+    _fake_psutil(monkeypatch, {"USERPROFILE": str(other_home), "HOME": str(other_home)})
+
+    got = si.config_dir_of(4242)
+
+    assert got == (other_home / ".navig").resolve()
+    assert got != smoke.resolve()
+
+    killed: list[int] = []
+    out = si.kill_other_instances(
+        si.GATEWAY_PATTERNS,
+        table=[(4242, "python -m navig gateway start")],
+        keep=set(),
+        killer=killed.append,
+        config_dir=smoke.resolve(),
+    )
+    assert out == [] and killed == [], "a default-config brain was killed as our own"
+
+
+def test_a_peer_with_no_derivable_home_is_unidentifiable(monkeypatch, tmp_path):
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "smoke"))
+    monkeypatch.setitem(__import__("sys").modules, "pwd", None)  # no passwd fallback
+    _fake_psutil(monkeypatch, {})
+
+    assert si.config_dir_of(4242) is None
+
+
+def test_a_system_service_peer_defaults_to_etc_navig(monkeypatch, tmp_path):
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "smoke"))
+    _fake_psutil(monkeypatch, {"NAVIG_SYSTEM_SERVICE": "1", "HOME": str(tmp_path)})
+
+    assert si.config_dir_of(4242) == Path("/etc/navig").resolve()
+
+
+# ── pid_status: "could not inspect" is not "dead" ─────────────────────────────
+
+
+def _deny_cmdline(monkeypatch):
+    """An elevated daemon seen from a normal account: create_time answers, cmdline is denied."""
+    import pytest
+
+    psutil = pytest.importorskip("psutil")
+
+    def _denied(self):
+        raise psutil.AccessDenied(self.pid)
+
+    monkeypatch.setattr(psutil.Process, "cmdline", _denied)
+    return psutil
+
+
+def test_an_unreadable_cmdline_does_not_hide_a_live_owner(tmp_path, monkeypatch):
+    """THE REGRESSION: cmdline was read even with no marker, and AccessDenied became None —
+    a live elevated daemon read as absent from a non-elevated `service status` / `pids`."""
+    _deny_cmdline(monkeypatch)
+    f = tmp_path / "x.pid"
+    f.write_text(str(os.getpid()), encoding="utf-8")
+
+    assert si.pid_from_pidfile(f) == os.getpid()
+    assert si.pid_status(f) == ("alive", os.getpid())
+
+
+def test_a_marker_that_cannot_be_read_is_unknown_not_dead(tmp_path, monkeypatch):
+    _deny_cmdline(monkeypatch)
+    f = tmp_path / "x.pid"
+    f.write_text(str(os.getpid()), encoding="utf-8")
+
+    assert si.pid_status(f, cmdline_contains="navig_tray") == ("unknown", os.getpid())
+    assert si.pid_from_pidfile(f, cmdline_contains="navig_tray") is None
+
+
+def test_an_uninspectable_process_is_unknown(tmp_path, monkeypatch):
+    import pytest
+
+    psutil = pytest.importorskip("psutil")
+
+    def _denied(self):
+        raise psutil.AccessDenied(self.pid)
+
+    monkeypatch.setattr(psutil.Process, "create_time", _denied)
+    f = tmp_path / "x.pid"
+    f.write_text(str(os.getpid()), encoding="utf-8")
+
+    assert si.pid_status(f) == ("unknown", os.getpid())
+
+
+def test_pid_status_names_dead_and_missing(tmp_path):
+    import subprocess
+    import sys
+
+    import pytest
+
+    pytest.importorskip("psutil")
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait(timeout=30)
+    f = tmp_path / "x.pid"
+    f.write_text(str(proc.pid), encoding="utf-8")
+
+    assert si.pid_status(f) == ("dead", proc.pid)
+    assert si.pid_status(tmp_path / "absent.pid") == ("missing", None)

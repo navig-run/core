@@ -117,6 +117,25 @@ def _tool_cdp_screenshot(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG
     ))
 
 
+def _tool_cdp_download(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
+    from navig.browser import cdp_actions
+
+    ref = args.get("ref")
+    # Deliberately NO path argument: the page picks the filename (sanitised, never
+    # overwriting, capped in size) and the tool picks the directory. A caller-chosen
+    # path would turn "a file arrived from this page" into "write bytes anywhere this
+    # process can reach" — the class `desktop_filesystem` is gated dangerous for.
+    return _run(cdp_actions.download(
+        int(args.get("port", 9222)),
+        ref=int(ref) if ref is not None else None,
+        selector=args.get("selector"),
+        timeout=float(args.get("timeout", 30)),
+        out_dir=None,
+        max_bytes=max(1, int(args.get("max_mb", 25))) * 1024 * 1024,
+        tab=args.get("tab"), url=args.get("url"),
+    ))
+
+
 def _tool_cdp_click(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
     from navig.browser import cdp_actions
 
@@ -275,6 +294,27 @@ def register(server: Any) -> None:
                                 "out": {"type": "string", "description": "Output filename."},
                                 "full_page": {"type": "boolean", "default": False},
                                 "as_base64": {"type": "boolean", "default": False},
+                                "tab": _TAB_PROP, "url": _URL_PROP},
+                "required": [],
+            },
+        },
+        "cdp_download": {
+            "name": "cdp_download",
+            "description": (
+                "Capture a file download the attached page starts — click first with "
+                "cdp_click, or pass ref/selector to click it here. Returns the saved path, "
+                "byte size and SHA-256; the file lands in the browser's own downloads "
+                "folder, never a path you choose, is never overwritten and is never executed."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {"port": _PORT_PROP,
+                                "ref": {"type": "integer", "description": "a11y ref (from cdp_snapshot) of what starts the download; omit if you already clicked."},
+                                "selector": {"type": "string", "description": "CSS selector of what starts the download; omit if you already clicked."},
+                                "timeout": {"type": "number", "default": 30,
+                                            "description": "Seconds to wait for the download to begin."},
+                                "max_mb": {"type": "integer", "default": 25,
+                                           "description": "Refuse and delete a file larger than this many megabytes."},
                                 "tab": _TAB_PROP, "url": _URL_PROP},
                 "required": [],
             },
@@ -456,6 +496,7 @@ def register(server: Any) -> None:
         "cdp_launch": _tool_cdp_launch,
         "cdp_snapshot": _tool_cdp_snapshot,
         "cdp_screenshot": _tool_cdp_screenshot,
+        "cdp_download": _tool_cdp_download,
         "cdp_click": _tool_cdp_click,
         "cdp_type": _tool_cdp_type,
         "cdp_key": _tool_cdp_key,
@@ -481,6 +522,12 @@ def register(server: Any) -> None:
         server._tool_safety = {}
     server._tool_safety.update({
         "cdp_eval": "dangerous",      # arbitrary JS — credential-exfiltration vector
+        # The FILENAME comes from a hostile-capable remote page (a Content-Disposition
+        # of "..\..\x.exe" was observed against the local fixture), and the bytes are
+        # never vouched for by the agent — only the location and size are. The CLI may
+        # name a directory; this surface may not. Mirrored in approval.DESTRUCTIVE_TOOLS
+        # so `test_agent_gate_parity` cannot see the two gates disagree.
+        "cdp_download": "dangerous",
         "cdp_launch": "dangerous",    # force_restart CLOSES a running window
         "cdp_stop": "dangerous",      # closes NAVIG-launched browsers
         "cdp_login": "dangerous",     # injects a real credential into a page

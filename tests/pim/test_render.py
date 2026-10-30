@@ -8,6 +8,7 @@ suggestion that renders exactly like something the operator wrote.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -140,9 +141,10 @@ def test_the_agenda_groups_and_counts(_=None) -> None:
     ]
     text = render_agenda(rows, NOW)
     assert "3 open" in text
-    assert "OVERDUE</b> (1)" in text
-    assert "TODAY</b> (1)" in text
-    assert "INBOX</b> (1)" in text
+    # The count sits inside the bold heading now that the section is a card heading;
+    # what matters is that each bucket is labelled AND counted.
+    for bucket in ("OVERDUE", "TODAY", "INBOX"):
+        assert re.search(rf"{bucket}.*\(1\)", text), bucket
     assert text.index("Late thing") < text.index("Today thing") < text.index("Loose end")
 
 

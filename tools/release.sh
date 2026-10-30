@@ -24,6 +24,24 @@
 # Requirements: Git Bash / WSL / macOS / Linux; remote 'origin'; python; gh (for step 6).
 set -euo pipefail
 
+# Interpreter for the helper scripts. PEP 394 means most Linux distributions ship `python3`
+# and NO `python`, so the old bare `python` calls worked in Windows Git Bash and died here at
+# the first guard with `python: command not found` (2026-10-30, outpost). Override with
+# PYTHON=/path/to/python when a specific interpreter is needed.
+PYTHON="${PYTHON:-}"
+if [[ -z "$PYTHON" ]]; then
+  for candidate in python3 python; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      PYTHON="$candidate"
+      break
+    fi
+  done
+fi
+if [[ -z "$PYTHON" ]]; then
+  echo "ERROR: no Python interpreter found (tried python3, python). Set PYTHON=/path/to/python."
+  exit 1
+fi
+
 VERSION="${1:-}"
 PUBLISH=false
 SKIP_VERIFY=false
@@ -75,10 +93,10 @@ fi
 # The version this script is told to release must be the version the tree BUILDS. This
 # tool only ever synced latest.json; pyproject.toml is bumped by version_bump.py. Without
 # this check `release.sh 3.26.0` on a 3.25.0 tree tagged v3.26.0 over a navig-3.25.0 wheel.
-PYPROJECT_VERSION=$(python -c "import re,pathlib; print(re.search(r'(?m)^version\s*=\s*\"(\d+\.\d+\.\d+)\"', pathlib.Path('pyproject.toml').read_text(encoding='utf-8')).group(1))")
+PYPROJECT_VERSION=$("$PYTHON" -c "import re,pathlib; print(re.search(r'(?m)^version\s*=\s*\"(\d+\.\d+\.\d+)\"', pathlib.Path('pyproject.toml').read_text(encoding='utf-8')).group(1))")
 if [[ "$PYPROJECT_VERSION" != "$VERSION" ]]; then
   echo "ERROR: pyproject.toml says $PYPROJECT_VERSION, not $VERSION - the wheel would carry the wrong version."
-  echo "       Bump first: python tools/version_bump.py bump <patch|minor|major> --commit"
+  echo "       Bump first: $PYTHON tools/version_bump.py bump <patch|minor|major> --commit"
   exit 1
 fi
 
@@ -94,13 +112,13 @@ git pull --ff-only origin main
 # no-op. It refuses an EMPTY release — the release body below would be empty too, so a
 # tag with nothing to say is stopped here, not discovered on the Releases page.
 echo "Rotating CHANGELOG.md [Unreleased] under [$VERSION]..."
-python tools/changelog_assemble.py --release "$VERSION"
+"$PYTHON" tools/changelog_assemble.py --release "$VERSION"
 
 # ── Update version manifests ───────────────────────────────────────────────────
 # download_url is null at this point — the asset it points at does not exist yet. Step 7
 # re-syncs after the GitHub Release is created, which is when the URL becomes real.
 echo "Syncing version manifests to $VERSION..."
-python tools/_version_sync.py --version "$VERSION"
+"$PYTHON" tools/_version_sync.py --version "$VERSION"
 
 git add latest.json CHANGELOG.md
 git add -A changelog.d 2>/dev/null || true   # the fragments the rotation consumed
@@ -112,20 +130,20 @@ fi
 # The body is composed ONCE, before anything irreversible, so a changelog with no block
 # for this version stops the release here.
 NOTES_FILE="$(mktemp -t "release_notes_${TAG}.XXXXXX")"
-python tools/changelog_assemble.py --release-notes "$VERSION" > "$NOTES_FILE"
+"$PYTHON" tools/changelog_assemble.py --release-notes "$VERSION" > "$NOTES_FILE"
 
 # ── Build + verify BEFORE the tag: never tag something that does not build ───────
 echo ""
 echo "──────────────────────────────────────────"
 echo "  Build + verification"
 echo "──────────────────────────────────────────"
-if ! python -m build --version &>/dev/null; then
+if ! "$PYTHON" -m build --version &>/dev/null; then
   echo "Installing build + twine..."
   pip install --quiet build twine
 fi
 rm -rf dist/
-python -m build
-python -m twine check dist/*
+"$PYTHON" -m build
+"$PYTHON" -m twine check dist/*
 
 # The artifact must carry THIS version — the guard above makes it so; this proves it.
 if ! ls dist/navig-"$VERSION"-*.whl >/dev/null 2>&1; then
@@ -152,12 +170,12 @@ echo "Tag $TAG pushed to origin."
 # The org's GitHub Actions is billing-blocked: the tag workflow (release.yml) does not
 # run, so nothing publishes unless this does. 3.25.0 went out this way.
 if [[ "$PUBLISH" == "true" ]]; then
-  python -m twine upload dist/*
+  "$PYTHON" -m twine upload dist/*
   echo "Published $VERSION to PyPI."
 else
   echo ""
   echo "NOT published. Upload the artifacts that were just verified and tagged with:"
-  echo "  cd core && python -m twine upload dist/*"
+  echo "  cd core && $PYTHON -m twine upload dist/*"
 fi
 
 # ── GitHub Release: the one body, with the artifacts attached ─────────────────
@@ -180,7 +198,7 @@ fi
 # ── Record the release in the manifest, now that its asset exists ──────────────
 # The tool HEADs the asset and writes its URL only when it is really there; before this
 # point that is null. Same second commit release.yml makes, done here because it cannot.
-python tools/_version_sync.py --version "$VERSION" --released-at "$(date -u +%Y-%m-%d)"
+"$PYTHON" tools/_version_sync.py --version "$VERSION" --released-at "$(date -u +%Y-%m-%d)"
 git add latest.json
 for www_rel in ../web/www/content/copy.ts ../web/www/public/latest.json; do
   [[ -f "$www_rel" ]] && git add "$www_rel"
@@ -195,7 +213,7 @@ fi
 # mirror carries $TAG with its artifacts, _version_sync writes `download_url: null` and the
 # release is not advertised to installers. Say so here — the gap is invisible otherwise
 # (observed on v3.30.0: the labs release existed, the mirror did not, latest.json said null).
-if python - <<'PY'
+if "$PYTHON" - <<'PY'
 import json, sys
 sys.exit(0 if (json.load(open("latest.json")) or {}).get("download_url") else 1)
 PY

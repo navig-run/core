@@ -324,6 +324,13 @@ class NavigMatrixBot:
         """Register incoming-message callback: async fn(room_id, sender, body)."""
         self._message_callbacks.append(callback)
 
+    def off_message(self, callback: Callable) -> None:
+        """Unregister a callback added with :meth:`on_message` (no-op if absent)."""
+        try:
+            self._message_callbacks.remove(callback)
+        except ValueError:
+            pass
+
     # ── File sharing ──
 
     async def upload_file(
@@ -578,7 +585,8 @@ class NavigMatrixBot:
             except Exception:
                 logger.debug("Matrix: event store failed (non-fatal)")
 
-        for cb in self._message_callbacks:
+        # A snapshot: a one-shot callback may unregister itself while we iterate.
+        for cb in list(self._message_callbacks):
             try:
                 await cb(room.room_id, event.sender, event.body)
             except Exception:

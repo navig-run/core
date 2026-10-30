@@ -112,3 +112,22 @@ def test_the_default_is_resolved_per_call_not_frozen_at_import(
     assert Path(BrowserConfig().screenshot_dir) == second / "screenshots", (
         "the default was frozen at import instead of resolved per call"
     )
+
+
+def test_a_system_service_keeps_screenshots_under_its_writable_data_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Review F1342: core/deploy/navig.service sets NAVIG_CONFIG_DIR=/etc/navig under
+    ProtectSystem=strict, so <config_dir>/screenshots is read-only and the gateway's
+    BrowserController mkdir failed startup. The service's writable dir is its data dir."""
+    from navig.platform import paths
+
+    monkeypatch.setenv("NAVIG_SYSTEM_SERVICE", "1")
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "etc"))
+    monkeypatch.setenv("NAVIG_DATA_DIR", str(tmp_path / "var"))
+
+    expected = tmp_path / "var" / "screenshots"
+    assert paths.screenshot_dir() == expected
+    assert Path(BrowserConfig().screenshot_dir) == expected
+    assert Path(StealthConfig().screenshot_dir) == expected
+    assert Path(DesktopConfig().screenshot_dir) == expected

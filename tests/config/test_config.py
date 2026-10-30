@@ -381,6 +381,35 @@ class TestActiveContext:
 
         assert config_manager.load_host_config("myhost").get("default_app") == "myapp"
 
+    def test_removing_a_global_default_app_inside_a_project_edits_the_global_host(
+        self, config_manager, sample_host_config, temp_home
+    ):
+        """Review #363: inside a project whose `.navig/` has no `hosts/`, the host loads
+        from the global dir but a generic save writes to the project dir. Clearing
+        default_app must edit the file that owns it — not leave the global host stale
+        and create a project-local shadow copy."""
+        global_dir = config_manager.base_dir
+        global_host = global_dir / "hosts" / "myhost.yaml"
+        global_host.parent.mkdir(parents=True, exist_ok=True)
+        host = {k: v for k, v in sample_host_config.items() if k != "apps"}
+        assert host["default_app"] == "myapp"
+        global_host.write_text(yaml.safe_dump(host), encoding="utf-8")
+        (global_dir / "apps").mkdir(parents=True, exist_ok=True)
+        (global_dir / "apps" / "myapp.yaml").write_text(
+            yaml.safe_dump({"name": "myapp", "host": "myhost"}), encoding="utf-8"
+        )
+
+        project_dir = temp_home / "project" / ".navig"
+        project_dir.mkdir(parents=True)
+        config_manager.get_config_directories()  # resolve paths before overriding
+        config_manager.app_config_dir = project_dir
+        assert config_manager.get_config_directories()[0] == project_dir
+
+        assert config_manager._apps.delete("myhost", "myapp") is True
+
+        assert "default_app" not in yaml.safe_load(global_host.read_text(encoding="utf-8"))
+        assert not (project_dir / "hosts" / "myhost.yaml").exists()
+
     def test_get_active_host_from_global_active_host_key(self, config_manager, sample_host_config):
         """Test compatibility fallback to global config active_host key."""
         config_manager.save_host_config("myhost", sample_host_config)

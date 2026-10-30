@@ -84,14 +84,40 @@ def test_the_deployment_is_never_deleted_outright(tmp_path: Path) -> None:
     before_copy = script.split("cp -a")[0]
     assert "rm -rf /var/www/myapp;" not in before_copy
     assert "rm -rf /var/www/myapp " not in before_copy
-    assert "mv /var/www/myapp /var/www/myapp.navig-rollback-tmp" in script
+    assert 'mv /var/www/myapp "$st/old"' in script
+
+
+def test_the_copy_completes_before_the_live_target_is_moved(tmp_path: Path) -> None:
+    """Moving the target first left the site missing/partial for the whole copy."""
+    script = _script(tmp_path)
+
+    copy = script.index(f'cp -a {SNAP} "$st/new"')
+    setaside = script.index('mv /var/www/myapp "$st/old"')
+    assert copy < setaside
+
+
+def test_staging_is_private_to_this_invocation(tmp_path: Path) -> None:
+    """A fixed `<target>.navig-rollback-tmp` was `rm -rf`'d whoever owned it."""
+    script = _script(tmp_path)
+
+    assert "mktemp -d /var/www/myapp.navig-rollback.XXXXXX" in script
+    assert "navig-rollback-tmp" not in script
+
+
+def test_restore_gets_a_long_timeout(tmp_path: Path) -> None:
+    """The 30 s SSH default would kill a large copy mid-way."""
+    remote = MagicMock()
+    remote.execute_command.return_value = _result(0)
+    _manager(tmp_path, remote).restore_snapshot(SnapshotRecord(path=SNAP, created_at="20240101"))
+
+    assert remote.execute_command.call_args.kwargs["timeout"] >= 600
 
 
 def test_the_snapshot_is_copied_not_moved(tmp_path: Path) -> None:
     """`mv` consumes the snapshot; a second rollback then has nothing."""
     script = _script(tmp_path)
 
-    assert f"cp -a {SNAP} /var/www/myapp" in script
+    assert f'cp -a {SNAP} "$st/new"' in script
     assert f"mv {SNAP}" not in script
 
 
@@ -118,7 +144,7 @@ def test_a_missing_snapshot_reports_the_deployment_is_untouched(tmp_path: Path) 
     assert "left untouched" in msg
 
 
-def test_a_failed_copy_reports_the_deployment_was_put_back(tmp_path: Path) -> None:
+def test_a_failed_copy_reports_the_deployment_is_untouched(tmp_path: Path) -> None:
     remote = MagicMock()
     remote.execute_command.return_value = _result(
         RollbackManager._EXIT_COPY_FAILED, stderr="No space left on device"
@@ -129,8 +155,20 @@ def test_a_failed_copy_reports_the_deployment_was_put_back(tmp_path: Path) -> No
     )
 
     assert ok is False
-    assert "put back" in msg
+    assert "left untouched" in msg
     assert "No space left on device" in msg
+
+
+def test_a_failed_swap_reports_the_deployment_was_put_back(tmp_path: Path) -> None:
+    remote = MagicMock()
+    remote.execute_command.return_value = _result(RollbackManager._EXIT_SWAP_FAILED)
+
+    ok, msg = _manager(tmp_path, remote).restore_snapshot(
+        SnapshotRecord(path=SNAP, created_at="20240101")
+    )
+
+    assert ok is False
+    assert "put back" in msg
 
 
 def test_a_failed_setaside_reports_the_deployment_is_untouched(tmp_path: Path) -> None:
@@ -197,7 +235,27 @@ def test_restore_really_replaces_the_deployment(tmp_path: Path) -> None:
 
     assert proc.returncode == 0, proc.stderr
     assert (target / "index.html").read_text(encoding="utf-8") == "GOOD"
-    assert not (tmp_path / "site.navig-rollback-tmp").exists()
+    assert not list(tmp_path.glob("site.navig-rollback*")), "staging must be cleaned up"
+
+
+@needs_sh
+def test_a_preexisting_staging_dir_is_not_destroyed(tmp_path: Path) -> None:
+    """A leftover from an interrupted rollback may hold the only intact live tree."""
+    target = tmp_path / "site"
+    target.mkdir()
+    (target / "index.html").write_text("BROKEN", encoding="utf-8")
+    snapshot = tmp_path / "snap"
+    snapshot.mkdir()
+    (snapshot / "index.html").write_text("GOOD", encoding="utf-8")
+    leftover = tmp_path / "site.navig-rollback-tmp"
+    leftover.mkdir()
+    (leftover / "index.html").write_text("RECOVERY COPY", encoding="utf-8")
+
+    proc = _run(tmp_path, target=target, snapshot=snapshot)
+
+    assert proc.returncode == 0, proc.stderr
+    assert (target / "index.html").read_text(encoding="utf-8") == "GOOD"
+    assert (leftover / "index.html").read_text(encoding="utf-8") == "RECOVERY COPY"
 
 
 @needs_sh

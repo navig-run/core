@@ -180,6 +180,22 @@ async def test_a_refused_in_place_edit_falls_back_to_send_then_delete(monkeypatc
     assert 80 in ch.deleted(), "the original goes only AFTER the new one was sent"
 
 
+async def test_the_fallback_resend_keeps_the_thread_telegram_did_not_nest(monkeypatch, tmp_path):
+    """In a real update the target carries no `reply_to_message` of its own — Telegram
+    nests one level. The resend must still thread under what the original answered,
+    which the catalog recorded when the original arrived."""
+    monkeypatch.setenv("NAVIG_DATA_DIR", str(tmp_path / "data"))
+    from navig.store.telegram_catalog import TelegramCatalogStore
+
+    TelegramCatalogStore().upsert_message(555, 80, sender_id=777, text="да", reply_to=70,
+                                          kind="business")
+    monkeypatch.setattr(ar, "_generate", AsyncMock(return_value="Да."))
+    ch = _Chan(refuse=("editMessageText",))
+    await _run(ch, _trigger(_mine(text="да")))
+    sent = ch.of("sendMessage")
+    assert sent and sent[0]["reply_parameters"]["message_id"] == 70
+
+
 async def test_when_everything_is_refused_your_words_stay(monkeypatch):
     monkeypatch.setattr(ar, "_generate", AsyncMock(return_value="Да."))
     ch = _Chan(refuse=("editMessageText", "sendMessage"))
@@ -289,4 +305,58 @@ async def test_the_deadline_does_not_remove_an_answer_already_going_out(monkeypa
     ch = _Chan()
     await asyncio.wait_for(_run(ch, _trigger(_their())), 5)
     assert 90 not in ch.deleted()
-    ch.send_message.assert_not_awaited()
+    # Not confirmed either way, so the owner is told to look — never "nothing was sent".
+    notice = ch.send_message.await_args.args[1]
+    assert "check the chat" in notice and "nothing was sent" not in notice
+
+
+@pytest.mark.parametrize("target", [_their(), _mine(text="завтра в 6")], ids=["reply", "rewrite"])
+async def test_a_stalled_send_after_applying_still_clears_the_placeholder(monkeypatch, target):
+    """Edit refused, then the fallback send stalls past the deadline: the ✍️ placeholder
+    is not the answer, so it is removed and the owner is told."""
+    monkeypatch.setattr(ar, "_ROLE_DEADLINE_S", 0.3)
+    monkeypatch.setattr(ar, "_generate", AsyncMock(return_value="ответ"))
+    real_edit = ar._edit_text
+
+    async def refuse_answer_edit(channel, chat_id, bcid, mid, text):
+        if text == "ответ":
+            return False
+        return await real_edit(channel, chat_id, bcid, mid, text)
+
+    async def stalled_send(*_a, **_k):
+        await asyncio.sleep(3600)
+
+    async def stalled_caption(*_a, **_k):
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(ar, "_edit_text", refuse_answer_edit)
+    monkeypatch.setattr(ar, "_send", stalled_send)
+    monkeypatch.setattr(ar, "_edit_caption", stalled_caption)
+    ch = _Chan()
+    await asyncio.wait_for(_run(ch, _trigger(target)), 5)
+    assert 90 in ch.deleted(), "the ✍️ placeholder must not stay up"
+    assert 80 not in ch.deleted()
+    assert "check the chat" in ch.send_message.await_args.args[1]
+
+
+async def test_a_refused_delete_of_the_original_is_reported(monkeypatch):
+    """A connection that may reply but not delete: the resend lands, the original
+    stays. Both are now in the chat, and the owner must hear it — not "done"."""
+    monkeypatch.setattr(ar, "_generate", AsyncMock(return_value="Да."))
+    ch = _Chan(refuse=("editMessageText", "deleteBusinessMessages"))
+    await _run(ch, _trigger(_mine(text="да", reply_to_message={"message_id": 70})))
+    assert ch.of("sendMessage"), "the rewrite was sent"
+    note = ch.send_message.await_args.args[1]
+    assert "could not be removed" in note and "both" in note
+
+
+async def test_a_stuck_typing_tick_does_not_hold_the_deadline(monkeypatch):
+    """The deadline cancels the run; the typing ticker was then AWAITED, so a
+    `sendChatAction` stalled in Telegram kept ✍️ up long past the deadline."""
+    monkeypatch.setattr(ar, "_ROLE_DEADLINE_S", 0.2)
+    monkeypatch.setattr(ar, "_generate", _stall)
+    monkeypatch.setattr(ar, "_chat_action", _stall)
+    ch = _Chan()
+    await asyncio.wait_for(_run(ch, _trigger(_their())), 5)
+    assert 90 in ch.deleted()
+    assert "took too long" in ch.send_message.await_args.args[1]

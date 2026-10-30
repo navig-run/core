@@ -17,6 +17,9 @@ examples:
   - "Stop the myapp service"
   - "Is the backup service running?"
   - "Remove the old scheduler service"
+# Written against a planned command surface that is not implemented yet
+# (KNOWN_MISSING in tests/quality/test_content_command_refs_resolve.py).
+activatable: false
 ---
 
 # NSSM Windows Service Manager

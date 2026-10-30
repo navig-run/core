@@ -133,3 +133,31 @@ def test_assistant_still_exposes_ask_and_still_lacks_chat() -> None:
     """Pin the premise so the fix cannot quietly rot back."""
     assert hasattr(AIAssistant, "ask")
     assert not hasattr(AIAssistant, "chat")
+
+
+def test_a_follow_up_turn_carries_the_previous_exchange(assistant, monkeypatch) -> None:
+    """ask() builds a fresh prompt per call, so the session must hand it the transcript —
+    otherwise "what about the second option?" refers to nothing."""
+    replies = iter(["list two options", "what about the second option?", "exit"])
+    monkeypatch.setattr(builtins, "input", lambda *_a: next(replies))
+    assistant.ask.side_effect = ["1) restart 2) rebuild", "Rebuild means …"]
+
+    run_ai_chat()
+
+    first, second = (c[0][1] for c in assistant.ask.call_args_list)
+    assert not first.get("conversation")
+    assert second["conversation"] == [
+        ("user", "list two options"),
+        ("assistant", "1) restart 2) rebuild"),
+    ]
+
+
+def test_the_transcript_reaches_the_prompt_text() -> None:
+    """Every provider path builds its prompt from _build_context_string — the turns
+    must land there, not just in a dict nobody renders."""
+    rendered = AIAssistant._build_context_string(
+        object(), {"conversation": [("user", "list two options"), ("assistant", "1) a 2) b")]}
+    )
+    assert "Conversation so far:" in rendered
+    assert "user: list two options" in rendered
+    assert "assistant: 1) a 2) b" in rendered

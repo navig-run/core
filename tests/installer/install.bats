@@ -56,7 +56,15 @@ EOF
     # No tty and no -y/--yes: `read < /dev/tty` fails, the reply defaults to "n", and
     # the function must return 0 having changed NOTHING. Returning 0 matters as much as
     # not deleting: a declined uninstall is a normal outcome, not an error.
+    #
+    # `bats run` does not detach the controlling terminal, so launched from an
+    # interactive shell `read < /dev/tty` OPENS and blocks on an invisible prompt (and a
+    # stray "y" would reach _stop_navig_background). A function named `read` shadows
+    # the builtin, so the read fails deterministically however the suite is launched —
+    # which is exactly the no-tty condition this test asserts.
+    read() { return 1; }
     run uninstall_navig
+    unset -f read
     [ "$status" -eq 0 ]
     [[ "$output" == *"Cancelled"* ]]
 

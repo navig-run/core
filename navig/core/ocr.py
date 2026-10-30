@@ -22,8 +22,32 @@ from __future__ import annotations
 import functools
 import io
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 logger = logging.getLogger(__name__)
+
+#: A surface-level language preference (e.g. ``telegram.tiktok_cards.language``) for
+#: the OCR done inside :func:`language_override`. A context variable rather than an
+#: argument, so the single-argument reader every surface and test fake shares keeps its
+#: signature; ``asyncio.to_thread`` copies the context, so threaded reads see it too.
+_LANGUAGE_OVERRIDE: ContextVar[object] = ContextVar("navig_ocr_language", default="")
+
+
+@contextmanager
+def language_override(preference: object) -> Iterator[None]:
+    """Read OCR in *preference* (a feature's own language key) inside this block.
+
+    An empty preference changes nothing: :func:`ocr_language` then falls back to
+    ``user.language`` exactly as it does outside the block.
+    """
+    token = _LANGUAGE_OVERRIDE.set(preference or "")
+    try:
+        yield
+    finally:
+        _LANGUAGE_OVERRIDE.reset(token)
+
 
 #: What to tell a user whose install cannot OCR. The Python package ships in an
 #: extra; the binary is a separate OS-level install on every platform.
@@ -137,6 +161,7 @@ def ocr_language(preference: object = "") -> str | None:
     Not cached, deliberately — the binary probe behind it is, and `user.language`
     can change under a running daemon via ``navig config set``.
     """
+    preference = preference or _LANGUAGE_OVERRIDE.get()
     installed = installed_ocr_languages()
     pack = _preferred_ocr_pack(preference)
     if not pack or pack not in installed:
@@ -156,6 +181,7 @@ def ocr_language_gap(preference: object = "") -> str | None:
         return None
     from navig.core.language import resolve_language  # noqa: PLC0415
 
+    preference = preference or _LANGUAGE_OVERRIDE.get()
     pinned = resolve_language(preference)
     if not pinned or ocr_language(preference) is not None:
         return None
@@ -184,6 +210,14 @@ OCR_MIN_CONFIDENCE = 60.0
 _MIN_WORD_RUN = 3
 
 
+def _index_or_zero(values, i: int):
+    """``values[i]``, or 0 when the array is absent, shorter, or not indexable."""
+    try:
+        return values[i]
+    except (IndexError, TypeError, KeyError):
+        return 0
+
+
 def _confident_text(data: dict) -> str | None:
     """Reassemble `image_to_data` output, keeping only confident words.
 
@@ -201,11 +235,10 @@ def _confident_text(data: dict) -> str | None:
             continue
         if conf < OCR_MIN_CONFIDENCE:
             continue
-        key = (
-            data.get("block_num", [0] * (i + 1))[i],
-            data.get("par_num", [0] * (i + 1))[i],
-            data.get("line_num", [0] * (i + 1))[i],
-        )
+        # A missing, short or null position array groups the word on line 0 rather
+        # than raising — the caller swallows the error into "no text found".
+        key = tuple(_index_or_zero(data.get(field), i)
+                    for field in ("block_num", "par_num", "line_num"))
         lines.setdefault(key, []).append(word)
 
     text = "\n".join(" ".join(words) for _key, words in sorted(lines.items())).strip()

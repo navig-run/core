@@ -65,6 +65,32 @@ def test_terminal_path_receipt_is_signed(tmp_path):
     assert ok is True, reason
 
 
+@pytest.mark.parametrize(
+    ("action", "outcome"),
+    [
+        ("succeed", ReceiptOutcome.SUCCEEDED),
+        ("fail:disk full", ReceiptOutcome.FAILED),
+        ("cancel", ReceiptOutcome.CANCELLED),
+        ("timeout", ReceiptOutcome.TIMED_OUT),
+    ],
+)
+def test_advance_to_a_terminal_state_signs_exactly_one_receipt(tmp_path, action, outcome):
+    """The public `/runtime/missions/{id}/advance` route goes through advance_mission."""
+    store = RuntimeStore(tmp_path / "rt")
+    m = Mission(title="check disks", capability="agentic")
+    store.create_mission(m)
+    store.advance_mission(m.mission_id, "start")
+    assert store.list_receipts(mission_id=m.mission_id) == []  # not terminal yet
+
+    store.advance_mission(m.mission_id, action)
+
+    receipts = store.list_receipts(mission_id=m.mission_id)
+    assert len(receipts) == 1
+    assert receipts[0].outcome == outcome
+    ok, reason = verify_receipt_dict(receipts[0].to_dict())
+    assert ok is True, reason
+
+
 def test_signature_survives_a_disk_round_trip(tmp_path):
     store = RuntimeStore(tmp_path / "rt")
     m = _started_mission(store)
@@ -157,3 +183,26 @@ def test_verify_receipt_command_fails_on_an_unknown_id(tmp_path, monkeypatch):
     result = CliRunner().invoke(block_app, ["verify-receipt", "no-such-receipt", "--json"])
 
     assert result.exit_code == 1
+
+
+def _circular() -> list:
+    loop: list = []
+    loop.append(loop)
+    return loop
+
+
+@pytest.mark.parametrize("result", [{1: "a", "b": 2}, "circular"], ids=["mixed-keys", "circular"])
+def test_uncanonicalisable_result_still_stores_a_signed_receipt(tmp_path, result):
+    # json.dumps(sort_keys=True) raises for mixed key types and circular containers;
+    # complete_mission has already moved the mission to SUCCEEDED by then, so a raise
+    # would strand a terminal mission with no receipt.
+    if result == "circular":
+        result = _circular()
+    store = RuntimeStore(tmp_path / "rt")
+    m = _started_mission(store)
+
+    receipt = store.complete_mission(m.mission_id, succeeded=True, result=result)
+
+    assert "result_digest" not in receipt.artifacts
+    assert verify_receipt_dict(receipt.to_dict())[0] is True
+    assert store._receipts[receipt.receipt_id] is receipt

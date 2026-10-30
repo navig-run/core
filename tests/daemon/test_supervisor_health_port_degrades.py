@@ -104,3 +104,15 @@ def test_a_successful_bind_is_still_recorded(monkeypatch):
     asyncio.run(_start(d))
 
     assert d._health_server is sentinel
+
+
+@pytest.mark.parametrize("port", [65536, 99999])
+def test_an_out_of_range_health_port_does_not_propagate(port):
+    """An out-of-range port raises OverflowError from bind(), not OSError — it must
+    degrade the same way instead of aborting `_supervisor_loop`. The real
+    `asyncio.start_server` is used: the range check fails before anything binds."""
+    d = _daemon(port)
+
+    asyncio.run(_start(d))  # must NOT raise
+
+    assert d._health_server is None

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import pytest
 
+from navig.onboarding import renderer
 from navig.onboarding.engine import StepRecord
 from navig.onboarding.renderer import (
     _label,
@@ -75,10 +76,13 @@ class TestLabel:
 
 class TestRenderStepSuccess:
     def test_contains_check_mark(self) -> None:
+        # The renderer picks its glyph set at import time from the terminal it is writing
+        # to (Unicode vs ASCII), so the assertion follows the set it actually chose — a
+        # pytest run with no LANG/stdout encoding gets the ASCII "+" (2026-10-30, outpost).
         rec = _record()
         output = render_step_success(rec)
         plain = _strip_ansi(output)
-        assert "✓" in plain
+        assert renderer._ICON_OK in plain
 
     def test_contains_label(self) -> None:
         rec = _record(step_id="ai-provider", title="Choose AI provider")
@@ -107,7 +111,7 @@ class TestRenderStepSkipped:
         rec = _record(status="skipped")
         output = render_step_skipped(rec)
         plain = _strip_ansi(output)
-        assert "·" in plain
+        assert renderer._ICON_DOT in plain
 
     def test_contains_label(self) -> None:
         rec = _record(step_id="vault-init", title="Initialize vault", status="skipped")
@@ -124,7 +128,7 @@ class TestRenderStepFailure:
         rec = _record(status="failed", error="Permission denied")
         output = render_step_failure(rec)
         plain = _strip_ansi(output)
-        assert "✗" in plain
+        assert renderer._ICON_FAIL in plain
 
     def test_contains_error_text(self) -> None:
         rec = _record(status="failed", error="Permission denied")
@@ -176,3 +180,25 @@ class TestRenderProgress:
         plain = _strip_ansi(output)
         assert "vault" in plain
         assert "…" in plain
+
+
+# ── the glyph decision ───────────────────────────────────────────────────────
+
+
+def test_a_utf8_stdout_gets_the_unicode_set(monkeypatch):
+    """The set follows the encoding actually in use — and is built from it, not guessed."""
+    monkeypatch.delenv("TERM", raising=False)
+    monkeypatch.setenv("PYTHONIOENCODING", "utf-8")
+    assert renderer._uni() is True
+
+
+def test_a_dumb_terminal_gets_ascii(monkeypatch):
+    monkeypatch.setenv("TERM", "dumb")
+    monkeypatch.setenv("PYTHONIOENCODING", "utf-8")
+    assert renderer._uni() is False
+
+
+def test_the_ascii_set_is_marked_not_coloured_ascii(monkeypatch):
+    """ASCII fallbacks stay single characters — a two-char marker would break alignment."""
+    assert len(renderer._ICON_OK) == 1 and len(renderer._ICON_DOT) == 1
+    assert len(renderer._ICON_FAIL) == 1

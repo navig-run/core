@@ -43,6 +43,9 @@ CFG_MASTER = "telegram.business.enabled"
 _CFG_TOOL = "telegram.business.tools.{tool}.who"
 
 
+from navig.telegram.config import require_auth_enabled
+
+
 def _cfg():
     from navig.core import Config
     return Config()
@@ -80,7 +83,6 @@ def arming_blocked_reason() -> str | None:
 
     Mirrors the bot channel's owner gate: require_auth ON + allowed_users non-empty.
     """
-    from navig.core.coerce import coerce_bool
 
     try:
         cfg = _cfg()
@@ -89,7 +91,7 @@ def arming_blocked_reason() -> str | None:
         # enforced" for an operator who had explicitly turned it OFF — and then
         # arm the business layer on an unauthenticated bot. Coercing here only
         # ever TIGHTENS the guard: a genuine "off" now blocks arming.
-        require_auth = coerce_bool(tg.get("require_auth", True), True)
+        require_auth = require_auth_enabled(tg.get("require_auth", True))
         allowed = tg.get("allowed_users") or []
         if not require_auth:
             return "telegram.require_auth is OFF — anyone could control the bot. Enable it first."

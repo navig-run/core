@@ -25,6 +25,10 @@ from typing import Any
 
 logger = logging.getLogger("navig.connectors.circuit_breaker")
 
+# Minimum lifetime of a HALF_OPEN probe reservation, so a zero recovery_timeout
+# still admits exactly one probe at a time (and an abandoned one still expires).
+_PROBE_LEASE_FLOOR_S = 1.0
+
 
 class CircuitState(str, Enum):
     CLOSED = "closed"
@@ -102,10 +106,7 @@ class CircuitBreaker:
             return False  # OPEN
 
         now = time.monotonic()
-        if (
-            self._probe_started_at is not None
-            and (now - self._probe_started_at) < self.recovery_timeout
-        ):
+        if self._probe_active(now):
             return False  # a probe is already out and still plausibly running
         self._probe_started_at = now
         return True
@@ -144,10 +145,22 @@ class CircuitBreaker:
             "failure_count": self._failure_count,
             "total_trips": self._total_trips,
             "recovery_timeout": self.recovery_timeout,
-            "probe_in_flight": self._probe_started_at is not None,
+            "probe_in_flight": self._probe_active(time.monotonic()),
         }
 
     # -- Internal ----------------------------------------------------------
+
+    def _probe_active(self, now: float) -> bool:
+        """True while the outstanding HALF_OPEN probe still holds its lease.
+
+        The lease is ``recovery_timeout`` with a positive floor: with
+        ``recovery_timeout=0`` a zero-length lease would expire instantly and admit
+        every caller, which is the herd the single-probe rule exists to stop.
+        """
+        if self._probe_started_at is None:
+            return False
+        lease = max(self.recovery_timeout, _PROBE_LEASE_FLOOR_S)
+        return (now - self._probe_started_at) < lease
 
     def _transition(self, new_state: CircuitState) -> None:
         old = self._state

@@ -192,7 +192,9 @@ async def _send_matrix(
         event_id = await _matrix_notifier.send_message(room_id, message)
         if not event_id:
             return DeliveryResult.failure(
-                "matrix", "the Matrix bot returned no event id (not connected or rejected)"
+                "matrix",
+                "the Matrix bot returned no event id (not connected, rejected, unexpected"
+                " response or internal error — see the matrix log)",
             )
         return DeliveryResult.success("matrix", message_id=event_id)
     except Exception as exc:

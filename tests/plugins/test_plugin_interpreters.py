@@ -127,7 +127,7 @@ def test_py_launcher_listing_is_parsed(monkeypatch, tmp_path):
         exe.parent.mkdir(parents=True)
         exe.write_text("", encoding="utf-8")
     listing = f" -V:3.14 *        {a}\n -V:3.13          {b}\n -V:3.10          {tmp_path}/gone.exe\n"
-    monkeypatch.setattr(itp.os, "name", "nt")
+    monkeypatch.setattr(itp.sys, "platform", "win32")
     monkeypatch.setattr(itp.shutil, "which", lambda n: "py" if n == "py" else str(a))
     monkeypatch.setattr(
         itp.subprocess,
@@ -148,7 +148,7 @@ def test_an_unreadable_candidate_is_skipped_not_fatal(monkeypatch, tmp_path):
     good.write_text("", encoding="utf-8")
     locked = tmp_path / "locked" / "python.exe"
 
-    monkeypatch.setattr(itp.os, "name", "nt")
+    monkeypatch.setattr(itp.sys, "platform", "win32")
     monkeypatch.setattr(itp.shutil, "which", lambda n: "py" if n == "py" else None)
     monkeypatch.setattr(
         itp.subprocess,
@@ -220,3 +220,18 @@ def test_a_dead_install_is_an_error_whose_fix_uninstalls_it(_row):
     assert "pip install -e" not in row.detail, "nothing to reinstall when only a record is dead"
 
 
+
+
+def test_a_declared_dead_install_is_reinstalled_not_uninstalled(tmp_path, monkeypatch, _row):
+    """Another Python still points a DECLARED package at a deleted worktree. The fix
+    used to be `pip install -e … && pip uninstall -y <it>` — the repair, then its undo."""
+    gone = json.dumps({"url": (tmp_path / "gone").as_uri(), "dir_info": {"editable": True}})
+    (a,) = _audit(_checkout(tmp_path), monkeypatch, ["0.2.0", gone])
+
+    assert a.fix_paths == (f"plugins/{DIST}",)
+    assert a.reinstall == (DIST,)
+    assert not a.ok
+
+    row, _doctor = _row(a)
+    assert f"{OTHER} -m pip install -e plugins/{DIST}" in row.detail
+    assert "pip uninstall" not in row.detail, row.detail

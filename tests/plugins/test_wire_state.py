@@ -85,6 +85,8 @@ def test_the_store_reports_that_plugin_as_broken_not_wired():
         item = _plugins()[0]
     assert item.state == "broken", "a plugin that failed to load must not read as usable"
     assert item.degraded is False
+    # Review F1803/F1804: broken WITH its reason, not broken with an empty error.
+    assert item.detail["error"] == "ImportError: no module named x"
 
 
 # ── every consumer must handle every word ────────────────────────────────────

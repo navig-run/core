@@ -149,6 +149,18 @@ def test_cline_mirror_is_wrapped(tmp_path):
     assert cline.rstrip().endswith("body")
 
 
+
+def test_render_honours_cline_skip_tags():
+    """Review #221: render('cline') processed MASTER as copilot, so a section tagged
+    `SKIP:cline` came back into `.cline/memory.md` — unlike sync-instructions.ps1."""
+    raw = ["# T", "## Roster <!-- SKIP:cline -->", "secret", "## Keep", "kept"]
+    cline = s.render("cline", raw)
+    assert "Roster" not in cline and "secret" not in cline
+    assert "kept" in cline
+    # copilot-rendered targets still keep it.
+    assert "Roster" in s.render("copilot", raw)
+    assert "Roster" in s.render("codex", raw)
+
 # ── the repo it must find is the one you are STANDING in (2026-09-06) ────────
 #
 # `navig sync instructions --check`, run from inside the repo that holds MASTER,

@@ -15,7 +15,10 @@ SPACE, which a long-lived daemon must not bind to; config_dir() is not a space.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+import pytest
 
 import navig.daemon.entry as entry
 
@@ -27,6 +30,9 @@ def _stop_before_the_daemon(monkeypatch):
 
     monkeypatch.setattr(supervisor.NavigDaemon, "is_running", staticmethod(lambda: True))
     monkeypatch.setattr(supervisor.NavigDaemon, "read_pid", staticmethod(lambda: 1))
+    monkeypatch.setattr(
+        supervisor.NavigDaemon, "_verify_daemon_pid", staticmethod(lambda pid: True)
+    )
 
 
 def test_the_entry_chdirs_to_the_config_dir_before_the_guard(tmp_path, monkeypatch):
@@ -67,6 +73,9 @@ def test_an_unresolvable_home_does_not_block_the_boot(tmp_path, monkeypatch):
 
     monkeypatch.setattr(supervisor.NavigDaemon, "is_running", staticmethod(_guard))
     monkeypatch.setattr(supervisor.NavigDaemon, "read_pid", staticmethod(lambda: 1))
+    monkeypatch.setattr(
+        supervisor.NavigDaemon, "_verify_daemon_pid", staticmethod(lambda pid: True)
+    )
     monkeypatch.chdir(tmp_path)
 
     entry.main()  # must not raise
@@ -112,3 +121,99 @@ def test_children_inherit_the_home(monkeypatch, tmp_path):
             assert c.cwd is None, (
                 f"{c.name} pins its own cwd={c.cwd}; it would not inherit the home"
             )
+
+
+def test_a_relative_config_home_is_resolved_before_the_chdir(tmp_path, monkeypatch):
+    """`NAVIG_CONFIG_DIR=.navig` names `<launch>/.navig`. Left relative across the
+    chdir, every later `config_dir()` answered `<launch>/.navig/.navig` — the stop and
+    duplicate guards then read the wrong pid file and could boot a second daemon."""
+    launch = tmp_path / "launch"
+    (launch / ".navig").mkdir(parents=True)
+    monkeypatch.chdir(launch)
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", ".navig")
+    _stop_before_the_daemon(monkeypatch)
+
+    entry.main()
+
+    from navig.platform import paths
+
+    expected = (launch / ".navig").resolve()
+    assert Path(paths.config_dir()).resolve() == expected, (
+        f"config_dir() drifted to {paths.config_dir()!s} after the chdir"
+    )
+    assert Path.cwd().resolve() == expected
+
+
+def test_the_launch_directory_env_file_is_still_loaded(tmp_path, monkeypatch):
+    """The chdir to the home happens before `.env` discovery, so `Path.cwd()/.env`
+    became the home's `.env` and a project `.env` carrying TELEGRAM_BOT_TOKEN was never
+    read — a restart came up without the credentials it had before."""
+    pytest.importorskip("dotenv")
+    import navig.daemon.supervisor as supervisor
+
+    home = tmp_path / "home"
+    launch = tmp_path / "project"
+    home.mkdir()
+    launch.mkdir()
+    (launch / ".env").write_text("NAVIG_TEST_LAUNCH_ENV=from-launch\n", encoding="utf-8")
+    monkeypatch.setenv("NAVIG_TEST_LAUNCH_ENV", "placeholder")  # restored on teardown
+    monkeypatch.delenv("NAVIG_TEST_LAUNCH_ENV")
+    monkeypatch.setattr("navig.platform.paths.config_dir", lambda: home)
+    monkeypatch.setattr(supervisor.NavigDaemon, "is_running", staticmethod(lambda: False))
+    monkeypatch.setattr(entry, "_load_config", lambda: {"telegram_bot": False})
+
+    class _FakeDaemon:
+        def __init__(self, *a, **k):
+            pass
+
+        def run(self):
+            pass
+
+    monkeypatch.setattr(supervisor, "NavigDaemon", _FakeDaemon)
+    monkeypatch.chdir(launch)
+
+    entry.main()
+
+    assert os.environ.get("NAVIG_TEST_LAUNCH_ENV") == "from-launch"
+
+
+def test_a_config_manager_cached_in_the_project_is_rebound_to_the_home(tmp_path, monkeypatch):
+    """`navig service start --foreground` runs main() inside the CLI process, whose
+    callback already cached a ConfigManager with base_dir = the project `.navig/`. The
+    chdir alone left that manager — and the log under its base_dir — in the project."""
+    from navig.config import get_config_manager, reset_config_manager
+
+    home = tmp_path / "navig-home"
+    project = tmp_path / "some-project"
+    (project / ".navig").mkdir(parents=True)
+    home.mkdir()
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(home))
+    _stop_before_the_daemon(monkeypatch)
+    monkeypatch.chdir(project)
+    reset_config_manager()
+    try:
+        assert Path(get_config_manager().base_dir).resolve() == (project / ".navig").resolve()
+
+        entry.main()
+
+        assert Path(get_config_manager().base_dir).resolve() == home.resolve(), (
+            "the cached ConfigManager still points at the project after the chdir"
+        )
+    finally:
+        reset_config_manager()
+
+
+def test_a_missing_config_home_is_created_before_the_chdir(tmp_path, monkeypatch):
+    """A fresh install or a new absolute NAVIG_CONFIG_DIR has no home yet. The chdir
+    failed silently and was never retried, leaving the daemon in the launch project."""
+    home = tmp_path / "not-yet" / "navig-home"
+    project = tmp_path / "some-project"
+    project.mkdir()
+    monkeypatch.setattr("navig.platform.paths.config_dir", lambda: home)
+    _stop_before_the_daemon(monkeypatch)
+    monkeypatch.chdir(project)
+
+    entry.main()
+
+    assert home.is_dir()
+    assert Path.cwd().resolve() == home.resolve()

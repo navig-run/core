@@ -33,6 +33,10 @@ def _not_lighthouse(monkeypatch):
             return "tunnel" if key == "cloud.mode" else default
 
     monkeypatch.setattr("navig.core.Config", lambda *a, **k: _Cfg())
+    # `_os_remote_row()` reads the REAL config manager and device store, and this box
+    # has a paired NAVIG OS client, so the section also carried a "Remote NAVIG OS" row
+    # in a whole-suite run (measured 2026-10-30). This file judges the button row.
+    monkeypatch.setattr(d, "_os_remote_row", lambda: [])
 
 
 def _rows(monkeypatch, verdict):

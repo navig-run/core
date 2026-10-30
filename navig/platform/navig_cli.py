@@ -29,12 +29,15 @@ Two preference orders, one per caller's history:
 from __future__ import annotations
 
 import importlib.util
-import os
 import shutil
 import sys
 from pathlib import Path
 
-_LAUNCHER_NAME = "navig.exe" if os.name == "nt" else "navig"
+from navig.platform import capabilities
+
+# The launcher name is the seam's answer, not a second copy of the same guess: a
+# `.exe` suffix is a Windows fact, and `capabilities.launcher_name()` already owns it.
+_LAUNCHER_NAME = capabilities.launcher_name()
 
 
 def _importable() -> bool:

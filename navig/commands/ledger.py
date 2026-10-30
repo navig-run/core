@@ -91,7 +91,10 @@ def ledger_verify(
 
     want_json = json_out or bool(ctx.obj and ctx.obj.get("json"))
     if want_json:
-        emit_json(result.to_dict())
+        payload = result.to_dict()
+        if named_but_missing:
+            payload["ok"] = False  # exit 1 below — the JSON must not say otherwise
+        emit_json(payload)
         if not result.ok or named_but_missing:
             raise typer.Exit(1)
         return
@@ -234,7 +237,7 @@ def ledger_show(
     result = verify_ledger(ledger_path)
     entries, undone = _collect_entries(ledger_path)
     broken_lines = {b.line for b in result.breaks}
-    recent = entries[-max(tail, 0):] if tail else entries
+    recent = entries[-max(tail, 0) :] if tail else entries
 
     def build_row(line_no: int, data: dict) -> dict[str, Any]:
         if "hash" not in data:
@@ -243,11 +246,14 @@ def ledger_show(
             chain = "broken"
         else:
             chain = "ok"
-        label = data.get("reversibility") or classify(
-            str(data.get("operation_type", "other")),
-            data.get("undo_data") or None,
-            data.get("tags") or [],
-        ).value
+        label = (
+            data.get("reversibility")
+            or classify(
+                str(data.get("operation_type", "other")),
+                data.get("undo_data") or None,
+                data.get("tags") or [],
+            ).value
+        )
         op_id = str(data.get("id", ""))
         return {
             "line": line_no,
@@ -317,9 +323,7 @@ def ledger_show(
     get_console().print(table)
 
     greens = sum(
-        1
-        for row in rows
-        if row["reversibility"] == Reversibility.GREEN.value and not row["undone"]
+        1 for row in rows if row["reversibility"] == Reversibility.GREEN.value and not row["undone"]
     )
     if greens:
         ch.dim(f"{greens} green (undoable) in view · undo the latest: navig undo")
@@ -343,15 +347,17 @@ def _note_interrupted_inflight(ch) -> None:
 
     Read-only — `ledger show` never mutates the ledger (it is skip-recorded for
     the observer effect); the honest recording happens in `navig ledger reap`.
+
+    The count comes from `unrecorded_dead_markers()`, the SAME set `reap` acts on.
+    Counting every dead marker instead told the operator "12 operation(s) never
+    completed" and then reaped one: the other eleven were stale markers whose
+    operation had already written its line (the completion raced the marker
+    delete), which `reap` clears silently.
     """
     try:
-        from navig import operation_inflight as _inflight
         from navig.operation_recorder import get_operation_recorder
 
-        markers = get_operation_recorder().iter_inflight()
-        interrupted = sum(
-            1 for m in markers if not _inflight.pid_is_alive(m.pid, m.create_time)
-        )
+        _, interrupted = get_operation_recorder().in_flight_summary()
     except Exception:  # noqa: BLE001 — a display nudge must never crash the view
         return
     if interrupted:

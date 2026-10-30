@@ -58,3 +58,24 @@ def test_tree_skills_groups_by_category(tmp_path: Path) -> None:
 
     assert tree["server-management"] == ["disk-space", "system-status"]
     assert tree["meta"] == ["create-skill"]
+
+
+def test_every_builtin_skill_file_is_named_exactly_skill_md() -> None:
+    """Discovery globs `SKILL.md`, which is case-sensitive on Linux: a `skill.md` loads on
+    Windows and silently vanishes everywhere else (win-perf-tuner shipped that way)."""
+    import os
+
+    import navig
+
+    root = Path(navig.__file__).parent / "builtin" / "skills"
+    assert root.is_dir()
+    seen = 0
+    wrong: list[str] = []
+    for dirpath, _dirs, files in os.walk(root):
+        for name in files:
+            if name.lower() == "skill.md":
+                seen += 1
+                if name != "SKILL.md":
+                    wrong.append(str(Path(dirpath, name).relative_to(root)))
+    assert seen > 0
+    assert not wrong, f"rename to SKILL.md: {wrong}"

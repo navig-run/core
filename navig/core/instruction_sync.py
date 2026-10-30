@@ -93,7 +93,9 @@ def read_master(root: Path) -> list[str]:
 
 def render(target: str, raw_lines: list[str]) -> str:
     """The final content for *target* (some targets wrap the processed body)."""
-    body = process(raw_lines, "copilot" if target != "cursor" else "cursor")
+    # cursor and cline honour their own SKIP tags (scripts/sync-instructions.ps1 renders
+    # them with `Get-Processed … "cursor"` / `"cline"`); every other mirror is the copilot body.
+    body = process(raw_lines, target if target in ("cursor", "cline") else "copilot")
     if target == "cline":
         stamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M")
         return f"# NAVIG — Agent Memory\n\nLast synced: {stamp}\n\n---\n\n{body}"

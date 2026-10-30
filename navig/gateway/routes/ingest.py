@@ -157,6 +157,10 @@ async def _handler(request: "web.Request") -> "web.Response":
             result.body,
             priority=result.priority,
             data=result.data,
+            # The provider's own event id is the identity of this arrival: two real
+            # $19.99 payments are two arrivals, while five taps on a test button (no
+            # identity) still collapse on their identical words.
+            dedupe_key=f"{source_name}:{result.event_id}" if result.event_id else None,
         )
     except Exception:  # noqa: BLE001 — dispatch blew up before delivering anything
         _unmark()  # not delivered → let a retry re-attempt

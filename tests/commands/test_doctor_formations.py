@@ -44,3 +44,16 @@ def test_formations_discovery_failure_is_reported(monkeypatch):
     row = check_formations()[0]
     assert row[1] is False
     assert "discovery failed" in row[2]
+
+
+def test_a_schema_invalid_manifest_is_a_load_error(monkeypatch, tmp_path):
+    """Parseable JSON missing the required fields cannot load — it must not pass as healthy."""
+    bad = tmp_path / "bad"
+    bad.mkdir()
+    (bad / "formation.json").write_text('{"id": "bad"}', encoding="utf-8")
+    monkeypatch.setattr(loader_mod, "_get_formations_roots", lambda: [tmp_path])
+
+    errors = loader_mod.formation_load_errors()
+
+    assert [d for d, _ in errors] == [bad]
+    assert "invalid formation.json" in errors[0][1]

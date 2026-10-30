@@ -1222,6 +1222,7 @@ def _render_procs(processes: Any, target: str, flat: bool, by: str, snapshot: An
 
 @app.command("kill")
 def kill_command(
+    ctx: typer.Context,
     target: str = typer.Argument(..., help="Group (node/python/chrome-tabs/...) or process-name substring"),
     force: bool = typer.Option(False, "--force", "-f", help="Use SIGKILL instead of graceful terminate"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would be killed without killing"),
@@ -1249,6 +1250,9 @@ def kill_command(
       navig kill claude-idle -n        # preview leftover Claude sessions, then drop -n
     """
     from navig.commands import processes
+
+    # `navig --dry-run kill …` puts the flag on the root; honour it, never kill on it.
+    dry_run = dry_run or bool((ctx.obj or {}).get("dry_run"))
 
     if target.strip().lower() == "claude-idle":
         cands = processes.find_idle_claude_sessions(idle_hours)

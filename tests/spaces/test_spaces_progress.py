@@ -82,3 +82,23 @@ class TestReadSpaceProgress:
         phase.write_text("---\nlast_updated: 2024-01-15\n---\n", encoding="utf-8")
         result = read_space_progress("s", tmp_path, "project")
         assert result.last_updated == "2024-01-15"
+
+    def test_text_and_mtime_come_from_the_same_file(self, tmp_path: Path, monkeypatch) -> None:
+        """The phase text was read through a second discovery, so it could describe a
+        different CURRENT_PHASE.md than the one whose mtime is reported."""
+        from navig.spaces import plan_files
+
+        found = tmp_path / "found" / "CURRENT_PHASE.md"
+        found.parent.mkdir()
+        found.write_text("- [x] a\n- [x] b\n", encoding="utf-8")
+        monkeypatch.setattr(
+            plan_files, "plan_file",
+            lambda _p, name: found if name == "CURRENT_PHASE.md" else None,
+        )
+        real_read_plan = plan_files.read_plan
+        monkeypatch.setattr(
+            plan_files, "read_plan",
+            lambda p, name: "- [ ] other\n" if name == "CURRENT_PHASE.md" else real_read_plan(p, name),
+        )
+        result = read_space_progress("s", tmp_path, "project")
+        assert result.completion_pct == 100.0

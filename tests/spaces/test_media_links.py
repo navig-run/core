@@ -14,10 +14,12 @@ from pathlib import Path
 
 import pytest
 
+from navig.spaces import media_links
 from navig.spaces.media_links import (
     Finding,
     MediaConfig,
     ScanRoot,
+    ensure_ignored,
     inspect_link,
     is_link,
     make_link,
@@ -350,9 +352,55 @@ def test_unignored_link_in_a_repo_is_flagged(estate: tuple[Path, Path]) -> None:
     entry = inspect_link(project / ".media", _cfg(projects, mroot), check_git=True)
     assert Finding.UNIGNORED in entry.findings
 
+    # A trailing-slash rule matches DIRECTORIES. On Windows the link is a junction,
+    # i.e. a directory, so the rule ignores it. On POSIX it is a symlink, which git
+    # does not treat as a directory: the rule cannot match, git would commit the
+    # link, and `check-ignore` answers "not ignored" however often the rule is
+    # appended (2026-10-30, outpost). Both answers are correct for their platform —
+    # what must never happen is the silent one.
     (project / ".gitignore").write_text(".media/\n", encoding="utf-8")
     entry = inspect_link(project / ".media", _cfg(projects, mroot), check_git=True)
-    assert Finding.UNIGNORED not in entry.findings
+    if media_links._WINDOWS:
+        assert Finding.UNIGNORED not in entry.findings
+    else:
+        assert Finding.UNIGNORED in entry.findings, entry.detail
+        assert "without the trailing slash" in (entry.detail or ""), entry.detail
+
+    # The portable rule matches a directory AND a symlink, so it clears the finding
+    # on every platform.
+    (project / ".gitignore").write_text(".media\n", encoding="utf-8")
+    entry = inspect_link(project / ".media", _cfg(projects, mroot), check_git=True)
+    assert Finding.UNIGNORED not in entry.findings, entry.detail
+
+
+def test_ensure_ignored_writes_the_rule_that_works_everywhere(
+    estate: tuple[Path, Path],
+) -> None:
+    """`navig space media --fix` must not write a rule that fixes nothing off Windows.
+
+    `.media/` ignores a Windows junction and NOT a POSIX symlink, so appending it
+    reported success while git kept the link committable — the worst shape of bug:
+    a repair that looks like it ran (2026-10-30, outpost).
+    """
+    import subprocess  # noqa: PLC0415
+
+    if not shutil.which("git"):
+        pytest.skip("git not installed")
+
+    projects, mroot = estate
+    project = _project(projects, "repo")
+    subprocess.run(["git", "init", "-q", str(project)], check=True)
+    media = mroot / "repo"
+    media.mkdir()
+    make_link(project / ".media", media)
+
+    assert ensure_ignored(project, _cfg(projects, mroot)) is True
+
+    written = (project / ".gitignore").read_text(encoding="utf-8")
+    assert "\n.media\n" in written, written
+    assert ".media/" not in written, written
+    entry = inspect_link(project / ".media", _cfg(projects, mroot), check_git=True)
+    assert Finding.UNIGNORED not in entry.findings, entry.detail
 
 
 def test_tracked_media_is_reported_as_tracked_not_unignored(
@@ -420,3 +468,104 @@ def test_junction_is_not_a_symlink_to_python(estate: tuple[Path, Path]) -> None:
 
     assert not os.path.islink(link)  # the trap
     assert is_link(link)  # the fix
+
+
+# ─────────────────────────── persisting the layout ──────────────────────────
+
+
+def test_save_config_keeps_a_concurrent_edit_and_is_read_back_at_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`media config --init` must not overwrite a key another process wrote, and
+    the same process must see the layout it just saved."""
+    import time
+
+    import yaml
+
+    from navig.config import ConfigManager
+    from navig.spaces import media_links
+
+    cfg_dir = tmp_path / "navig-config"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.yaml").write_text("keep_me: 1\n", encoding="utf-8")
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(cfg_dir))
+    manager = ConfigManager()
+    manager.get_global_config()  # take the snapshot
+    monkeypatch.setattr("navig.config.get_config_manager", lambda: manager)
+
+    # Another process (the daemon, a second CLI) writes after our snapshot.
+    time.sleep(0.05)
+    path = cfg_dir / "config.yaml"
+    path.write_text("keep_me: 1\nwritten_elsewhere: 2\n", encoding="utf-8")
+    st = path.stat()
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 10_000_000))
+
+    projects, mroot = tmp_path / "projects", tmp_path / "media"
+    written = media_links.save_config(_cfg(projects, mroot))
+
+    on_disk = yaml.safe_load(written.read_text(encoding="utf-8"))
+    assert on_disk["written_elsewhere"] == 2
+    assert on_disk["keep_me"] == 1
+    assert on_disk["space"]["media"]["media_root"] == str(mroot)
+    assert media_links.load_config().media_root == mroot
+
+
+def test_a_legacy_studio_config_is_imported_into_space_media(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A navig-studio user's ~/.navig/studio.json must keep working after the
+    plugin was folded into `navig space media` — translated and imported once."""
+    import json
+
+    import yaml
+
+    from navig.config import ConfigManager
+    from navig.spaces import media_links
+
+    cfg_dir = tmp_path / "navig-config"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.yaml").write_text("keep_me: 1\n", encoding="utf-8")
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(cfg_dir))
+    monkeypatch.delenv("NAVIG_STUDIO_CONFIG", raising=False)
+    monkeypatch.delenv("NAVIG_MEDIA_ROOT", raising=False)
+    manager = ConfigManager()
+    monkeypatch.setattr("navig.config.get_config_manager", lambda: manager)
+
+    projects, studio = tmp_path / "projects", tmp_path / "studio"
+    legacy = cfg_dir / "studio.json"
+    legacy.write_text(
+        json.dumps(
+            {
+                "studio_root": str(studio),
+                "link_name": ".media",
+                "roots": [{"path": str(projects), "project_depth": 2}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = media_links.load_config()
+    assert cfg.media_root == studio
+    assert [r.path for r in cfg.roots] == [projects]
+
+    on_disk = yaml.safe_load((cfg_dir / "config.yaml").read_text(encoding="utf-8"))
+    assert on_disk["space"]["media"]["media_root"] == str(studio)
+    assert on_disk["keep_me"] == 1
+    assert legacy.is_file()  # the import never deletes the user's file
+
+
+def test_no_legacy_studio_config_still_reports_nothing_configured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from navig.config import ConfigManager
+    from navig.spaces import media_links
+
+    cfg_dir = tmp_path / "navig-config"
+    cfg_dir.mkdir()
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(cfg_dir))
+    monkeypatch.delenv("NAVIG_STUDIO_CONFIG", raising=False)
+    manager = ConfigManager()
+    monkeypatch.setattr("navig.config.get_config_manager", lambda: manager)
+
+    with pytest.raises(media_links.MediaConfigError, match="no media layout"):
+        media_links.load_config()

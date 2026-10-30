@@ -10,6 +10,7 @@ against taps landing in the wrong habits.csv is `remember_target` /
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 
@@ -80,14 +81,16 @@ class TestBuildCard:
         habit_tracker.upsert(tracker, DAY, "wake", "yes")
         _, keyboard = habit_actions.build_card(tracker, DAY)
         wake = keyboard["inline_keyboard"][0][0]
-        assert wake["text"] == "✅ Wake"
-        assert keyboard["inline_keyboard"][0][1]["text"] == "❌ Walk"
+        assert wake["text"] == "✓ Wake"
+        assert wake["style"] == "success"
+        assert keyboard["inline_keyboard"][0][1]["text"] == "Walk"
+        assert "style" not in keyboard["inline_keyboard"][0][1]
 
     def test_pending_row_renders_unchecked(self, tracker):
         """A day-1 seeded 'pending' row is not a done habit."""
         habit_tracker.upsert(tracker, DAY, "wake", "pending")
         _, keyboard = habit_actions.build_card(tracker, DAY)
-        assert keyboard["inline_keyboard"][0][0]["text"] == "❌ Wake"
+        assert keyboard["inline_keyboard"][0][0]["text"] == "Wake"
 
     def test_callback_data_fits_telegram_budget(self, tracker):
         _, keyboard = habit_actions.build_card(tracker, DAY)
@@ -141,7 +144,7 @@ class TestTapping:
         method, payload = channel.calls[-1]
         assert method == "editMessageText"
         assert payload["message_id"] == 42
-        assert payload["reply_markup"]["inline_keyboard"][0][0]["text"] == "✅ Wake"
+        assert payload["reply_markup"]["inline_keyboard"][0][0]["text"] == "✓ Wake"
 
     def test_score_is_stored(self, tracker):
         channel = FakeChannel()
@@ -210,8 +213,10 @@ class TestTheThreeAreNamed:
         habit_tracker.upsert(tracker, DAY, "wake", "yes")
         text = self._closing(tracker)
 
-        assert f"{habit_actions.MARK_DONE} Wake" in text
-        assert f"{habit_actions.MARK_OPEN} Walk" in text
+        # The closing card renders the same task list the check-in does, so its
+        # markers are the card's (☑/☐), not the old dot-joined line's (✓/·).
+        assert "☑ Wake" in text
+        assert "☐ Walk" in text
 
     def test_no_card_says_non_negotiable(self, tracker):
         """A word the owner had to ask about does not belong on the card."""
@@ -229,7 +234,8 @@ class TestTheThreeAreNamed:
             habit_actions.build_card(tracker, DAY, morning=True)[0],
             self._closing(tracker),
         ):
-            assert habit_actions.FLOOR_TITLE in text
+            # The section is named through the locale now: "Required" / "Обязательные".
+            assert habit_actions._t("habit.card.floor_title") in text
             for label in habit_tracker.NON_NEGOTIABLES:
                 assert habit_actions.LABEL_WORDS[label] in text
 
@@ -247,7 +253,10 @@ class TestTheThreeAreNamed:
         habit_tracker.upsert(tracker, DAY, "caffeine_cutoff", "yes")
         text = self._closing(tracker)
 
-        assert "Also done: No coffee" in text
+        # The extra habit is shown inside its section with a real checkbox —
+        # the old "Also done: …" sentence listed it apart from the three it sits
+        # next to in the same card.
+        assert "☑ No coffee" in text
         assert "caffeine_cutoff" not in text
 
     def test_a_label_without_a_word_still_renders(self, tracker):
@@ -298,12 +307,55 @@ class TestTargetPairing:
         assert habit_tracker.resolve_target(1) == a
         assert habit_tracker.resolve_target(2) == b
 
+    def test_two_cards_in_one_chat_each_keep_their_own_tracker(self, tmp_path):
+        """A newer card for another space must not redirect taps on the older card."""
+        a, b = tmp_path / "a" / "habits.csv", tmp_path / "b" / "habits.csv"
+        habit_tracker.remember_target(5, a, message_id=100, day=DAY)
+        habit_tracker.remember_target(5, b, message_id=200, day=DAY)
+
+        assert habit_tracker.resolve_target(5, 100) == a.resolve()
+        assert habit_tracker.resolve_target(5, 200) == b.resolve()
+        # Without a message id (or for a card never recorded) the latest card wins.
+        assert habit_tracker.resolve_target(5) == b.resolve()
+        assert habit_tracker.resolve_target(5, 999) == b.resolve()
+
+    def test_tap_on_the_older_card_writes_into_its_own_tracker(self, tmp_path):
+        a, b = tmp_path / "a.csv", tmp_path / "b.csv"
+        habit_tracker.remember_target(6, a, message_id=10, day=DAY)
+        habit_tracker.remember_target(6, b, message_id=11, day=DAY)
+
+        asyncio.run(habit_actions.handle_callback(FakeChannel(), f"hb:t:wake:{STAMP}", 6, 10))
+
+        assert habit_tracker.day_map(a, DAY).get("wake") == "yes"
+        assert not b.exists()
+
+    def test_relative_tracker_path_is_persisted_absolute(self, tmp_path, monkeypatch):
+        """The gateway resolves the path from a different cwd than the CLI recorded it in."""
+        recorded_in = tmp_path / "cli-cwd"
+        recorded_in.mkdir()
+        elsewhere = tmp_path / "daemon-cwd"
+        elsewhere.mkdir()
+
+        monkeypatch.chdir(recorded_in)
+        habit_tracker.remember_target(7, Path("space") / "habits.csv")
+        monkeypatch.chdir(elsewhere)
+
+        resolved = habit_tracker.resolve_target(7)
+        assert resolved.is_absolute()
+        assert resolved == (recorded_in / "space" / "habits.csv").resolve()
+
     def test_corrupt_targets_file_does_not_break_taps(self, tmp_path, monkeypatch):
         (tmp_path / "targets.json").write_text("{not json", encoding="utf-8")
         fallback = tmp_path / "fallback.csv"
         monkeypatch.setattr(habit_tracker, "tracker_path", lambda *a, **k: fallback)
 
         assert habit_tracker.resolve_target(1) == fallback
+
+
+def _word_of(button: dict) -> str:
+    """The button's word, without the tick a done habit carries."""
+    text = str(button.get("text", ""))
+    return text[len(habit_actions.MARK_DONE) :].strip() if text.startswith(habit_actions.MARK_DONE) else text.strip()
 
 
 class TestButtonsAreReadable:
@@ -313,19 +365,33 @@ class TestButtonsAreReadable:
         _, keyboard = habit_actions.build_card(tracker, DAY)
         for row in keyboard["inline_keyboard"][: len(habit_actions.CHECKIN_ROWS)]:
             for button in row:
-                word = button["text"].split(" ", 1)[1]
+                word = _word_of(button)
                 assert word.strip()
                 assert any(c.isalpha() for c in word)
 
     def test_state_marks_are_distinguishable(self, tracker):
+        """One tick where it means something, and a colour under it.
+
+        The old pair (✅ / ❌) read as "good" and "failed" at 22:15. The operator asked
+        for fewer symbols, so the done button carries `✓` and a green `style`, and the
+        open one carries nothing but its word.
+        """
         habit_tracker.upsert(tracker, DAY, "wake", "yes")
         _, keyboard = habit_actions.build_card(tracker, DAY)
-        marks = {b["text"].split(" ", 1)[0] for b in keyboard["inline_keyboard"][0]}
-        assert marks == {habit_actions.MARK_DONE, habit_actions.MARK_OPEN}
+        done, *rest = keyboard["inline_keyboard"][0]
+        assert done["text"].startswith(habit_actions.MARK_DONE)
+        assert done["style"] == "success"
+        assert all(not b["text"].startswith(habit_actions.MARK_DONE) for b in rest)
+        assert all("style" not in b for b in rest)
 
-    def test_card_explains_what_a_tap_does(self, tracker):
+    def test_the_card_does_not_explain_its_own_buttons(self, tracker):
+        """The hint line left on request: six labelled buttons need no instructions.
+
+        It also cost a whole line of a card that is read on a phone at 22:15.
+        """
         text, _ = habit_actions.build_card(tracker, DAY)
-        assert "Tap what you did" in text
+        assert "Tap what you did" not in text
+        assert habit_actions.MARK_DONE not in text.split("•")[0]
 
     def test_close_button_is_in_english(self, tracker):
         _, keyboard = habit_actions.build_card(tracker, DAY)
@@ -341,7 +407,7 @@ class TestButtonsAreReadable:
         plain = {"wake", "walk", "ship", "train", "no", "coffee", "self", "care"}
         for row in keyboard["inline_keyboard"][: len(habit_actions.CHECKIN_ROWS)]:
             for button in row:
-                word = button["text"].split(" ", 1)[1]
+                word = _word_of(button)
                 parts = [p for p in word.lower().replace("-", " ").split() if p]
                 assert set(parts) <= plain, f"unexplained button word: {word}"
 
@@ -375,7 +441,7 @@ class TestMorningCard:
     def test_morning_card_reflects_what_is_already_done(self, tracker):
         habit_tracker.upsert(tracker, DAY, "wake", "yes")
         _, keyboard = habit_actions.build_card(tracker, DAY, morning=True)
-        assert keyboard["inline_keyboard"][0][0]["text"] == "✅ Wake"
+        assert keyboard["inline_keyboard"][0][0]["text"] == "✓ Wake"
 
     def test_evening_card_still_lists_what_is_open(self, tracker):
         text, _ = habit_actions.build_card(tracker, DAY, morning=False)
@@ -517,7 +583,7 @@ class _FakeBot:
         self.calls.append((method, payload))
         if method == "deleteMessage" and self.refuse_delete:
             raise RuntimeError("Bad Request: message to delete not found")
-        if method == "sendMessage":
+        if method in ("sendMessage", "sendRichMessage"):
             self.next_id += 1
             return {"ok": True, "result": {"message_id": self.next_id}}
         return {"ok": True, "result": True}
@@ -552,6 +618,31 @@ def _checkin(tracker, **kw):
     habit.habit_checkin(**args)
 
 
+class TestRichTransport:
+    def test_a_server_without_rich_still_gets_the_card(self, tracker, monkeypatch):
+        """An older Bot API answers "unknown method"; the plain body must follow."""
+        import navig.commands.telegram as tg_cmd
+        import navig.telegram.api as api
+        from navig.gateway.channels import telegram_extensions
+
+        calls: list[str] = []
+
+        def fake(token, method, payload):  # noqa: ARG001
+            calls.append(method)
+            if method == "sendRichMessage":
+                raise RuntimeError("Bad Request: unknown method")
+            return {"ok": True, "result": {"message_id": 700}}
+
+        for mod in (api, tg_cmd):
+            monkeypatch.setattr(mod, "_api_call", fake)
+            monkeypatch.setattr(mod, "_load_telegram_token", lambda: "T")
+        monkeypatch.setattr(telegram_extensions, "is_enabled", lambda name: True)
+
+        _checkin(tracker, send=True)
+
+        assert calls == ["sendRichMessage", "sendMessage"]
+
+
 class TestMiddayAndExpiry:
     def test_morning_send_remembers_the_morning_slot(self, tracker, bot):
         _checkin(tracker, send=True, morning=True)
@@ -562,10 +653,10 @@ class TestMiddayAndExpiry:
         habit_tracker.upsert(tracker, DAY, "wake", "yes")   # tapped at 08:20
         _checkin(tracker, send=True, midday=True)           # 11:30 → id 502
 
-        assert bot.methods() == ["sendMessage", "sendMessage", "deleteMessage"]
+        assert bot.methods() == ["sendRichMessage", "sendRichMessage", "deleteMessage"]
         sent = bot.calls[1][1]
-        assert "Morning" in sent["text"]
-        assert sent["reply_markup"]["inline_keyboard"][0][0]["text"] == "✅ Wake"
+        assert "Morning" in sent["rich_message"]["html"]
+        assert sent["reply_markup"]["inline_keyboard"][0][0]["text"] == "✓ Wake"
         assert bot.calls[2][1]["message_id"] == 501
         assert habit_tracker.morning_card(-999) == (502, DAY)
 
@@ -578,7 +669,7 @@ class TestMiddayAndExpiry:
         _checkin(tracker, send=True, morning=True)
         _checkin(tracker, expire_morning=True)
         _checkin(tracker, expire_morning=True)               # nothing left: no call
-        assert bot.methods() == ["sendMessage", "deleteMessage"]
+        assert bot.methods() == ["sendRichMessage", "deleteMessage"]
         assert habit_tracker.morning_card(-999) == (None, None)
 
     def test_expire_leaves_the_evening_card_alone(self, tracker, bot):
@@ -593,3 +684,55 @@ class TestMiddayAndExpiry:
         bot.refuse_delete = True
         _checkin(tracker, expire_morning=True)
         assert habit_tracker.morning_card(-999) == (None, None)
+
+
+# ===========================================================================
+# A refused edit and a closed day
+# ===========================================================================
+
+class RefusingChannel(FakeChannel):
+    """Telegram refused the edit: the real ``_api_call`` returns None, never raises."""
+
+    async def _api_call(self, method, payload):
+        self.calls.append((method, payload))
+        return None if method == "editMessageText" else {"message_id": 7}
+
+
+class TestRefusedEditsAndClosedDays:
+    def test_a_tap_on_a_closed_day_changes_nothing(self, tracker):
+        habit_tracker.upsert(tracker, DAY, "wake", "yes")
+        habit_tracker.remember_target(-999, tracker)
+        habit_tracker.mark_day_closed(-999, DAY)
+        before = habit_tracker.read_tracker(tracker)
+
+        channel = FakeChannel()
+        toast = _tap(channel, tracker, f"hb:t:wake:{STAMP}")
+        score = _tap(channel, tracker, f"hb:s:3:{STAMP}")
+
+        assert habit_tracker.read_tracker(tracker) == before
+        assert "closed" in toast and "closed" in score
+        assert channel.calls == []
+
+    def test_a_refused_close_does_not_mark_the_day_closed(self, tracker):
+        channel = RefusingChannel()
+        toast = _tap(channel, tracker, f"hb:x:{STAMP}")
+
+        assert habit_tracker.is_day_closed(-999, DAY) is False
+        assert "try again" in toast
+        assert [m for m, _ in channel.calls] == ["editMessageText"], "no journal prompt"
+
+    def test_a_refused_tap_edit_does_not_report_plain_success(self, tracker):
+        channel = RefusingChannel()
+        toast = _tap(channel, tracker, f"hb:t:wake:{STAMP}")
+
+        assert habit_tracker.day_map(tracker, DAY)["wake"] == "yes", "the tap is saved"
+        assert "didn't update" in toast, toast
+
+    def test_not_modified_counts_as_an_updated_card(self, tracker, monkeypatch):
+        monkeypatch.setattr(habit_actions, "_last_telegram_error",
+                            lambda: "Bad Request: message is not modified")
+        channel = RefusingChannel()
+        toast = _tap(channel, tracker, f"hb:x:{STAMP}")
+
+        assert habit_tracker.is_day_closed(-999, DAY) is True
+        assert toast == "Day closed"

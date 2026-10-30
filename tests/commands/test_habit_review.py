@@ -262,6 +262,19 @@ class TestBuild:
         assert "average **23:15**" in block
         assert "average **7**" in block
 
+    def test_steps_and_deep_values_are_rendered_not_dropped(self, tracker):
+        """Excluded from "The rest" as value labels, but only sleep_time and score had
+        a values line — so `habit log deep --value 2` disappeared from the review."""
+        _full_week(tracker)
+        habit_tracker.upsert(tracker, "2026-08-17", "deep", "2")
+        habit_tracker.upsert(tracker, "2026-08-18", "deep", "4")
+        habit_tracker.upsert(tracker, "2026-08-17", "steps", "8000")
+        block = weekly_review.build(tracker, MON, SUN)
+
+        assert "**Deep work:** 2 · 4" in block
+        assert "average **3**" in block
+        assert "**Steps:** 8000" in block
+
     def test_other_labels_are_counted_with_their_words(self, tracker):
         _full_week(tracker)
         habit_tracker.upsert(tracker, "2026-08-17", "train", "yes")
@@ -282,6 +295,20 @@ class TestBuild:
 
         assert "Complete days: 0 of 7" in block
         assert "nothing above was measured" in block
+
+    def test_history_outside_the_window_does_not_hide_the_empty_window(self, tracker):
+        """`rows` was the whole tracker, so an older row suppressed the warning for a
+        window in which nothing was measured."""
+        habit_tracker.upsert(tracker, "2026-07-01", "train", "yes")
+        block = weekly_review.build(tracker, MON, SUN)
+
+        assert "nothing above was measured" in block
+
+    def test_a_row_inside_the_window_drops_the_empty_window_line(self, tracker):
+        habit_tracker.upsert(tracker, "2026-08-19", "train", "yes")
+        block = weekly_review.build(tracker, MON, SUN)
+
+        assert "nothing above was measured" not in block
 
 
 # ===========================================================================

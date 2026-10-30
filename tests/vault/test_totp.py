@@ -42,3 +42,13 @@ def test_is_valid_secret():
     assert is_valid_secret("JBSWY3DPEHPK3PXP")
     assert not is_valid_secret("")
     assert not is_valid_secret("not!base32!")
+
+
+@pytest.mark.parametrize("algorithm", ["md5", "nope", "new", ""])
+def test_unsupported_algorithm_is_a_value_error(algorithm):
+    with pytest.raises(ValueError, match="unsupported TOTP algorithm"):
+        totp_now(_SEED, algorithm=algorithm, t=59)
+
+
+def test_algorithm_name_is_case_insensitive():
+    assert totp_now(_SEED, algorithm="SHA256", t=59) == totp_now(_SEED, algorithm="sha256", t=59)

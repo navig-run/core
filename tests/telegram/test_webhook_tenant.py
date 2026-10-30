@@ -107,6 +107,13 @@ def _patch_config(monkeypatch, cfg):
     import navig.core
 
     monkeypatch.setattr(navig.core, "Config", lambda *a, **k: cfg)
+    # `check_reachability()` also emits `_os_remote_row()`, which reads the REAL config
+    # manager and device store: this box has a paired NAVIG OS client, so a whole-suite
+    # run added a failing "Remote NAVIG OS" row to a section these tests judge as
+    # lighthouse-only (measured 2026-10-30).
+    from navig.commands import doctor
+
+    monkeypatch.setattr(doctor, "_os_remote_row", lambda: [])
 
 
 def test_lighthouse_status_says_so_when_the_tenant_check_ITSELF_fails(monkeypatch, capsys):

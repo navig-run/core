@@ -7,6 +7,7 @@ Nothing here talks to GitHub or reads this machine's real lanes or telemetry.
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime, timezone
 
 import pytest
@@ -554,8 +555,63 @@ def test_a_stopped_runner_service_is_named(tmp_path):
 def test_an_unset_or_unwritable_shared_lane_dir_fails(tmp_path):
     assert _rows(env={})["Shared lane dir"][1] is False
     missing = tmp_path / "nope" / "deeper"
-    row = _rows(env={"NAVIG_SLOT_DIR": str(missing)})["Shared lane dir"]
+    row = _rows(
+        env={"NAVIG_SLOT_DIR": str(missing)},
+        group_in_token=lambda _g: False,
+        group_lists_user=lambda _g: False,
+    )["Shared lane dir"]
     assert row[1] is False and "not writable" in row[2]
+
+
+# ── the lane hint names the real cause (2026-10-25) ──────────────────────────
+
+
+def _lane_row(tmp_path, *, in_token, lists_user):
+    """The Shared lane dir row for a path this process cannot write."""
+    return _rows(
+        env={"NAVIG_SLOT_DIR": str(tmp_path / "nope" / "deeper")},
+        group_in_token=in_token,
+        group_lists_user=lists_user,
+    )["Shared lane dir"]
+
+
+def test_a_missing_membership_asks_for_an_administrator(tmp_path):
+    row = _lane_row(tmp_path, in_token=lambda _g: False, lists_user=lambda _g: False)
+    assert row[1] is False and "add this account to navig-ci-users" in row[2]
+    assert "sign out" not in row[2], "membership is the cause here, not the token"
+
+
+def test_a_member_with_a_stale_token_is_told_to_sign_back_in(tmp_path):
+    """The case that misled this machine: the group lists the account, the token predates it.
+
+    No administrator can fix it and nothing has to be reinstalled — a new logon token does.
+    """
+    row = _lane_row(tmp_path, in_token=lambda _g: False, lists_user=lambda _g: True)
+    assert row[1] is False
+    assert "already lists this account" in row[2] and "sign out and back in" in row[2]
+    assert "no administrator needed" in row[2]
+    assert "add this account" not in row[2]
+
+
+def test_a_member_in_the_token_gets_the_acl_as_the_blocker(tmp_path):
+    row = _lane_row(tmp_path, in_token=lambda _g: True, lists_user=lambda _g: True)
+    assert row[1] is False and "ACL is the blocker" in row[2]
+    if sys.platform == "win32":
+        assert "icacls" in row[2] and "navig-ci-users:(OI)(CI)M" in row[2]
+    else:
+        assert "setfacl" in row[2]
+
+
+def test_an_unreadable_membership_says_so_and_still_names_the_way_out(tmp_path):
+    row = _lane_row(tmp_path, in_token=lambda _g: None, lists_user=lambda _g: None)
+    assert row[1] is False and "could not read navig-ci-users membership" in row[2]
+    assert "sign out and back in" in row[2], "an unknown cause still needs a next step"
+
+
+def test_a_token_alone_is_enough_to_blame_the_acl(tmp_path):
+    """If the token carries the group, membership is moot: only the ACL can refuse the write."""
+    row = _lane_row(tmp_path, in_token=lambda _g: True, lists_user=lambda _g: None)
+    assert "ACL is the blocker" in row[2]
 
 
 def test_the_disk_floor_and_an_unreadable_volume():

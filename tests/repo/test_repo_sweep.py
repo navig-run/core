@@ -288,6 +288,35 @@ def test_yes_deletes_the_redundant_and_keeps_the_real(repo: Path):
     assert "feat/real" in remaining
 
 
+def test_a_branch_that_moves_after_classification_is_kept(repo: Path, monkeypatch):
+    """The sweep classifies every branch before deleting any. Another session can advance
+    one in between, and `git branch -D <name>` then removed a tip no proof ever covered.
+    The delete is pinned to the classified sha, so the moved branch survives."""
+    base_sha = _git("rev-parse", "HEAD", cwd=repo)
+    _git("branch", "old/pointer", base_sha, cwd=repo)
+    tree = _git("rev-parse", "HEAD^{tree}", cwd=repo)
+    real_collect = repo_mod.collect_sweep
+
+    def _then_someone_commits(root, **kw):
+        data = real_collect(root, **kw)
+        new_tip = _git("commit-tree", tree, "-p", base_sha, "-m", "new work", cwd=repo)
+        _git("update-ref", "refs/heads/old/pointer", new_tip, cwd=repo)
+        _then_someone_commits.new_tip = new_tip
+        return data
+
+    monkeypatch.setattr(repo_mod, "collect_sweep", _then_someone_commits)
+    result = runner.invoke(
+        repo_app, ["sweep", "--repo", str(repo), "--no-fetch", "--yes", "--json"]
+    )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["deleted"] == []
+    assert [f["name"] for f in data["failed"]] == ["old/pointer"]
+    assert "moved since it was classified" in data["failed"][0]["error"]
+    assert _git("rev-parse", "old/pointer", cwd=repo) == _then_someone_commits.new_tip
+
+
 def test_the_human_output_names_the_recovery_handle(repo: Path):
     base_sha = _git("rev-parse", "HEAD", cwd=repo)
     _git("branch", "old/pointer", base_sha, cwd=repo)
@@ -531,8 +560,11 @@ def test_sweep_yes_deletes_the_finished_worktrees_branch_even_with_a_stale_upstr
 _REAL_INDEX = repo_mod._github_pr_index
 
 
-def _rows(*pairs):
-    return [{"headRefName": h, "number": n, "state": st, "headRefOid": f"{h}-sha"} for h, n, st in pairs]
+def _rows(*pairs, base="main"):
+    return [
+        {"headRefName": h, "number": n, "state": st, "headRefOid": f"{h}-sha", "baseRefName": base}
+        for h, n, st in pairs
+    ]
 
 
 def test_index_holds_every_merged_pr_and_annotates_open_ones(repo: Path, monkeypatch):
@@ -564,6 +596,28 @@ def test_a_branch_with_a_merged_and_an_open_pr_is_judged_by_the_merge(repo: Path
     monkeypatch.setattr(repo_mod, "_gh_pr_rows", _fake)
     index, _ = _REAL_INDEX(repo)
     assert index["feat/x"]["state"] == "MERGED", "the proof must not be overwritten by annotation"
+
+
+def test_a_pr_merged_into_another_base_is_not_a_proof(repo: Path, monkeypatch):
+    """A PR merged into `develop` or a release branch at this exact tip says nothing about
+    origin/main. It used to enter the index as MERGED, and `sweep --yes` / `land` then
+    force-deleted a branch whose commits main never received."""
+    def _fake(gh, root, state, limit):
+        if state == "merged":
+            return (
+                _rows(("feat/dev", 3, "MERGED"), base="develop")
+                + _rows(("feat/nobase", 4, "MERGED"), base=None)
+                + _rows(("feat/main", 5, "MERGED"))
+            ), None
+        return [], None
+
+    import shutil as _sh
+    monkeypatch.setattr(_sh, "which", lambda name: "gh")
+    monkeypatch.setattr(repo_mod, "_gh_pr_rows", _fake)
+    index, _ = _REAL_INDEX(repo)
+    assert "feat/dev" not in index, "a merge into develop is not a merge into main"
+    assert "feat/nobase" not in index, "a row that hides its base cannot prove anything"
+    assert index["feat/main"]["state"] == "MERGED"
 
 
 def test_a_full_page_of_merged_rows_is_reported_as_truncated(repo: Path, monkeypatch):
@@ -613,6 +667,24 @@ def test_branch_never_committed_reads_the_reflog(repo: Path):
     assert never is True and created is not None and created > 0
     _git("checkout", "-q", "fresh", cwd=repo); _commit(repo, "x.txt"); _git("checkout", "-q", "main", cwd=repo)
     assert branch_never_committed(repo, "fresh") == (False, None)
+
+
+def test_created_at_is_the_reflog_entry_time_not_the_commit_time(repo: Path, monkeypatch):
+    """Review #1502: ``%cd`` is the committer date of the commit the branch was cut from.
+    A branch made NOW from a 60-day-old commit read as 60 days unused, so `sweep --yes`
+    could remove a minutes-old worktree."""
+    from navig.commands.repo import branch_never_committed
+
+    old = int(time.time()) - 60 * 86400
+    monkeypatch.setenv("GIT_COMMITTER_DATE", f"{old} +0000")
+    monkeypatch.setenv("GIT_AUTHOR_DATE", f"{old} +0000")
+    _git("commit", "-q", "--allow-empty", "-m", "old", cwd=repo)
+    monkeypatch.delenv("GIT_COMMITTER_DATE")
+    monkeypatch.delenv("GIT_AUTHOR_DATE")
+    _git("branch", "cut-now", cwd=repo)
+    never, created = branch_never_committed(repo, "cut-now")
+    assert never is True
+    assert created is not None and abs(created - time.time()) < 120, created
 
 
 def test_an_empty_reflog_is_unknown_not_never_committed(repo: Path):
@@ -853,3 +925,58 @@ def test_a_fresh_worktree_reusing_a_branch_name_with_an_old_merged_pr_is_not_fin
     w = _finished_gh(repo)["reused"]
     assert w["merged_pr_tip"] is False
     assert w["removable"] is False and "merged as" not in w["why_kept"], w["why_kept"]
+
+
+def test_a_branch_recreated_at_the_tip_its_merged_pr_fast_forwarded_to_is_not_finished(
+    repo: Path, monkeypatch, _idle_two_hours
+):
+    """After a fast-forward merge the PR head IS the base tip. A worktree recreated with
+    the same branch name from that base has the merged PR's exact name and sha, and was
+    removable once idle. Its reflog says it never moved past creation: fresh, not done."""
+    tip = _git("rev-parse", "HEAD", cwd=repo)
+    _worktree(repo, "again")
+    monkeypatch.setattr(
+        repo_mod, "_github_pr_index",
+        lambda r: ({"feat/again": {"number": 11, "state": "MERGED", "head": tip}}, None),
+    )
+    w = _finished_gh(repo)["again"]
+    assert w["merged_pr_tip"] is False
+    assert w["removable"] is False, w["why_kept"]
+
+
+def test_a_pr_merged_just_now_over_an_old_commit_starts_its_idle_window_at_the_merge(
+    repo: Path, monkeypatch, _idle_two_hours
+):
+    """The HEAD reflog records the last LOCAL commit — hours old — not the merge a minute
+    ago, so `sweep --yes` could remove the worktree from under the session that merged."""
+    import time as _time
+
+    wt = _worktree(repo, "just-landed")
+    tip = _commit(wt, "just-landed.txt")
+    _advance_main(repo, 1)
+    merged_at = _time.time() - 60
+    monkeypatch.setattr(
+        repo_mod, "_github_pr_index",
+        lambda r: ({"feat/just-landed": {
+            "number": 77, "state": "MERGED", "head": tip, "merged_at": merged_at,
+        }}, None),
+    )
+    w = _finished_gh(repo)["just-landed"]
+    assert w["merged_pr_tip"] is True
+    assert w["removable"] is False, "merged a minute ago — the merging session may be in it"
+    assert "merged as #77 MERGED" in w["why_kept"] and "1 min ago" in w["why_kept"]
+
+
+def test_the_index_carries_the_merge_time(repo: Path, monkeypatch):
+    import shutil as _sh
+
+    def _fake(gh, root, state, limit):
+        rows = _rows(("feat/t", 1, "MERGED")) if state == "merged" else []
+        for row in rows:
+            row["mergedAt"] = "2026-10-25T12:00:00Z"
+        return rows, None
+
+    monkeypatch.setattr(_sh, "which", lambda name: "gh")
+    monkeypatch.setattr(repo_mod, "_gh_pr_rows", _fake)
+    index, _ = _REAL_INDEX(repo)
+    assert index["feat/t"]["merged_at"] == 1792929600.0

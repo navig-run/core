@@ -27,7 +27,7 @@ class FakeChannel:
 
     async def _api_call(self, method, payload):
         self.calls.append((method, dict(payload)))
-        if method == "sendMessage":
+        if method in ("sendMessage", "sendRichMessage"):
             return {"message_id": 71, "chat": {"id": payload.get("chat_id")}}
         return {"ok": True}
 
@@ -36,6 +36,11 @@ class FakeChannel:
 
     def payload(self, method: str) -> dict:
         return next(payload for name, payload in self.calls if name == method)
+
+    def body(self, method: str) -> str:
+        """The body Telegram carries: the rich html when the card has one, else text."""
+        payload = self.payload(method)
+        return payload.get("text") or (payload.get("rich_message") or {}).get("html", "")
 
     def buttons(self, method: str) -> list[dict]:
         return [
@@ -95,8 +100,7 @@ def _tip_result() -> EngagementResult:
     return EngagementResult(
         action=EngagementAction.CAPABILITY_PROMO,
         message=(
-            "💡 **Server Monitoring**: Real-time health dashboard.\n"
-            "Try: `navig host monitor show`"
+            "💡 **Server Monitoring**: Real-time health dashboard.\nTry: `navig host monitor show`"
         ),
         priority=5,
         metadata={"feature": "host_monitor"},
@@ -122,14 +126,14 @@ def test_the_greeting_card_is_delivered_once_and_the_second_tick_is_silent():
     assert first is not None
 
     assert asyncio.run(notifier._send_notification(first)) is True
-    assert channel.methods() == ["sendMessage"]
-    payload = channel.payload("sendMessage")
-    assert "Приветствие" in payload["text"]
-    assert "Пора за работу" in payload["text"]
-    assert [b["text"] for b in channel.buttons("sendMessage")] == ["Open brief", "Close"]
+    assert channel.methods() == ["sendRichMessage"]
+    body = channel.body("sendRichMessage")
+    assert "Приветствие" in body
+    assert "Пора за работу" in body
+    assert [b["text"] for b in channel.buttons("sendRichMessage")] == ["Open brief", "Close"]
 
     assert _tick(notifier, _greeting_result()) is None
-    assert channel.methods() == ["sendMessage"], "the suppressed tick sent nothing"
+    assert channel.methods() == ["sendRichMessage"], "the suppressed tick sent nothing"
 
 
 def test_a_second_sender_process_cannot_greet_again():
@@ -169,23 +173,29 @@ def test_the_daily_tip_goes_out_as_a_card_with_its_example_command():
     _screen, context = notification.card
     assert context.prefix == "ntp"
     assert asyncio.run(notifier._send_notification(notification)) is True
-    assert "**" not in channel.payload("sendMessage")["text"]
-    assert [b["text"] for b in channel.buttons("sendMessage")] == ["Open", "Close"]
+    assert "**" not in channel.body("sendRichMessage")
+    assert [b["text"] for b in channel.buttons("sendRichMessage")] == ["Open", "Close"]
 
     # Open is the action that carries the full tip and the command line.
     data = notification.card[1]
     callback = f"cd:ntp:open:{data.key}"
     from navig.telegram import cards
 
-    asyncio.run(cards.dispatch(channel, {
-        "id": "cb1",
-        "data": callback,
-        "message": {"chat": {"id": 42}, "message_id": 71},
-        "from": {"id": 42},
-    }, callback))
-    edited = channel.payload("editMessageText")
-    assert "Real-time health dashboard" in edited["text"]
-    assert "`navig host monitor show`" in edited["text"]
+    asyncio.run(
+        cards.dispatch(
+            channel,
+            {
+                "id": "cb1",
+                "data": callback,
+                "message": {"chat": {"id": 42}, "message_id": 71},
+                "from": {"id": 42},
+            },
+            callback,
+        )
+    )
+    edited = channel.body("editMessageText")
+    assert "Real-time health dashboard" in edited
+    assert "navig host monitor show" in edited
 
 
 def test_the_tip_is_suppressed_for_the_rest_of_the_day():
@@ -221,5 +231,4 @@ def test_other_engagement_actions_stay_plain_notifications():
 
     assert notification is not None
     assert notification.card is None
-    assert notification.keyboard == [[{"text": "Yes, go ahead",
-                                       "callback_data": "slash:status"}]]
+    assert notification.keyboard == [[{"text": "Yes, go ahead", "callback_data": "slash:status"}]]

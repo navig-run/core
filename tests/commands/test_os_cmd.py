@@ -610,6 +610,10 @@ class TestOpenCommand:
         monkeypatch.setattr(os_cmd, "probe", lambda _port: {"reachable": False})
         result = runner.invoke(os_cmd.app, ["open"], env={"COLUMNS": "400"})
         assert result.exit_code == 1
+        # The actionable fact first: the SERVER is what is not answering, and the command
+        # names the way to start it. The launch reason rides along, never replaced.
+        assert "navig os serve" in result.output
+        assert "not answering" in result.output
         assert "not running" in result.output
 
     def test_no_launch_codes_but_a_serving_server_opens_the_login_page(
@@ -656,7 +660,8 @@ class TestOpenCommand:
         monkeypatch.setattr(os_cmd, "probe", lambda _port: {"reachable": False, "error": "refused"})
         result = runner.invoke(os_cmd.app, ["open"], env={"COLUMNS": "400"})
         assert result.exit_code == 1
-        assert "unix socket" in result.output
+        assert "navig os serve" in result.output  # what to do, first
+        assert "unix socket" in result.output  # and the original reason, still shown
 
     def test_opens_a_detached_kiosk_browser(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from navig.os_host import launch

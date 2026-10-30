@@ -161,3 +161,39 @@ class TestScrubExistingSecrets:
             assert row is not None and "hunter2xyz" not in row.content
         assert s.search_keyword("hunter2xyz", limit=5) == []
         assert s.scrub_secrets(apply=False) == []  # idempotent
+
+class TestSpokenSecretPunctuation:
+    """The sentence around a secret keeps its punctuation; the secret never does.
+
+    Regression (2026-10-26): the spoken redactor ate trailing punctuation with the
+    token, so a stored fact read "…password is ***REDACTED***" — the user's "!" and
+    "," vanished with it.
+    """
+
+    def test_trailing_exclamation_is_kept(self):
+        text, changed = redact_fact("Home router password is hunter2xyz!")
+        assert changed
+        assert "hunter2xyz" not in text
+        assert text.endswith("***REDACTED***!")
+
+    def test_trailing_comma_keeps_the_sentence_flow(self):
+        text, changed = redact_fact("Bank PIN: 4821, then reboot the box")
+        assert changed
+        assert "4821" not in text
+        assert "***REDACTED***, then reboot the box" in text
+
+    def test_quotes_around_the_secret_are_kept(self):
+        text, changed = redact_fact('API key is "x9y8z7p" for staging')
+        assert changed
+        assert "x9y8z7p" not in text
+        assert '"***REDACTED***"' in text
+
+    def test_an_internal_comma_is_redacted_whole(self):
+        # Excluding "," from the token would leak ",bcd" after the placeholder.
+        text, changed = redact_fact("password is a,bcd for the server")
+        assert changed
+        assert "a,bcd" not in text and "bcd" not in text
+
+    def test_punctuation_only_secret_re_emits_nothing(self):
+        with pytest.raises(SensitiveContentError):
+            redact_fact("password is ,..")

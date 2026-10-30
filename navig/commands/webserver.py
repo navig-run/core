@@ -470,10 +470,11 @@ def enable_site(options: dict[str, Any]) -> None:
         from navig.cli.recovery import require_active_host  # noqa: PLC0415
         host_name = require_active_host(options, config_manager)
 
-        # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
-        from navig.core import host_lock  # noqa: PLC0415
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock) —
+    # outside the branch above, so an explicit --host is guarded too.
+    from navig.core import host_lock  # noqa: PLC0415
 
-        host_lock.guard_remote(config_manager, host_name, "navig web enable-site")
+    host_lock.guard_remote(config_manager, host_name, "navig web enable-site")
 
     if not app_name:
         from navig.cli.recovery import require_active_app  # noqa: PLC0415
@@ -563,10 +564,11 @@ def disable_site(options: dict[str, Any]) -> None:
         from navig.cli.recovery import require_active_host  # noqa: PLC0415
         host_name = require_active_host(options, config_manager)
 
-        # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
-        from navig.core import host_lock  # noqa: PLC0415
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock) —
+    # outside the branch above, so an explicit --host is guarded too.
+    from navig.core import host_lock  # noqa: PLC0415
 
-        host_lock.guard_remote(config_manager, host_name, "navig web disable-site")
+    host_lock.guard_remote(config_manager, host_name, "navig web disable-site")
 
     if not app_name:
         from navig.cli.recovery import require_active_app  # noqa: PLC0415
@@ -656,10 +658,11 @@ def enable_module(options: dict[str, Any]) -> None:
         from navig.cli.recovery import require_active_host  # noqa: PLC0415
         host_name = require_active_host(options, config_manager)
 
-        # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
-        from navig.core import host_lock  # noqa: PLC0415
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock) —
+    # outside the branch above, so an explicit --host is guarded too.
+    from navig.core import host_lock  # noqa: PLC0415
 
-        host_lock.guard_remote(config_manager, host_name, "navig web enable-module")
+    host_lock.guard_remote(config_manager, host_name, "navig web enable-module")
 
     if not app_name:
         from navig.cli.recovery import require_active_app  # noqa: PLC0415
@@ -750,10 +753,11 @@ def disable_module(options: dict[str, Any]) -> None:
         from navig.cli.recovery import require_active_host  # noqa: PLC0415
         host_name = require_active_host(options, config_manager)
 
-        # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
-        from navig.core import host_lock  # noqa: PLC0415
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock) —
+    # outside the branch above, so an explicit --host is guarded too.
+    from navig.core import host_lock  # noqa: PLC0415
 
-        host_lock.guard_remote(config_manager, host_name, "navig web disable-module")
+    host_lock.guard_remote(config_manager, host_name, "navig web disable-module")
 
     if not app_name:
         from navig.cli.recovery import require_active_app  # noqa: PLC0415
@@ -840,10 +844,11 @@ def reload_server(options: dict[str, Any]) -> None:
         from navig.cli.recovery import require_active_host  # noqa: PLC0415
         host_name = require_active_host(options, config_manager)
 
-        # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
-        from navig.core import host_lock  # noqa: PLC0415
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock) —
+    # outside the branch above, so an explicit --host is guarded too.
+    from navig.core import host_lock  # noqa: PLC0415
 
-        host_lock.guard_remote(config_manager, host_name, "navig web reload")
+    host_lock.guard_remote(config_manager, host_name, "navig web reload")
 
     if not app_name:
         from navig.cli.recovery import require_active_app  # noqa: PLC0415

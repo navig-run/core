@@ -30,6 +30,11 @@ def test_default_prefers_this_interpreter_when_navig_is_importable(monkeypatch):
 
 
 def test_entrypoint_order_survives_when_asked(monkeypatch):
+    # `_on_path` is what runs FIRST for this preference, and on a developer box whose PATH
+    # carries a real `navig` it wins — which made this assertion pass on Windows (where the
+    # only candidate is the `.cmd` shim `_on_path` rejects) and fail on Linux, measuring the
+    # host instead of the order under test (2026-10-30, outpost).
+    monkeypatch.setattr(navig_cli, "_on_path", lambda: None)
     monkeypatch.setattr(navig_cli, "_importable", lambda: True)
     monkeypatch.setattr(navig_cli, "_entrypoint", lambda: ["C:/some/navig.exe"])
 

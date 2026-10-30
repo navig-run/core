@@ -812,7 +812,7 @@ class TestToolRegistration:
         assert "worktree_merge" in names
         assert "worktree_remove" in names
 
-    def test_register_worktree_tools_function(self):
+    def test_register_worktree_tools_function(self, monkeypatch):
         """The contract is "these tools ARE registered", not "these were ABSENT".
 
         This used to assert against `after - before`, which silently required
@@ -823,12 +823,20 @@ class TestToolRegistration:
         fails with `'worktree_create' in set()` — a red build for test ordering
         rather than for anything the registrar did. Registration is idempotent, so
         asserting presence is both correct and order-independent.
+
+        Presence in the GLOBAL registry is not enough either: an earlier
+        `register_all_tools()` leaves these names there, so a registrar that
+        became a no-op would still pass. The registrar resolves `_AGENT_REGISTRY`
+        at call time, so swap in a fresh one and assert against that.
         """
-        from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+        from navig.agent import agent_tool_registry
+        from navig.agent.agent_tool_registry import AgentToolRegistry
         from navig.agent.tools import register_worktree_tools
 
+        fresh = AgentToolRegistry()
+        monkeypatch.setattr(agent_tool_registry, "_AGENT_REGISTRY", fresh)
         register_worktree_tools()
-        names = set(_AGENT_REGISTRY.available_names())
+        names = set(fresh.available_names())
         for tool in ("worktree_create", "worktree_list", "worktree_merge", "worktree_remove"):
             assert tool in names, f"{tool} not registered"
 

@@ -59,19 +59,22 @@ def _stub(server, name: str, calls: list) -> None:
 
 
 # ── a shipped dangerous tool is really gated ────────────────────────────────────
+#
+# `navig_run_command` is registered on every platform. `desktop_powershell` is not: the
+# desktop/windows bundles only load on win32, so off Windows it has no classification.
 
 
 def test_a_dangerous_tool_runs_when_the_gate_approves(server) -> None:
     calls: list = []
-    _stub(server, "desktop_powershell", calls)
+    _stub(server, "navig_run_command", calls)
 
-    assert server._execute_tool("desktop_powershell", {"command": "Get-Process"}) == {"ok": True}
-    assert calls == [{"command": "Get-Process"}]
+    assert server._execute_tool("navig_run_command", {"command": "uptime"}) == {"ok": True}
+    assert calls == [{"command": "uptime"}]
 
 
 def test_a_dangerous_tool_is_blocked_when_the_gate_denies(server) -> None:
     calls: list = []
-    _stub(server, "desktop_powershell", calls)
+    _stub(server, "navig_run_command", calls)
 
     async def deny(_req):
         return ApprovalDecision.DENIED
@@ -79,14 +82,14 @@ def test_a_dangerous_tool_is_blocked_when_the_gate_denies(server) -> None:
     get_approval_gate().backend = deny
 
     with pytest.raises(PermissionError):
-        server._execute_tool("desktop_powershell", {"command": "Get-Process"})
+        server._execute_tool("navig_run_command", {"command": "uptime"})
     assert calls == [], "the handler must not run after a denial"
 
 
 def test_a_denial_reaches_the_client_as_an_error(server) -> None:
     """A blocked tool must not look like a successful call that returned nothing."""
-    _stub(server, "desktop_powershell", [])
-    server.tools["desktop_powershell"] = {"name": "desktop_powershell"}
+    _stub(server, "navig_run_command", [])
+    server.tools["navig_run_command"] = {"name": "navig_run_command"}
 
     async def deny(_req):
         return ApprovalDecision.DENIED
@@ -94,7 +97,7 @@ def test_a_denial_reaches_the_client_as_an_error(server) -> None:
     get_approval_gate().backend = deny
 
     envelope = server._handle_tools_call(
-        {"name": "desktop_powershell", "arguments": {"command": "x"}}
+        {"name": "navig_run_command", "arguments": {"command": "x"}}
     )
 
     assert envelope.get("isError") is True
@@ -141,20 +144,20 @@ def test_a_safe_tool_never_consults_the_gate(server) -> None:
 
 
 def test_the_audit_line_names_the_tool_and_its_arg_keys(server, caplog) -> None:
-    _stub(server, "desktop_powershell", [])
+    _stub(server, "navig_run_command", [])
 
     # navig loggers set propagate=False, so caplog needs the logger attached directly.
     logger = logging.getLogger("navig.mcp_server")
     with caplog.at_level(logging.WARNING, logger="navig.mcp_server"):
         logger.propagate = True
         try:
-            server._execute_tool("desktop_powershell", {"command": "Get-Process"})
+            server._execute_tool("navig_run_command", {"command": "uptime"})
         finally:
             logger.propagate = False
 
     line = "\n".join(r.getMessage() for r in caplog.records)
     assert "[mcp.gate]" in line
-    assert "desktop_powershell" in line
+    assert "navig_run_command" in line
     assert "dangerous" in line
     assert "command" in line, "the argument KEY should be recorded"
 
@@ -189,7 +192,7 @@ def test_the_audit_line_never_records_an_argument_value(server) -> None:
 def test_the_gate_fails_closed_when_approval_cannot_load(server) -> None:
     """An unavailable gate must block a dangerous tool, not wave it through."""
     calls: list = []
-    _stub(server, "desktop_powershell", calls)
+    _stub(server, "navig_run_command", calls)
 
     real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__
 
@@ -200,7 +203,7 @@ def test_the_gate_fails_closed_when_approval_cannot_load(server) -> None:
 
     with patch("builtins.__import__", side_effect=broken):
         with pytest.raises(PermissionError, match="approval gate unavailable"):
-            server._execute_tool("desktop_powershell", {"command": "x"})
+            server._execute_tool("navig_run_command", {"command": "x"})
     assert calls == []
 
 

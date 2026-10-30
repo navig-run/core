@@ -45,6 +45,21 @@ def test_build_launch_args_electron_gets_no_quiet_flags():
     assert "--no-first-run" not in args
 
 
+def test_build_launch_args_explicit_browser_path_gets_quiet_flags():
+    # `cdp launch <path>` passes the absolute executable as the app.
+    for exe in (r"C:\X\chrome.exe", r"C:\X\msedge.exe", "/usr/bin/brave-browser"):
+        args = _build_launch_args(exe, exe, 9222, None, None, None)
+        for flag in CHROMIUM_QUIET_ARGS:
+            assert flag in args, (exe, flag)
+        assert any(a.startswith("--disable-features=") for a in args), exe
+
+
+def test_build_launch_args_explicit_electron_path_gets_no_quiet_flags():
+    exe = r"C:\Apps\Discord\Discord.exe"
+    args = _build_launch_args(exe, exe, 9223, None, None, None)
+    assert "--no-first-run" not in args
+
+
 def test_build_launch_args_extra_args_come_after_quiet():
     args = _build_launch_args("chrome.exe", "chrome", 9222, None, None, ["--headless=new"])
     assert "--headless=new" in args

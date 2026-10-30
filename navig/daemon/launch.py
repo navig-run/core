@@ -68,13 +68,14 @@ def remove_worker_pid() -> None:
 def supervisor_runs_the_bot() -> int | None:
     """The supervisor's pid when it is running AND its config runs the bot."""
     try:
-        from navig.daemon.entry import _load_config
+        from navig.daemon.entry import _as_bool, _load_config
         from navig.daemon.supervisor import NavigDaemon
 
         if not NavigDaemon.is_running():
             return None
         cfg = _load_config()
-        if not cfg.get("telegram_bot", True):
+        # The daemon's own truth table: a string "false" is disabled, not truthy.
+        if not _as_bool(cfg.get("telegram_bot", True), True):
             return None
         return NavigDaemon.read_pid()
     except Exception:  # noqa: BLE001 — a probe must never block a launch
@@ -122,16 +123,47 @@ def spawn_detached(cmd: list[str]) -> subprocess.Popen:
 def supervisor_runs_the_gateway() -> int | None:
     """The supervisor's pid when it is running AND its config runs the gateway."""
     try:
-        from navig.daemon.entry import _load_config
+        from navig.daemon.entry import _as_bool, _load_config
         from navig.daemon.supervisor import NavigDaemon
 
         if not NavigDaemon.is_running():
             return None
-        if not _load_config().get("gateway", False):
+        if not _as_bool(_load_config().get("gateway", False), False):
             return None
         return NavigDaemon.read_pid()
     except Exception:  # noqa: BLE001
         return None
+
+
+def _service_provides(
+    *, bot: bool, gateway: bool, port: int | None, host: str | None
+) -> tuple[bool, str]:
+    """Would starting the installed service give the operator what they asked for?
+
+    Delegating is only a substitute when the service's daemon config runs every
+    requested component on the requested endpoint: a default ``service install`` runs
+    the bot with ``gateway: false``, and ``service start`` takes no ``--port``/``--host``
+    — so delegating anyway "started" something that silently lacked the gateway, the
+    bot, or the endpoint the operator typed. Returns ``(provides, reason_if_not)``; an
+    unreadable config answers no (the direct spawn still honours the request).
+    """
+    try:
+        from navig.daemon.entry import _GATEWAY_PORT, _as_bool, _as_int, _load_config
+
+        cfg = _load_config()
+    except Exception:  # noqa: BLE001 — a probe must never block a launch
+        return False, "its daemon config could not be read"
+    if bot and not _as_bool(cfg.get("telegram_bot", True), True):
+        return False, "it is configured without the bot (telegram_bot: false)"
+    if gateway:
+        if not _as_bool(cfg.get("gateway", False), False):
+            return False, "it is configured without a gateway (gateway: false)"
+        service_port = _as_int(cfg.get("gateway_port", _GATEWAY_PORT), _GATEWAY_PORT)
+        if port is not None and port != service_port:
+            return False, f"it serves the gateway on port {service_port}, not {port}"
+        if host is not None:
+            return False, "it cannot be started on an explicit --host"
+    return True, ""
 
 
 def start_gateway_in_background(*, port: int | None, host: str | None, ch: Any) -> str:
@@ -146,18 +178,15 @@ def start_gateway_in_background(*, port: int | None, host: str | None, ch: Any) 
         return "daemon-running"
 
     if service_is_installed():
-        try:
-            from navig.daemon.entry import _load_config
-
-            gateway_enabled = bool(_load_config().get("gateway", False))
-        except Exception:  # noqa: BLE001
-            gateway_enabled = False
-        if gateway_enabled:
+        provides, why_not = _service_provides(bot=False, gateway=True, port=port, host=host)
+        if provides:
             ch.info("Starting through the installed service — a living parent, autostart, a pid contract")
             from navig.commands.service import service_start
 
             service_start(foreground=False, logs=False)
             return "service"
+        if why_not:
+            ch.dim(f"  Not using the installed service: {why_not}")
 
     cmd = [sys.executable, "-m", "navig", "gateway", "start"]
     if port is not None:
@@ -186,13 +215,16 @@ def start_bot_in_background(*, gateway: bool, port: int | None, ch: Any) -> str:
         return "daemon-running"
 
     if service_is_installed():
-        ch.info(
-            "Starting through the installed service — a living parent, autostart, a pid contract"
-        )
-        from navig.commands.service import service_start
+        provides, why_not = _service_provides(bot=True, gateway=gateway, port=port, host=None)
+        if provides:
+            ch.info(
+                "Starting through the installed service — a living parent, autostart, a pid contract"
+            )
+            from navig.commands.service import service_start
 
-        service_start(foreground=False, logs=False)
-        return "service"
+            service_start(foreground=False, logs=False)
+            return "service"
+        ch.dim(f"  Not using the installed service: {why_not}")
 
     cmd = [sys.executable, "-m", "navig.daemon.telegram_worker"]
     if gateway:

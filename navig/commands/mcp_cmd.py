@@ -471,41 +471,59 @@ def mcp_search(
     search_mcp_cmd(query, {})
 
 
+def _merged_opts(ctx: typer.Context, *, dry_run: bool, **local: bool) -> dict:
+    """Local flags merged over the root callback's globals (``navig --dry-run mcp …``).
+
+    A local ``False`` never overrides a global ``True``: the global ``--dry-run`` /
+    ``--yes`` were silently dropped, so ``navig --dry-run mcp install x`` really ran
+    ``npm install -g`` and wrote the config.
+    """
+    base = dict(ctx.obj or {}) if isinstance(ctx.obj, dict) else {}
+    merged = {**base, "dry_run": bool(dry_run or base.get("dry_run"))}
+    for key, value in local.items():
+        merged[key] = bool(value or base.get(key))
+    return merged
+
+
 @mcp_app.command("install")
 def mcp_install(
+    ctx: typer.Context,
     name: str = typer.Argument(..., help="Server name from `navig mcp search`"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be installed"),
 ):
     """Install an MCP server from the directory."""
     from navig.commands.mcp import install_mcp_cmd
 
-    install_mcp_cmd(name, {"dry_run": dry_run})
+    install_mcp_cmd(name, _merged_opts(ctx, dry_run=dry_run))
 
 
 @mcp_app.command("enable")
 def mcp_enable(
+    ctx: typer.Context,
     name: str = typer.Argument(..., help="Configured server name"),
     dry_run: bool = typer.Option(False, "--dry-run"),
 ):
     """Enable a configured MCP server."""
     from navig.commands.mcp import enable_mcp_cmd
 
-    enable_mcp_cmd(name, {"dry_run": dry_run})
+    enable_mcp_cmd(name, _merged_opts(ctx, dry_run=dry_run))
 
 
 @mcp_app.command("disable")
 def mcp_disable(
+    ctx: typer.Context,
     name: str = typer.Argument(..., help="Configured server name"),
     dry_run: bool = typer.Option(False, "--dry-run"),
 ):
     """Disable a configured MCP server."""
     from navig.commands.mcp import disable_mcp_cmd
 
-    disable_mcp_cmd(name, {"dry_run": dry_run})
+    disable_mcp_cmd(name, _merged_opts(ctx, dry_run=dry_run))
 
 
 @mcp_app.command("remove")
 def mcp_remove(
+    ctx: typer.Context,
     name: str = typer.Argument(..., help="Configured server name"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt"),
     dry_run: bool = typer.Option(False, "--dry-run"),
@@ -515,4 +533,4 @@ def mcp_remove(
 
     # `yes` is honoured by uninstall_mcp_cmd — without exposing it there was no
     # way to remove a server non-interactively (scripts would hang on the prompt).
-    uninstall_mcp_cmd(name, {"dry_run": dry_run, "yes": yes})
+    uninstall_mcp_cmd(name, _merged_opts(ctx, dry_run=dry_run, yes=yes))

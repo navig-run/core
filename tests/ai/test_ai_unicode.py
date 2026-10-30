@@ -47,7 +47,7 @@ def test_ask_ai_handles_non_utf8_tasklist_output():
     )
 
     with (
-        patch("os.name", "nt"),
+        patch.object(ai_mod.sys, "platform", "win32"),
         patch("subprocess.run", return_value=fake_proc),
         patch.object(cfg_mod, "get_config_manager", return_value=fake_cfg),
         patch.object(ai_core, "AIAssistant", return_value=fake_assistant),
@@ -84,7 +84,7 @@ def test_ask_ai_non_utf8_tasklist_bytes_decoded_gracefully():
     fake_assistant.ask.return_value = "mocked answer"
 
     with (
-        patch("os.name", "nt"),
+        patch.object(ai_mod.sys, "platform", "win32"),
         patch("subprocess.run", return_value=fake_proc),
         patch.object(cfg_mod, "get_config_manager", return_value=fake_cfg),
         patch.object(ai_core, "AIAssistant", return_value=fake_assistant),

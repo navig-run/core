@@ -22,6 +22,7 @@ import typer
 
 from navig._daemon_defaults import _DAEMON_PORT, _GATEWAY_PORT
 from navig.console_helper import get_console
+from navig.platform import capabilities
 from navig.platform.paths import config_dir
 
 logger = logging.getLogger(__name__)
@@ -203,6 +204,58 @@ def _daemon_autostart() -> tuple[bool, str]:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+def _ran_from_the_launcher() -> bool:
+    """True when this very process was started through the ``navig`` launcher.
+
+    The program name, not the path: the shim is a symlink to the console script, so a
+    shell that could not resolve ``navig`` can still run the real thing by absolute
+    path, and ``sys.argv[0]`` then reads ``navig`` (``navig.exe`` on Windows). That
+    process proves the launcher is installed and runnable; only the convenience of a
+    bare command is missing.
+    """
+    name = Path(sys.argv[0] or "").name.lower()
+    return name.startswith("navig")
+
+
+def _shim_path_row(shim: Path) -> CheckResult:
+    """Report the launcher shim directory against this process's ``PATH``, honestly.
+
+    A managed install is healthy even when the shell driving ``doctor`` carries a
+    minimal ``PATH``: systemd units, ``ssh host 'cmd'`` and agent sessions never
+    read the login profile, so ``~/.local/bin`` is absent there while the install
+    itself is perfect. Warning in that case told the operator to "open a new
+    shell / re-run install" — advice that could not change anything, because the
+    next *login* shell already has the directory.
+
+    So the row is green whenever the launcher is runnable from here — resolved on
+    ``PATH``, or this process itself came through it — and a real warning only
+    when neither holds.
+    """
+    shim_dir = str(shim.parent)
+    if shim_dir in os.environ.get("PATH", "").split(os.pathsep):
+        return _check("shim dir on PATH", True, shim_dir)
+    resolved = shutil.which("navig")
+    if resolved:
+        return _check(
+            "shim dir on PATH",
+            True,
+            f"absent from this non-login shell's PATH; the launcher resolves at {resolved}",
+        )
+    if _ran_from_the_launcher():
+        return _check(
+            "shim dir on PATH",
+            True,
+            f"absent from this non-login shell's PATH; this run came through the launcher, "
+            f"so add {shim_dir} to PATH only to use the bare command here",
+        )
+    return _check(
+        "shim dir on PATH",
+        False,
+        f"the launcher does not resolve — add {shim_dir} to PATH or re-run the installer",
+        warn=True,
+    )
+
+
 def check_runtime() -> list[tuple[str, bool, str]]:
     """Check the isolated uv-managed runtime: uv, venv, shim/PATH, daemon, skills.
 
@@ -211,10 +264,9 @@ def check_runtime() -> list[tuple[str, bool, str]]:
     """
     results: list[tuple[str, bool, str]] = []
     rt = _runtime_dir()
-    is_win = os.name == "nt"
-    venv_py = (
-        rt / "venv" / ("Scripts" if is_win else "bin") / ("python.exe" if is_win else "python")
-    )
+    # The runtime's own layout, spelled once by the platform seam: one truth for the
+    # venv directory name and the executable suffix, instead of three os.name guesses.
+    venv_py = capabilities.python_in_venv(rt / "venv")
 
     try:
         in_runtime = str(Path(sys.executable).resolve()).startswith(str(rt.resolve()))
@@ -229,7 +281,7 @@ def check_runtime() -> list[tuple[str, bool, str]]:
             )
         )
     else:
-        uv_exe = rt / ("uv.exe" if is_win else "uv")
+        uv_exe = rt / ("uv" + capabilities.executable_suffix())
         results.append(
             _check(
                 "uv engine",
@@ -247,21 +299,15 @@ def check_runtime() -> list[tuple[str, bool, str]]:
             )
         )
         results.append(_check("running from runtime", in_runtime, sys.executable, warn=True))
-        shim = Path.home() / ".local" / "bin" / ("navig.cmd" if is_win else "navig")
+        # The installer's convention, answered by the platform seam (`navig.cmd` exists
+        # because CreateProcess appends only `.exe` while searching).
+        shim = capabilities.user_bin_dir() / capabilities.launcher_name()
         results.append(
             _check(
                 "launcher shim", shim.exists(), str(shim) if shim.exists() else "missing", warn=True
             )
         )
-        on_path = str(shim.parent) in os.environ.get("PATH", "").split(os.pathsep)
-        results.append(
-            _check(
-                "shim dir on PATH",
-                on_path,
-                "" if on_path else "open a new shell / re-run install",
-                warn=True,
-            )
-        )
+        results.append(_shim_path_row(shim))
         registered, kind = _daemon_autostart()
         results.append(
             _check(
@@ -1387,7 +1433,7 @@ def _bindability_row(label: str, port: int) -> CheckResult:
     except OSError as exc:
         hint = (
             " — check `netsh interface ipv4 show excludedportrange protocol=tcp`"
-            if os.name == "nt"
+            if sys.platform == "win32"
             else ""
         )
         # NOT ok: nothing is listening AND nothing can bind, so this port is unusable.
@@ -1460,7 +1506,7 @@ def _user_path_from_registry() -> str | None:
     value KIND in order to write it back, and must fail loudly rather than quietly do
     nothing. Same key, different obligations.
     """
-    if os.name != "nt":
+    if sys.platform != "win32":
         return None
     try:
         import winreg
@@ -1478,7 +1524,7 @@ def check_path_health() -> list[tuple[str, bool, str]]:
     Windows only: the 8191 ceiling is a cmd.exe property, so on POSIX this contributes
     no row rather than a green one about a limit that does not exist there.
     """
-    if os.name != "nt":
+    if sys.platform != "win32":
         return []
 
     raw = os.environ.get("PATH")
@@ -1587,11 +1633,7 @@ def check_sockets(target_port: int | None = None) -> list[tuple[str, bool, str]]
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(0.5)
                 if s.connect_ex(("127.0.0.1", _DAEMON_PORT)) == 0:
-                    results.append(
-                        _check(
-                            "Daemon Port", True, f"Port {_DAEMON_PORT} is bound (daemon running)"
-                        )
-                    )
+                    results.append(_daemon_port_owner_row(_DAEMON_PORT, _gateway_owner(_DAEMON_PORT)))
                 else:
                     results.append(_bindability_row("Daemon Port", _DAEMON_PORT))
         except Exception as e:  # noqa: BLE001
@@ -1742,6 +1784,31 @@ def _owner_label(cmdline: str) -> str:
         return module or "unknown"
     first = parts[0] if parts else "unknown"
     return first.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
+
+
+def _daemon_port_owner_row(port: int, cmdline: str | None) -> CheckResult:
+    """Who listens on the daemon port — a bound port alone is not "daemon running".
+
+    Any unrelated process on ``_DAEMON_PORT`` also answers ``connect_ex`` with 0, and that
+    listener is exactly what keeps NAVIG's IPC/MCP daemon from binding — reporting it as
+    a healthy daemon hid the collision this row exists to expose.
+    """
+    if cmdline is None:
+        return _check(
+            "Daemon Port",
+            False,
+            f"Port {port} is bound but the owning process cannot be identified — "
+            f"identify it with `netstat -ano | findstr :{port}`",
+            warn=True,
+        )
+    label = _owner_label(cmdline)
+    if label.lower().startswith("navig"):
+        return _check("Daemon Port", True, f"Port {port} is bound by {label} (daemon running)")
+    return _check(
+        "Daemon Port",
+        False,
+        f"Port {port} is held by {label}, not NAVIG — the IPC/MCP daemon cannot bind it",
+    )
 
 
 def _is_gateway_cmdline(cmdline: str) -> bool:
@@ -2344,8 +2411,9 @@ def check_other_interpreters() -> list[tuple[str, bool, str]]:
         fixes = []
         if a.fix_paths:
             fixes.append(editable_install_command(a.fix_paths, executable=a.executable))
-        if a.dead:
-            fixes.append(uninstall_command([d for d, _ in a.dead], executable=a.executable))
+        retired = [d for d, _ in a.dead if d not in a.reinstall]
+        if retired:
+            fixes.append(uninstall_command(retired, executable=a.executable))
         fix = " && ".join(fixes)
         problems = []
         if a.dead:
@@ -3272,8 +3340,10 @@ def check_pending_approvals() -> list[tuple[str, bool, str]]:
         return []
 
     try:
-        pending = journal.list_pending()
-        resumable = resume.list_resumable()
+        # strict: the default readers degrade an unreadable store to {} — no row, the
+        # reassuring answer — so a real I/O failure would never reach the except below.
+        pending = journal.list_pending(strict=True)
+        resumable = resume.list_resumable(strict=True)
     except Exception as exc:  # noqa: BLE001 — doctor must never crash on a check
         # `return []` renders as NO ROW, which the operator reads as "nothing waiting" —
         # the reassuring answer to an unanswerable question, and the same shape this
@@ -3662,30 +3732,22 @@ def check_ledger() -> list[tuple[str, bool, str]]:
     operation that was interrupted; ``navig ledger reap`` records it honestly as
     ``interrupted``. Read-only here — doctor never mutates the ledger. Returns
     [] (section hidden) when there is nothing to say.
+
+    The counts come from ``OperationRecorder.in_flight_summary()`` — the same rule
+    ``reap`` applies — so a dead marker whose line already exists (the completion
+    raced the marker delete) is not reported as a missing operation.
     """
     try:
-        from navig import operation_inflight as _inflight
         from navig.operation_recorder import get_operation_recorder
 
-        markers = get_operation_recorder().iter_inflight()
+        running, interrupted = get_operation_recorder().in_flight_summary()
     except Exception as exc:  # noqa: BLE001 — a health check must never crash the doctor
         # Hiding the section reads as "no interrupted operations", which is the answer this
         # check exists to stop taking on faith.
         return [_check("Ledger", False, f"COULD NOT VERIFY ({exc})", warn=True)]
 
-    if not markers:
+    if not running and not interrupted:
         return []
-
-    running = interrupted = 0
-    for marker in markers:
-        try:
-            alive = _inflight.pid_is_alive(marker.pid, marker.create_time)
-        except Exception:  # noqa: BLE001
-            alive = True  # indeterminate → assume alive, never over-report interrupted
-        if alive:
-            running += 1
-        else:
-            interrupted += 1
 
     results: list[tuple[str, bool, str]] = []
     if interrupted:
@@ -3700,6 +3762,10 @@ def check_ledger() -> list[tuple[str, bool, str]]:
     if running:
         results.append(_check("In-flight ops", True, f"{running} operation(s) currently running"))
     return results
+
+
+_ANCHOR_EXE_NAMES = ("NAVIG Anchor.exe", "navig-anchor.exe")
+_ANCHOR_EXE_NAMES_LOWER = frozenset(n.lower() for n in _ANCHOR_EXE_NAMES)
 
 
 def check_desktop_apps() -> list[tuple[str, bool, str]]:
@@ -3726,9 +3792,12 @@ def check_desktop_apps() -> list[tuple[str, bool, str]]:
     try:
         import os as _os
 
+        # The bundled installer ships the productName binary ("NAVIG Anchor.exe");
+        # "navig-anchor.exe" is the cargo name, kept for dev and older builds.
         candidates = [
-            Path(_os.environ.get("LOCALAPPDATA", "")) / "NAVIG Anchor" / "navig-anchor.exe",
-            Path(_os.environ.get("ProgramFiles", "")) / "NAVIG Anchor" / "navig-anchor.exe",
+            Path(_os.environ.get(env, "")) / "NAVIG Anchor" / name
+            for env in ("LOCALAPPDATA", "ProgramFiles")
+            for name in _ANCHOR_EXE_NAMES
         ]
         installed = next((p for p in candidates if p.is_file()), None)
         if installed is None:
@@ -3753,7 +3822,7 @@ def check_desktop_apps() -> list[tuple[str, bool, str]]:
 
             exes: list[str | None] = []
             for proc in psutil.process_iter(["name", "exe"]):
-                if (proc.info.get("name") or "").lower() != "navig-anchor.exe":
+                if (proc.info.get("name") or "").lower() not in _ANCHOR_EXE_NAMES_LOWER:
                     continue
                 exes.append(proc.info.get("exe") or None)
             results.append(_judge_anchor_running(exes, installed))
@@ -4265,10 +4334,16 @@ def _git_head(src_dir: Path) -> tuple[str, str] | None:
 
     Uses ``git rev-parse`` (which walks UP to the repo root), so it works even though this
     monorepo keeps ``.git`` at the root, not inside the editable ``core/`` src dir.
+    A repository that does not track ``<src_dir>/navig`` (a wheel in a repo-local
+    ``.venv``) is not NAVIG's checkout and also yields None.
     """
     import subprocess
 
     try:
+        from navig.daemon.supervisor import _tracks_navig_source
+
+        if not _tracks_navig_source(src_dir):
+            return None
         full = subprocess.run(
             ["git", "-C", str(src_dir), "rev-parse", "HEAD"],
             capture_output=True,
@@ -4344,6 +4419,9 @@ def check_daemon_log_location() -> list[tuple[str, bool, str]]:
         return [_check("Daemon log", False, f"COULD NOT VERIFY ({exc})", warn=True)]
 
     log_file = state.get("log_file") if isinstance(state, dict) else None
+    unknown_why = state.get("log_file_unknown") if isinstance(state, dict) else None
+    if not log_file and unknown_why:
+        return [_check("Daemon log", False, f"location unknown — {unknown_why}", warn=True)]
     if not log_file:
         return [
             _check(
@@ -5365,7 +5443,7 @@ def clean_path_cmd(
 
     from navig import console_helper as ch
 
-    if os.name != "nt":
+    if sys.platform != "win32":
         # The 8191 ceiling is a cmd.exe property. Say so plainly rather than pruning a
         # POSIX PATH for a problem it does not have.
         msg = "clean-path is Windows-only (the 8191-char ceiling is a cmd.exe property)"
@@ -5460,6 +5538,163 @@ def clean_path_cmd(
     _broadcast_environment_change()
     ch.success(f"User PATH rewritten — freed {freed} chars. Backup: {backup}")
     ch.info("open a NEW terminal to pick it up; restore by pasting the backup back if needed")
+
+
+@doctor_app.command("remote-dev")
+def remote_dev_cmd(
+    json_output: bool = typer.Option(False, "--json", help="JSON output"),
+    editor_url: str = typer.Option(
+        "", "--editor-url", help="Remote editor URL to probe (default: the configured brain entry)"
+    ),
+    no_remote_probe: bool = typer.Option(
+        False,
+        "--no-remote-probe",
+        help="Skip the SSH build probe (offline, or when the remote host must not be touched)",
+    ),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="List every requirement behind each capability"
+    ),
+):
+    """Report whether NAVIG can develop, test, build and publish with this workstation off.
+
+    Six capabilities are reported independently — remote editor, coding agents, remote CI,
+    remote build, release and the composite workstation-off claim — because a host can be
+    ready for remote editing while being nowhere near ready to publish, and a single green
+    light hides exactly that difference.
+
+    Three states, and the middle one matters most:
+
+    \b
+      READY       every requirement was verified to hold
+      BLOCKED     a requirement was verified to fail
+      UNVERIFIED  we could not look — never counted as success
+
+    Read-only by design: nothing is written, installed, published or restarted, so it is
+    safe to run against a live production host at any moment. Exit code is 1 unless the
+    composite flag is READY, which makes it usable as a gate in CI or a monitor.
+    """
+    import json as _json
+
+    from navig import console_helper as ch
+    from navig.readiness import remote_dev as rd
+
+    get_config_value = _remote_dev_config_value
+    configured_url = editor_url or str(
+        get_config_value("remote_dev.editor_url", rd.DEFAULT_EDITOR_URL) or rd.DEFAULT_EDITOR_URL
+    )
+    configured_repo = str(
+        get_config_value("remote_dev.remote_repo_path", rd.DEFAULT_REMOTE_REPO_PATH)
+        or rd.DEFAULT_REMOTE_REPO_PATH
+    )
+    alias = get_config_value("remote_dev.ssh_alias", "outpost")
+    # An optional read of the brain's registry: without it this command can only see
+    # the local store, which on a client machine is not the fleet.
+    brain_url = str(get_config_value("remote_dev.brain_url", "") or "")
+    gateway_token = str(get_config_value("gateway.auth.token", "") or "")
+
+    repo_root = Path(__file__).resolve().parents[3]
+    capabilities = rd.assess(
+        repo_root=repo_root,
+        editor_url=configured_url,
+        remote_repo_path=configured_repo,
+        ssh_alias=str(alias) if alias else None,
+        check_remote_build=not no_remote_probe,
+        brain_url=brain_url,
+        gateway_token=gateway_token,
+    )
+    composite = capabilities[-1]
+
+    if json_output:
+        print(
+            _json.dumps(
+                {
+                    "editor_url": configured_url,
+                    "remote_repo_path": configured_repo,
+                    "capabilities": [c.as_dict() for c in capabilities],
+                    "neuron_off_ready": composite.readiness is rd.Readiness.READY,
+                },
+                indent=2,
+            )
+        )
+        raise typer.Exit(0 if composite.readiness is rd.Readiness.READY else 1)
+
+    _COLOUR = {
+        rd.Readiness.READY: "green",
+        rd.Readiness.BLOCKED: "red",
+        rd.Readiness.UNVERIFIED: "yellow",
+    }
+    _GLYPH = {
+        rd.Readiness.READY: "●",
+        rd.Readiness.BLOCKED: "✗",
+        rd.Readiness.UNVERIFIED: "○",
+    }
+
+    table = ch.Table(box=None, show_header=True, padding=(0, 2))
+    table.add_column("Capability", no_wrap=True)
+    table.add_column("Readiness", no_wrap=True)
+    table.add_column("Evidence")  # the one wrappable column
+
+    for capability in capabilities:
+        colour = _COLOUR[capability.readiness]
+        table.add_row(
+            capability.key,
+            f"[{colour}]{_GLYPH[capability.readiness]} {capability.readiness.value}[/{colour}]",
+            _plain_text(capability.headline()),
+        )
+    ch.console.print(table)
+
+    if verbose:
+        for capability in capabilities:
+            detail = ch.Table(
+                box=None, show_header=True, padding=(0, 2), title=capability.label
+            )
+            detail.add_column("Requirement", no_wrap=True)
+            detail.add_column("Result", no_wrap=True)
+            detail.add_column("Evidence")
+            for requirement in capability.requirements:
+                mark = {
+                    rd.Status.PASS: "[green]pass[/green]",
+                    rd.Status.FAIL: "[red]fail[/red]",
+                    rd.Status.UNKNOWN: "[yellow]unknown[/yellow]",
+                }[requirement.status]
+                detail.add_row(requirement.name, mark, _plain_text(requirement.evidence))
+            ch.console.print(detail)
+
+    next_steps = [r for c in capabilities for r in c.requirements if r.next_step]
+    if next_steps:
+        ch.panel(
+            "\n".join(f"· {r.next_step}" for r in next_steps[:6]),
+            title="Next steps",
+            style="dim",
+            border_style="dim",
+        )
+
+    if composite.readiness is rd.Readiness.READY:
+        ch.success("NEURON_OFF_READY — every capability was verified without this workstation")
+        raise typer.Exit(0)
+
+    ch.warning(
+        "not ready with the workstation off: "
+        + ", ".join(c.key for c in capabilities[:-1] if c.readiness is not rd.Readiness.READY)
+    )
+    raise typer.Exit(1)
+
+
+def _remote_dev_config_value(key: str, default: Any) -> Any:
+    """Read one config value without ever failing the diagnostic.
+
+    A missing or unreadable config is a default, not an error: this command exists to
+    report what it can see, and refusing to run because a key is absent would be the same
+    "could not look therefore broken" mistake in the other direction. A fresh
+    ConfigManager is used — never the process-wide singleton — so a long-lived daemon's
+    cached config cannot leak into a one-shot diagnostic.
+    """
+    try:
+        from navig.config import ConfigManager
+
+        return ConfigManager().get(key, default)
+    except Exception:  # noqa: BLE001 - a diagnostic must not die on a config read
+        return default
 
 
 def _broadcast_environment_change() -> None:

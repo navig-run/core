@@ -180,7 +180,13 @@ def load(space_root: Path) -> RoutesConfig | None:
         d = raw["defaults"]
         config.defaults = RoutesDefaults(
             sla_hours=int(d.get("sla_hours", 48)),
-            unrouted_fallback=str(d.get("unrouted_fallback", "") or fallback_agent),
+            # Present-but-empty is a deliberate "no fallback"; only an absent (or null)
+            # key falls through to the inferred one.
+            unrouted_fallback=(
+                str(d["unrouted_fallback"])
+                if d.get("unrouted_fallback") is not None
+                else fallback_agent
+            ),
         )
     elif fallback_agent:
         config.defaults = RoutesDefaults(unrouted_fallback=fallback_agent)
@@ -249,13 +255,16 @@ def _channel_keywords(ch: dict[str, Any]) -> list[str]:
     """Match terms for a channel, across every spelling seen in the wild.
 
     Handles `triggers: [{keyword: [...]}, {formation: ...}]` (only the `keyword`
-    entries are terms) and `pattern: "a|b|c"` (a regex alternation, not a list).
+    entries are terms), the mapping form `triggers: {keyword: [...]}` (one trigger),
+    and `pattern: "a|b|c"` (a regex alternation, not a list).
     """
     words: list[str] = []
     words.extend(_coerce_list(ch.get("keywords")))
     words.extend(_coerce_list(ch.get("tags")))
 
     triggers = ch.get("triggers")
+    if isinstance(triggers, dict):
+        triggers = [triggers]
     if isinstance(triggers, list):
         for trig in triggers:
             if isinstance(trig, dict):

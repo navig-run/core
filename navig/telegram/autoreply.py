@@ -375,8 +375,48 @@ async def maybe_autoreply(channel: Any, msg: dict, *, is_owner: bool, owner_id: 
     bcid = msg.get("business_connection_id")
     # dict(active): snapshot the persona so a concurrent "role off" can't mutate it
     # out from under the running task.
-    _spawn(_run_autoreply(channel, chat_id, bcid, msg, dict(active), owner_id))
+    job = (bcid, msg, dict(active))
+    if chat_id in _chat_jobs:
+        # A reply for this chat is already running: a burst coalesces into ONE more
+        # reply to the latest message (the context carries the rest), never one LLM
+        # call per message.
+        _chat_jobs[chat_id] = job
+        return True
+    _chat_jobs[chat_id] = None
+    _spawn(_run_chat_autoreplies(channel, chat_id, job, owner_id))
     return True
+
+
+#: Bounds detached auto-reply work. A chat has at most one reply in flight plus one
+#: coalesced pending job (``_chat_jobs[chat_id]``: None = running, nothing pending);
+#: across chats at most ``_MAX_CONCURRENT_REPLIES`` read media / call the model at once.
+_MAX_CONCURRENT_REPLIES = 4
+_chat_jobs: dict[Any, tuple | None] = {}
+_reply_slots: dict[Any, asyncio.Semaphore] = {}
+
+
+def _slots() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    sem = _reply_slots.get(loop)
+    if sem is None:
+        _reply_slots.clear()  # a semaphore is bound to one loop; drop stale ones
+        sem = _reply_slots[loop] = asyncio.Semaphore(_MAX_CONCURRENT_REPLIES)
+    return sem
+
+
+async def _run_chat_autoreplies(
+    channel: Any, chat_id: int, job: tuple, owner_id: int | None
+) -> None:
+    """Run this chat's reply, then the one coalesced job that arrived meanwhile."""
+    try:
+        while job is not None:
+            bcid, msg, active = job
+            async with _slots():
+                await _run_autoreply(channel, chat_id, bcid, msg, active, owner_id)
+            job = _chat_jobs.get(chat_id)
+            _chat_jobs[chat_id] = None
+    finally:
+        _chat_jobs.pop(chat_id, None)
 
 
 async def _run_autoreply(
@@ -394,7 +434,8 @@ async def _run_autoreply(
             return
         context = _recent_context(chat_id, owner_id)
         reply = await _generate(
-            active.get("role", "default"), active.get("lang", ""), context, target=incoming
+            active.get("role", "default"), active.get("lang", ""), context, target=incoming,
+            lang_words=_language_words(msg, incoming),
         )
         if not reply:
             return
@@ -478,6 +519,12 @@ async def maybe_role_reply(channel: Any, msg: dict, *, is_owner: bool, owner_id:
 
     author = (target.get("from") or {}).get("id")
     own = owner_id is not None and author == owner_id
+    if not own:
+        # A message this bot sent AS the owner can come back with `from` = the bot;
+        # it is still the owner's own message, not one of theirs to answer.
+        from navig.telegram.business import _is_own_echo  # noqa: PLC0415
+
+        own = _is_own_echo(channel, target)
     if own and _has_media(target) and not (target.get("caption") or "").strip():
         # A photo/video of yours with no caption: there are no words to say in
         # another voice, and replacing the media with text would destroy it.
@@ -572,9 +619,12 @@ async def _while_typing(channel: Any, chat_id: Any, bcid: str | None, coro: Any)
         return await coro
     finally:
         stop.set()
+        # Cancelled, not awaited to completion: a tick stuck in `sendChatAction` would
+        # otherwise hold the deadline's give-up for as long as Telegram's own timeout.
+        ticker.cancel()
         try:
             await ticker
-        except Exception:  # noqa: BLE001
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
             pass
 
 
@@ -599,15 +649,30 @@ async def _within_deadline(
     kind: str, role: str, channel: Any, chat_id: Any, bcid: str | None,
     placeholder: Any, owner_id: int | None, note: str, work: Any, state: dict,
 ) -> None:
-    """Run *work*; past `_ROLE_DEADLINE_S` give up — unless the answer was already
-    being applied (``state["applying"]``), when removing the placeholder could
-    remove the answer itself."""
+    """Run *work*; past `_ROLE_DEADLINE_S` give up.
+
+    Once the answer is being applied (``state["applying"]``) the timeout may have
+    cancelled a Telegram edit/send mid-flight, so the plain give-up note would lie.
+    The placeholder is still removed unless it may now BE the answer
+    (``state["placeholder_maybe_answer"]``) or is already gone, and the owner is
+    told to check the chat unless the answer was confirmed (``state["applied"]``).
+    """
     try:
         await asyncio.wait_for(work, timeout=_ROLE_DEADLINE_S)
     except asyncio.TimeoutError:
         _outcome(kind, role, chat_id, f"timed out after {_ROLE_DEADLINE_S:.0f}s")
         if not state.get("applying"):
             await _give_up(channel, chat_id, bcid, placeholder, owner_id, note)
+            return
+        if (placeholder is not None and not state.get("placeholder_gone")
+                and not state.get("placeholder_maybe_answer")):
+            await _delete(channel, bcid, chat_id, placeholder)
+        if not state.get("applied"):
+            await _notify_owner(
+                channel, owner_id,
+                f"⚠️ <b>{role}</b> timed out while applying its answer — check the chat, "
+                "it may not have gone through.",
+            )
 
 
 async def _run_role_rewrite(
@@ -662,25 +727,58 @@ async def _role_rewrite(
             return
         state["applying"] = True
         mid = target.get("message_id")
+        original_kept = False
         if (target.get("text") or "").strip():
             done = await _edit_text(channel, chat_id, bcid, mid, rewritten)
             if not done:
-                parent = (target.get("reply_to_message") or {}).get("message_id")
+                parent = _parent_of(chat_id, target)
                 done = await _send(channel, chat_id, bcid, rewritten, reply_to=parent)
                 if done:
-                    await _delete(channel, bcid, chat_id, mid)
+                    # A connection that may reply but not delete leaves BOTH up.
+                    original_kept = not await _delete(channel, bcid, chat_id, mid)
         else:
             done = await _edit_caption(channel, chat_id, bcid, mid, rewritten)
+        state["applied"] = bool(done)
         if placeholder is not None:
             await _delete(channel, bcid, chat_id, placeholder)
+            state["placeholder_gone"] = True
         if not done:
             _outcome("rewrite", role, chat_id, "edit and send refused")
             await _notify_owner(channel, owner_id,
                                 f"⚠️ The <b>{role}</b> version could not be applied — your message was left as it was.")
             return
+        if original_kept:
+            _outcome("rewrite", role, chat_id, "sent, original could not be removed")
+            await _notify_owner(channel, owner_id,
+                                f"⚠️ The <b>{role}</b> version was sent, but your original could not "
+                                "be removed — both are in the chat now.")
+            return
         _outcome("rewrite", role, chat_id, "rewritten in place")
     except Exception:  # noqa: BLE001
         logger.warning("role rewrite background task failed", exc_info=True)
+
+
+def _parent_of(chat_id: int, target: dict) -> int | None:
+    """The message *target* itself answered, so a resend keeps its thread.
+
+    Telegram nests one level only: the trigger's ``reply_to_message`` (the target)
+    never carries the target's own ``reply_to_message``. The catalog recorded it
+    when the target first arrived.
+    """
+    nested = (target.get("reply_to_message") or {}).get("message_id")
+    if nested is not None:
+        return nested
+    mid = target.get("message_id")
+    if chat_id is None or mid is None:
+        return None
+    try:
+        from navig.store.telegram_catalog import TelegramCatalogStore  # noqa: PLC0415
+
+        row = TelegramCatalogStore().get_message_by_ref(chat_id, mid)
+    except Exception:  # noqa: BLE001 — unthreaded beats not sent
+        logger.debug("autoreply: parent lookup failed", exc_info=True)
+        return None
+    return (row or {}).get("reply_to")
 
 
 async def _run_role_reply(
@@ -717,7 +815,9 @@ async def _role_reply(
             await _edit_text(channel, chat_id, bcid, placeholder, _WRITING)
         context = _recent_context(chat_id, owner_id)
         reply = await _while_typing(
-            channel, chat_id, bcid, _generate(role, lang, context, target=incoming),
+            channel, chat_id, bcid,
+            _generate(role, lang, context, target=incoming,
+                      lang_words=_language_words(target, incoming)),
         )
         if not reply:
             _outcome("role reply", role, chat_id, "generation empty")
@@ -725,10 +825,18 @@ async def _role_reply(
                            f"⚠️ Couldn't write a reply as <b>{role}</b> — nothing was sent.")
             return
         state["applying"] = True
-        if placeholder is not None and await _edit_text(channel, chat_id, bcid, placeholder, reply):
-            _outcome("role reply", role, chat_id, "answered in place")
-            return
+        if placeholder is not None:
+            # In flight, the edit may land even if it is cancelled: the placeholder
+            # might already BE the answer, so the deadline must not delete it.
+            state["placeholder_maybe_answer"] = True
+            edited = await _edit_text(channel, chat_id, bcid, placeholder, reply)
+            state["placeholder_maybe_answer"] = False
+            if edited:
+                state["applied"] = state["placeholder_gone"] = True
+                _outcome("role reply", role, chat_id, "answered in place")
+                return
         if await _send(channel, chat_id, bcid, reply, reply_to=reply_to):
+            state["applied"] = True
             if placeholder is not None:
                 await _delete(channel, bcid, chat_id, placeholder)
             _outcome("role reply", role, chat_id, "sent")
@@ -800,26 +908,47 @@ def _recent_context(chat_id: int, owner_id: int | None, n: int = _CONTEXT_N) -> 
 #: Characters of the other person's writing shown to the model as "their language".
 _LANG_SAMPLE_CHARS = 160
 
+#: The parts of a media description that are someone's own words — a transcript or
+#: text read off the image — as `understand_message_media` labels them.
+_MEDIA_WORDS_RE = re.compile(
+    r"(?:saying|said in it|text in it|text on screen):\s*(.+?)(?=;\s|\]$|$)", re.S,
+)
 
-def _language_sample(target: str, context: list[tuple[str, str]], rewrite: bool) -> str:
+
+def _language_words(msg: dict, as_text: str) -> str:
+    """The words in *msg* that carry a language: its text or caption, else what was
+    said or written in its media. "" for a captionless photo — its description is
+    NAVIG's English, which must not decide the language of the reply."""
+    words = (msg.get("text") or msg.get("caption") or "").strip()
+    if words:
+        return words
+    return " ".join(m.group(1).strip() for m in _MEDIA_WORDS_RE.finditer(as_text or ""))
+
+
+def _language_sample(
+    target: str, context: list[tuple[str, str]], rewrite: bool, words: str | None = None,
+) -> str:
     """Text whose language the reply must match.
 
     A rewrite keeps the owner's own message's language. A reply follows how THEY
     write across the conversation, ending with the message being answered: keyed on
     that message alone, a French chat's one-word "punk" got an English answer.
+    *words*, when given, is the part of *target* a person wrote or said; a target
+    with none (a captionless photo) adds nothing to the sample.
     """
+    own = target if words is None else words
     if rewrite:
-        text = target
+        text = own or target
     else:
         theirs = [t for who, t in context if who == "Them" and t]
-        text = " ".join([*theirs[-4:], target])
+        text = " ".join([*theirs[-4:], own])
     flat = " ".join(text.split())
     return flat[-_LANG_SAMPLE_CHARS:]
 
 
 async def _generate(
     role: str, lang: str, context: list[tuple[str, str]], *, target: str | None = None,
-    rewrite: bool = False,
+    rewrite: bool = False, lang_words: str | None = None,
 ) -> str:
     # A name that resolves to nothing keeps the old behaviour — pro mode has always
     # accepted any word as a style hint. Only the per-message trigger is strict.
@@ -841,7 +970,7 @@ async def _generate(
         )
     else:
         lang_clause = " Reply in the same language the other person is using."
-    # The guardrail floor comes FIRST, and deliberately the MINIMAL one.
+    # The guardrail floor comes FIRST, and deliberately a one-line one.
     #
     # This is the only surface in the tree that tells the model to speak as a HUMAN
     # BEING rather than as NAVIG, and it writes to THIRD PARTIES — the person messaging
@@ -849,16 +978,17 @@ async def _generate(
     # from `telegram.business.autoreply.roles`, so it is exactly the "identity that can be written by a
     # user" the floor exists to survive; it goes after the floor, never before it.
     #
-    # Minimal, not the full block: the minimal floor protects the owner ("never fabricate
-    # a path, command, URL or capability", "keep the operator's private data private",
-    # "you are not a doctor") WITHOUT requiring AI disclosure, so it does not contradict
-    # this feature's stated purpose. The full block's preamble ("These rules come from
+    # The impersonation floor, not the full block: it protects the owner ("never
+    # fabricate a path, command, URL or capability", "keep the operator's private data
+    # private") WITHOUT requiring AI disclosure, so it does not contradict this
+    # feature's stated purpose. The full block's preamble ("These rules come from
     # NAVIG itself…") would both leak the product name into a human-voiced reply and
-    # collide with the no-disclosure instruction.
-    from navig.agent.conv.guardrails import guardrail_floor_minimal  # noqa: PLC0415
+    # collide with the no-disclosure instruction. Not the minimal floor either: its
+    # "you are not a doctor", spoken AS an owner who is one, denies their credentials.
+    from navig.agent.conv.guardrails import guardrail_floor_impersonation  # noqa: PLC0415
 
     system = (
-        f"{guardrail_floor_minimal()}\n\n"
+        f"{guardrail_floor_impersonation()}\n\n"
         "You are replying on the owner's personal Telegram Business account, AS the owner, "
         "to the person messaging them. Never reveal that you are an AI or an assistant. "
         + persona + lang_clause +
@@ -870,7 +1000,11 @@ async def _generate(
         "Never invent facts — no prices, dates, availability, deadlines or promises "
         "that are not in the conversation; when the answer needs one you do not have, "
         "say plainly how they can get it. "
-        "Output ONLY the reply text — no quotes, no labels, no preamble."
+        # Only the WHOLE reply is kept out of quotes: a persona may quote inside it
+        # (Tyler closes on an aphorism "in quotes"), and a bare "no quotes" told the
+        # model to drop it.
+        "Output ONLY the reply text — do not wrap the whole reply in quotes; no labels, "
+        "no preamble."
     )
     convo = "\n".join(f"{who}: {t}" for who, t in context[-_CONTEXT_N:]) or "(no prior messages)"
     if target and rewrite:
@@ -897,11 +1031,14 @@ async def _generate(
         )
     else:
         user = f"Conversation so far:\n{convo}\n\nWrite your next reply as the owner:"
-    if target and not lang:
+    sample = _language_sample(target, context, rewrite, lang_words) if target and not lang else ""
+    if sample:
         # LAST, where even a small model obeys it. Stated only in the system prompt,
         # a local 7B model answered a Russian message in English after a long
-        # English persona text — the most recent language it had read.
-        user += f"\n(Write it in the same language as this: «{_language_sample(target, context, rewrite)}»)"
+        # English persona text — the most recent language it had read. Nothing to
+        # sample (a captionless photo, no chat yet) leaves it to the system prompt's
+        # "use the language of the conversation".
+        user += f"\n(Write it in the same language as this: «{sample}»)"
     try:
         from navig.llm.generate import llm_generate
 
@@ -1022,24 +1159,28 @@ async def _send(
         return False
 
 
-async def _delete(channel: Any, bcid: str | None, chat_id: int | None, message_id: int | None) -> None:
+async def _delete(channel: Any, bcid: str | None, chat_id: int | None, message_id: int | None) -> bool:
+    """True only when Telegram confirmed the delete — `_api_call` refuses with None."""
     if message_id is None:
-        return
+        return False
     try:
         if bcid:
             from navig.telegram.deletions import note_own_deletion  # noqa: PLC0415
 
-            note_own_deletion(bcid, [message_id])  # our trigger — keep it out of the digest
+            note_own_deletion(bcid, [message_id], chat_id=chat_id)  # our trigger — keep it out of the digest
             # In a business chat, deletes go through deleteBusinessMessages —
             # deleteMessage ignores business_connection_id and fails "not found".
-            await channel._api_call(
+            return bool(await channel._api_call(
                 "deleteBusinessMessages",
                 {"business_connection_id": bcid, "message_ids": [message_id]},
-            )
-        elif chat_id is not None:
-            await channel._api_call("deleteMessage", {"chat_id": chat_id, "message_id": message_id})
+            ))
+        if chat_id is not None:
+            return bool(await channel._api_call(
+                "deleteMessage", {"chat_id": chat_id, "message_id": message_id},
+            ))
     except Exception:  # noqa: BLE001
-        pass
+        logger.debug("autoreply delete failed", exc_info=True)
+    return False
 
 
 async def _notify_owner(channel: Any, owner_id: int | None, text: str) -> None:

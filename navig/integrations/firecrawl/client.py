@@ -159,6 +159,9 @@ def get_firecrawl_client() -> FirecrawlClient:
         env_vars=("FIRECRAWL_API_KEY",),
         vault_labels=(
             "FIRECRAWL_API_KEY",
+            # The bare provider name is what `navig vault add firecrawl` stores on the
+            # default profile — the very command the error below tells the operator to run.
+            "firecrawl",
             "firecrawl/api_key",
             "firecrawl/api-key",
             "firecrawl_api_key",

@@ -220,3 +220,12 @@ def test_load_for_update_REFUSES_a_non_mapping(tmp_path):
     p.write_text("- a\n- b\n", encoding="utf-8")
     with pytest.raises(yaml_io.ConfigReadError):
         yaml_io.load_yaml_for_update(p)
+
+
+def test_load_for_update_REFUSES_a_file_that_is_not_utf8(tmp_path):
+    """Non-UTF-8 bytes raise UnicodeDecodeError (a ValueError, not an OSError); callers
+    that catch only ConfigReadError crashed instead of refusing cleanly."""
+    p = tmp_path / "config.yaml"
+    p.write_bytes(b"\xff\xfe key: v\n")
+    with pytest.raises(yaml_io.ConfigReadError):
+        yaml_io.load_yaml_for_update(p)

@@ -2,7 +2,27 @@
 
 from __future__ import annotations
 
+import importlib.util
+
+import pytest
+
 from navig.browser import firefox as fx
+
+
+def _module_available(name: str) -> bool:
+    try:
+        return importlib.util.find_spec(name) is not None
+    except ValueError:  # another test left a spec-less stub in sys.modules
+        return False
+
+
+# Camoufox is the optional `[firefox]` extra (``camoufox[geoip]``): it is absent on a plain
+# install, and these tests patch its module attributes, so they need it present. Skipping
+# says that, instead of failing an install for an extra nobody asked for (2026-10-30).
+needs_camoufox = pytest.mark.skipif(
+    not _module_available("camoufox"),
+    reason="optional [firefox] extra (camoufox) is not installed",
+)
 
 # ── pure helpers ──────────────────────────────────────────────────────────────
 
@@ -125,6 +145,7 @@ def _install_fake_camoufox(monkeypatch, yielded):
     monkeypatch.setattr(fx, "ensure_camoufox", lambda: True)  # binary present (hermetic)
 
 
+@needs_camoufox
 async def test_camoufox_uses_context_directly(monkeypatch):
     ctx = _FakeContext()  # a BrowserContext (no new_context) → used as-is
     _install_fake_camoufox(monkeypatch, ctx)
@@ -134,6 +155,7 @@ async def test_camoufox_uses_context_directly(monkeypatch):
     await c.stop()
 
 
+@needs_camoufox
 async def test_camoufox_makes_context_from_browser_no_viewport(monkeypatch):
     ctx = _FakeContext()
     seen = {}
@@ -151,6 +173,7 @@ async def test_camoufox_makes_context_from_browser_no_viewport(monkeypatch):
     await c.stop()
 
 
+@needs_camoufox
 async def test_camoufox_requires_binary(monkeypatch):
     # If the binary can't be provisioned, start() raises a clear FirefoxUnavailable.
     monkeypatch.setattr("camoufox.async_api.AsyncCamoufox", lambda **k: object())
@@ -176,11 +199,13 @@ def test_best_login_engine_falls_back_to_firefox(monkeypatch):
     assert fx.best_login_engine() == "firefox"
 
 
+@needs_camoufox
 def test_camoufox_binary_available_true(monkeypatch):
     monkeypatch.setattr("camoufox.pkgman.installed_verstr", lambda: "135.0")
     assert fx.camoufox_binary_available() is True
 
 
+@needs_camoufox
 def test_camoufox_binary_available_false_when_not_fetched(monkeypatch):
     def boom():
         raise RuntimeError("not installed")

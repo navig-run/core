@@ -14,6 +14,9 @@ examples:
   - "Show active tunnels"
   - "Tunnel port 3000 from production"
   - "Stop all tunnels"
+# Written against a planned command surface that is not implemented yet
+# (KNOWN_MISSING in tests/quality/test_content_command_refs_resolve.py).
+activatable: false
 ---
 
 # SSH Tunnel Management

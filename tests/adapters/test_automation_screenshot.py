@@ -101,15 +101,35 @@ def test_get_screenshot_backend_env_var_selects_backend(monkeypatch):
 # ─── capture_full_screen ──────────────────────────────────────────────────────
 
 
-def test_capture_full_screen_returns_tuple():
-    from navig.adapters.automation.screenshot import capture_full_screen
+def test_capture_full_screen_delegates_when_the_desktop_size_is_known():
+    from navig.adapters.automation import screenshot as mod
 
     fake_img = MagicMock()
 
-    with patch("navig.adapters.automation.screenshot.capture", return_value=(fake_img, "pillow")):
-        img, name = capture_full_screen()
-        assert img is fake_img
-        assert name == "pillow"
+    with (
+        patch.object(mod, "_full_screen_size", return_value=(2560, 1440)),
+        patch.object(mod, "capture", return_value=(fake_img, "pillow")) as fake_capture,
+    ):
+        img, name = mod.capture_full_screen()
+
+    assert img is fake_img
+    assert name == "pillow"
+    fake_capture.assert_called_once_with(0, 0, 2560, 1440, backend=None)
+
+
+def test_capture_full_screen_never_invents_a_geometry():
+    """The old fallback captured 1920×1080 whenever nothing could report the desktop
+    size, which silently cropped every other resolution. A host with no geometry must
+    use the OS tool's own full-screen mode, or say why it cannot capture at all."""
+    from navig.adapters.automation import screenshot as mod
+
+    with (
+        patch.object(mod, "_full_screen_size", return_value=None),
+        patch.object(mod.platform_capture, "choose", return_value=None),
+        patch.object(mod.platform_capture, "install_hint", return_value="install grim"),
+    ):
+        with pytest.raises(RuntimeError, match="install grim"):
+            mod.capture_full_screen()
 
 
 # ─── capture (region) ─────────────────────────────────────────────────────────

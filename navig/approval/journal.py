@@ -26,7 +26,10 @@ bookkeeping file could not be written.
 
 from __future__ import annotations
 
+import contextlib
+import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -42,10 +45,58 @@ def _store_path() -> Path:
     return paths.config_dir() / "approvals" / "pending.json"
 
 
+@contextlib.contextmanager
+def store_lock() -> Iterator[None]:
+    """Exclusive cross-process lock for a read-modify-write of either approvals store.
+
+    Each save is atomic, but a load → filter → save is not: a `doctor` prune in one
+    process could save its stale snapshot over a record the gateway had just written,
+    and that approval could then never resume. Shared by `journal` and `resume` (same
+    directory). Not re-entrant — never nest it. Raises OSError when it cannot be had
+    (Windows gives up after ~10 s); the callers' best-effort handlers skip the write.
+    """
+    directory = _store_path().parent
+    directory.mkdir(parents=True, exist_ok=True)
+    with open(directory / ".lock", "a+", encoding="utf-8") as fh:
+        if sys.platform == "win32":
+            import msvcrt  # noqa: PLC0415
+
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl  # noqa: PLC0415
+
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            try:
+                if sys.platform == "win32":
+                    fh.seek(0)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            except OSError:  # closing the handle releases it anyway
+                pass
+
+
 def _load() -> dict[str, Any]:
     from navig.core.json_io import load_json_safe
 
     data = load_json_safe(_store_path(), default={})
+    return data if isinstance(data, dict) else {}
+
+
+def _load_for_update() -> dict[str, Any]:
+    """Load for a read-modify-write: raises when a non-empty file cannot be read.
+
+    `_load()` degrades an unreadable file to `{}`, which is right for a view and wrong for
+    a mutation — saving over it would drop every other entry. Callers' best-effort
+    handlers turn the raise into "skip the write", leaving the file untouched.
+    """
+    from navig.core.json_io import load_json_for_update
+
+    data = load_json_for_update(_store_path(), default={})
     return data if isinstance(data, dict) else {}
 
 
@@ -72,27 +123,54 @@ def record_pending(
 ) -> None:
     """Note that *request_id* is outstanding. Never raises."""
     try:
-        data = _load()
-        data[request_id] = {
-            "command": command,
-            "channel": channel,
-            "user_id": user_id,
-            "level": level,
-            "asked_at": time.time(),
-            "expires_at": expires_at,
-        }
-        _save(data)
+        with store_lock():
+            data = _load_for_update()
+            data[request_id] = {
+                "command": command,
+                "channel": channel,
+                "user_id": user_id,
+                "level": level,
+                "asked_at": time.time(),
+                "expires_at": expires_at,
+            }
+            _save(data)
     except Exception:  # noqa: BLE001 — bookkeeping must never break an approval
         pass
+
+
+def note_card(request_id: str, chat_id: int, message_id: int) -> None:
+    """Attach the Telegram card that asks *request_id* to its pending entry. Never raises.
+
+    The daily chat tidy reads it back (:func:`pending_cards`) so it never deletes a
+    card whose buttons are still waiting for an answer."""
+    try:
+        data = _load()
+        entry = data.get(request_id)
+        if isinstance(entry, dict):
+            entry["card"] = [int(chat_id), int(message_id)]
+            _save(data)
+    except Exception:  # noqa: BLE001 — bookkeeping must never break an approval
+        pass
+
+
+def pending_cards() -> set[tuple[int, int]]:
+    """``(chat, message_id)`` of every card whose request is still outstanding."""
+    out: set[tuple[int, int]] = set()
+    for entry in list_pending().values():
+        card = entry.get("card") if isinstance(entry, dict) else None
+        if isinstance(card, list) and len(card) == 2 and all(isinstance(v, int) for v in card):
+            out.add((card[0], card[1]))
+    return out
 
 
 def clear_pending(request_id: str) -> dict[str, Any] | None:
     """Drop *request_id* from the outstanding set, returning what it held (if anything)."""
     try:
-        data = _load()
-        entry = data.pop(request_id, None)
-        if entry is not None:
-            _save(data)
+        with store_lock():
+            data = _load_for_update()
+            entry = data.pop(request_id, None)
+            if entry is not None:
+                _save(data)
         return entry
     except Exception:  # noqa: BLE001
         return None
@@ -112,9 +190,14 @@ def prune_expired(*, now: float | None = None) -> int:
     An entry with no ``expires_at`` is unknown, not expired — it is kept.
     """
     try:
-        data = _load()
-    except Exception:  # noqa: BLE001
+        with store_lock():
+            return _prune_expired_locked(now)
+    except Exception:  # noqa: BLE001 — a failed prune must not break a read
         return 0
+
+
+def _prune_expired_locked(now: float | None) -> int:
+    data = _load_for_update()
     t = time.time() if now is None else now
     keep: dict[str, Any] = {}
     for rid, entry in data.items():
@@ -134,12 +217,17 @@ def prune_expired(*, now: float | None = None) -> int:
     return dropped
 
 
-def list_pending() -> dict[str, Any]:
+def list_pending(*, strict: bool = False) -> dict[str, Any]:
     """Everything still outstanding — including across a restart, minus the expired.
 
     Self-healing on read: the expired are pruned here, so no surface has to remember
     to do it and a stale record cannot outlive the next look.
     """
+    if strict:
+        # For status views that must tell "nothing waiting" from "could not read": an
+        # unreadable store raises instead of reading as empty.
+        prune_expired()
+        return _load_for_update()
     try:
         prune_expired()
         return _load()

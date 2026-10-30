@@ -125,3 +125,49 @@ async def test_nothing_is_recorded_when_there_is_no_broker_or_url(recorded):
     m2.state.tunnel_url = None
     await m2._register_current_url()
     assert recorded == []
+
+
+async def test_a_retry_never_restores_a_rotated_away_url(recorded):
+    """Review: https://github.com/navig-run/labs/pull/1165#discussion_r3907850486"""
+    m = _manager()
+    old_url = m.state.tunnel_url
+    registered: list[str] = []
+
+    async def register(url, label):
+        registered.append(url)
+        if url == old_url:
+            # cloudflared rotates while this attempt fails and backs off.
+            m.state.tunnel_url = "https://new.trycloudflare.com"
+            raise BrokerError(503, "upstream")
+
+    m._broker = AsyncMock()
+    m._broker.register.side_effect = register
+
+    await m._register_current_url()
+
+    assert registered == [old_url], "the stale URL was re-registered after a rotation"
+    assert recorded == [], "a superseded register is not a failure"
+
+
+async def test_a_non_positive_attempt_count_is_normalised_everywhere(recorded):
+    """Review F1397: attempts=0 made one call but reported 0 attempts."""
+    m = _manager()
+    m._broker = AsyncMock()
+    m._broker.register.side_effect = BrokerError(503, "upstream")
+
+    await m._register_current_url(attempts=0)
+
+    assert m._broker.register.await_count == 1
+    assert recorded[0][1]["attempts"] == 1
+
+
+async def test_a_rejected_url_reports_the_one_attempt_it_made(recorded):
+    """Review F1389: a 4xx broke out after one try but the incident said 5."""
+    m = _manager()
+    m._broker = AsyncMock()
+    m._broker.register.side_effect = BrokerError(400, "bad_tunnel_url")
+
+    await m._register_current_url(attempts=5)
+
+    assert m._broker.register.await_count == 1
+    assert recorded[0][1]["attempts"] == 1

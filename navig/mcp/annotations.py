@@ -55,8 +55,9 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "navig_runtime_list_nodes",
         "navig_runtime_list_receipts",
         "navig_runtime_trust_score",
-        # coordination (read-only mailbox inspection)
+        # coordination (read-only mailbox inspection and counting)
         "coordination_inbox",
+        "coordination_stats",
         # memory (retrieval only)
         "memory_key_facts_retrieve",
         "memory_key_facts_stats",
@@ -732,7 +733,9 @@ DESCRIPTION_HINTS: dict[str, str] = {
         "navig_agent_goal_cancel on an id from this list."
     ),
     "navig_agent_goal_add": (
-        "Returns the new goal's id; use navig_agent_goal_cancel to stop it."
+        "Returns the new goal's id (and, with webflow, the subtask that replays and verifies it; "
+        "an unknown flow returns the candidates instead); use navig_agent_goal_start to run it "
+        "and navig_agent_goal_cancel to stop it."
     ),
     "navig_agent_goal_start": (
         "Returns the goal's new state; use navig_agent_goal_list to list goals and "

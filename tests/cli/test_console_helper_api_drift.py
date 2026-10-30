@@ -67,11 +67,41 @@ def _console_helper_aliases(tree: ast.AST) -> set[str]:
                 if a.name == "console_helper":
                     aliases.add(a.asname or a.name)
         elif isinstance(node, ast.Import):
-            # `import navig.console_helper as ch`  /  `import navig.console_helper`
+            # `import navig.console_helper as ch` binds `ch`. The unaliased
+            # `import navig.console_helper` binds only `navig`, so the module is
+            # reached as the dotted receiver `navig.console_helper` -- record that
+            # full path, never the bare last segment it does not bind.
             for a in node.names:
                 if a.name.endswith("console_helper"):
-                    aliases.add(a.asname or a.name.split(".")[-1])
+                    aliases.add(a.asname or a.name)
     return {a for a in aliases if a}
+
+
+def _dotted(expr: ast.expr) -> str | None:
+    """`navig.console_helper` for that Name/Attribute chain; None for anything else."""
+    parts: list[str] = []
+    while isinstance(expr, ast.Attribute):
+        parts.append(expr.attr)
+        expr = expr.value
+    if not isinstance(expr, ast.Name):
+        return None
+    parts.append(expr.id)
+    return ".".join(reversed(parts))
+
+
+def _missing_helper_calls(tree: ast.AST) -> list[tuple[int, str]]:
+    """(lineno, `receiver.attr`) for every call to a console_helper name that does not exist."""
+    aliases = _console_helper_aliases(tree)
+    hits: list[tuple[int, str]] = []
+    if not aliases:
+        return hits
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+            continue
+        recv = _dotted(node.func.value)
+        if recv in aliases and not _exists(node.func.attr):
+            hits.append((node.lineno, f"{recv}.{node.func.attr}"))
+    return hits
 
 
 def _scanned_roots() -> list[Path]:
@@ -126,12 +156,8 @@ def test_no_calls_to_console_helper_functions_that_do_not_exist():
         if not aliases:
             continue
         scanned_with_aliases += 1
-        for node in ast.walk(tree):
-            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
-                continue
-            recv = node.func.value
-            if isinstance(recv, ast.Name) and recv.id in aliases and not _exists(node.func.attr):
-                offenders.append(f"{path.name}:{node.lineno}  {recv.id}.{node.func.attr}()")
+        for lineno, call in _missing_helper_calls(tree):
+            offenders.append(f"{path.name}:{lineno}  {call}()")
 
     # An empty scan is green, and green is exactly what a broken guard looks like. If a
     # refactor moves the source tree or breaks alias detection, say so — do not pass.
@@ -168,8 +194,13 @@ def test_alias_detection_binds_the_module_but_not_its_members():
         "from navig import console_helper as ch2\n"
     )
     assert _console_helper_aliases(module_forms) == {
-        "ch", "ch2", "console_helper",
+        "ch", "ch2", "console_helper", "navig.console_helper",
     }
+
+    # The unaliased dotted import binds `navig`, NOT `console_helper` -- tested on its
+    # own, because combined with `from navig import console_helper` the two masked it.
+    bare_dotted = ast.parse("import navig.console_helper\n")
+    assert _console_helper_aliases(bare_dotted) == {"navig.console_helper"}
 
     member_forms = ast.parse(
         "from navig.console_helper import console, Table, _safe_symbol\n"
@@ -184,17 +215,20 @@ def test_the_guard_still_catches_a_real_missing_helper():
     """Anti-vacuity: narrowing alias detection must not blind the guard to the
     crash it exists for (`ch.print(...)` — the 86-site bug)."""
     tree = ast.parse("import navig.console_helper as ch\nch.print('x')\nch.warning('y')\n")
-    aliases = _console_helper_aliases(tree)
-    hits = [
-        node.func.attr
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id in aliases
-        and not _exists(node.func.attr)
-    ]
-    assert hits == ["print"], f"expected the bogus ch.print() to be caught, got {hits}"
+    hits = [call for _, call in _missing_helper_calls(tree)]
+    assert hits == ["ch.print"], f"expected the bogus ch.print() to be caught, got {hits}"
+
+
+def test_the_guard_catches_a_missing_helper_through_the_dotted_receiver():
+    """`import navig.console_helper` then `navig.console_helper.print()` is the same
+    crash through an Attribute receiver -- the guard once checked Name receivers only."""
+    tree = ast.parse(
+        "import navig.console_helper\n"
+        "navig.console_helper.print('x')\n"
+        "navig.console_helper.warning('y')\n"
+    )
+    hits = [call for _, call in _missing_helper_calls(tree)]
+    assert hits == ["navig.console_helper.print"], hits
 
 
 def test_the_helpers_the_sweep_relied_on_are_really_there():

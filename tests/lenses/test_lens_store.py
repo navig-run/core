@@ -286,6 +286,25 @@ def test_update_check_skips_current_pending_rejected_and_older_versions(
     assert store.check_updates(fetch=lambda url: newer)[0]["status"] == "rejected"
 
 
+def test_an_update_check_never_overwrites_an_agent_edit_awaiting_review(
+    store: LensStore,
+) -> None:
+    """Review F2730: the daily monitor used to stage the fetched update over the agent's
+    proposal, discarding it before a person decided."""
+    lens_id = _installed(store, "1.0.0")
+    agent_src = _src(extra="// @version 1.0.0\n", body="window.__agent = 1;")
+    store.stage(lens_id, agent_src, kind="agent")
+    pending_file = store._pending_path(lens_id)
+    newer = _src(extra="// @version 1.1.0\n", body="window.__new = 1;")
+
+    [row] = store.check_updates(fetch=lambda url: newer)
+
+    assert row["status"] == "pending" and row["pending_kind"] == "agent"
+    rec = store.get(lens_id)
+    assert rec is not None and rec.pending and rec.pending["kind"] == "agent"
+    assert pending_file.read_text(encoding="utf-8") == agent_src
+
+
 def test_an_unreachable_install_link_is_an_error_row_not_a_crash(store: LensStore) -> None:
     _installed(store)
 

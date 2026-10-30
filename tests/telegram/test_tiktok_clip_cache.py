@@ -208,6 +208,23 @@ class TestBounds:
         assert len(fetches) == 2
 
 
+async def test_files_left_by_an_earlier_process_are_cleared(_temp_root, fetches, monkeypatch):
+    """A restarted daemon starts with an empty `_cache` but the old files remain,
+    under per-process hash names it never reuses, so the byte budget never saw
+    them. The first use in a process must clear them."""
+    monkeypatch.setattr(t, "_cache_dir_claimed", None, raising=False)
+    cache = _temp_root / f"{t._TMP_PREFIX}cache"
+    cache.mkdir()
+    orphan = cache / "deadbeef_clip.mp4"
+    orphan.write_bytes(b"old" * 100)
+
+    async with t._fetched(_URL):
+        pass
+
+    assert not orphan.exists(), "an earlier process's cache file survived"
+    assert len(t._cache) == 1 and os.path.exists(next(iter(t._cache.values()))[0])
+
+
 class TestLockDictIsBounded:
     """`_cache` is bounded by TTL and by bytes; `_cache_locks` was bounded by
     nothing — one entry per distinct (url, audio_only) for the life of the daemon.
@@ -260,6 +277,46 @@ class TestLockDictIsBounded:
         assert (_URL, False) in t._cache_locks
 
 
+    async def test_a_lock_with_a_woken_waiter_is_not_pruned(self, _temp_root, monkeypatch):
+        """`release()` clears `locked()` before the waiter it woke resumes. A prune
+        in that window used to drop the lock, so the next caller got a second one
+        and fetched the same clip concurrently with the waiter."""
+        import asyncio
+
+        key = (_URL, False)
+        release = asyncio.Event()
+        seen: dict = {}
+        calls = {"n": 0}
+
+        async def _fetch(url, *, dest_dir=None, audio_only=False, **kw):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                await release.wait()
+                original = t._cache_locks[key]
+
+                def _interleaved_evict() -> None:
+                    # Runs after the failing holder released, before the waiter resumes.
+                    t._evict(time.time())
+                    seen["kept"] = t._cache_locks.get(key) is original
+
+                asyncio.get_running_loop().call_soon(_interleaved_evict)
+                raise RuntimeError("first fetch failed")
+            target = Path(dest_dir) / "clip.mp4"
+            target.write_bytes(b"x")
+            return str(target)
+
+        monkeypatch.setattr(t.engine, "fetch_file_async", _fetch)
+        first = asyncio.create_task(_use_once())
+        await asyncio.sleep(0)
+        waiter = asyncio.create_task(_use_once())
+        await asyncio.sleep(0)
+        release.set()
+        results = await asyncio.gather(first, waiter, return_exceptions=True)
+
+        assert isinstance(results[0], RuntimeError) and results[1] is True
+        assert seen.get("kept") is True, "a lock with a queued waiter was pruned"
+
+
 async def _use_once():
     async with t._fetched(_URL):
         return True
@@ -297,3 +354,27 @@ async def test_two_concurrent_actions_share_one_download(_temp_root, monkeypatch
 
     assert a == b == b"x" * 32
     assert started["n"] == 1, f"{started['n']} concurrent downloads of one clip"
+
+
+async def test_a_locked_expired_entry_does_not_fail_the_download(
+    _temp_root, fetches, monkeypatch
+):
+    """On Windows an antivirus scan can hold a cached file open; the eviction that
+    runs before every fetch must not turn that into a failed download."""
+    async with t._fetched(_URL):
+        pass
+    cached = t._cache[(_URL, False)][0]
+    real_unlink = Path.unlink
+
+    def locked(self, *a, **kw):
+        if str(self) == cached:
+            raise PermissionError(13, "file in use")
+        return real_unlink(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "unlink", locked)
+    later = time.time() + t._CACHE_TTL_S + 1
+    monkeypatch.setattr(t.time, "time", lambda: later)
+
+    async with t._fetched(_URL) as clip:
+        assert os.path.exists(clip.path)
+    assert len(fetches) == 2

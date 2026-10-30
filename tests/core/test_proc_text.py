@@ -8,6 +8,7 @@ Windows actually reported.
 
 from __future__ import annotations
 
+import codecs
 import os
 import subprocess
 import sys
@@ -107,6 +108,23 @@ def test_posix_uses_utf8() -> None:
     assert console_encoding() == "utf-8"
 
 
+def test_a_stand_in_for_windows_cannot_poison_the_posix_answer(monkeypatch) -> None:
+    """The cache is keyed by platform, so a one-off substitution cannot stick.
+
+    It used to be `lru_cache(maxsize=1)` over a no-argument function: whichever caller ran
+    first answered for the whole process, and in a long xdist worker that caller could be a
+    test standing in for Windows — after which a POSIX process decoded child output with
+    `"oem"` (`LookupError: unknown encoding: oem`).
+    """
+    from navig.core import proc_text
+
+    monkeypatch.setattr(proc_text.sys, "platform", "win32")
+    standing_in = console_encoding()  # the Windows branch, resolved for "win32"
+    monkeypatch.undo()
+    assert standing_in  # some codec name, not a crash
+    assert console_encoding() == "utf-8"
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows branch")
 def test_windows_matches_the_live_console_code_page() -> None:
     """`console_encoding()` derives from the console's CURRENT output code page.
@@ -168,7 +186,23 @@ def test_end_to_end_against_a_real_console_tool() -> None:
             "re-encoded through another, which is not evidence either way"
         )
 
-    assert decoded.encode(encoding, errors="replace") == raw
+    # The samples cannot see a flip that starts AND ends while the child runs (866 -> 65001
+    # -> 866 inside `whoami`): all three read 866 while `raw` was written as UTF-8. So judge
+    # by the bytes too -- a mismatch on non-UTF-8 output that is itself strictly valid UTF-8
+    # is that race, not a decoding bug.
+    roundtrip = decoded.encode(encoding, errors="replace")
+    if roundtrip != raw and codecs.lookup(encoding).name != "utf-8":
+        try:
+            raw.decode("utf-8")
+        except UnicodeDecodeError:
+            pass
+        else:
+            pytest.skip(
+                f"raw is UTF-8 although the console read {encoding} before, after and at "
+                "the read: the page flipped and flipped back while the child ran"
+            )
+
+    assert roundtrip == raw
 
     import locale
 
@@ -223,11 +257,17 @@ def test_decode_console_result_tolerates_uncaptured_streams() -> None:
 
 
 def test_console_encoding_is_cached() -> None:
-    """It is consulted once per subprocess call; the ctypes lookup must not repeat."""
+    """It is consulted once per subprocess call; the ctypes lookup must not repeat.
+
+    The public function is a thin wrapper so the cache can be keyed by platform; the
+    cached call is `_console_encoding_for(sys.platform)`.
+    """
+    from navig.core.proc_text import _console_encoding_for
+
     console_encoding()
-    hits_before = console_encoding.cache_info().hits
+    hits_before = _console_encoding_for.cache_info().hits
     console_encoding()
-    assert console_encoding.cache_info().hits == hits_before + 1
+    assert _console_encoding_for.cache_info().hits == hits_before + 1
 
 
 def test_module_imports_ctypes_lazily() -> None:
@@ -306,5 +346,5 @@ def test_oem_encoding_is_a_real_codec_and_is_the_oem_page() -> None:
 def test_posix_oem_encoding_is_utf8(monkeypatch) -> None:
     from navig.core import proc_text
 
-    monkeypatch.setattr(proc_text.os, "name", "posix")
+    monkeypatch.setattr(proc_text.sys, "platform", "linux")
     assert proc_text.oem_encoding() == "utf-8"

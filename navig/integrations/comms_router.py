@@ -158,6 +158,8 @@ class MatrixHitLChannel(HitLChannel):
         corr = str(uuid.uuid4())[:6]
         future: asyncio.Future = asyncio.get_running_loop().create_future()
         self._pending[corr] = future
+        bot = None
+        _on_reply = None
 
         try:
             bot = self._bot()
@@ -196,6 +198,11 @@ class MatrixHitLChannel(HitLChannel):
             return ""
         finally:
             self._pending.pop(corr, None)
+            # One-shot means one-shot: every ask() used to leave its closure on the
+            # bot forever, iterated on every incoming message.
+            off = getattr(bot, "off_message", None) if _on_reply is not None else None
+            if callable(off):
+                off(_on_reply)
 
     async def choose(self, question: str, options: list[str], timeout: int = 300) -> str:
         """Present numbered choices. User replies with the number."""

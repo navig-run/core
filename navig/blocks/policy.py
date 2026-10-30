@@ -273,7 +273,9 @@ def valid_block_id(block_id: str) -> bool:
 
 def _plugin_installed(name: str) -> bool:
     """Is a plugin named ``name`` available? Checks the pip entry-point dist first
-    (first-party plugins register that way), then the package-format install dir."""
+    (first-party plugins register that way), then the package-format roots — user
+    AND trusted project, matched on the canonical manifest id (or the dir name) —
+    the same roots ``plugin_capability_dirs`` discovers a plugin's blocks from."""
     try:
         from importlib import metadata
 
@@ -282,10 +284,16 @@ def _plugin_installed(name: str) -> bool:
     except Exception:  # noqa: BLE001 — PackageNotFoundError and friends
         pass
     try:
-        from navig.plugins.package import installed_plugin_roots
+        from navig.plugins.package import (
+            _plugin_id_of,
+            installed_plugin_roots,
+            project_plugin_roots,
+        )
 
-        for root in installed_plugin_roots(include_disabled=True):
-            if root.name == name:
+        roots = [*installed_plugin_roots(include_disabled=True),
+                 *project_plugin_roots(include_disabled=True)]
+        for root in roots:
+            if root.name == name or _plugin_id_of(root) == name:
                 return True
     except Exception:  # noqa: BLE001 — plugin host optional
         pass
@@ -328,7 +336,9 @@ def requirement_entries(items) -> list[tuple[str, str]]:
     Malformed entries are dropped (author-time lint catches them — see validate_block).
     """
     out: list[tuple[str, str]] = []
-    for item in items or []:
+    if not isinstance(items, (list, tuple)):
+        return out  # `tools: 1` / `tools: adb` — validate_block reports "must be a list"
+    for item in items:
         if isinstance(item, str) and item.strip():
             out.append((item.strip(), ""))
         elif isinstance(item, dict):

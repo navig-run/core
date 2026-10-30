@@ -103,6 +103,14 @@ def test_a_sharp_808_still_rounds_to_its_note():
     assert bass_root(power, freqs) == "E"
 
 
+def test_silent_frames_do_not_vote_for_the_bass_root():
+    """Most frames silent → the median strength is 0; they must not all vote for bin 0."""
+    freqs = np.arange(0.0, 200.0, 1.0)
+    power = np.zeros((10, freqs.size))
+    power[7:, int(np.searchsorted(freqs, 55.0))] = 1.0  # A1 in 3 of 10 frames
+    assert bass_root(power, freqs) == "A"
+
+
 def test_band_shares_put_a_sub_sine_in_the_sub_band():
     from navig.media.tonality import _spectrum
 

@@ -31,6 +31,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from navig.approval.journal import store_lock
+
 logger = logging.getLogger("navig.approval.resume")
 
 #: Beyond this, a late approval is reported but not executed. An hour is long enough to
@@ -49,6 +51,19 @@ def _load() -> dict[str, Any]:
     from navig.core.json_io import load_json_safe
 
     data = load_json_safe(_store_path(), default={})
+    return data if isinstance(data, dict) else {}
+
+
+def _load_for_update() -> dict[str, Any]:
+    """Load for a read-modify-write: raises when a non-empty file cannot be read.
+
+    `_load()` degrades an unreadable file to `{}`, which is right for a view and wrong for
+    a mutation — saving over it would drop every other entry. Callers' best-effort
+    handlers turn the raise into "skip the write", leaving the file untouched.
+    """
+    from navig.core.json_io import load_json_for_update
+
+    data = load_json_for_update(_store_path(), default={})
     return data if isinstance(data, dict) else {}
 
 
@@ -88,16 +103,17 @@ def record(
     and a second copy would be one that can go stale between the ask and the answer.
     """
     try:
-        data = _load()
-        data[request_id] = {
-            "session_key": session_key,
-            "channel": channel,
-            "user_id": user_id,
-            "tool_name": tool_name,
-            "parameters": parameters or {},
-            "asked_at": time.time(),
-        }
-        _save(data)
+        with store_lock():
+            data = _load_for_update()
+            data[request_id] = {
+                "session_key": session_key,
+                "channel": channel,
+                "user_id": user_id,
+                "tool_name": tool_name,
+                "parameters": parameters or {},
+                "asked_at": time.time(),
+            }
+            _save(data)
     except Exception:  # noqa: BLE001 — bookkeeping must never break an approval
         pass
 
@@ -109,10 +125,11 @@ def take(request_id: str) -> dict[str, Any] | None:
     the second caller finds nothing and does nothing, instead of running the tool twice.
     """
     try:
-        data = _load()
-        entry = data.pop(request_id, None)
-        if entry is not None:
-            _save(data)
+        with store_lock():
+            data = _load_for_update()
+            entry = data.pop(request_id, None)
+            if entry is not None:
+                _save(data)
         return entry
     except Exception:  # noqa: BLE001
         return None
@@ -127,13 +144,22 @@ _KEEP_S = 24 * 3600.0
 
 
 def prune_stale(*, now: float | None = None, keep_s: float | None = None) -> int:
-    """Drop records older than *keep_s* (default a day). Returns how many were dropped."""
+    """Drop records older than *keep_s*. Returns how many were dropped.
+
+    The default horizon is a day, or the configured resume window when that is longer —
+    a record `is_too_old()` would still execute must never be pruned as stale.
+    """
     try:
-        data = _load()
+        with store_lock():
+            return _prune_stale_locked(now, keep_s)
     except Exception:  # noqa: BLE001
         return 0
+
+
+def _prune_stale_locked(now: float | None, keep_s: float | None) -> int:
+    data = _load_for_update()
     t = time.time() if now is None else now
-    horizon = _KEEP_S if keep_s is None else float(keep_s)
+    horizon = max(_KEEP_S, max_age_seconds()) if keep_s is None else float(keep_s)
     keep: dict[str, Any] = {}
     for rid, entry in data.items():
         try:
@@ -152,11 +178,16 @@ def prune_stale(*, now: float | None = None, keep_s: float | None = None) -> int
     return dropped
 
 
-def list_resumable() -> dict[str, Any]:
+def list_resumable(*, strict: bool = False) -> dict[str, Any]:
     """Every record still awaiting a late answer — the enumerating read for status views.
 
     Self-healing on read: records past their keep window are pruned first.
     """
+    if strict:
+        # For status views that must tell "nothing waiting" from "could not read": an
+        # unreadable store raises instead of reading as empty.
+        prune_stale()
+        return _load_for_update()
     try:
         prune_stale()
         return _load()
@@ -214,6 +245,7 @@ async def resume_after_approval(
             "Approval arrived too late",
             f"'{entry.get('tool_name')}' was approved after the request went stale. "
             "Nothing was run — re-issue the request if you still want it.",
+            entry=entry,
         )
         return False
 
@@ -227,6 +259,7 @@ async def resume_after_approval(
             "Could not finish the approved action",
             f"'{entry.get('tool_name')}' was approved, but re-running it failed. "
             "Check the logs and re-issue if needed.",
+            entry=entry,
         )
         return False
 
@@ -234,19 +267,37 @@ async def resume_after_approval(
         deliver,
         "Finished the action you approved",
         str(reply or "").strip() or f"'{entry.get('tool_name')}' completed.",
+        entry=entry,
     )
     return True
 
 
-async def _notify(deliver: Any, title: str, body: str) -> None:
-    """Deliver through the same channel-agnostic seam the incident producer uses."""
+async def _notify(
+    deliver: Any, title: str, body: str, *, entry: dict[str, Any] | None = None
+) -> None:
+    """Deliver through the same channel-agnostic seam the incident producer uses.
+
+    The result goes back through the channel that asked (plus the always-on deck feed),
+    not every channel the type routes to; a requester channel that is not a notification
+    channel (a mission, the CLI) gets the type's normal routing.
+    """
     if deliver is not None:
         await deliver(title, body)
         return
     try:
         from navig.notify import dispatch
+        from navig.notify.types import CHANNEL_KEYS
 
-        await dispatch("approval_resume", title, body, data={"source": "navig"})
+        entry = entry or {}
+        channel = str(entry.get("channel") or "")
+        only = ["deck", channel] if channel in CHANNEL_KEYS and channel != "deck" else None
+        await dispatch(
+            "approval_resume",
+            title,
+            body,
+            data={"source": "navig", "channel": channel, "user_id": entry.get("user_id")},
+            only_channels=only,
+        )
     except Exception:  # noqa: BLE001 — a delivery failure must not lose the result
         logger.warning("approval resume: could not deliver result: %s", body[:200])
 
@@ -268,7 +319,19 @@ async def _default_run_turn(entry: dict[str, Any]) -> str:
     # obvious-looking `ConversationalAgent(session_id=…).chat(msg, session_key=…)` would
     # have raised TypeError straight into this module's own except handler: the exact
     # defect class the call-arg gate exists for.
-    agent = ConversationalAgent()
+    # Seed the turn with THIS session's conversation. Without `history=` the agent falls
+    # back to ConversationHistory(user_id="default") — the shared file, not the session
+    # that asked — and `run_agentic(session_key=…)` does not load history. Mirrors
+    # `ChannelRouter`'s per-session construction, incognito included.
+    history = None
+    if session_key:
+        from navig.agent.conv.history import ConversationHistory
+        from navig.gateway.channel_router import INCOGNITO_SUFFIX
+
+        history = ConversationHistory(
+            user_id=session_key, persist=not session_key.endswith(INCOGNITO_SUFFIX)
+        )
+    agent = ConversationalAgent(history=history)
     return await agent.run_agentic(
         f"The approval you were waiting for has been granted: {tool} is now authorised. "
         "Carry out that action and report the result.",

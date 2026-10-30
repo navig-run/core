@@ -141,3 +141,44 @@ def test_sync_without_any_resolvable_formation_exits_nonzero(tmp_path):
     loader_mod.set_formations_roots([tmp_path / "empty-roots"])
     res = runner.invoke(formation_app, ["sync", "--json"])
     assert res.exit_code == 1
+
+
+def test_a_traversal_agent_id_fails_formation_validation():
+    """An agent id becomes `.navig/agents/<id>.md`; `../` must not validate — including
+    without the optional jsonschema module, whose absence used to skip every pattern."""
+    from navig.formations.schema import (
+        FORMATION_SCHEMA,
+        _validate_manually,
+        validate_formation_data,
+    )
+
+    data = {
+        "id": _TEAM, "name": "T", "version": "1.0.0", "description": "d",
+        "agents": ["reviewer", "../../evil"], "default_agent": "reviewer",
+    }
+    _, errors = validate_formation_data(data)
+    assert errors and any("../../evil" in e for e in errors), errors
+    assert _validate_manually(data, FORMATION_SCHEMA), "the manual path must enforce it too"
+    data["agents"] = ["reviewer", "worker_2", "front-end"]
+    assert validate_formation_data(data)[1] == []
+
+
+def test_sync_never_writes_outside_the_agents_dir(tmp_path, monkeypatch):
+    """Defense in depth: a traversal id that reaches sync is reported, never written."""
+    from types import SimpleNamespace
+
+    import navig.formations.loader as loader
+
+    agent = SimpleNamespace(role="evil", tools=[], system_prompt="pwned")
+    formation = SimpleNamespace(
+        id=_TEAM, agents=["../../evil"], loaded_agents={"../../evil": agent}
+    )
+    monkeypatch.setattr(loader, "get_active_formation", lambda **_k: formation)
+
+    res = runner.invoke(formation_app, ["sync", "--json"])
+
+    assert res.exit_code == 0, res.output
+    report = json.loads(res.output)
+    assert report["written"] == [] and report["missing"] == ["../../evil"]
+    assert not (tmp_path / "evil.md").exists()
+    assert not list(tmp_path.rglob("evil.md"))

@@ -67,7 +67,11 @@ def test_the_agenda_lists_appointments_by_day_and_never_tasks(env) -> None:
     )
     text, keyboard = agenda_actions.build_view(NOW)
     assert "Visio Sarah" in text and "Buy paper" not in text
-    assert "📍 Zoom" in text and "👤 Sarah" in text
+    assert "📍 Zoom" in text
+    # Who matters once you are deciding about that appointment: the detail sheet
+    # carries it, the row does not — two tails per row read as a wall of emoji.
+    detail, _keyboard = agenda_actions.build_detail(appt["id"], NOW)  # type: ignore[misc]
+    assert "👤" in detail and "Sarah" in detail
     assert f"ag:o:{appt['id']}" in _callbacks(keyboard)
     assert all(len(c.encode()) <= 64 for c in _callbacks(keyboard))
 
@@ -116,14 +120,29 @@ def test_a_gone_appointment_answers_honestly(env) -> None:
     assert toast
 
 
+#: Tag names are markup, not prose: the card renders <pre>, <table> and <code>, so
+#: scanning them would turn this guard into an HTML-element allowlist instead of a
+#: check on what the operator actually reads.
+_TAG = re.compile(r"<[^>]+>")
+#: Latin left over from markup and entities, never from an untranslated string.
+_BOILERPLATE = frozenset({"b", "i", "code", "lt", "gt", "amp", "nbsp"})
+
+
 def test_the_russian_agenda_has_no_english(env, monkeypatch) -> None:
     monkeypatch.setattr(i18n, "current_language", lambda: "ru")
     i18n.shared().reset()
     try:
         appt = service.create_appointment("Стоматолог", NOW + timedelta(days=2), location="Клиника")
-        for text, keyboard in (agenda_actions.build_view(NOW), agenda_actions.build_detail(appt["id"], NOW)):
+        # Both projections are probed: the classic body is what a chat without rich
+        # messages receives, so markup only the rich render escapes must fail here too.
+        for text, keyboard in (
+            agenda_actions.build_view(NOW),
+            agenda_actions.build_view_rich(NOW),
+            agenda_actions.build_detail(appt["id"], NOW),
+            agenda_actions.build_detail_rich(appt["id"], NOW),
+        ):
             labels = " ".join(b["text"] for row in keyboard["inline_keyboard"] for b in row)
-            english = set(re.findall(r"[A-Za-z]+", f"{text} {labels}")) - {"b", "i", "code"}
+            english = set(re.findall(r"[A-Za-z]+", f"{_TAG.sub(' ', text)} {labels}")) - _BOILERPLATE
             assert not english, f"{english}\n{text}\n{labels}"
     finally:
         i18n.shared().reset()

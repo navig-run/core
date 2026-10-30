@@ -20,6 +20,22 @@ import yaml
 _ITEM_TYPES = frozenset({"file", "directory"})
 
 
+def _contained_source(template_dir: Path, source_ref: object) -> Path:
+    """Resolve a `source:` reference, refusing anything outside *template_dir*.
+
+    A source file's contents are copied into the generated project, so an absolute
+    path or a `..` escape in an untrusted template would copy arbitrary local files.
+    """
+    root = Path(template_dir).resolve()
+    source_path = (root / str(source_ref)).resolve()
+    if Path(str(source_ref)).is_absolute() or not source_path.is_relative_to(root):
+        raise ValueError(
+            f"source {str(source_ref)!r} must be a relative path inside the template "
+            f"directory ({root})"
+        )
+    return source_path
+
+
 class Scaffolder:
     """
     Generates file structures from YAML templates.
@@ -87,6 +103,14 @@ class Scaffolder:
                 value = item.get(field)
                 if value is None:
                     continue
+                if field != "condition" and not isinstance(value, str):
+                    # Generation hands `path`/`content` to `from_string()` raw (only
+                    # `condition` is `str()`-ed at runtime), so `content: 123` would pass
+                    # here and raise a TypeError mid-write.
+                    raise ValueError(
+                        f"{loc}.{field} must be a string, got {type(value).__name__} "
+                        f"({value!r}) — quote it in the YAML"
+                    )
                 source = str(value)
                 if field == "condition" and "{{" not in source:
                     # Same wrapping `_check_condition` applies, so a bare name like
@@ -116,12 +140,27 @@ class Scaffolder:
 
             source_ref = item.get("source")
             if source_ref is not None and template_dir is not None:
-                source_path = template_dir / str(source_ref)
+                try:
+                    source_path = _contained_source(template_dir, source_ref)
+                except ValueError as e:
+                    raise ValueError(f"{loc}.{e}") from e
                 if not source_path.is_file():
                     raise ValueError(
                         f"{loc}.source {str(source_ref)!r} was not found next to the "
                         f"template ({source_path})"
                     )
+                # `_create_file` reads and compiles the source only when it reaches the
+                # item — after earlier items were written. Compile it now.
+                try:
+                    self.jinja_env.from_string(source_path.read_text(encoding="utf-8"))
+                except UnicodeDecodeError as e:
+                    raise ValueError(
+                        f"{loc}.source {str(source_ref)!r} is not UTF-8 text: {e}"
+                    ) from e
+                except jinja2.TemplateSyntaxError as e:
+                    raise ValueError(
+                        f"{loc}.source {str(source_ref)!r} is not valid Jinja: {e}"
+                    ) from e
 
             children = item.get("children")
             if children is not None:
@@ -168,8 +207,42 @@ class Scaffolder:
             # `dirs_exist_ok` MERGES rather than replacing: generating into a directory
             # that already holds unrelated files must not wipe them, and `copy2`
             # carries over the modes applied during staging.
+            #
+            # Copy the staging CHILDREN, never the staging root: `copytree` ends with
+            # `copystat(src, dst)`, so merging the root would stamp the
+            # TemporaryDirectory's 0700 onto an existing target and strip group/other
+            # access from a shared or served project directory.
+            #
+            # The merge itself can fail partway (disk full, a permission error). Undo
+            # what it added: a brand-new target goes entirely, an existing one loses
+            # only the paths this merge created.
+            target_existed = target_dir.exists()
+            new_paths = [
+                target_dir / rel
+                for rel in (p.relative_to(staging) for p in staging.rglob("*"))
+                if not (target_dir / rel).exists()
+            ]
             target_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(staging, target_dir, dirs_exist_ok=True)
+            try:
+                for child in staging.iterdir():
+                    destination = target_dir / child.name
+                    if child.is_dir():
+                        shutil.copytree(child, destination, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(child, destination)
+            except BaseException:
+                if not target_existed:
+                    shutil.rmtree(target_dir, ignore_errors=True)
+                else:
+                    for added in sorted(new_paths, key=lambda p: len(p.parts), reverse=True):
+                        try:
+                            if added.is_dir() and not added.is_symlink():
+                                added.rmdir()
+                            elif added.exists():
+                                added.unlink()
+                        except OSError:
+                            pass  # best-effort; the original error is what matters
+                raise
 
     @staticmethod
     def _merged_variables(
@@ -244,9 +317,23 @@ class Scaffolder:
         return archive_path
 
     def _process_structure(
-        self, items: list[dict[str, Any]], current_path: Path, variables: dict[str, Any], template_dir: Path | None = None
+        self,
+        items: list[dict[str, Any]],
+        current_path: Path,
+        variables: dict[str, Any],
+        template_dir: Path | None = None,
+        root: Path | None = None,
     ):
-        """Recursively process structure items."""
+        """Recursively process structure items.
+
+        Every rendered path must stay inside ``root`` (the staging directory). A path
+        that is absolute or climbs out with ``..`` would otherwise be written OUTSIDE
+        staging — even by ``preview()`` under ``--dry-run`` — and the staging cleanup
+        never removes it.
+        """
+        if root is None:
+            root = current_path
+        resolved_root = root.resolve()
         for item in items:
             if not self._check_condition(item, variables):
                 continue
@@ -259,13 +346,29 @@ class Scaffolder:
                 continue
 
             item_path = current_path / name
+            if Path(name).is_absolute() or not item_path.resolve().is_relative_to(
+                resolved_root
+            ):
+                raise ValueError(
+                    f"template path {name!r} escapes the scaffold root; paths must be "
+                    "relative and stay inside the generated tree"
+                )
+            # A path may carry a `..` that still stays inside the tree (`a/../b.txt`).
+            # The containment check above allows it, but the WRITE then needs directory
+            # `a` to exist first — on POSIX `open("a/../b.txt")` fails with ENOENT even
+            # though `..` cancels it (measured 2026-10-30; NT normalises `..` lexically
+            # before it opens, which is why this only broke off Windows). Normalise the
+            # path lexically so the file lands where the author meant.
+            item_path = Path(os.path.normpath(item_path))
             item_type = item.get("type", "file")
             mode = item.get("mode")
 
             if item_type == "directory":
                 self._create_directory(item_path, mode)
                 if "children" in item:
-                    self._process_structure(item.get("children", []), item_path, variables, template_dir)
+                    self._process_structure(
+                        item.get("children", []), item_path, variables, template_dir, root
+                    )
             else:
                 self._create_file(item, item_path, mode, variables, template_dir)
 
@@ -301,6 +404,12 @@ class Scaffolder:
 
             result = self.jinja_env.from_string(cond_str).render(**variables).strip().lower()
             return result in ("true", "yes", "1", "on")
+        except jinja2.UndefinedError:
+            # `{{ options.tests }}` with no `options`: the default `Undefined` renders a
+            # bare missing name as "", but RAISES on attribute access. Absent optional
+            # data is the same "missing variable -> False" case, not a malformed
+            # expression, so skip the item rather than abort.
+            return False
         except Exception as e:
             raise ValueError(
                 f"template condition {condition!r} could not be evaluated "
@@ -349,7 +458,7 @@ class Scaffolder:
             # External source files: copy from template directory
             if not template_dir:
                 raise ValueError("template_dir must be provided to use 'source' files in templates.")
-            source_path = template_dir / item["source"]
+            source_path = _contained_source(template_dir, item["source"])
             if not source_path.is_file():
                 raise FileNotFoundError(f"Template source file not found: {source_path}")
             

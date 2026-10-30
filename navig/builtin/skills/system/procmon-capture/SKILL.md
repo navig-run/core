@@ -14,6 +14,9 @@ examples:
   - "Record what files my app touches"
   - "Log registry changes during installer"
   - "Stop any running Procmon"
+# Written against a planned command surface that is not implemented yet
+# (KNOWN_MISSING in tests/quality/test_content_command_refs_resolve.py).
+activatable: false
 ---
 
 # Process Monitor Capture

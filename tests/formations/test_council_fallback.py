@@ -335,6 +335,28 @@ def test_fallback_route_prefers_mode_fallback_when_default_is_the_failed_provide
     assert council_mod._fallback_route("anthropic") == (None, None)
 
 
+def test_fallback_route_unnamed_provider_uses_mode_fallback(monkeypatch):
+    """A bare connection/timeout error names no provider: the call that failed went
+    through the default route, so the retry must take the mode fallback rather than
+    repeat that same route (review F0104)."""
+    import navig.llm.router as router_mod
+
+    class _Cfg:
+        provider = "anthropic"
+        model = "claude-opus-4-8"
+        mode = "big_tasks"
+
+    monkeypatch.setattr(router_mod, "resolve_llm", lambda *a, **k: _Cfg())
+    monkeypatch.setattr(
+        router_mod, "get_mode_fallback_spec", lambda mode, **k: "ollama:qwen2.5:7b-instruct"
+    )
+    assert council_mod._fallback_route(None) == ("ollama", "ollama:qwen2.5:7b-instruct")
+
+    # No reachable fallback configured → still the one plain no-pin retry.
+    monkeypatch.setattr(router_mod, "get_mode_fallback_spec", lambda mode, **k: None)
+    assert council_mod._fallback_route(None) == ("anthropic", None)
+
+
 # ── Synthesis fallback + honest failure state (the final-decision call) ───────
 
 _SYNTH_MARKER = "The team just discussed"  # only the synthesis prompt says this
@@ -499,3 +521,53 @@ def test_hung_agent_times_out_gracefully_without_wedging_the_round(monkeypatch):
         assert elapsed < 5, "the round must return at the budget, not wedge on the hung agent"
     finally:
         release.set()
+
+
+def test_the_per_agent_timeout_bounds_the_ai_call_itself(monkeypatch):
+    """`shutdown(wait=False)` only abandons a hung worker; it keeps running (piling up
+    across gateway runs, blocking interpreter exit). The timeout must reach the AI call
+    so the worker itself returns — for every agent call and for the synthesis."""
+    monkeypatch.setattr(council_mod, "_ROUND_BUDGET_BUFFER_S", 0.1)
+    # Never consult the real routing/vault from a straggling worker.
+    monkeypatch.setattr(council_mod, "_fallback_route", lambda failed: (None, None))
+    seen: list[float | None] = []
+    workers: list[threading.Thread] = []
+    lock = threading.Lock()
+    never = threading.Event()
+
+    def fake_ai(prompt, system_prompt=None, model=None, timeout=None):
+        with lock:
+            seen.append(timeout)
+            workers.append(threading.current_thread())
+        if system_prompt and "Beta" in system_prompt and "wrap this up" not in prompt:
+            # A provider that honours its HTTP timeout: hangs, then gives up at `timeout`.
+            never.wait(timeout if timeout is not None else 3)
+            raise RuntimeError("beta gave up")
+        return "fine\nCONFIDENCE: 0.6"
+
+    monkeypatch.setattr(council_mod, "_ask_ai", fake_ai)
+
+    try:
+        run_council(_formation(), "Ship it?", rounds=1, timeout_per_agent=0.1)
+
+        assert seen and all(t == 0.1 for t in seen), seen
+        for t in workers:
+            t.join(2)
+        assert not any(t.is_alive() for t in workers), "timed-out workers must actually exit"
+    finally:
+        never.set()
+        for t in workers:
+            t.join(5)
+
+
+def test_a_plain_seam_without_timeout_still_works(monkeypatch):
+    """Seams that take no `timeout` keyword are called without one."""
+
+    def fake_ai(prompt: str, system_prompt: str | None = None) -> str:
+        return "ok\nCONFIDENCE: 0.5"
+
+    monkeypatch.setattr(council_mod, "_ask_ai", fake_ai)
+    result = run_council(_formation(), "Ship it?", rounds=1, timeout_per_agent=5)
+
+    responses = [r["response"] for r in result["rounds"][0]["responses"]]
+    assert all(not r.startswith("[ERROR") for r in responses), responses

@@ -81,6 +81,7 @@ async def _maybe_bind_telegram_to_broker(user_id: int) -> None:
     try:
         from navig.core import Config
         from navig.core.coerce import coerce_bool
+
         cfg = Config()
         # coerce_bool so a stored "false" string (navig config set) reads as disabled.
         if not coerce_bool(cfg.get("cloud.enabled", True)):  # default ON
@@ -93,16 +94,16 @@ async def _maybe_bind_telegram_to_broker(user_id: int) -> None:
         # Detect identically to gateway/server.py::_start_cloud_manager
         # (cloud.lighthouse_url OR the NAVIG_LIGHTHOUSE_URL env override).
         import os as _os
+
         lighthouse_url = (
-            cfg.get("cloud.lighthouse_url", "")
-            or _os.environ.get("NAVIG_LIGHTHOUSE_URL", "")
-            or ""
+            cfg.get("cloud.lighthouse_url", "") or _os.environ.get("NAVIG_LIGHTHOUSE_URL", "") or ""
         ).strip()
         cloud_mode = (cfg.get("cloud.mode", "") or "").strip().lower()
         if lighthouse_url and cloud_mode in ("", "lighthouse"):
             logger.debug(
                 "broker bind skipped for tg %s: lighthouse mode — the uplink "
-                "resolves telegram_id, no api.navig.run row to bind.", user_id,
+                "resolves telegram_id, no api.navig.run row to bind.",
+                user_id,
             )
             return
 
@@ -118,7 +119,8 @@ async def _maybe_bind_telegram_to_broker(user_id: int) -> None:
         if allowed and int(user_id) not in allowed:
             logger.debug(
                 "broker bind skipped: tg user %s not in telegram.allowed_users %s",
-                user_id, sorted(allowed),
+                user_id,
+                sorted(allowed),
             )
             return
 
@@ -133,6 +135,7 @@ async def _maybe_bind_telegram_to_broker(user_id: int) -> None:
         broker_url = cfg.get("cloud.broker_url", "https://relay.navig.run")
 
         from navig.cloud.broker_client import BrokerClient, BrokerError
+
         client = BrokerClient(broker_url, api_key)
         try:
             await client.bind_telegram(int(user_id))
@@ -150,12 +153,15 @@ async def _maybe_bind_telegram_to_broker(user_id: int) -> None:
         if getattr(exc, "status", None) == 404:
             logger.debug(
                 "broker bind_telegram(%s): 404 — daemon not yet registered, "
-                "CloudManager retry pending", user_id,
+                "CloudManager retry pending",
+                user_id,
             )
         else:
             logger.warning(
                 "broker bind_telegram(%s) failed: %r — Mini App will show "
-                "'not bound' until this succeeds.", user_id, exc,
+                "'not bound' until this succeeds.",
+                user_id,
+                exc,
             )
     except Exception as exc:  # noqa: BLE001
         # Visible (not debug): a failed bind is exactly why the Mini App
@@ -163,8 +169,11 @@ async def _maybe_bind_telegram_to_broker(user_id: int) -> None:
         # network / config issues stay loud.
         logger.warning(
             "broker bind_telegram(%s) failed: %r — Mini App will show 'not bound' "
-            "until this succeeds.", user_id, exc,
+            "until this succeeds.",
+            user_id,
+            exc,
         )
+
 
 # Short timeout for non-critical probes and system commands (bridge ping, uptime, df).
 _SHORT_CMD_TIMEOUT: float = 2.0
@@ -213,6 +222,12 @@ except ImportError:
 # the locked `core` Telegram extension, so it cannot be taken away that way
 # either — both halves are pinned by
 # core/tests/quality/test_telegram_extension_coverage.py.
+# Telegram rejects a setMyCommands payload above 100 entries with
+# `400 Bad Request: BOT_COMMANDS_TOO_MUCH` — the WHOLE payload, not the excess — so a
+# surface that grew to 101 left the bot serving an OLD menu and logged a 400 on every
+# boot (outpost, 2026-10-28). Clamp, and name what was left out.
+MAX_BOT_COMMANDS: int = 100
+
 LOCKED_COMMANDS: frozenset[str] = frozenset(
     {"start", "help", "settings", "status", "extensions", "ext"}
 )
@@ -339,7 +354,7 @@ class SlashCommandEntry:
     category: str = "general"  # section heading for /help
     usage: str = ""  # optional usage hint shown in /help (e.g. "/cmd [option]")
     default_args: str = ""  # substituted for {args} when user sends no argument
-    no_args_cli: str = ""   # alternative CLI command used when user sends NO argument
+    no_args_cli: str = ""  # alternative CLI command used when user sends NO argument
     ai_capable: bool = False  # if True, the Deck Commands tab exposes an AI/Plain toggle
     ai_default: str = "plain"  # "ai" or "plain" — fallback when user hasn't picked
 
@@ -347,6 +362,27 @@ class SlashCommandEntry:
 _SLASH_REGISTRY: list[SlashCommandEntry] = [
     # --- Core ----------------------------------------------------------------
     SlashCommandEntry("start", "Wake up greeting", handler="_handle_start", category="core"),
+    SlashCommandEntry(
+        "cards",
+        "🗂️ Card index — every card family, one press away",
+        handler="_handle_cards_index",
+        category="core",
+        usage="/cards [page]",
+    ),
+    SlashCommandEntry(
+        "poll",
+        "🗳️ Native Telegram poll — question | option | option [--multi] [--public] [--quiz=N]",
+        handler="_handle_poll",
+        category="core",
+        usage="/poll Question? | Option A | Option B",
+    ),
+    SlashCommandEntry(
+        "menu",
+        "The hub — tasks, agenda, reminders, habits in one card",
+        handler="_handle_menu",
+        category="core",
+        usage="/menu",
+    ),
     # Extensions — the switch for every other switch. LOCKED (see LOCKED_COMMANDS)
     # and owned by the locked `core` Telegram extension, so neither the Deck's
     # per-command toggle nor an extension toggle can take it away.
@@ -370,20 +406,30 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     # The handlers live on TelegramMeshMixin, which TelegramChannel does not inherit;
     # the dispatcher resolves them by name against that mixin (see telegram.py).
     SlashCommandEntry(
-        "nodes", "List mesh peers — role, load, capabilities",
-        handler="_handle_mesh_nodes", category="mesh",
+        "nodes",
+        "List mesh peers — role, load, capabilities",
+        handler="_handle_mesh_nodes",
+        category="mesh",
     ),
     SlashCommandEntry(
-        "leader", "Show which mesh node is currently leader",
-        handler="_handle_mesh_leader", category="mesh",
+        "leader",
+        "Show which mesh node is currently leader",
+        handler="_handle_mesh_leader",
+        category="mesh",
     ),
     SlashCommandEntry(
-        "mesh", "Mesh mode on/off, or current status",
-        handler="_handle_mesh_toggle", category="mesh", usage="/mesh [on|off|status]",
+        "mesh",
+        "Mesh mode on/off, or current status",
+        handler="_handle_mesh_toggle",
+        category="mesh",
+        usage="/mesh [on|off|status]",
     ),
     SlashCommandEntry(
-        "switch", "Hand leadership to another node",
-        handler="_handle_mesh_switch", category="mesh", usage="/switch [host]",
+        "switch",
+        "Hand leadership to another node",
+        handler="_handle_mesh_switch",
+        category="mesh",
+        usage="/switch [host]",
     ),
     SlashCommandEntry(
         "lang",
@@ -570,7 +616,12 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         usage="/query -d <db> <SQL>",
     ),
     # --- Tools ---------------------------------------------------------------
-    SlashCommandEntry("hosts", "\U0001f5a5\ufe0f Configured servers", handler="_handle_hosts_cmd", category="tools"),
+    SlashCommandEntry(
+        "hosts",
+        "\U0001f5a5\ufe0f Configured servers",
+        handler="_handle_hosts_cmd",
+        category="tools",
+    ),
     SlashCommandEntry(
         "hosttest",
         "Test connectivity to active host",
@@ -835,65 +886,97 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     # get muted in Telegram instead, and a muted reminder is indistinguishable from
     # a broken one.
     SlashCommandEntry(
-        "stats", "Habit progress — streaks, complete days, which weekday you lose",
-        handler="_handle_habit_stats", category="habits", usage="/stats [7|14|all]",
+        "stats",
+        "Habit progress — streaks, complete days, which weekday you lose",
+        handler="_handle_habit_stats",
+        category="habits",
+        usage="/stats [7|14|all]",
     ),
     SlashCommandEntry(
-        "card", "Send today's check-in card now",
-        handler="_handle_habit_card", category="habits",
+        "card",
+        "Send today's check-in card now",
+        handler="_handle_habit_card",
+        category="habits",
     ),
     # --- Todo (the PIM) -------------------------------------------------------
     # `/todo` with no argument opens the card; with one it CAPTURES. One command for
     # both because capture has to be the shortest possible path -- a task you have to
     # navigate to before typing is a task you do not write down.
     SlashCommandEntry(
-        "todo", "Your task list \u2014 or capture one: /todo Dentist tomorrow 10:30",
-        handler="_handle_todo", category="todo", usage="/todo [task] [when]",
+        "todo",
+        "Your task list \u2014 or capture one: /todo Dentist tomorrow 10:30",
+        handler="_handle_todo",
+        category="todo",
+        usage="/todo [task] [when]",
     ),
     # Aliases, hidden from /help and the "/" menu so one feature does not take three
     # slots in a list the operator scrolls. They still route, and they are still owned
     # by the `todo` extension, so switching it off takes all three.
     SlashCommandEntry(
-        "t", "Capture a task (short for /todo)",
-        handler="_handle_todo", category="todo", visible=False,
+        "t",
+        "Capture a task (short for /todo)",
+        handler="_handle_todo",
+        category="todo",
+        visible=False,
     ),
     SlashCommandEntry(
-        "task", "Capture a task (short for /todo)",
-        handler="_handle_todo", category="todo", visible=False,
+        "task",
+        "Capture a task (short for /todo)",
+        handler="_handle_todo",
+        category="todo",
+        visible=False,
     ),
     # --- Prompt library ---------------------------------------------------------
     # `/prompt` with no argument opens favourites/recent; with words it finds and
     # sends the prompt as a rich message (one-tap copy, native "Show More").
     SlashCommandEntry(
-        "prompt", "Find & send a saved prompt: /prompt debug root cause",
-        handler="_handle_prompt", category="prompts", usage="/prompt [name or words]",
+        "prompt",
+        "Find & send a saved prompt: /prompt debug root cause",
+        handler="_handle_prompt",
+        category="prompts",
+        usage="/prompt [name or words]",
     ),
     SlashCommandEntry(
-        "prompts", "Browse your prompt library (same as /prompt)",
-        handler="_handle_prompt", category="prompts", visible=False,
+        "prompts",
+        "Browse your prompt library (same as /prompt)",
+        handler="_handle_prompt",
+        category="prompts",
+        visible=False,
     ),
     # --- Read aloud -------------------------------------------------------------
     # Bedtime reader: a text becomes quiet ten-minute audio parts, delivered as they are
     # made. `/read <text>` for short ones; a .txt/.md with the caption `/read` for long
     # ones (a message is capped at 4096 characters — see navig/telegram/read_actions.py).
     SlashCommandEntry(
-        "read", "Read a text aloud, like a book: /read <text>, or send a .txt with the caption /read",
-        handler="_handle_read", category="media", usage="/read <text> | /read stop | /read go",
+        "read",
+        "Read a text aloud, like a book: /read <text>, or send a .txt with the caption /read",
+        handler="_handle_read",
+        category="media",
+        usage="/read <text> | /read stop | /read go",
     ),
     SlashCommandEntry(
-        "book", "Read a text aloud (same as /read)",
-        handler="_handle_read", category="media", visible=False,
+        "book",
+        "Read a text aloud (same as /read)",
+        handler="_handle_read",
+        category="media",
+        visible=False,
     ),
     # Appointments live apart from tasks: something to ATTEND, not to DO.
     SlashCommandEntry(
-        "agenda", "Your appointments, by day",
-        handler="_handle_agenda", category="todo", usage="/agenda",
+        "agenda",
+        "Your appointments, by day",
+        handler="_handle_agenda",
+        category="todo",
+        usage="/agenda",
     ),
     # --- Paper mail (the mailroom) ---------------------------------------------
     # The verb is the caption of a photo/PDF; typed alone it explains the gesture.
     SlashCommandEntry(
-        "courrier", "Classer une lettre : envoie sa photo ou son PDF avec la l\u00e9gende /courrier",
-        handler="_handle_courrier", category="paperwork", usage="/courrier (l\u00e9gende d'une photo/PDF)",
+        "courrier",
+        "Classer une lettre : envoie sa photo ou son PDF avec la l\u00e9gende /courrier",
+        handler="_handle_courrier",
+        category="paperwork",
+        usage="/courrier (l\u00e9gende d'une photo/PDF)",
     ),
     # --- Bot Identity ---
     SlashCommandEntry("about", "Learn about NAVIG", handler="_handle_about", category="core"),
@@ -1288,8 +1371,19 @@ _HELP_CATEGORIES: list[_HelpCategory] = [
         label="Getting Started",
         emoji="🚀",
         commands=[
-            "start", "help", "status", "doctor", "os", "ping", "about", "version", "skill",
-            "extensions", "lang",
+            "start",
+            "menu",
+            "help",
+            "status",
+            "doctor",
+            "os",
+            "ping",
+            "about",
+            "version",
+            "skill",
+            "extensions",
+            "lang",
+            "cards",
         ],
     ),
     _HelpCategory(
@@ -1333,7 +1427,16 @@ _HELP_CATEGORIES: list[_HelpCategory] = [
         label="Operations",
         emoji="🛠",
         commands=[
-            "hosts", "test", "hosttest", "use", "apps", "app", "files", "cat", "run", "backup",
+            "hosts",
+            "test",
+            "hosttest",
+            "use",
+            "apps",
+            "app",
+            "files",
+            "cat",
+            "run",
+            "backup",
         ],
     ),
     _HelpCategory(
@@ -1359,8 +1462,17 @@ _HELP_CATEGORIES: list[_HelpCategory] = [
         label="Messaging",
         emoji="💬",
         commands=[
-            "messengers", "send", "sms", "wa", "reply", "thread", "threads",
-            "contact", "contacts",
+            "messengers",
+            "send",
+            "sms",
+            "wa",
+            "reply",
+            "thread",
+            "threads",
+            "contact",
+            "contacts",
+            # A poll is a chat message with a question in it, so it lives with Messaging.
+            "poll",
         ],
     ),
     _HelpCategory(
@@ -1445,6 +1557,15 @@ def _help_category_has_live_commands(cat: "_HelpCategory") -> bool:
         if _live_help_commands(sub.commands):
             return True
     return False
+
+
+class ActiveHostUnverifiable(RuntimeError):
+    """The operator NAMED an active host that cannot be verified right now.
+
+    ``get_active_host()`` returns ``None`` for that, the same value as "no host is
+    configured", so ``... or "localhost"`` turned a transient failure into running the
+    command on the gateway machine. Raised instead; ``@error_handled`` replies with it.
+    """
 
 
 class TelegramCommandsMixin:
@@ -1651,9 +1772,12 @@ class TelegramCommandsMixin:
                 ]
             )
             if target_message_id:
-                if await self.edit_message(
-                    chat_id, target_message_id, text, parse_mode="HTML", keyboard=keyboard
-                ) is not None:
+                if (
+                    await self.edit_message(
+                        chat_id, target_message_id, text, parse_mode="HTML", keyboard=keyboard
+                    )
+                    is not None
+                ):
                     return
             sent = await self.send_message(chat_id, text, parse_mode="HTML", keyboard=keyboard)
             if sent and isinstance(sent, dict):
@@ -1700,8 +1824,12 @@ class TelegramCommandsMixin:
             # is a TypedDict, so `MessageMetadata()` and `dict()` are both `{}`), but it made
             # a dead import look like a supported optional one.
             from navig.gateway.channels.types import MessageMetadata
+
             await self._handle_briefing(
-                chat_id=chat_id, user_id=user_id, metadata=MessageMetadata()
+                chat_id=chat_id,
+                user_id=user_id,
+                metadata=MessageMetadata(),
+                message_id=target_message_id,
             )
             return
 
@@ -1719,9 +1847,12 @@ class TelegramCommandsMixin:
         text = f"{_ni('warn')} Something went wrong while opening that screen."
         keyboard = [[{"text": "🏠 Home", "callback_data": "nav:home"}]]
         if target_message_id:
-            if await self.edit_message(
-                chat_id, target_message_id, text, parse_mode=None, keyboard=keyboard
-            ) is not None:
+            if (
+                await self.edit_message(
+                    chat_id, target_message_id, text, parse_mode=None, keyboard=keyboard
+                )
+                is not None
+            ):
                 return
         sent = await self.send_message(chat_id, text, parse_mode=None, keyboard=keyboard)
         if sent and isinstance(sent, dict):
@@ -1828,7 +1959,9 @@ class TelegramCommandsMixin:
             lines.append(f"<b>{heading}</b>")
             for entry in commands:
                 cmd = f"/{entry.command}"
-                desc = _html.escape((entry.description or "").strip() or "No description", quote=False)
+                desc = _html.escape(
+                    (entry.description or "").strip() or "No description", quote=False
+                )
                 lines.append(f"• {cmd} — {desc}")
             lines.append("")
 
@@ -1885,6 +2018,7 @@ class TelegramCommandsMixin:
         # /start hits. Silent on non-TTY (systemd journal stays clean).
         try:
             from navig.core import narrator
+
             _name_for_trace = (username or "").lstrip("@").strip() or f"user_{user_id}"
             narrator.blank()
             narrator.phase(f"/start from @{_name_for_trace} (user_id={user_id})", icon="brain")
@@ -1903,7 +2037,9 @@ class TelegramCommandsMixin:
                     for m in sess.messages[-8:]:
                         content = str(getattr(m, "content", "")).strip()
                         if content:
-                            recent_msgs.append({"role": getattr(m, "role", "user"), "content": content})
+                            recent_msgs.append(
+                                {"role": getattr(m, "role", "user"), "content": content}
+                            )
             except Exception as _ctx_exc:
                 logger.debug("session context skipped for /start: %s", _ctx_exc)
 
@@ -1935,7 +2071,9 @@ class TelegramCommandsMixin:
             messages.extend(recent_msgs)
             messages.append({"role": "user", "content": "/start"})
             if narrator is not None:
-                narrator.step(f"calling LLM (mode=summary, context={len(recent_msgs)} msgs)", icon="radio")
+                narrator.step(
+                    f"calling LLM (mode=summary, context={len(recent_msgs)} msgs)", icon="radio"
+                )
             # SYNC run_llm — offload off the gateway event loop so /start doesn't
             # freeze the whole daemon while the greeting LLM call runs.
             import asyncio as _asyncio
@@ -1949,16 +2087,11 @@ class TelegramCommandsMixin:
             if narrator is not None:
                 narrator.step(f"LLM greeting failed -> fallback text  ({_greet_exc})", icon="warn")
 
-        await self.send_message(chat_id, greeting or fallback_text, parse_mode=None)
-        if narrator is not None:
-            narrator.verdict(
-                "Greeting sent  (LLM)" if greeting else "Greeting sent  (fallback text)",
-                icon="check",
-            )
-
-        # Away summary — show a brief context recap when the user returns after
-        # a long absence.  The feature is gated by memory.away_summary_gap_hours
-        # (0 = disabled) and applies only to DM sessions with prior history.
+        # Away summary — a brief context recap when the user returns after a long
+        # absence. Gated by memory.away_summary_gap_hours (0 = disabled) and only for
+        # DM sessions with prior history. It rides INSIDE the greeting card (folded
+        # away), so a return is one message instead of two.
+        away_text = ""
         try:
             from navig.config import get_config_manager as _gcm_start
             from navig.gateway.channels.away_summary import build_away_summary
@@ -1974,9 +2107,7 @@ class TelegramCommandsMixin:
                 if _sess_start and _sess_start.messages:
                     _last_active_raw = prior_last_active or _sess_start.last_active
                     _last_active = datetime.fromisoformat(_last_active_raw)
-                    _gap_secs = (
-                        datetime.now() - _last_active.replace(tzinfo=None)
-                    ).total_seconds()
+                    _gap_secs = (datetime.now() - _last_active.replace(tzinfo=None)).total_seconds()
                     if _gap_secs >= _gap_hours * 3600:
                         _window = int(
                             _cfg_start.get("memory.away_summary_message_window", 30) or 30
@@ -1987,13 +2118,19 @@ class TelegramCommandsMixin:
                         ]
                         _summary = await build_away_summary(_history, config=_cfg_start)
                         if _summary:
-                            await self.send_message(
-                                chat_id,
-                                f"💭 <b>Last time:</b> {html.escape(_summary)}",
-                                parse_mode="HTML",
-                            )
+                            away_text = _summary
         except Exception as _away_exc:
             logger.debug("away_summary skipped (non-fatal): %s", _away_exc)  # /start must not block
+
+        await self._send_greeting_card(
+            chat_id,
+            greeting or fallback_text,
+            username=username,
+            tod=tod,
+            away=away_text,
+            llm=greeting is not None,
+            narrator=narrator,
+        )
 
         # Onboarding handoff block intentionally removed — setup progress now
         # lives in the Navig Deck Welcome flow, not in the chat greeting.
@@ -2008,6 +2145,62 @@ class TelegramCommandsMixin:
             await _maybe_bind_telegram_to_broker(user_id)
         except Exception as _bind_exc:
             logger.debug("cloud broker bind skipped: %s", _bind_exc)
+
+    async def _send_greeting_card(
+        self,
+        chat_id: int,
+        greeting: str,
+        *,
+        username: str = "",
+        tod: str = "morning",
+        away: str = "",
+        llm: bool = True,
+        narrator: Any = None,
+    ) -> None:
+        """Send the ``/start`` greeting as a card, degrading to plain text.
+
+        The greeting stays words, not a dashboard: one warm paragraph, the return
+        recap folded away, one Menu button and a link into the Deck. A core without
+        the card kit (or a Telegram that refuses the rich body) still gets the words.
+        """
+        name = (username or "").lstrip("@").strip()
+        deck_url = ""
+        try:
+            from navig.cloud.rotation import menu_button_url
+
+            deck_url = str(menu_button_url() or "")
+        except Exception as _url_exc:  # noqa: BLE001 — a greeting ships without the link
+            logger.debug("deck url skipped for /start: %s", _url_exc)
+
+        try:
+            from navig.telegram import card_transport, greeting_card
+
+            card = greeting_card.greeting_card(
+                greeting, name=name, tod=tod, away=away, deck_url=deck_url
+            )
+            rows = card.keyboard()
+            sent = None
+            if card_transport.rich_available(self):
+                sent = await self.send_rich_message(
+                    chat_id,
+                    html=card.rich_html(),
+                    fallback_html=card.classic_html(),
+                    keyboard=rows,
+                )
+            if not sent:
+                sent = await self.send_message(
+                    chat_id, card.classic_html(), parse_mode="HTML", keyboard=rows
+                )
+        except Exception as _card_exc:  # noqa: BLE001 — /start must always answer
+            logger.debug("greeting card failed, sending the words: %s", _card_exc)
+            sent = await self.send_message(chat_id, greeting, parse_mode=None)
+
+        if narrator is not None:
+            narrator.verdict(
+                "Greeting sent  (LLM)" if llm else "Greeting sent  (fallback text)",
+                icon="check",
+            )
+        del sent  # the verdict is the only thing the caller needs
 
     # -- Help Encyclopedia (interactive, in-place editing) -------------------
 
@@ -2032,6 +2225,112 @@ class TelegramCommandsMixin:
         """
         value = TelegramCommandsMixin._t(f"help.{kind}.{key}")
         return fallback if value == f"help.{kind}.{key}" else value
+
+    @staticmethod
+    def _help_card_data(cb_data: str) -> dict | None:
+        """Plain data for one help screen, or ``None`` when the card cannot know it.
+
+        The card layer never reads the catalogue: this gathers the counts, the rows and the
+        neighbouring categories, and `navig.telegram.help_card` arranges them. Returning
+        ``None`` is the signal to fall back to the text screen that already existed.
+        """
+        parts = (cb_data or "").split(":")
+        if len(parts) < 2 or parts[0] != "help":
+            return None
+
+        _t = TelegramCommandsMixin._t
+        labels = {
+            "keywords_label": _t("help.btn.keywords"),
+            "extensions_label": _t("help.btn.extensions"),
+            "close_label": _t("help.btn.close"),
+            "categories_label": _t("help.btn.categories"),
+            "back_label": _t("help.btn.back"),
+        }
+
+        if parts[1] == "home":
+            idx = _ensure_help_cmd_index()
+            live = [
+                cat for cat in _HELP_CATEGORIES if _help_category_has_live_commands(cat)
+            ]
+            categories = []
+            for cat in live:
+                commands = [
+                    c for sub in (cat.subcategories or []) for c in sub.commands
+                ] or list(cat.commands or [])
+                categories.append(
+                    {
+                        "key": cat.key,
+                        "emoji": cat.emoji,
+                        "label": TelegramCommandsMixin._help_label("cat", cat.key, cat.label),
+                        "count": len([c for c in commands if c in idx]),
+                    }
+                )
+            return {
+                "kind": "home",
+                "command_count": len(idx),
+                "categories": categories,
+                **labels,
+            }
+
+        if parts[1] == "c" and len(parts) >= 3:
+            cat_key = parts[2]
+            cat = next((c for c in _HELP_CATEGORIES if c.key == cat_key), None)
+            if cat is None or cat.subcategories:
+                # A subcategory chooser is three buttons and no table — leave it text.
+                return None
+            idx = _ensure_help_cmd_index()
+            names = _live_help_commands(cat.commands)
+            rows = []
+            for name in names:
+                entry = idx.get(name)
+                if entry is None:
+                    continue
+                rows.append(
+                    {
+                        "name": name,
+                        "description": entry.description or "",
+                        "callback": f"help:d:{name}:{cat_key}",
+                    }
+                )
+            order = [c.key for c in _HELP_CATEGORIES if _help_category_has_live_commands(c)]
+            position = order.index(cat_key) + 1 if cat_key in order else 0
+            return {
+                "kind": "category",
+                "emoji": cat.emoji,
+                "label": TelegramCommandsMixin._help_label("cat", cat.key, cat.label),
+                "commands": rows,
+                "index": position,
+                "total": len(order),
+                "prev": order[position - 2] if position > 1 else "",
+                "next": order[position] if 0 < position < len(order) else "",
+                **labels,
+            }
+
+        if parts[1] == "d" and len(parts) >= 4:
+            name = parts[2]
+            back_cat = parts[3]
+            idx = _ensure_help_cmd_index()
+            entry = idx.get(name)
+            if entry is None:
+                return None
+            cat = next((c for c in _HELP_CATEGORIES if c.key == back_cat), None)
+            cat_label = (
+                TelegramCommandsMixin._help_label("cat", cat.key, cat.label) if cat else ""
+            )
+            back = f"help:c:{back_cat}"
+            if len(parts) >= 5:
+                back = f"help:s:{back_cat}:{parts[4]}"
+            return {
+                "kind": "command",
+                "name": name,
+                "description": entry.description or "",
+                "usage": entry.usage or f"/{name}",
+                "category_label": cat_label,
+                "back_callback": back,
+                **labels,
+            }
+
+        return None
 
     @staticmethod
     def _build_help_home() -> tuple[str, list[list[dict[str, str]]]]:
@@ -2212,6 +2511,7 @@ class TelegramCommandsMixin:
             entry = idx.get(cmd_name)
             if entry:
                 import html as _html
+
                 desc = _html.escape(
                     entry.description or TelegramCommandsMixin._t("help.no_description"),
                     quote=False,
@@ -2267,6 +2567,7 @@ class TelegramCommandsMixin:
             return None
 
         import html as _html
+
         desc = _html.escape(
             entry.description or TelegramCommandsMixin._t("help.no_description"), quote=False
         )
@@ -2286,8 +2587,7 @@ class TelegramCommandsMixin:
                 f"  <code>{entry.cli_template}</code>"
             )
         lines.append(
-            f"\n📁 <b>{TelegramCommandsMixin._t('help.detail.category')}</b>"
-            f"  {entry.category}"
+            f"\n📁 <b>{TelegramCommandsMixin._t('help.detail.category')}</b>  {entry.category}"
         )
 
         text = "\n".join(lines)
@@ -2346,6 +2646,19 @@ class TelegramCommandsMixin:
             back_cat = parts[3]
             back_sub = parts[4] if len(parts) >= 5 else None
             result = TelegramCommandsMixin._build_help_command_detail(cmd_name, back_cat, back_sub)
+
+        # A card when the screen has data worth arranging (home, a category, a command);
+        # the text screens stay for the shapes a table cannot improve.
+        try:
+            from navig.telegram import card_transport, help_card  # noqa: PLC0415
+
+            card = help_card.card_from(TelegramCommandsMixin._help_card_data(cb_data))
+            if card is not None and await card_transport.edit_card(
+                self, chat_id, message_id, card
+            ):
+                return
+        except Exception as exc:  # noqa: BLE001 — a card must never break /help
+            logger.debug("help card edit failed, falling back to text: %s", exc)
 
         if result is None:
             # Fallback — return to home
@@ -2424,7 +2737,9 @@ class TelegramCommandsMixin:
         """`/read [stop | go | status | <text>]` — be read to, like a book."""
         from navig.telegram import read_actions
 
-        argument = (text or "").split(None, 1)[1].strip() if len((text or "").split(None, 1)) > 1 else ""
+        argument = (
+            (text or "").split(None, 1)[1].strip() if len((text or "").split(None, 1)) > 1 else ""
+        )
         await read_actions.handle_command(self, chat_id, argument)
 
     async def _handle_todo(self, chat_id: int, text: str = "", **_: Any) -> None:
@@ -2448,20 +2763,25 @@ class TelegramCommandsMixin:
                 return
 
         # A capture answers with what was saved and one tap to file it; a bare /todo
-        # opens the list.
+        # opens the list. The list is a card: a chat that renders rich messages gets
+        # real headings and a bulleted list, every other chat the classic projection
+        # of the same structure, with the same buttons either way.
         if argument and created is not None:
             body, keyboard = todo_actions.build_added(created)
+            sent = await self._api_call(
+                "sendMessage",
+                {
+                    "chat_id": chat_id,
+                    "text": body,
+                    "parse_mode": "HTML",
+                    "reply_markup": keyboard,
+                },
+            )
         else:
-            body, keyboard = todo_actions.build_view("all")
-        sent = await self._api_call(
-            "sendMessage",
-            {
-                "chat_id": chat_id,
-                "text": body,
-                "parse_mode": "HTML",
-                "reply_markup": keyboard,
-            },
-        )
+            from navig.telegram import card_transport  # noqa: PLC0415
+
+            card, keyboard = todo_actions.view_card("all")
+            sent = await card_transport.send_card(self, chat_id, card, keyboard=keyboard)
         # A freshly captured task with a date needs its reminders scheduling, and the
         # chat we just answered in is where they should arrive. Doing it here rather
         # than inside `capture()` keeps that function usable from the CLI and the agent
@@ -2473,8 +2793,11 @@ class TelegramCommandsMixin:
 
             try:
                 reschedule(
-                    get_board_store(), created,
-                    user_id=int(chat_id), chat_id=int(chat_id), now=local_now(),
+                    get_board_store(),
+                    created,
+                    user_id=int(chat_id),
+                    chat_id=int(chat_id),
+                    now=local_now(),
                 )
             except Exception:  # noqa: BLE001 - the task is saved; a reminder is not worth losing it
                 logger.exception("todo: could not schedule reminders for %s", created.get("id"))
@@ -2624,9 +2947,7 @@ class TelegramCommandsMixin:
             ]
         ]
         if message_id:
-            await self.edit_message(
-                chat_id, message_id, text, parse_mode="HTML", keyboard=keyboard
-            )
+            await self.edit_message(chat_id, message_id, text, parse_mode="HTML", keyboard=keyboard)
             return
         await self.send_message(chat_id, text, parse_mode="HTML", keyboard=keyboard)
 
@@ -2820,9 +3141,10 @@ class TelegramCommandsMixin:
         text: str = "",
         message_id: int | None = None,
     ) -> None:
-        """Rich /plans card — show Spaces progress with inline action buttons."""
+        """The spaces board as a card — one row per space, its bar in its own column."""
         from navig.commands.plans import collect_spaces_progress
         from navig.commands.space import get_active_space
+        from navig.telegram import card_transport, chat_tidy, plans_card
 
         try:
             spaces = collect_spaces_progress()
@@ -2834,57 +3156,20 @@ class TelegramCommandsMixin:
             )
             return
 
-        active = get_active_space()
-        lines = ["\U0001f5fa\ufe0f <b>Spaces Progress</b>", ""]
-        if not spaces:
-            lines.append("<i>No spaces found. Run <code>/intake</code> to set up your first space.</i>")
-        else:
-            for sp in spaces:
-                pct = sp.completion_pct or 0.0
-                bar_filled = int(pct / 10)
-                bar = "\u2588" * bar_filled + "\u2591" * (10 - bar_filled)
-                marker = "\u25b8" if sp.name == active else "\u2022"
-                scope_tag = f"<code>{sp.scope}</code>" if sp.scope and sp.scope != "global" else ""
-                goal_tag = f"<i>{html.escape(sp.goal)}</i>" if sp.goal else ""
-                meta = " \u00b7 ".join(x for x in [scope_tag, goal_tag, sp.last_updated] if x)
-                lines.append(
-                    f"{marker} <b>{html.escape(sp.name)}</b>  {bar} {pct:.0f}%"
-                )
-                if meta:
-                    lines.append(f"   {meta}")
-            lines.append("")
-            lines.append(f"Active: <code>{html.escape(active)}</code>")
-
-        keyboard: list[list[dict]] = [
-            [
-                {"text": "\U0001f9ed Start Intake", "callback_data": "nav:open:intake"},
-                {"text": "\U0001f4dd Add Goal", "callback_data": "nav:open:plan"},
-            ],
-            [
-                {"text": "\U0001f4cb Briefing", "callback_data": "nav:open:briefing"},
-                {"text": "\U0001f5c2\ufe0f Spaces", "callback_data": "nav:cmd:/spaces"},
-            ],
-        ]
-        if message_id:
-            keyboard.append([
-                {"text": "\U0001f519 Back", "callback_data": "nav:back"},
-                {"text": "\U0001f3e0 Home", "callback_data": "nav:home"},
-            ])
-            await self.edit_message(
-                chat_id, message_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard
-            )
-        else:
-            # Fresh send tagged `system` — swept the next morning like the other
-            # status cards (the edit path above records nothing).
-            from navig.telegram import chat_tidy
-
-            with chat_tidy.routine("system"):
-                sent = await self.send_message(
-                    chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard
-                )
-            # Only the fresh-send path pins. The edit path above re-renders a message that
-            # is already whatever it was, so pinning there would re-pin on every press.
-            await TelegramCommandsMixin._auto_pin_plans(self, chat_id, user_id, sent)
+        card = plans_card.spaces_card(
+            spaces=spaces,
+            active=get_active_space(),
+            buttons=plans_card.nav_rows(message_id=bool(message_id)),
+        )
+        if message_id and await card_transport.edit_card(self, chat_id, message_id, card):
+            return
+        # Fresh send tagged `system` — swept the next morning like the other status cards
+        # (the edit path above records nothing).
+        with chat_tidy.routine("system"):
+            sent = await card_transport.send_card(self, chat_id, card)
+        # Only the fresh-send path pins: the edit path re-renders a message that is already
+        # whatever it was, so pinning there would re-pin on every press.
+        await TelegramCommandsMixin._auto_pin_plans(self, chat_id, user_id, sent)
 
     async def _handle_plan_cmd(
         self,
@@ -2893,35 +3178,28 @@ class TelegramCommandsMixin:
         text: str = "",
         message_id: int | None = None,
     ) -> None:
-        """Handle /plan <goal> — add a plan goal with confirmation card."""
+        """Record a plan goal in the active space, answered as a card.
+
+        Three outcomes, three cards: no argument (usage with an ordered example list), the
+        goal landed (a Space/Goal sheet), and the duplicate (a callout, because nothing was
+        written). Anything else is a real failure and stays a plain error with the reason.
+        """
+        from navig.telegram import card_transport, plans_card
+
         raw = (text or "").strip()
-        arg = raw[len("/plan"):].strip() if raw.lower().startswith("/plan") else raw
+        arg = raw[len("/plan") :].strip() if raw.lower().startswith("/plan") else raw
 
         if not arg:
-            usage_lines = [
-                "\U0001f4dd <b>Add a Plan Goal</b>",
-                "",
-                "Use <code>/plan &lt;goal text&gt;</code> to record a goal in your active space.",
-                "",
-                "<b>Examples:</b>",
-                "  \u2022 <code>/plan Launch MVP by end of May</code>",
-                "  \u2022 <code>/plan Read 2 books this month</code>",
-                "  \u2022 <code>/plan Reduce cloud costs by 20%</code>",
-            ]
-            keyboard = [
-                [
-                    {"text": "\U0001f9ed Start Intake Instead", "callback_data": "nav:open:intake"},
-                    {"text": "\U0001f5fa\ufe0f Plans", "callback_data": "nav:cmd:/plans"},
-                ],
-            ]
-            await self.send_message(
-                chat_id, "\n".join(usage_lines), parse_mode="HTML", keyboard=keyboard
-            )
+            card = plans_card.goal_usage_card(buttons=plans_card.nav_rows(message_id=False))
+            await card_transport.send_card(self, chat_id, card)
             return
 
         from navig.commands.space import get_active_space
 
         active = get_active_space()
+        outcome = "added"
+        resolved_space = ""
+        error_text = ""
         try:
             # Replicate plans_add logic directly (Typer CLI fn cannot be called programmatically)
             import os
@@ -2943,40 +3221,41 @@ class TelegramCommandsMixin:
                 target_file.write_text("# Plan\n\n## Added Goals\n", encoding="utf-8")
 
             entry = f"- [ ] [{resolved_space}] {arg.strip()}"
-            text = target_file.read_text(encoding="utf-8")
-            duplicate = entry in text
-            if not duplicate:
-                updated = _insert_under_section(text, "## Added Goals", entry)
+            existing = target_file.read_text(encoding="utf-8")
+            if entry in existing:
+                outcome = "duplicate"
+            else:
+                updated = _insert_under_section(existing, "## Added Goals", entry)
                 _tmp = target_file.parent / (target_file.name + ".tmp")
                 _tmp.write_text(updated, encoding="utf-8")
                 os.replace(_tmp, target_file)
-
-            if duplicate:
-                lines = [
-                    "\u26a0\ufe0f <b>Duplicate goal</b>",
-                    "",
-                    "<i>This goal is already in your plan.</i>",
-                ]
-            else:
-                lines = [
-                    "\u2705 <b>Goal added</b>",
-                    "",
-                    f"\U0001f4cc Space: <code>{html.escape(resolved_space)}</code>",
-                    f"\U0001f3af Goal: {html.escape(arg)}",
-                ]
         except Exception as exc:
-            lines = [
-                "\u274c <b>Failed to add goal</b>",
-                f"<code>{html.escape(str(exc))}</code>",
-            ]
+            outcome = "failed"
+            error_text = str(exc)
 
-        keyboard = [
+        if outcome == "failed":
+            await self.send_message(
+                chat_id,
+                f"\u274c <b>Failed to add goal</b>\n<code>{html.escape(error_text)}</code>",
+                parse_mode="HTML",
+            )
+            return
+
+        actions = [
             [
-                {"text": "\U0001f4cb View Plans", "callback_data": "nav:cmd:/plans"},
-                {"text": "\u2795 Add Another", "callback_data": "nav:cmd:/plan"},
-            ],
+                (plans_card._label("plan.card.view"), "nav:cmd:/plans", "primary"),
+                (plans_card._label("plan.card.another"), "nav:cmd:/plan", None),
+            ]
         ]
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+        if outcome == "duplicate":
+            card = plans_card.goal_duplicate_card(goal=arg, buttons=actions)
+        else:
+            card = plans_card.goal_added_card(
+                space=resolved_space or active, goal=arg, buttons=actions
+            )
+        if message_id and await card_transport.edit_card(self, chat_id, message_id, card):
+            return
+        await card_transport.send_card(self, chat_id, card)
 
     async def _handle_spaces(
         self, chat_id: int, user_id: int = 0, text: str = "", message_id: int | None = None
@@ -3017,10 +3296,12 @@ class TelegramCommandsMixin:
             ],
         ]
         if message_id:
-            keyboard.append([
-                {"text": "\U0001f519 Back", "callback_data": "nav:back"},
-                {"text": "\U0001f3e0 Home", "callback_data": "nav:home"},
-            ])
+            keyboard.append(
+                [
+                    {"text": "\U0001f519 Back", "callback_data": "nav:back"},
+                    {"text": "\U0001f3e0 Home", "callback_data": "nav:home"},
+                ]
+            )
             await self.edit_message(
                 chat_id, message_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard
             )
@@ -3181,7 +3462,9 @@ class TelegramCommandsMixin:
         if arg:
             if not validate_space_name(arg):
                 await self.send_message(
-                    chat_id, "Unknown space for intake. Use <code>/spaces</code> first.", parse_mode="HTML"
+                    chat_id,
+                    "Unknown space for intake. Use <code>/spaces</code> first.",
+                    parse_mode="HTML",
                 )
                 return
             selected_space = normalize_space_name(arg)
@@ -3199,7 +3482,9 @@ class TelegramCommandsMixin:
         self._runtime_state_with_context(user_id, chat_id, context)
 
         first_question = TelegramCommandsMixin._INTAKE_QUESTIONS[0][1]
-        text_payload = f"🧭 Intake started for <code>{html.escape(selected_space)}</code>.\n{first_question}"
+        text_payload = (
+            f"🧭 Intake started for <code>{html.escape(selected_space)}</code>.\n{first_question}"
+        )
         keyboard = [
             [
                 {"text": "🔙 Back", "callback_data": "nav:back"},
@@ -3207,13 +3492,14 @@ class TelegramCommandsMixin:
             ],
         ]
         if message_id:
-            if await self.edit_message(
-                chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
-            ) is not None:
+            if (
+                await self.edit_message(
+                    chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
+                )
+                is not None
+            ):
                 return
-        sent = await self.send_message(
-            chat_id, text_payload, parse_mode="HTML", keyboard=keyboard
-        )
+        sent = await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
         if sent and isinstance(sent, dict):
             self._get_navigation_state(chat_id)["message_id"] = sent.get("message_id")
 
@@ -3321,12 +3607,8 @@ class TelegramCommandsMixin:
             return None, None
 
         detected_space = self._detect_space_from_text(lowered)
-        has_switch_signal = any(
-            verb in lowered for verb in TelegramCommandsMixin._NL_SWITCH_VERBS
-        )
-        has_intake_signal = any(
-            verb in lowered for verb in TelegramCommandsMixin._NL_INTAKE_VERBS
-        )
+        has_switch_signal = any(verb in lowered for verb in TelegramCommandsMixin._NL_SWITCH_VERBS)
+        has_intake_signal = any(verb in lowered for verb in TelegramCommandsMixin._NL_INTAKE_VERBS)
 
         if detected_space and has_switch_signal and not has_intake_signal:
             return "space", detected_space
@@ -3362,10 +3644,22 @@ class TelegramCommandsMixin:
             "skill": ("run skill", "list skills", "skill list"),
             "db": ("list databases", "show databases"),
             "kill": (
-                "kill", "kill all", "kill the", "kill any", "kill every",
-                "terminate", "stop all", "close all", "shut down",
-                "shutdown processes", "clear chrome tabs", "kill chrome tabs",
-                "close chrome tabs", "kill node", "kill python", "kill powershell",
+                "kill",
+                "kill all",
+                "kill the",
+                "kill any",
+                "kill every",
+                "terminate",
+                "stop all",
+                "close all",
+                "shut down",
+                "shutdown processes",
+                "clear chrome tabs",
+                "kill chrome tabs",
+                "close chrome tabs",
+                "kill node",
+                "kill python",
+                "kill powershell",
             ),
         }
 
@@ -3426,9 +3720,7 @@ class TelegramCommandsMixin:
                     "command": command,
                     "args": args,
                     "risk": (
-                        "risky"
-                        if command in TelegramCommandsMixin._NL_RISKY_COMMANDS
-                        else "safe"
+                        "risky" if command in TelegramCommandsMixin._NL_RISKY_COMMANDS else "safe"
                     ),
                     "usage": entry.usage or f"/{command}",
                     "score": score,
@@ -3465,14 +3757,76 @@ class TelegramCommandsMixin:
     # → the user's joke request gets intercepted before it reaches the LLM.
     _NL_STOPWORDS: frozenset[str] = frozenset(
         {
-            "a", "an", "the", "i", "me", "my", "we", "us", "our", "you",
-            "your", "he", "she", "it", "they", "them", "their", "to", "of",
-            "in", "on", "at", "for", "with", "by", "from", "is", "am", "are",
-            "was", "were", "be", "been", "being", "do", "does", "did", "have",
-            "has", "had", "and", "or", "but", "if", "so", "as", "that", "this",
-            "these", "those", "what", "which", "who", "whom", "whose", "when",
-            "where", "why", "how", "yes", "no", "ok", "okay", "please", "thanks",
-            "thank", "hi", "hey", "hello", "yo",
+            "a",
+            "an",
+            "the",
+            "i",
+            "me",
+            "my",
+            "we",
+            "us",
+            "our",
+            "you",
+            "your",
+            "he",
+            "she",
+            "it",
+            "they",
+            "them",
+            "their",
+            "to",
+            "of",
+            "in",
+            "on",
+            "at",
+            "for",
+            "with",
+            "by",
+            "from",
+            "is",
+            "am",
+            "are",
+            "was",
+            "were",
+            "be",
+            "been",
+            "being",
+            "do",
+            "does",
+            "did",
+            "have",
+            "has",
+            "had",
+            "and",
+            "or",
+            "but",
+            "if",
+            "so",
+            "as",
+            "that",
+            "this",
+            "these",
+            "those",
+            "what",
+            "which",
+            "who",
+            "whom",
+            "whose",
+            "when",
+            "where",
+            "why",
+            "how",
+            "yes",
+            "no",
+            "ok",
+            "okay",
+            "please",
+            "thanks",
+            "thank",
+            "hi",
+            "hey",
+            "hello",
+            "yo",
         }
     )
 
@@ -3728,7 +4082,9 @@ class TelegramCommandsMixin:
             )
 
             _settings_hit = await try_handle_settings_intent(text, chat_id, user_id, self)
-            message_brief.note(chat_id, _brief_msg, "settings_intent", "yes" if _settings_hit else "no")
+            message_brief.note(
+                chat_id, _brief_msg, "settings_intent", "yes" if _settings_hit else "no"
+            )
             if _settings_hit:
                 return True
         except Exception as _settings_exc:
@@ -3755,20 +4111,31 @@ class TelegramCommandsMixin:
             }
             self._runtime_state_with_context(user_id, chat_id, context)
 
-            await self.send_message(
-                chat_id,
-                (
-                    f"🧭 Detected <code>{intent}</code> for <code>{space}</code>. "
-                    "Auto-starting in 3s. Reply <code>cancel</code> to stop or <code>yes</code> to run now."
-                ),
-                parse_mode="HTML",
-                keyboard=[
-                    [
-                        {"text": "✅ Yes now", "callback_data": "nl_yes", "style": "success"},
-                        {"text": "🛑 Cancel", "callback_data": "nl_cancel", "style": "danger"},
-                    ]
-                ],
-            )
+            # The two answers this prompt accepts are the whole point of it, so they go
+            # in the bubble instead of under it.
+            try:
+                from navig.telegram import card_transport, nl_card  # noqa: PLC0415
+
+                _intent = nl_card.intent_card(intent=intent, space=space, delay=3)
+                await card_transport.send_card(
+                    self, chat_id, _intent, keyboard=_intent.keyboard()
+                )
+            except Exception as _intent_exc:  # noqa: BLE001 — the words still get through
+                logger.debug("nl intent card skipped: %s", _intent_exc)
+                await self.send_message(
+                    chat_id,
+                    (
+                        f"🧭 Detected <code>{intent}</code> for <code>{space}</code>. "
+                        "Auto-starting in 3s. Reply <code>cancel</code> to stop or <code>yes</code> to run now."
+                    ),
+                    parse_mode="HTML",
+                    keyboard=[
+                        [
+                            {"text": "✅ Yes now", "callback_data": "nl_yes", "style": "success"},
+                            {"text": "🛑 Cancel", "callback_data": "nl_cancel", "style": "danger"},
+                        ]
+                    ],
+                )
             spawn(
                 self._execute_nl_pending_after_delay(
                     chat_id=chat_id,
@@ -3812,6 +4179,16 @@ class TelegramCommandsMixin:
         if resolved.get("ambiguous"):
             candidates = list(resolved.get("candidates") or [])[:3]
             if candidates:
+                try:
+                    from navig.telegram import card_transport, nl_card  # noqa: PLC0415
+
+                    _ambiguous = nl_card.ambiguous_card(candidates=candidates, query=text)
+                    await card_transport.send_card(
+                        self, chat_id, _ambiguous, keyboard=_ambiguous.keyboard()
+                    )
+                    return True
+                except Exception as _amb_exc:  # noqa: BLE001 — fall back to the words
+                    logger.debug("nl ambiguous card skipped: %s", _amb_exc)
                 lines = [
                     "I found multiple matching commands.",
                     "Tap a command below to run it.",
@@ -3835,6 +4212,20 @@ class TelegramCommandsMixin:
         usage = str(resolved.get("usage") or f"/{command}")
 
         if resolved.get("missing_args"):
+            try:
+                from navig.telegram import card_transport, nl_card  # noqa: PLC0415
+
+                _missing = nl_card.missing_args_card(
+                    command=command,
+                    usage=usage,
+                    description=str(resolved.get("description") or ""),
+                )
+                await card_transport.send_card(
+                    self, chat_id, _missing, keyboard=_missing.keyboard()
+                )
+                return True
+            except Exception as _miss_exc:  # noqa: BLE001 — fall back to the words
+                logger.debug("nl missing-args card skipped: %s", _miss_exc)
             await self.send_message(
                 chat_id,
                 f"I can run this as <code>/{command}</code>, but it needs arguments.\nUsage: <code>{usage}</code>",
@@ -3972,9 +4363,7 @@ class TelegramCommandsMixin:
                     "", chat_id, 0, provider_id, manifest
                 )
             else:
-                self._update_llm_mode_router(
-                    provider_id, {"small": "", "big": "", "coder_big": ""}
-                )
+                self._update_llm_mode_router(provider_id, {"small": "", "big": "", "coder_big": ""})
                 prov_name_disp = manifest.display_name if manifest else provider_id
                 await self.send_message(
                     chat_id,
@@ -4253,7 +4642,9 @@ class TelegramCommandsMixin:
 
         judges.confirm_reply(
             text,
-            " ".join(str(pending.get(k) or "") for k in ("intent", "space", "command", "args")).strip(),
+            " ".join(
+                str(pending.get(k) or "") for k in ("intent", "space", "command", "args")
+            ).strip(),
             "cancel"
             if lowered in {"cancel", "stop", "no", "abort"}
             else "confirm"
@@ -4424,9 +4815,7 @@ class TelegramCommandsMixin:
                 )
                 mode = sm.get_session_metadata(
                     chat_id, user_id, "agent_mode", "", is_group=is_group
-                ) or sm.get_session_metadata(
-                    chat_id, user_id, "focus_mode", "", is_group=is_group
-                )
+                ) or sm.get_session_metadata(chat_id, user_id, "focus_mode", "", is_group=is_group)
                 from navig.gateway.channels.focus_modes import DEFAULT_MODE
 
                 mode = mode if mode in ("standard", "creative") else DEFAULT_MODE
@@ -4493,10 +4882,11 @@ class TelegramCommandsMixin:
             lines = ["<b>Agent Modes</b>\n"]
             for mid, fm in AGENT_MODES.items():
                 active_marker = " <b>· active</b>" if mid == current else ""
-                lines.append(f"{fm.emoji} <code>{mid}</code>{active_marker}\n<i>{fm.description}</i>")
+                lines.append(
+                    f"{fm.emoji} <code>{mid}</code>{active_marker}\n<i>{fm.description}</i>"
+                )
             lines.append(
-                "\n<code>/mode &lt;name&gt;</code> to switch  ·  "
-                "<code>/mode auto</code> to reset"
+                "\n<code>/mode &lt;name&gt;</code> to switch  ·  <code>/mode auto</code> to reset"
             )
             await self.send_message(chat_id, "\n\n".join(lines), parse_mode="HTML")
             return
@@ -4518,9 +4908,7 @@ class TelegramCommandsMixin:
         if _HAS_SESSIONS:
             try:
                 sm = get_session_manager()
-                sm.set_session_metadata(
-                    chat_id, _uid, "agent_mode", canonical, is_group=_is_grp
-                )
+                sm.set_session_metadata(chat_id, _uid, "agent_mode", canonical, is_group=_is_grp)
             except Exception as e:
                 logger.debug("Failed to persist agent_mode: %s", e)
         try:
@@ -4570,15 +4958,10 @@ class TelegramCommandsMixin:
             except Exception as exc:  # noqa: BLE001
                 logger.debug("/lang read failed: %s", exc)
                 current = None
-            shown = current or "auto (follow the content)"
-            await self.send_message(
-                chat_id,
-                f"🌍 Output language: <b>{html.escape(str(shown))}</b>\n\n"
-                "Change it with <code>/lang Russian</code>, or "
-                "<code>/lang auto</code> to follow whatever the content is.\n"
-                "Applies to transcripts, AI briefings and summaries.",
-                parse_mode="HTML",
-            )
+            from navig.telegram import card_transport, lang_card  # noqa: PLC0415
+
+            card = lang_card.picker_card(current=str(current or ""))
+            await card_transport.send_card(self, chat_id, card)
             return
 
         value = normalise_language(arg)
@@ -4599,29 +4982,23 @@ class TelegramCommandsMixin:
             )
             return
 
+        from navig.telegram import card_transport, lang_card  # noqa: PLC0415
+
         if (saved or None) != (value or None):
-            await self.send_message(
+            # The write did not land: say that, with both values, instead of echoing the
+            # request back as success (the failure the command was written to prevent).
+            await card_transport.send_card(
+                self,
                 chat_id,
-                "⚠️ The language setting did not persist — config reads back as "
-                f"<b>{html.escape(str(saved or 'auto'))}</b>.",
-                parse_mode="HTML",
+                lang_card.mismatch_card(requested=str(value or "auto"), saved=str(saved or "")),
             )
             return
 
-        if saved is None:
-            await self.send_message(
-                chat_id,
-                "🌍 Output language: <b>auto</b> — transcripts and briefings now "
-                "follow the language of the content itself.",
-                parse_mode="HTML",
-            )
-        else:
-            await self.send_message(
-                chat_id,
-                f"🌍 Output language set to <b>{html.escape(saved)}</b>. "
-                "Transcripts, briefings and summaries will use it from now on.",
-                parse_mode="HTML",
-            )
+        await card_transport.send_card(
+            self,
+            chat_id,
+            lang_card.saved_card(requested=str(value or "auto"), saved=str(saved or "")),
+        )
 
     async def _handle_tier_override(
         self,
@@ -4675,7 +5052,8 @@ class TelegramCommandsMixin:
         """Toggle incognito for this chat: ``/incognito``, ``/incognito on|off``."""
         if not _HAS_SESSIONS:
             await self.send_message(
-                chat_id, "Incognito isn't available: the session store is not loaded.",
+                chat_id,
+                "Incognito isn't available: the session store is not loaded.",
                 parse_mode=None,
             )
             return
@@ -4949,7 +5327,9 @@ class TelegramCommandsMixin:
                         ready = bool(result.local_probe_ok)
                     elif manifest.requires_key:
                         vault_ok, vault_validated = self._provider_vault_validation_status(manifest)
-                        ready = key_detected or vault_ok  # consistent with _handle_providers: key exists in vault
+                        ready = (
+                            key_detected or vault_ok
+                        )  # consistent with _handle_providers: key exists in vault
                     else:
                         ready = True
                 except Exception:
@@ -4988,9 +5368,7 @@ class TelegramCommandsMixin:
                 return
             except Exception:  # noqa: BLE001
                 pass
-        await self.send_message(
-            chat_id, text_payload, parse_mode="HTML", keyboard=keyboard_rows
-        )
+        await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard_rows)
 
     async def _show_models_tier_summary(
         self,
@@ -5113,6 +5491,25 @@ class TelegramCommandsMixin:
             models = list(manifest.models)
 
         if not models:
+            try:
+                from navig.telegram import card_transport  # noqa: PLC0415
+                from navig.telegram import model_list_card as _mlc
+            except Exception:  # noqa: BLE001 — wheel drift: the old text answer still works
+                _mlc = None
+            if _mlc is not None:
+                card = _mlc.empty_card(
+                    tier_label=tier_label,
+                    provider_emoji=emoji,
+                    provider_name=name,
+                    provider_id=prov_id,
+                    failed=resolution_failed,
+                )
+                if message_id and await card_transport.edit_card(
+                    self, chat_id, message_id, card, keyboard=card.keyboard()
+                ):
+                    return
+                if await card_transport.send_card(self, chat_id, card, keyboard=card.keyboard()):
+                    return
             lines = [
                 f"📝 <b>{html.escape(tier_label)} — {emoji} {html.escape(name)}</b>",
                 "",
@@ -5144,6 +5541,7 @@ class TelegramCommandsMixin:
 
         # Detect current model for this tier
         current_model = ""
+        current_provider_name = ""
         try:
             from navig.llm.router import get_llm_router
 
@@ -5155,11 +5553,50 @@ class TelegramCommandsMixin:
                     mc = lr.modes.get_mode(modes[0])
                     if mc and getattr(mc, "provider", "") == prov_id:
                         current_model = getattr(mc, "model", "") or ""
+                    elif mc and getattr(mc, "provider", ""):
+                        # This tier runs somebody else's model; naming it is the whole
+                        # point of showing the list, because a pick here switches it.
+                        current_provider_name = getattr(mc, "provider", "") or ""
+                        try:
+                            from navig.providers.registry import get_provider as _gp2
+
+                            other = _gp2(current_provider_name)
+                            if other:
+                                current_provider_name = other.display_name
+                        except Exception:  # noqa: BLE001
+                            pass
         except Exception:  # noqa: BLE001
             logger.debug("Failed to read LLM mode router for model list", exc_info=True)
 
         total_pages = (len(models) + PAGE_SIZE - 1) // PAGE_SIZE
         page = max(0, min(page, total_pages - 1))
+
+        try:
+            from navig.telegram import card_transport  # noqa: PLC0415
+            from navig.telegram import model_list_card as _mlc
+        except Exception:  # noqa: BLE001 — wheel drift: the old text answer still works
+            _mlc = None
+
+        if _mlc is not None:
+            card = _mlc.model_list_card(
+                tier_label=tier_label,
+                provider_emoji=emoji,
+                provider_name=name,
+                provider_id=prov_id,
+                tier_code=tier_code,
+                models=[str(m) for m in models],
+                page=page,
+                page_size=PAGE_SIZE,
+                current_model=current_model,
+                current_provider_name=current_provider_name,
+            )
+            if message_id and await card_transport.edit_card(
+                self, chat_id, message_id, card, keyboard=card.keyboard()
+            ):
+                return
+            if await card_transport.send_card(self, chat_id, card, keyboard=card.keyboard()):
+                return
+
         start = page * PAGE_SIZE
         page_models = models[start : start + PAGE_SIZE]
 
@@ -5388,26 +5825,7 @@ class TelegramCommandsMixin:
         except Exception:  # noqa: BLE001
             pass
 
-        # ── Header ──────────────────────────────────────────────────────
-        lines: list[str] = ["🎛️ <b>AI Providers</b>", ""]
-
-        # Session override banner
-        if session_overrides:
-            override_parts: list[str] = []
-            _tier_prov_keys = [
-                k for k in session_overrides if k.startswith("tier_") and k.endswith("_provider")
-            ]
-            if _tier_prov_keys:
-                _tier_names = [
-                    k.replace("tier_", "").replace("_provider", "") for k in _tier_prov_keys
-                ]
-                override_parts.append(f"tiers={','.join(_tier_names)}")
-            if "vision_provider" in session_overrides:
-                override_parts.append(f"vision={session_overrides['vision_provider']}")
-            if override_parts:
-                lines.append(f"🔶 Session: {', '.join(override_parts)}")
-
-        # Active provider line
+        # ── What the card says ──────────────────────────────────────────
         active_name = ""
         if active_prov and active_prov != "bridge_copilot":
             try:
@@ -5415,73 +5833,66 @@ class TelegramCommandsMixin:
                 active_name = f"{_am.emoji} {_am.display_name}" if _am else active_prov
             except Exception:  # noqa: BLE001
                 active_name = active_prov
-            lines.append(f"✅ Current: <b>{html.escape(active_name)}</b>")
         elif active_prov == "bridge_copilot":
-            lines.append(f"✅ Current: <b>{_ni('bolt')} Bridge</b>")
+            active_name = f"{_ni('bolt')} Bridge"
 
-        # Bridge status (single line)
+        session_parts: list[str] = []
+        _tier_prov_keys = [
+            k for k in session_overrides if k.startswith("tier_") and k.endswith("_provider")
+        ]
+        if _tier_prov_keys:
+            session_parts.append(
+                "tiers="
+                + ",".join(k.replace("tier_", "").replace("_provider", "") for k in _tier_prov_keys)
+            )
+        if "vision_provider" in session_overrides:
+            session_parts.append(f"vision={session_overrides['vision_provider']}")
+
         bridge_active = active_prov == "bridge_copilot"
-        if bridge_online or bridge_active:
-            lines.append(_format_bridge_status(bridge_online, bridge_url))
 
-        # Compact model routing summary
+        # Compact model routing summary — three rows of the sheet, not a code soup
+        routes: list[dict[str, str]] = []
         try:
             from navig.llm.router import get_llm_router
 
             llm_router = get_llm_router()
             if llm_router:
-                small = llm_router.modes.get_mode("small_talk")
-                big = llm_router.modes.get_mode("big_tasks")
-                code = llm_router.modes.get_mode("coding")
-
-                def _short(mode_obj):
-                    if not mode_obj:
-                        return "—"
-                    model = getattr(mode_obj, "model", "") or ""
-                    return model.split("/")[-1] if model else "—"
-
-                lines.append("")
-                lines.append(f"⚡<code>{_short(small)}</code> · 🧠<code>{_short(big)}</code> · 💻<code>{_short(code)}</code>")
+                for route_label, mode_key in (
+                    ("⚡ Small talk", "small_talk"),
+                    ("🧠 Big tasks", "big_tasks"),
+                    ("💻 Coding", "coding"),
+                ):
+                    mode = llm_router.modes.get_mode(mode_key)
+                    routes.append(
+                        {"label": route_label, "model": str(getattr(mode, "model", "") or "")}
+                    )
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
         # Vision status
+        vision: dict[str, str] | None = None
         try:
             from navig.providers.discovery import resolve_vision_model
 
             vision_result = resolve_vision_model(session_overrides or None)
             if vision_result:
                 v_prov, v_model, v_reason = vision_result
-                v_short = v_model.split("/")[-1].split(":")[-1]
-                lines.append(f"👁 Vision: <code>{html.escape(v_short)}</code> ({html.escape(v_reason)})")
+                vision = {"model": v_model, "reason": v_reason}
         except Exception:  # noqa: BLE001
             pass
 
-        if user_pref == "noai":
-            lines.append("")
-            lines.append("🚫 <b>Next message:</b> <code>raw / no AI</code> <i>(one-shot)</i>")
 
-        lines.append("")
-        lines.append("Tap a provider to activate it:")
-
-        # ── Provider buttons ────────────────────────────────────────────
-        keyboard_rows: list = []
-        # Bridge is always shown regardless of probe result so users can see it
-        # exists even when VS Code is closed.  Suffix reflects actual state.
-        if bridge_active:
-            bridge_suffix = " ✅"
-        elif bridge_online:
-            bridge_suffix = ""
-        else:
-            bridge_suffix = " ⏸ offline"
-        bridge_button = [
-            {
-                "text": f"{_ni('bolt')} Bridge{bridge_suffix}",
-                "callback_data": "prov_bridge"
-                if (bridge_online or bridge_active)
-                else "prov_bridge_offline",
-            }
-        ]
+        # ── Provider rows: state is a fact, the button is the one action ─────
+        # Bridge is always listed regardless of probe result so users can see it
+        # exists even when VS Code is closed; the state column carries the truth.
+        providers_view: list[dict[str, str]] = []
+        bridge_entry = {
+            "id": "bridge",
+            "emoji": _ni("bolt"),
+            "name": "Bridge",
+            "state": "active" if bridge_active else ("ready" if bridge_online else "offline"),
+            "data": "prov_bridge" if (bridge_online or bridge_active) else "prov_bridge_offline",
+        }
         bridge_inserted = False
         ready_provider_count = 0
 
@@ -5512,97 +5923,92 @@ class TelegramCommandsMixin:
                 ready = False
 
             if not ready:
+                state = "ready"
                 if (
                     getattr(manifest, "tier", "") == "cloud"
                     and getattr(manifest, "requires_key", False)
                     and not vault_has_key
                 ):
                     # 🔒 = locked / needs API key setup (🔑 looks like "has a key")
-                    stub_btn = {
-                        "text": f"{manifest.emoji} {manifest.display_name} 🔒",
-                        "callback_data": f"prov_cfg_{manifest.id}",
-                    }
-                    keyboard_rows.append([stub_btn])
+                    state = "locked"
                 elif getattr(manifest, "tier", "") == "local":
-                    # Show offline local providers so users know they exist.
-                    stub_btn = {
-                        "text": f"{manifest.emoji} {manifest.display_name} ⏸ offline",
-                        "callback_data": f"prov_cfg_{manifest.id}",
-                    }
-                    keyboard_rows.append([stub_btn])
+                    # Offline local providers stay listed so users know they exist.
+                    state = "offline"
+                if state != "ready":
+                    providers_view.append(
+                        {
+                            "id": str(manifest.id),
+                            "emoji": str(manifest.emoji),
+                            "name": str(manifest.display_name),
+                            "state": state,
+                        }
+                    )
                     # Place Bridge after Ollama even when Ollama is offline
                     if manifest.id == "ollama" and not bridge_inserted:
-                        keyboard_rows.append(bridge_button)
+                        providers_view.append(bridge_entry)
                         bridge_inserted = True
                 continue
 
             ready_provider_count += 1
-            is_active = manifest.id == active_prov
-            active_suffix = " ✅" if is_active else ""
-            btn = {
-                "text": f"{manifest.emoji} {manifest.display_name}{active_suffix}",
-                "callback_data": f"prov_{manifest.id}",
-            }
-            keyboard_rows.append([btn])
+            providers_view.append(
+                {
+                    "id": str(manifest.id),
+                    "emoji": str(manifest.emoji),
+                    "name": str(manifest.display_name),
+                    "state": "active" if manifest.id == active_prov else "ready",
+                }
+            )
 
             # Place Bridge right after Ollama (online path)
             if manifest.id == "ollama" and not bridge_inserted:
-                keyboard_rows.append(bridge_button)
+                providers_view.append(bridge_entry)
                 bridge_inserted = True
 
         # Fallback: Bridge wasn't placed after Ollama (Ollama absent from registry)
         if not bridge_inserted:
-            keyboard_rows.append(bridge_button)
+            providers_view.append(bridge_entry)
 
-        if ready_provider_count == 0:
-            lines.append("")
-            lines.append("ℹ️ No vault-backed cloud providers are ready.")
+        from navig.telegram import card_transport, providers_card
 
-        noai_prefix = "✅ " if user_pref == "noai" else ""
-        keyboard_rows.append(
-            [{"text": f"{noai_prefix}🚫 No AI — raw mode", "callback_data": "prov_noai"}]
+        card = providers_card.provider_hub_card(
+            providers=providers_view,
+            routes=routes,
+            active_name=active_name,
+            session_parts=session_parts,
+            vision=vision,
+            noai=(user_pref == "noai"),
+            note=(
+                ""
+                if ready_provider_count
+                else "ℹ️ No vault-backed cloud providers are ready."
+            ),
+            message_id=message_id,
         )
+        keyboard_rows = card.keyboard()
 
-        # ── Action shortcuts ────────────────────────────────────────────
-        keyboard_rows.append(
-            [{"text": "🔀 Hybrid", "callback_data": "pu_hybrid"}]
-        )
-        keyboard_rows.append(
-            [
-                {"text": "👁 Vision",      "callback_data": "pu_vision"},
-                {"text": "🎙 Voice",       "callback_data": "pu_voice"},
-                {"text": "📲 Messengers",  "callback_data": "open_messengers"},
-            ]
-        )
-        if session_overrides:
-            keyboard_rows.append(
-                [{"text": "🔄 Reset session", "callback_data": "pu_reset_session"}]
-            )
         if message_id:
-            keyboard_rows.append(
-                [
-                    {"text": "🔙 Back", "callback_data": "nav:back"},
-                    {"text": "🏠 Home", "callback_data": "nav:home"},
-                ]
-            )
-        keyboard_rows.append([{"text": "✖ Close", "callback_data": "prov_close"}])
+            if await card_transport.edit_card(self, chat_id, message_id, card, keyboard=keyboard_rows):
+                return
 
-        text_payload = "\n".join(lines)
-        if message_id:
+        rich_send = getattr(self, "send_rich_message", None)
+        if rich_send is not None:
             try:
-                await self.edit_message(
+                sent = await rich_send(
                     chat_id,
-                    message_id,
-                    text_payload,
-                    parse_mode="HTML",
+                    html=card.rich_html(),
+                    fallback_html=card.classic_html(),
                     keyboard=keyboard_rows,
                 )
-                return
+                # ``send_rich_message`` answers None when it could not send at all
+                # (no bot session, or rich messages unavailable and no fallback body).
+                # Returning there dropped the hub silently; only a delivered dict counts.
+                if sent is not None:
+                    return
             except Exception:  # noqa: BLE001
-                pass  # fall through to fresh send
+                pass  # fall through to the classic send
 
         await self.send_message(
-            chat_id, text_payload, parse_mode="HTML", keyboard=keyboard_rows
+            chat_id, card.classic_html(), parse_mode="HTML", keyboard=keyboard_rows
         )
 
     async def _show_provider_activation_confirmation(
@@ -5820,6 +6226,7 @@ class TelegramCommandsMixin:
 
             endpoint = ""
             headers = {}
+
             def _get_key(pid: str) -> str:
                 """Resolve API key for provider from env, then vault/config."""
                 env_map = {
@@ -5865,7 +6272,11 @@ class TelegramCommandsMixin:
                     # out of the tier-default fallback, which takes models[0].
                     from navig.providers.capabilities import is_chat_model
 
-                    live = [m["id"] for m in data.get("data", []) if m.get("id") and is_chat_model(m["id"])]
+                    live = [
+                        m["id"]
+                        for m in data.get("data", [])
+                        if m.get("id") and is_chat_model(m["id"])
+                    ]
                     if live:
                         models = live
         except Exception as exc:  # noqa: BLE001
@@ -5928,7 +6339,9 @@ class TelegramCommandsMixin:
 
             def _pick_text(preferred: tuple[str, ...], fallback: str = "") -> str:
                 """Like _pick but excludes vision/multimodal models."""
-                text_models = [(r, lw) for r, lw in lowered if not any(vt in lw for vt in _VISION_TOKENS)]
+                text_models = [
+                    (r, lw) for r, lw in lowered if not any(vt in lw for vt in _VISION_TOKENS)
+                ]
                 for raw, low in text_models:
                     if any(token in low for token in preferred):
                         return raw
@@ -6225,7 +6638,11 @@ class TelegramCommandsMixin:
                         if current[tier] is not None:
                             continue  # already filled by hybrid router
                         mc = lr.modes.get_mode(modes[0])
-                        if mc and getattr(mc, "model", None) and getattr(mc, "provider", "") == prov_id:
+                        if (
+                            mc
+                            and getattr(mc, "model", None)
+                            and getattr(mc, "provider", "") == prov_id
+                        ):
                             current[tier] = mc.model
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
@@ -6241,17 +6658,6 @@ class TelegramCommandsMixin:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-        # Build tier display labels using HTML (safe for all model name chars)
-        tier_emoji = {"small": _ni("bolt"), "big": _ni("brain"), "coder_big": _ni("computer")}
-        tier_label = {"small": "Small", "big": "Big", "coder_big": "Code"}
-
-        def _tier_line(tier: str) -> str:
-            val = current[tier]
-            if val:
-                short_val = val.split("/")[-1].split(":")[-1]
-                return f"{tier_emoji[tier]} {tier_label[tier]}: <code>{short_val}</code>"
-            return f"{tier_emoji[tier]} {tier_label[tier]}: —"
-
         selected_tier = selected_tier if selected_tier in {"s", "b", "c"} else "s"
         tier_code_to_name = {"s": "small", "b": "big", "c": "coder_big"}
         tier_name = tier_code_to_name[selected_tier]
@@ -6263,83 +6669,6 @@ class TelegramCommandsMixin:
         start = page * page_size
         end = start + page_size
         page_models = models[start:end]
-
-        # Pagination header shown in text only when there are multiple pages
-        _viewing_header = f"{tier_emoji[tier_name]} {tier_label[tier_name]}"
-        if total_pages > 1:
-            _viewing_header += f" ({page + 1}/{total_pages})"
-        lines = [
-            f"<b>{emoji} {html.escape(name)}</b> — assign model to tier",
-            "",
-        ]
-        if _key_missing:
-            lines.append(f"⚠️ <i>API key not configured — set {_key_hint}</i>")
-            lines.append("")
-        _action_hint = (
-            f"<i>Assigning to: {_viewing_header} — tap a model below.</i>"
-            if show_models
-            else "<i>Tap Small, Big, or Code to pick a model.</i>"
-        )
-        lines.extend(
-            [
-                _tier_line("small"),
-                _tier_line("big"),
-                _tier_line("coder_big"),
-                "",
-                _action_hint,
-            ]
-        )
-        # Model list shown only as keyboard buttons (no duplicate numbered text list)
-
-        keyboard: list[list[dict[str, str]]] = []
-        keyboard.append(
-            [
-                {
-                    "text": f"{_ni('bolt')} Small",
-                    "callback_data": f"pmv_{prov_id}_s_{page}",
-                },
-                {
-                    "text": f"{_ni('brain')} Big",
-                    "callback_data": f"pmv_{prov_id}_b_{page}",
-                },
-                {
-                    "text": f"{_ni('computer')} Code",
-                    "callback_data": f"pmv_{prov_id}_c_{page}",
-                },
-            ]
-        )
-        if show_models:
-            for offset, m in enumerate(page_models):
-                idx = start + offset
-                short = m.split("/")[-1].split(":")[-1]
-                label = short if len(short) <= 42 else short[:39] + "..."
-                keyboard.append(
-                    [
-                        {
-                            "text": f"{label}",
-                            "callback_data": f"pms_{prov_id}_{idx}_{selected_tier}_{page}",
-                        }
-                    ]
-                )
-
-        if show_models and total_pages > 1:
-            page_nav: list[dict[str, str]] = []
-            if page > 0:
-                page_nav.append(
-                    {
-                        "text": "⬅️ Prev",
-                        "callback_data": f"prov_page_{prov_id}_{selected_tier}_{page - 1}",
-                    }
-                )
-            page_nav.append({"text": f"📄 {page + 1}/{total_pages}", "callback_data": "prov_noop"})
-            if page < total_pages - 1:
-                page_nav.append(
-                    {
-                        "text": "Next ➡️",
-                        "callback_data": f"prov_page_{prov_id}_{selected_tier}_{page + 1}",
-                    }
-                )
-            keyboard.append(page_nav)
 
         # Show Activate / Deactivate button depending on live router state
         _is_active_prov = False
@@ -6354,51 +6683,31 @@ class TelegramCommandsMixin:
                 )
         except Exception:  # noqa: BLE001
             pass
-        if _is_active_prov:
-            keyboard.append(
-                [{"text": f"🔴 Deactivate {name}", "callback_data": f"prov_deactivate_{prov_id}"}]
-            )
-        else:
-            keyboard.append(
-                [{"text": f"🚀 Activate {name}", "callback_data": f"prov_activate_{prov_id}"}]
-            )
-        keyboard.append(
-            [
-                {"text": "🔙 Back", "callback_data": "nav:providers"},
-                {"text": "🏠 Home", "callback_data": "nav:home"},
-            ]
+
+        from navig.telegram import card_transport, model_picker_card
+
+        card = model_picker_card.picker_card(
+            prov_id=prov_id,
+            name=name,
+            emoji=emoji,
+            models=page_models,
+            start=start,
+            page=page,
+            total_pages=total_pages,
+            current=current,
+            selected_tier=tier_name,
+            show_models=show_models,
+            key_hint=f"API key not configured — set {_key_hint}" if _key_missing else "",
+            active=_is_active_prov,
         )
-        keyboard.append([{"text": "✖ Close", "callback_data": "prov_close"}])
+        keyboard_rows = card.keyboard()
 
-        text_payload = "\n".join(lines)
-        if message_id:
-            try:
-                result = await self.edit_message(
-                    chat_id,
-                    message_id,
-                    text_payload,
-                    parse_mode="HTML",
-                    keyboard=keyboard,
-                )
-                # _api_call never raises — check return value to detect silent failures
-                if result is not None:
-                    return
-                logger.debug(
-                    "Provider picker edit_message returned None for %s in chat %s (message %s). Falling back to send_message.",
-                    prov_id,
-                    chat_id,
-                    message_id,
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.debug(
-                    "Provider picker edit_message raised for %s in chat %s (message %s): %s. Falling back to send_message.",
-                    prov_id,
-                    chat_id,
-                    message_id,
-                    exc,
-                )
+        if message_id and await card_transport.edit_card(
+            self, chat_id, message_id, card, keyboard=keyboard_rows
+        ):
+            return
 
-        await self.send_message(chat_id, text_payload, keyboard=keyboard, parse_mode="HTML")
+        await card_transport.send_card(self, chat_id, card, keyboard=keyboard_rows)
 
     # ── Provider control surface: handler methods ────────────────────────
 
@@ -6449,93 +6758,50 @@ class TelegramCommandsMixin:
         except Exception:  # noqa: BLE001
             pass
 
-        lines: list[str] = ["<b>🔀 Hybrid Routing</b>", ""]
-        if not _hybrid_active:
-            lines.append("⚠️ <i>Hybrid routing is currently disabled.</i>")
-            lines.append("")
-        lines.append("Assign a provider to each tier. Tap a tier to change it.")
-        lines.append("")
+        from navig.telegram import card_transport, routing_card
 
+        tier_state: dict[str, tuple[str, str, bool]] = {}
         for tier in ("small", "big", "coder_big"):
-            # Session override takes precedence for display
             so_prov = session_overrides.get(f"tier_{tier}_provider", "")
             so_model = session_overrides.get(f"tier_{tier}_model", "")
             if so_prov and so_model:
-                short_model = so_model.split("/")[-1].split(":")[-1]
-                lines.append(
-                    f"{tier_emoji[tier]} {tier_label[tier]}: "
-                    f"<code>{short_model}</code> ({so_prov}) 🔶"
-                )
+                tier_state[tier] = (so_prov, so_model, True)
             elif tier in tier_assignments:
                 prov_id, model = tier_assignments[tier]
-                short_model = model.split("/")[-1].split(":")[-1] if model else "—"
-                prov_display = prov_id or "—"
-                lines.append(
-                    f"{tier_emoji[tier]} {tier_label[tier]}: "
-                    f"<code>{short_model}</code> ({prov_display})"
-                )
-            else:
-                lines.append(f"{tier_emoji[tier]} {tier_label[tier]}: —")
+                tier_state[tier] = (prov_id or "—", model or "—", False)
 
-        if session_overrides:
-            lines.append("")
-            lines.append("🔶 = session override (not saved to config)")
-
-        lines.append("")
-        lines.append("<i>Tap a tier below to pick a provider for it.</i>")
-
-        # Build keyboard: one row per tier
-        keyboard: list[list[dict[str, str]]] = []
-        for tier in ("small", "big", "coder_big"):
-            keyboard.append(
-                [
-                    {
-                        "text": f"{tier_emoji[tier]} {tier_label[tier]}",
-                        "callback_data": f"hyb_tier_{tier}",
-                    }
-                ]
-            )
-
-        # Connected providers summary row (for quick pick).
-        # Exclude AirLLM — it probes as always-connected but is a local inference
-        # runner, not a cloud tier target for hybrid routing.
+        tier_buttons = [
+            (f"{tier_emoji[tier]} {tier_label[tier]}", f"hyb_tier_{tier}", None)
+            for tier in ("small", "big", "coder_big")
+        ]
         connected = [p for p in providers if p.connected and p.id != "airllm"]
-        if connected:
-            prov_row: list[dict[str, str]] = []
-            for p in connected[:4]:  # max 4 per row
-                prov_row.append(
-                    {"text": f"{p.emoji} {p.display_name}", "callback_data": f"hyb_pick_{p.id}"}
-                )
-            keyboard.append(prov_row)
-
-        # Enable hybrid routing button (only when not active)
+        pick_buttons = [
+            (f"{p.emoji} {p.display_name}", f"hyb_pick_{p.id}", None) for p in connected[:4]
+        ]
+        action_rows: list[list[tuple[str, str, str | None]]] = routing_card.button_rows(
+            tier_buttons
+        ) + routing_card.button_rows(pick_buttons, per_row=2)
         if not _hybrid_active:
-            keyboard.append(
-                [{"text": "🔛 Enable Hybrid Routing", "callback_data": "hyb_enable"}]
-            )
-
-        # Save / Reset / Back
+            action_rows.append([("🔛 Enable Hybrid Routing", "hyb_enable", "primary")])
         if session_overrides:
-            keyboard.append(
+            action_rows.append(
                 [
-                    {"text": "💾 Save as default", "callback_data": "hyb_save"},
-                    {"text": "🔄 Reset session", "callback_data": "hyb_reset"},
+                    ("💾 Save as default", "hyb_save", "primary"),
+                    ("🔄 Reset session", "hyb_reset", None),
                 ]
             )
-        keyboard.append(
-            [
-                {"text": "🔙 Back", "callback_data": "nav:back"},
-                {"text": "✖ Close", "callback_data": "prov_close"},
-            ]
+        action_rows.append(
+            [("🔙 Back", "nav:back", None), ("✖ Close", "prov_close", None)]
         )
 
-        text_payload = "\n".join(lines)
-        if message_id:
-            if await self.edit_message(
-                chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
-            ) is not None:
-                return
-        await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
+        card = routing_card.hybrid_card(
+            tiers=tier_state,
+            hybrid_active=_hybrid_active,
+            buttons=action_rows,
+        )
+        if message_id and await card_transport.edit_card(self, chat_id, message_id, card):
+            return
+        await card_transport.send_card(self, chat_id, card)
 
     async def _handle_provider_vision(
         self,
@@ -6565,48 +6831,7 @@ class TelegramCommandsMixin:
         vision_models = list_available_models(capability=Capability.VISION, connected_only=True)
         current = resolve_vision_model(session_overrides)
 
-        lines: list[str] = ["<b>👁 Vision Model</b>", ""]
-
-        if current:
-            cur_prov, cur_model, cur_reason = current
-            short_model = cur_model.split("/")[-1].split(":")[-1]
-            reason_labels = {
-                "session_override": "session override 🔶",
-                "global_config": "saved in config",
-                "active_provider": "from active provider",
-                "fallback": "auto-detected fallback",
-            }
-            reason_text = reason_labels.get(cur_reason, cur_reason)
-            lines.append(
-                f"Active: <code>{html.escape(short_model)}</code> ({html.escape(cur_prov)})"
-            )
-            lines.append(f"Source: {reason_text}")
-        else:
-            lines.append("⚠️ No vision model available — connect a vision-capable provider.")
-
-        lines.append("")
-
-        if vision_models:
-            lines.append("<i>Tap a model to use it for image analysis:</i>")
-            lines.append("")
-            # Group by provider
-            by_provider: dict[str, list] = {}
-            for m in vision_models:
-                by_provider.setdefault(m.provider_id, []).append(m)
-
-            for prov_id, models in by_provider.items():
-                for m in models[:5]:  # limit per provider
-                    short = m.name.split("/")[-1].split(":")[-1]
-                    is_cur = current and current[0] == m.provider_id and current[1] == m.name
-                    marker = " ✅" if is_cur else ""
-                    lines.append(
-                        f"  • {html.escape(m.capability_label)} <code>{html.escape(short)}</code> ({html.escape(prov_id)}){marker}"
-                    )
-        else:
-            lines.append("No vision-capable models found from connected providers.")
-
-        # Build keyboard
-        keyboard: list[list[dict[str, str]]] = []
+        from navig.telegram import card_transport, routing_card
 
         def _safe_vis_callback_data(prov_id: str, model_name: str) -> str | None:
             prefix = f"vis_{prov_id}:"
@@ -6620,40 +6845,43 @@ class TelegramCommandsMixin:
                 return None
             return f"{prefix}{token}"
 
-        for m in vision_models[:12]:  # max 12 buttons
+        model_buttons: list[tuple[str, str, str | None]] = []
+        for m in vision_models[:12]:
             short = m.name.split("/")[-1].split(":")[-1]
             is_cur = current and current[0] == m.provider_id and current[1] == m.name
             check = " ✅" if is_cur else ""
             callback_data = _safe_vis_callback_data(m.provider_id, m.name)
             if not callback_data:
                 continue
-            keyboard.append(
-                [
-                    {
-                        "text": f"👁 {short}{check}",
-                        "callback_data": callback_data,
-                    }
-                ]
+            model_buttons.append(
+                (f"👁 {short}{check}", callback_data, "success" if is_cur else None)
             )
 
-        # Clear vision override if we have one
+        action_rows: list[list[tuple[str, str, str | None]]] = []
         if session_overrides.get("vision_provider"):
-            keyboard.append([{"text": "🔄 Clear vision override", "callback_data": "vis_clear"}])
-
-        keyboard.append(
-            [
-                {"text": "🔙 Providers", "callback_data": "nav:providers"},
-                {"text": "✖ Close", "callback_data": "prov_close"},
-            ]
+            action_rows.append(
+                [
+                    (
+                        routing_card.label("vision.card.clear", "Clear vision override"),
+                        "vis_clear",
+                        None,
+                    )
+                ]
+            )
+        action_rows.append(
+            [("🔙 Providers", "nav:providers", None), ("✖ Close", "prov_close", None)]
         )
 
-        text_payload = "\n".join(lines)
-        if message_id:
-            if await self.edit_message(
-                chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
-            ) is not None:
-                return
-        await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
+        card = routing_card.vision_card(
+            current=current,
+            models=[{"name": m.name, "provider": m.provider_id} for m in vision_models],
+            has_override=bool(session_overrides.get("vision_provider")),
+            buttons=action_rows,
+            model_buttons=routing_card.button_rows(model_buttons, per_row=1),
+        )
+        if message_id and await card_transport.edit_card(self, chat_id, message_id, card):
+            return
+        await card_transport.send_card(self, chat_id, card)
 
     async def _handle_provider_show(
         self,
@@ -6686,94 +6914,37 @@ class TelegramCommandsMixin:
         tier_assignments = _get_current_tier_assignments()
         vision = resolve_vision_model(session_overrides)
 
-        tier_emoji = {"small": "⚡", "big": "🧠", "coder_big": "💻"}
-        tier_label = {"small": "Small", "big": "Big", "coder_big": "Code"}
+        from navig.telegram import card_transport, routing_card
 
-        lines: list[str] = ["<b>📊 Routing State</b>", ""]
-
-        # Active provider
-        prov_display = html.escape(active_prov) if active_prov else "<i>none</i>"
-        lines.append(f"🎯 Active provider: <code>{prov_display}</code>")
-        lines.append("")
-
-        # Config tier assignments
-        lines.append("<b>Config (saved):</b>")
+        effective: dict[str, tuple[str, str]] = {}
         for tier in ("small", "big", "coder_big"):
-            if tier in tier_assignments:
-                prov_id, model = tier_assignments[tier]
-                short = model.split("/")[-1].split(":")[-1] if model else "—"
-                lines.append(
-                    f"  {tier_emoji[tier]} {tier_label[tier]}: <code>{html.escape(short)}</code> ({html.escape(prov_id)})"
-                )
-            else:
-                lines.append(f"  {tier_emoji[tier]} {tier_label[tier]}: —")
+            so_prov = session_overrides.get(f"tier_{tier}_provider", "")
+            so_model = session_overrides.get(f"tier_{tier}_model", "")
+            if so_prov and so_model:
+                effective[tier] = (so_prov, so_model)
+            elif tier in tier_assignments:
+                effective[tier] = tier_assignments[tier]
 
-        # Session overrides
-        if session_overrides:
-            lines.append("")
-            lines.append("<b>Session overrides 🔶:</b>")
-            for key, value in sorted(session_overrides.items()):
-                lines.append(f"  • {html.escape(str(key))}: <code>{html.escape(str(value))}</code>")
-            lines.append("")
-            lines.append("<i>Session overrides are temporary and lost on restart.</i>")
-
-            # Show effective routing (config + session merged)
-            lines.append("")
-            lines.append("<b>Effective (after session merge):</b>")
-            for tier in ("small", "big", "coder_big"):
-                so_prov = session_overrides.get(f"tier_{tier}_provider", "")
-                so_model = session_overrides.get(f"tier_{tier}_model", "")
-                if so_prov and so_model:
-                    short = so_model.split("/")[-1].split(":")[-1]
-                    lines.append(
-                        f"  {tier_emoji[tier]} {tier_label[tier]}: "
-                        f"<code>{html.escape(short)}</code> ({html.escape(so_prov)}) 🔶"
-                    )
-                elif tier in tier_assignments:
-                    prov_id, model = tier_assignments[tier]
-                    short = model.split("/")[-1].split(":")[-1] if model else "—"
-                    lines.append(
-                        f"  {tier_emoji[tier]} {tier_label[tier]}: <code>{html.escape(short)}</code> ({html.escape(prov_id)})"
-                    )
-                else:
-                    lines.append(f"  {tier_emoji[tier]} {tier_label[tier]}: —")
-        else:
-            lines.append("")
-            lines.append("<i>No session overrides active.</i>")
-
-        # Vision
-        lines.append("")
-        if vision:
-            v_prov, v_model, v_reason = vision
-            short_v = v_model.split("/")[-1].split(":")[-1]
-            lines.append(
-                f"👁 Vision: <code>{html.escape(short_v)}</code> ({html.escape(v_prov)}) — {html.escape(v_reason)}"
-            )
-        else:
-            lines.append("👁 Vision: <i>not available</i>")
-
-        keyboard: list[list[dict[str, str]]] = [
-            [
-                {"text": "🔀 Hybrid", "callback_data": "pu_hybrid"},
-                {"text": "👁 Vision", "callback_data": "pu_vision"},
-            ],
+        action_rows: list[list[tuple[str, str, str | None]]] = [
+            [("🔀 Hybrid", "pu_hybrid", "primary"), ("👁 Vision", "pu_vision", None)]
         ]
         if session_overrides:
-            keyboard.append([{"text": "🔄 Reset session", "callback_data": "pu_reset_session"}])
-        keyboard.append(
-            [
-                {"text": "🔙 Providers", "callback_data": "nav:providers"},
-                {"text": "✖ Close", "callback_data": "prov_close"},
-            ]
+            action_rows.append([("🔄 Reset session", "pu_reset_session", None)])
+        action_rows.append(
+            [("🔙 Providers", "nav:providers", None), ("✖ Close", "prov_close", None)]
         )
 
-        text_payload = "\n".join(lines)
-        if message_id:
-            if await self.edit_message(
-                chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
-            ) is not None:
-                return
-        await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
+        card = routing_card.routing_card(
+            active_provider=active_prov or "",
+            config=dict(tier_assignments),
+            effective=effective,
+            overrides=dict(session_overrides),
+            vision=vision,
+            buttons=action_rows,
+        )
+        if message_id and await card_transport.edit_card(self, chat_id, message_id, card):
+            return
+        await card_transport.send_card(self, chat_id, card)
 
     async def _handle_provider_reset(
         self,
@@ -6815,9 +6986,12 @@ class TelegramCommandsMixin:
 
         text_payload = "\n".join(lines)
         if message_id:
-            if await self.edit_message(
-                chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
-            ) is not None:
+            if (
+                await self.edit_message(
+                    chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
+                )
+                is not None
+            ):
                 return
         await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
 
@@ -6905,9 +7079,12 @@ class TelegramCommandsMixin:
 
         text_payload = "\n".join(lines)
         if message_id:
-            if await self.edit_message(
-                chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
-            ) is not None:
+            if (
+                await self.edit_message(
+                    chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
+                )
+                is not None
+            ):
                 return
         await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
 
@@ -7012,45 +7189,45 @@ class TelegramCommandsMixin:
 
     @rate_limited
     @error_handled
-    async def _handle_trace(self, chat_id: int, user_id: int) -> None:
-        """Show recent activity snapshot (/trace).
+    async def _handle_trace(
+        self,
+        chat_id: int,
+        user_id: int,
+        message_id: int | None = None,
+    ) -> dict | None:
+        """Show recent activity snapshot (/trace) — as a card.
 
-        Covers: LLM bridges - recent messages - session state - daemon warnings - vault.
+        Covers: LLM bridge · recent messages · session state · daemon warnings · vault.
         """
-        SEP = "-"
-        now_utc = datetime.now(timezone.utc).strftime("%H:%M UTC")
-        lines: list = [f"<b>Recent Trace</b> - {now_utc}", ""]
+        from navig.telegram import card_transport, trace_card
 
-        _bridge_online, _bridge_url = await self._probe_bridge_grid()
-        lines.append("<b>Routing</b>")
-        lines.append(
-            f"  - Bridge Grid <code>{_bridge_url}</code> - <b>online</b>"
-            if _bridge_online
-            else "  - Bridge Grid - offline (using model router)"
-        )
+        now_utc = datetime.now(timezone.utc)
+        bridge_online, bridge_url = await self._probe_bridge_grid()
 
+        tiers: list[tuple[str, str]] = []
         if self._is_debug_mode(user_id):
             try:
                 from navig.llm.router import get_llm_router
 
                 llm_router = get_llm_router()
                 _TIER_NAMES = {
-                    "small_talk": ("-", "Small"),
-                    "big_tasks": ("-", "Big"),
-                    "coding": ("-", "Code"),
+                    "small_talk": "Small",
+                    "big_tasks": "Big",
+                    "coding": "Code",
                 }
                 if llm_router:
-                    for mode_name, (icon, label) in _TIER_NAMES.items():
-                        mc = llm_router.modes.get_mode(mode_name)
-                        if not mc:
+                    for mode_name, label in _TIER_NAMES.items():
+                        mode = llm_router.modes.get_mode(mode_name)
+                        if not mode:
                             continue
-                        lines.append(
-                            f"  {icon} {label} -> <code>{getattr(mc, 'provider', '?')}:{getattr(mc, 'model', '?')}</code>"
+                        tiers.append(
+                            (
+                                label,
+                                f"{getattr(mode, 'provider', '?')}:{getattr(mode, 'model', '?')}",
+                            )
                         )
-            except Exception:
-                lines.append("  <i>(model router unavailable)</i>")
-
-        lines.append(SEP)
+            except Exception as exc:  # noqa: BLE001 — the trace renders without it
+                logger.debug("trace tier list skipped: %s", exc)
 
         # -- Session messages - triple-fallback (DUP-10 fix: extracted helper) -
         session_messages = self._load_recent_messages(user_id, chat_id=chat_id)
@@ -7062,40 +7239,23 @@ class TelegramCommandsMixin:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-        lines.append(f"<b>Memory</b> - {len(session_messages)} msgs - {all_sessions_count} session(s)")
-        lines.append(SEP)
-
-        lines.append("<b>Recent</b>")
-        recent = session_messages[-8:]
-        if recent:
-            for msg in recent:
-                role = msg.get("role", "?")
-                raw_content = str(msg.get("content") or "").replace("\n", " ").strip()
-                preview = (
-                    raw_content
-                    if len(raw_content) <= 64
-                    else raw_content[:64].rsplit(" ", 1)[0] + "-"
-                ) or "_(empty)_"
-                arrow = "-" if role in ("user", "human") else "-"
-                actor = "-" if role in ("user", "human") else "-"
-                ts_raw = msg.get("timestamp") or msg.get("ts") or ""
-                ts_prefix = ""
-                if ts_raw:
-                    try:
-                        if isinstance(ts_raw, (int, float)):
-                            ts_prefix = (
-                                datetime.fromtimestamp(ts_raw, tz=timezone.utc).strftime("%H:%M")
-                                + " "
-                            )
-                        else:
-                            ts_prefix = str(ts_raw)[:5] + " "
-                    except Exception:  # noqa: BLE001
-                        pass  # best-effort; failure is non-critical
-                lines.append(f"  {ts_prefix}{arrow} {actor}: {preview}")
-        else:
-            lines.append("  <i>(no recent activity)</i>")
-
-        lines.append(SEP)
+        recent: list[dict] = []
+        for msg in session_messages[-8:]:
+            raw_content = str(msg.get("content") or "").replace("\n", " ").strip()
+            preview = (
+                raw_content if len(raw_content) <= 64 else raw_content[:64].rsplit(" ", 1)[0] + "…"
+            ) or "(empty)"
+            ts_raw = msg.get("timestamp") or msg.get("ts") or ""
+            stamp = ""
+            if ts_raw:
+                try:
+                    if isinstance(ts_raw, (int, float)):
+                        stamp = datetime.fromtimestamp(ts_raw, tz=timezone.utc).strftime("%H:%M")
+                    else:
+                        stamp = str(ts_raw)[:5]
+                except Exception:  # noqa: BLE001
+                    stamp = ""
+            recent.append({"role": msg.get("role", "?"), "preview": preview, "time": stamp})
 
         if hasattr(self, "_get_user_tier_pref"):
             tier = self._get_user_tier_pref(chat_id, user_id)
@@ -7125,18 +7285,10 @@ class TelegramCommandsMixin:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-        lines.append(
-            f"<b>Session</b> - tier: <code>{tier_label}</code> - host: <code>{html.escape(active_host)}</code> - voice: <code>{voice_label}</code>"
-        )
-        lines.append(SEP)
-
         # -- Daemon log warnings ------------------------------------------------
-        # debug.log lives at debug_log_path() = log_dir()/debug.log (on Windows
-        # %LOCALAPPDATA%\navig\logs), NEVER ~/.navig. Reading ~/.navig/debug.log was the
-        # #192 decoy — a 0-byte file the logger never writes; two hardcoded copies of it
-        # lingered here after that sweep because os.path.expanduser is a spelling the
-        # hardcoded-home guard couldn't see (fixed now: test_no_hardcoded_home also flags
-        # expanduser("~/.navig...")).
+        # debug.log lives at debug_log_path() = log_dir()/debug.log, NEVER ~/.navig.
+        # Reading ~/.navig/debug.log was the #192 decoy — a 0-byte file the logger
+        # never writes.
         try:
             from navig.platform.paths import debug_log_path as _debug_log_path
             from navig.platform.paths import log_dir as _log_dir
@@ -7153,7 +7305,7 @@ class TelegramCommandsMixin:
                 "/var/log/navig-daemon.log",
             ]
 
-        daemon_issues: list = []
+        daemon_issues: list[str] = []
         for _log_path in _log_candidates:
             if not os.path.exists(_log_path):
                 continue
@@ -7174,50 +7326,44 @@ class TelegramCommandsMixin:
             except OSError:
                 pass  # best-effort cleanup
 
-        if daemon_issues:
-            lines.append("<b>Daemon Warnings</b>")
-            for issue in daemon_issues[-5:]:
-                display = issue if len(issue) <= 100 else issue[:97] + "-"
-                lines.append(f"  -  <code>{display}</code>")
-        else:
-            lines.append("<b>Daemon</b> - no warnings")
-
         try:
             from navig.vault import get_vault
 
             _v = get_vault()
             _items = _v.list() if hasattr(_v, "list") else []
-            vault_msg = f"- {len(_items)} entries"
+            vault_msg = f"{len(_items)} entries"
         except Exception as _ve:
-            vault_msg = f"- {str(_ve)[:60]}"
-        lines.append(f"<b>Vault</b> - {vault_msg}")
-        lines.append(SEP)
+            vault_msg = f"unavailable — {str(_ve)[:60]}"
 
         # ── Latency X-ray: the last 20 turns as stage bars ──────────────────
-        # Answers "why was that slow?" without log archaeology: each row splits
-        # one turn into preparation, time-to-first-token, generation and tools.
-        # Sized to the 4096 message cap — rows are dropped oldest-first and the
-        # whole block is skipped if the rest of the trace leaves no room, so the
-        # X-ray can never be the reason /trace fails to send.
+        latency: list[str] = []
         try:
             from navig.agent.turn_latency import read_last, render_trace_block
 
-            _lat_block = render_trace_block(len("\n".join(lines)), read_last(20), width=24)
-            if _lat_block:
-                lines.extend(_lat_block)
-                lines.append(SEP)
+            latency = render_trace_block(
+                trace_card.LATENCY_BUDGET, read_last(20), width=24
+            ) or []
         except Exception as exc:  # noqa: BLE001 — the trace must render without it
             logger.debug("trace latency block skipped: %s", exc)
 
-        trace_keyboard = [
-            [
-                {"text": "- Refresh", "callback_data": "trace_refresh"},
-                {"text": "- Providers", "callback_data": "trace_providers"},
-                {"text": "- Model", "callback_data": "trace_model"},
-            ],
-            [{"text": "- Close", "callback_data": "trace_close"}],
-        ]
-        await self.send_message(chat_id, "\n".join(lines), keyboard=trace_keyboard)
+        card = trace_card.trace_card(
+            bridge_online=bridge_online,
+            bridge_url=bridge_url,
+            messages=len(session_messages),
+            sessions=all_sessions_count,
+            tier=tier_label,
+            host=active_host,
+            voice=voice_label,
+            vault=vault_msg,
+            tiers=tiers,
+            recent=recent,
+            warnings=daemon_issues[-5:],
+            latency=latency,
+            now=now_utc,
+        )
+        if message_id and await card_transport.edit_card(self, chat_id, message_id, card):
+            return None
+        return await card_transport.send_card(self, chat_id, card)
 
     def _load_recent_messages(self, user_id: int, chat_id: int = 0) -> list:
         """Load recent session messages via three fallback paths.
@@ -7725,6 +7871,7 @@ class TelegramCommandsMixin:
         ]
         try:
             import aiohttp
+
             async with aiohttp.ClientSession() as session:
                 for url in sources:
                     try:
@@ -7738,7 +7885,11 @@ class TelegramCommandsMixin:
             # fallback: subprocess curl
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    "curl", "-s", "--max-time", "5", sources[0],
+                    "curl",
+                    "-s",
+                    "--max-time",
+                    "5",
+                    sources[0],
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.DEVNULL,
                 )
@@ -7792,14 +7943,14 @@ class TelegramCommandsMixin:
         user_id: int,
         text: str = "",
         metadata: Any = None,
+        message_id: int | None = None,
     ) -> None:
         """/dns <domain> — cross-platform DNS lookup via stdlib + nslookup."""
         import asyncio
-        import re as _re
         import socket
         import subprocess
 
-        raw = text[len("/dns"):].strip() if text.lower().startswith("/dns") else text.strip()
+        raw = text[len("/dns") :].strip() if text.lower().startswith("/dns") else text.strip()
         domain = raw.split()[0] if raw else ""
         if not domain:
             await self.send_message(
@@ -7809,10 +7960,6 @@ class TelegramCommandsMixin:
             )
             return
 
-        DIV = "  <code>─────────────────────────</code>"
-        lines: list[str] = [f"🔎  <b>DNS lookup</b>  —  <code>{html.escape(domain)}</code>", DIV]
-
-        # ── A / AAAA via stdlib ───────────────────────────────────────────────
         ipv4: list[str] = []
         ipv6: list[str] = []
         try:
@@ -7825,70 +7972,62 @@ class TelegramCommandsMixin:
                     if ip not in ipv4:
                         ipv4.append(ip)
         except socket.gaierror as exc:
-            lines.append(f"❌  Resolution failed: <i>{html.escape(str(exc))}</i>")
-            await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
+            from navig.telegram import card_transport, nettools_card
+
+            card = nettools_card.dns_failure_card(domain, str(exc))
+            if message_id and await card_transport.edit_card(self, chat_id, message_id, card):
+                return
+            await card_transport.send_card(self, chat_id, card)
             return
 
-        if ipv4:
-            lines.append("  <b>A</b>")
-            for ip in ipv4[:8]:
-                lines.append(f"    <code>{html.escape(ip)}</code>")
-        if ipv6:
-            if ipv4:
-                lines.append("")
-            lines.append("  <b>AAAA</b>")
-            for ip in ipv6[:4]:
-                lines.append(f"    <code>{html.escape(ip)}</code>")
-
         # ── MX via nslookup ───────────────────────────────────────────────────
+        from navig.telegram import card_transport, nettools_card
+
+        mx_records: list[tuple[int, str]] = []
+        mx_checked = False
         try:
             proc = await asyncio.create_subprocess_exec(
-                "nslookup", "-type=MX", domain,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                "nslookup",
+                "-type=MX",
+                domain,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
             stdout, _ = await communicate_or_kill(proc, 8)
-            out = stdout.decode(errors="replace")
-            mx_records: list[tuple[int, str]] = []
-            for ln in out.splitlines():
-                ll = ln.strip()
-                if "mail exchanger" in ll.lower() or ("MX" in ll and "=" in ll):
-                    m = _re.search(r"preference\s*=\s*(\d+).*?exchanger\s*=\s*(\S+)", ll, _re.I)
-                    if m:
-                        mx_records.append((int(m.group(1)), m.group(2).rstrip(".")))
-            if mx_records:
-                mx_records.sort(key=lambda x: x[0])
-                lines.append("")
-                lines.append("  <b>MX</b>")
-                for pref, exch in mx_records[:6]:
-                    lines.append(f"    <code>{pref:>3}</code>  {html.escape(exch)}")
+            mx_records = nettools_card.parse_nslookup_mx(stdout.decode(errors="replace"))
+            mx_checked = True
         except Exception:
             pass
 
-        # ── TXT (SPF) via nslookup ────────────────────────────────────────────
+        # ── TXT (SPF and friends) via nslookup ────────────────────────────────
+        txt_records: list[str] = []
+        txt_checked = False
         try:
             proc2 = await asyncio.create_subprocess_exec(
-                "nslookup", "-type=TXT", domain,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                "nslookup",
+                "-type=TXT",
+                domain,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
             stdout2, _ = await communicate_or_kill(proc2, 8)
-            out2 = stdout2.decode(errors="replace")
-            txt_records: list[str] = []
-            for ln in out2.splitlines():
-                ll = ln.strip()
-                if "v=spf" in ll.lower() or ('"' in ll and "text" in ll.lower()):
-                    # strip quotes and label
-                    val = _re.sub(r'^.*?"(.*?)".*$', r"\1", ll)
-                    if val and val not in txt_records:
-                        txt_records.append(val[:80])
-            if txt_records:
-                lines.append("")
-                lines.append("  <b>TXT</b>")
-                for t in txt_records[:3]:
-                    lines.append(f"    <code>{html.escape(t)}</code>")
+            txt_records = nettools_card.parse_nslookup_txt(stdout2.decode(errors="replace"))
+            txt_checked = True
         except Exception:
             pass
 
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
+        card = nettools_card.dns_card(
+            domain,
+            ipv4=ipv4,
+            ipv6=ipv6,
+            mx=mx_records,
+            txt=txt_records,
+            mx_checked=mx_checked,
+            txt_checked=txt_checked,
+        )
+        if message_id and await card_transport.edit_card(self, chat_id, message_id, card):
+            return
+        await card_transport.send_card(self, chat_id, card)
 
     async def _handle_ssl(
         self,
@@ -7896,6 +8035,7 @@ class TelegramCommandsMixin:
         user_id: int,
         text: str = "",
         metadata: Any = None,
+        message_id: int | None = None,
     ) -> None:
         """/ssl <domain> — inspect SSL certificate via Python ssl module."""
         import asyncio
@@ -7903,7 +8043,7 @@ class TelegramCommandsMixin:
         import socket
         import ssl
 
-        raw = text[len("/ssl"):].strip() if text.lower().startswith("/ssl") else text.strip()
+        raw = text[len("/ssl") :].strip() if text.lower().startswith("/ssl") else text.strip()
         part = raw.split()[0] if raw else ""
         if not part:
             await self.send_message(
@@ -7919,10 +8059,6 @@ class TelegramCommandsMixin:
         else:
             domain, port = part, 443
 
-        DIV = "  <code>─────────────────────────</code>"
-        port_label = f"port {port}" if port != 443 else "443"
-        lines: list[str] = [f"🔐  <b>SSL certificate</b>  —  <code>{html.escape(domain)}</code>  :{port_label}", DIV]
-
         def _fmt_cert_date(s: str) -> str:
             """'Mar 30 08:35:08 2026 GMT' → 'Mar 30, 2026' (cross-platform)."""
             try:
@@ -7930,6 +8066,13 @@ class TelegramCommandsMixin:
                 return f"{dt.strftime('%b')} {dt.day}, {dt.year}"
             except Exception:
                 return s
+
+        from navig.telegram import card_transport, nettools_card
+
+        async def _deliver(card: Any) -> None:
+            if message_id and await card_transport.edit_card(self, chat_id, message_id, card):
+                return
+            await card_transport.send_card(self, chat_id, card)
 
         try:
             ctx = ssl.create_default_context()
@@ -7944,57 +8087,45 @@ class TelegramCommandsMixin:
             cert = conn.getpeercert()
             conn.close()
 
-            subject    = dict(x[0] for x in cert.get("subject", []))
-            issuer     = dict(x[0] for x in cert.get("issuer",  []))
+            subject = dict(x[0] for x in cert.get("subject", []))
+            issuer = dict(x[0] for x in cert.get("issuer", []))
             not_before = cert.get("notBefore", "?")
-            not_after  = cert.get("notAfter",  "?")
-            san_all    = cert.get("subjectAltName", [])
-            dns_names  = [v for t, v in san_all if t == "DNS"]
+            not_after = cert.get("notAfter", "?")
+            san_all = cert.get("subjectAltName", [])
+            dns_names = [v for t, v in san_all if t == "DNS"]
 
             cn = subject.get("commonName", "?")
             org_issuer = issuer.get("organizationName", issuer.get("commonName", "?"))
 
-            lines.append(f"  🏷  <b>Common name</b>   <code>{html.escape(cn)}</code>")
-            lines.append(f"  🏛  <b>Issued by</b>     {html.escape(org_issuer)}")
-            lines.append("")
-            lines.append(f"  📅  <b>Valid from</b>    {html.escape(_fmt_cert_date(not_before))}")
-            lines.append(f"  📅  <b>Expires</b>       {html.escape(_fmt_cert_date(not_after))}")
-
-            if dns_names:
-                shown = ", ".join(dns_names[:5])
-                more  = f"  <i>+{len(dns_names) - 5} more</i>" if len(dns_names) > 5 else ""
-                lines.append("")
-                lines.append(f"  🔗  <b>SANs</b>  ({len(dns_names)} names)")
-                lines.append(f"    <code>{html.escape(shown)}</code>{more}")
-
-            # ── Expiry banner ─────────────────────────────────────────────────
+            days_left: int | None = None
             try:
                 exp = datetime.datetime.strptime(not_after.strip(), "%b %d %H:%M:%S %Y %Z").replace(
                     tzinfo=datetime.timezone.utc
                 )
                 days_left = (exp - datetime.datetime.now(datetime.timezone.utc)).days
-                lines.append("")
-                lines.append(DIV)
-                if days_left <= 0:
-                    lines.append("  ❌  <b>CERTIFICATE EXPIRED</b>")
-                elif days_left <= 14:
-                    lines.append(f"  🚨  <b>Expires in {days_left} days</b>  — renew immediately!")
-                elif days_left <= 30:
-                    lines.append(f"  ⚠️  <b>Expires in {days_left} days</b>  — renew soon")
-                else:
-                    lines.append(f"  ✅  Valid for <b>{days_left} more days</b>")
             except Exception:
-                pass
+                days_left = None
+
+            await _deliver(
+                nettools_card.ssl_card(
+                    domain,
+                    port=port,
+                    common_name=cn,
+                    issuer=org_issuer,
+                    not_before=_fmt_cert_date(not_before),
+                    not_after=_fmt_cert_date(not_after),
+                    sans=dns_names,
+                    days_left=days_left,
+                )
+            )
 
         except ssl.SSLCertVerificationError as exc:
-            lines.append("  ⚠️  Verification failed")
-            lines.append(f"  <i>{html.escape(str(exc))}</i>")
-        except ssl.SSLError as exc:
-            lines.append(f"  ❌  SSL error: <i>{html.escape(str(exc))}</i>")
-        except OSError as exc:
-            lines.append(f"  ❌  Connection failed: <i>{html.escape(str(exc))}</i>")
+            await _deliver(
+                nettools_card.ssl_failure_card(domain, f"Verification failed — {exc}", port=port)
+            )
+        except (ssl.SSLError, OSError) as exc:
+            await _deliver(nettools_card.ssl_failure_card(domain, str(exc), port=port))
 
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
 
     async def _handle_whois(
         self,
@@ -8002,14 +8133,15 @@ class TelegramCommandsMixin:
         user_id: int,
         text: str = "",
         metadata: Any = None,
-    ) -> None:
-        """/whois <domain> — raw socket WHOIS (port 43), no external dependencies."""
+        message_id: int | None = None,
+    ) -> dict | None:
+        """/whois <domain> — raw socket WHOIS (port 43), answered as a card."""
         import asyncio
-        import datetime
-        import re as _re
         import socket as _socket
 
-        raw = text[len("/whois"):].strip() if text.lower().startswith("/whois") else text.strip()
+        from navig.telegram import card_transport, whois_card
+
+        raw = text[len("/whois") :].strip() if text.lower().startswith("/whois") else text.strip()
         domain = raw.split()[0] if raw else ""
         if not domain:
             await self.send_message(
@@ -8025,23 +8157,23 @@ class TelegramCommandsMixin:
             "com": "whois.verisign-grs.com",
             "net": "whois.verisign-grs.com",
             "org": "whois.pir.org",
-            "io":  "whois.nic.io",
-            "co":  "whois.nic.co",
-            "ai":  "whois.nic.ai",
+            "io": "whois.nic.io",
+            "co": "whois.nic.co",
+            "ai": "whois.nic.ai",
             "app": "whois.nic.google",
             "dev": "whois.nic.google",
-            "uk":  "whois.nic.uk",
-            "de":  "whois.denic.de",
-            "fr":  "whois.afnic.fr",
-            "nl":  "whois.domain-registry.nl",
-            "eu":  "whois.eu",
-            "ru":  "whois.tcinet.ru",
-            "cn":  "whois.cnnic.cn",
-            "jp":  "whois.jprs.jp",
-            "au":  "whois.auda.org.au",
-            "ca":  "whois.cira.ca",
-            "br":  "whois.registro.br",
-            "in":  "whois.registry.in",
+            "uk": "whois.nic.uk",
+            "de": "whois.denic.de",
+            "fr": "whois.afnic.fr",
+            "nl": "whois.domain-registry.nl",
+            "eu": "whois.eu",
+            "ru": "whois.tcinet.ru",
+            "cn": "whois.cnnic.cn",
+            "jp": "whois.jprs.jp",
+            "au": "whois.auda.org.au",
+            "ca": "whois.cira.ca",
+            "br": "whois.registro.br",
+            "in": "whois.registry.in",
         }
         whois_server = _WHOIS_SERVERS.get(tld, "whois.iana.org")
 
@@ -8063,131 +8195,17 @@ class TelegramCommandsMixin:
                 timeout=12,
             )
         except Exception as exc:
-            await self.send_message(
-                chat_id,
-                f"📋 <b>WHOIS</b>  <code>{html.escape(domain)}</code>\n\n"
-                f"❌ Query failed: <i>{html.escape(str(exc))}</i>",
-                parse_mode="HTML",
-            )
+            failed = whois_card.failure_card(domain, str(exc))
+            await card_transport.send_card(self, chat_id, failed)
             return
 
-        # ── Parse key fields ──────────────────────────────────────────────────
-        _FIELDS = [
-            ("Registered",       r"(?:Creation Date|Created(?: On)?|Registered(?: On)?)\s*:\s*(.+)"),
-            ("Expires",          r"(?:Expiry Date|Expir(?:y|ation) Date|Registry Expiry Date)\s*:\s*(.+)"),
-            ("Updated",          r"Updated Date\s*:\s*(.+)"),
-            ("Registrar",        r"(?:Registrar|Registrar Name)\s*:\s*(.+)"),
-            ("Status",           r"Domain Status\s*:\s*(\S+(?:https?://\S+)?)"),
-            ("DNSSEC",           r"DNSSEC\s*:\s*(.+)"),
-            ("Name servers",     r"Name Server\s*:\s*(.+)"),
-            ("Registrant",       r"Registrant Organization\s*:\s*(.+)"),
-            ("Registrant Email", r"Registrant Email\s*:\s*(.+)"),
-        ]
-
-        _DATE_ICONS = {
-            "Registered": "📅",
-            "Expires":    "⏳",
-            "Updated":    "🔄",
-        }
-        _FIELD_ICONS = {
-            "Registrar":        "🏢",
-            "Status":           "🔒",
-            "DNSSEC":           "🛡",
-            "Name servers":     "🌐",
-            "Registrant":       "👤",
-            "Registrant Email": "📧",
-        }
-
-        def _fmt_whois_date(s: str) -> str:
-            """'1997-09-15T04:00:00Z' or '1997-09-15' → 'Sep 15, 1997'"""
-            s = s.strip().split("T")[0].split(" ")[0]
-            try:
-                dt = datetime.datetime.strptime(s, "%Y-%m-%d")
-                return f"{dt.strftime('%b')} {dt.day}, {dt.year}"
-            except Exception:
-                return s
-
-        seen_keys: set[str] = set()
-        summary: list[tuple[str, str]] = []
-        name_servers: list[str] = []
-
-        for line in raw_out.splitlines():
-            for label, pattern in _FIELDS:
-                m = _re.search(pattern, line, _re.I)
-                if m:
-                    val = m.group(1).strip()
-                    if not val or val in ("", "Not disclosed", "REDACTED FOR PRIVACY"):
-                        continue
-                    if label == "Name servers":
-                        ns = val.lower().rstrip(".")
-                        if ns not in name_servers:
-                            name_servers.append(ns)
-                    elif label == "Status":
-                        # strip trailing URL like "https://icann.org/epp#..."
-                        val = _re.split(r"\s+https?://", val)[0].strip()
-                        if label not in seen_keys:
-                            seen_keys.add(label)
-                            summary.append((label, val))
-                    elif label not in seen_keys:
-                        seen_keys.add(label)
-                        summary.append((label, val))
-
-        DIV = "  <code>─────────────────────────</code>"
-
-        # ── Calculate days until expiry ───────────────────────────────────────
-        expiry_banner = ""
-        for lbl, val in summary:
-            if lbl == "Expires":
-                try:
-                    ds = val.strip().split("T")[0]
-                    exp = datetime.datetime.strptime(ds, "%Y-%m-%d").replace(tzinfo=datetime.timezone.utc)
-                    days_left = (exp - datetime.datetime.now(datetime.timezone.utc)).days
-                    if days_left <= 0:
-                        expiry_banner = "❌  <b>DOMAIN EXPIRED</b>"
-                    elif days_left <= 30:
-                        expiry_banner = f"⚠️  <b>Expires in {days_left} days</b>  — renew soon!"
-                    elif days_left <= 90:
-                        expiry_banner = f"📆  Expires in <b>{days_left} days</b>"
-                    else:
-                        years = days_left // 365
-                        rem   = days_left % 365
-                        if years:
-                            expiry_banner = f"✅  Registered for <b>{years}y {rem}d</b> more"
-                        else:
-                            expiry_banner = f"✅  Registered for <b>{days_left} more days</b>"
-                except Exception:
-                    pass
-                break
-
-        # ── Build output ──────────────────────────────────────────────────────
-        out_lines: list[str] = [f"📋  <b>WHOIS</b>  —  <code>{html.escape(domain)}</code>", DIV]
-
-        for label, val in summary:
-            icon = _DATE_ICONS.get(label) or _FIELD_ICONS.get(label, "  ")
-            if label in _DATE_ICONS:
-                display = _fmt_whois_date(val)
-            else:
-                display = val[:80]
-            out_lines.append(f"  {icon}  <b>{html.escape(label)}</b>")
-            out_lines.append(f"      <code>{html.escape(display)}</code>")
-            out_lines.append("")
-
-        if name_servers:
-            out_lines.append("  🌐  <b>Name servers</b>")
-            for ns in name_servers[:6]:
-                out_lines.append(f"      <code>{html.escape(ns)}</code>")
-            out_lines.append("")
-
-        if expiry_banner:
-            out_lines.append(DIV)
-            out_lines.append(f"  {expiry_banner}")
-
-        if len(out_lines) <= 2:
-            # Nothing parsed — show raw (trimmed)
-            kept = [l for l in raw_out.splitlines() if l.strip() and not l.startswith("%")][:30]
-            out_lines.append("<pre>" + html.escape("\n".join(kept)) + "</pre>")
-
-        await self.send_message(chat_id, "\n".join(out_lines), parse_mode="HTML")
+        # ── The record as a card ──────────────────────────────────────────────
+        fields, servers = whois_card.parse_record(raw_out)
+        days = whois_card.days_until(fields["Expires"]) if "Expires" in fields else None
+        card = whois_card.whois_card(domain, fields, servers, days=days, raw=raw_out)
+        if message_id and await card_transport.edit_card(self, chat_id, message_id, card):
+            return None
+        return await card_transport.send_card(self, chat_id, card)
 
     async def _handle_docker_cmd(
         self,
@@ -8305,25 +8323,34 @@ class TelegramCommandsMixin:
             from navig.remote import is_local_host
 
             cfg = get_config_manager()
-            host_name = cfg.get_active_host() or "localhost"
+            host_name = TelegramCommandsMixin._active_host_name(cfg)
             server_config = cfg.load_server_config(host_name)
             is_local = is_local_host(server_config)
+        except ActiveHostUnverifiable:
+            raise  # stop with an error, never run on this machine instead
         except Exception:
             host_name, is_local = "localhost", True
 
         sep = "\u2501" * 26
         header = f"{sep}\n\U0001f4e1  <b>Connectivity Test</b>  <code>{html.escape(host_name)}</code>\n{sep}"
-        keyboard = [[{"text": "\U0001f504 Refresh", "callback_data": "slash:hosttest"},
-                     {"text": "\U0001f5a5\ufe0f Hosts", "callback_data": "slash:hosts"}]]
+        keyboard = [
+            [
+                {"text": "\U0001f504 Refresh", "callback_data": "slash:hosttest"},
+                {"text": "\U0001f5a5\ufe0f Hosts", "callback_data": "slash:hosts"},
+            ]
+        ]
 
         # Send or edit-in-place placeholder
         if message_id is None:
-            ack = await self.send_message(chat_id, f"{header}\n\u23f3 <i>Testing\u2026</i>", parse_mode="HTML")
+            ack = await self.send_message(
+                chat_id, f"{header}\n\u23f3 <i>Testing\u2026</i>", parse_mode="HTML"
+            )
             message_id = (ack or {}).get("message_id")
 
         try:
             import subprocess
             import sys as _sys
+
             if is_local:
                 result_line = "\U0001f7e2 <b>localhost</b> \u2014 local host, no SSH needed"
             else:
@@ -8331,7 +8358,9 @@ class TelegramCommandsMixin:
                 proc = await asyncio.to_thread(  # blocking CLI call — never on the loop
                     subprocess.run,
                     [_sys.executable, "-m", "navig", "host", "test", host_name],
-                    capture_output=True, text=True, timeout=20,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
                 )
                 out = (proc.stdout or "").strip() or (proc.stderr or "").strip()
                 if proc.returncode == 0:
@@ -8344,7 +8373,9 @@ class TelegramCommandsMixin:
 
         now_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
         body = f"{header}\n{result_line}\n\n<i>\u2500 {now_str} \u2500</i>"
-        await TelegramCommandsMixin._send_monitor_card(self, chat_id, body, keyboard, message_id=message_id)
+        await TelegramCommandsMixin._send_monitor_card(
+            self, chat_id, body, keyboard, message_id=message_id
+        )
 
     # -- /use  host switcher --------------------------------------------------
 
@@ -8364,45 +8395,61 @@ class TelegramCommandsMixin:
         arg = ""
         for prefix in ("/use ", "/use"):
             if raw.lower().startswith(prefix):
-                arg = raw[len(prefix):].strip()
+                arg = raw[len(prefix) :].strip()
                 break
 
         try:
             from navig.config import get_config_manager
+
             cfg = get_config_manager()
         except Exception as exc:
-            await self.send_message(chat_id, f"❌ Config error: <i>{html.escape(str(exc))}</i>", parse_mode="HTML")
+            await self.send_message(
+                chat_id, f"❌ Config error: <i>{html.escape(str(exc))}</i>", parse_mode="HTML"
+            )
             return
 
         # ── Switch if arg given ───────────────────────────────────────────────
         if arg:
             import subprocess
             import sys as _sys
+
             try:
                 proc = await asyncio.to_thread(  # blocking CLI call — never on the loop
                     subprocess.run,
                     [_sys.executable, "-m", "navig", "host", "use", arg],
-                    capture_output=True, text=True, timeout=10,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                 )
                 if proc.returncode == 0:
                     active = cfg.get_active_host() or arg
                     header = TelegramCommandsMixin._mon_header("🔀", "Host Switched", active)
                     now = datetime.now(timezone.utc).strftime("%H:%M UTC")
-                    body = f"{header}\n🟢 Now using <b>{html.escape(active)}</b>\n\n<i>─ {now} ─</i>"
+                    body = (
+                        f"{header}\n🟢 Now using <b>{html.escape(active)}</b>\n\n<i>─ {now} ─</i>"
+                    )
                 else:
-                    err = (proc.stdout or proc.stderr or "unknown error").strip().split("\n")[0][:120]
+                    err = (
+                        (proc.stdout or proc.stderr or "unknown error").strip().split("\n")[0][:120]
+                    )
                     body = f"❌ <b>Could not switch to</b> <code>{html.escape(arg)}</code>\n<i>{html.escape(err)}</i>"
             except Exception as exc:
                 body = f"❌ <i>{html.escape(str(exc))}</i>"
-            keyboard = [[
-                {"text": "🖥 Host List", "callback_data": "slash:hosts"},
-                {"text": "📡 Test Now", "callback_data": "slash:hosttest"},
-            ]]
-            await TelegramCommandsMixin._send_monitor_card(self, chat_id, body, keyboard, message_id=message_id)
+            keyboard = [
+                [
+                    {"text": "🖥 Host List", "callback_data": "slash:hosts"},
+                    {"text": "📡 Test Now", "callback_data": "slash:hosttest"},
+                ]
+            ]
+            await TelegramCommandsMixin._send_monitor_card(
+                self, chat_id, body, keyboard, message_id=message_id
+            )
             return
 
         # ── No arg → show host list with switch buttons ───────────────────────
-        await TelegramCommandsMixin._handle_hosts_cmd(self, chat_id=chat_id, user_id=user_id, metadata=metadata, message_id=message_id)
+        await TelegramCommandsMixin._handle_hosts_cmd(
+            self, chat_id=chat_id, user_id=user_id, metadata=metadata, message_id=message_id
+        )
 
     # -- /apps + /app  app list / switcher ------------------------------------
 
@@ -8420,14 +8467,17 @@ class TelegramCommandsMixin:
         """/apps — list configured apps with inline switch buttons."""
         try:
             from navig.config import get_config_manager
+
             cfg = get_config_manager()
-            host_name = cfg.get_active_host() or "localhost"
+            host_name = TelegramCommandsMixin._active_host_name(cfg)
             apps = cfg.list_apps(host_name) if hasattr(cfg, "list_apps") else []
             # NOT get_active_app(host_name): the parameter is `return_source: bool`,
             # so a host name is truthy and the call returns a TUPLE (app, source).
             # `app == active_app` was then never true and the "active" marker on
             # this card had never rendered. Resolution is already host-aware inside.
             active_app = cfg.get_active_app() if hasattr(cfg, "get_active_app") else ""
+        except ActiveHostUnverifiable:
+            raise  # stop with an error, never run on this machine instead
         except Exception:
             apps, active_app, host_name = [], "", "localhost"
 
@@ -8442,11 +8492,15 @@ class TelegramCommandsMixin:
                 f"  <code>/run navig app add --host {html.escape(host_name)}</code>\n\n"
                 f"<i>─ {now} ─</i>"
             )
-            keyboard = [[
-                {"text": "🔄 Refresh", "callback_data": "slash:apps"},
-                {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
-            ]]
-            await TelegramCommandsMixin._send_monitor_card(self, chat_id, body, keyboard, message_id=message_id)
+            keyboard = [
+                [
+                    {"text": "🔄 Refresh", "callback_data": "slash:apps"},
+                    {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
+                ]
+            ]
+            await TelegramCommandsMixin._send_monitor_card(
+                self, chat_id, body, keyboard, message_id=message_id
+            )
             return
 
         lines: list[str] = [header]
@@ -8469,11 +8523,15 @@ class TelegramCommandsMixin:
                 row = []
         if row:
             keyboard.append(row)
-        keyboard.append([
-            {"text": "🔄 Refresh", "callback_data": "slash:apps"},
-            {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
-        ])
-        await TelegramCommandsMixin._send_monitor_card(self, chat_id, "\n".join(lines), keyboard, message_id=message_id)
+        keyboard.append(
+            [
+                {"text": "🔄 Refresh", "callback_data": "slash:apps"},
+                {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
+            ]
+        )
+        await TelegramCommandsMixin._send_monitor_card(
+            self, chat_id, "\n".join(lines), keyboard, message_id=message_id
+        )
 
     @rate_limited
     @error_handled
@@ -8491,36 +8549,54 @@ class TelegramCommandsMixin:
         arg = ""
         for prefix in ("/app ", "/app"):
             if raw.lower().startswith(prefix):
-                arg = raw[len(prefix):].strip()
+                arg = raw[len(prefix) :].strip()
                 break
 
         if arg:
             import subprocess
             import sys as _sys
+
             try:
                 proc = await asyncio.to_thread(  # blocking CLI call — never on the loop
                     subprocess.run,
                     [_sys.executable, "-m", "navig", "app", "use", arg],
-                    capture_output=True, text=True, timeout=10,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                 )
                 if proc.returncode == 0:
                     header = TelegramCommandsMixin._mon_header("📦", "App Switched", arg)
                     now = datetime.now(timezone.utc).strftime("%H:%M UTC")
-                    body = f"{header}\n🟢 Now using app <b>{html.escape(arg)}</b>\n\n<i>─ {now} ─</i>"
+                    body = (
+                        f"{header}\n🟢 Now using app <b>{html.escape(arg)}</b>\n\n<i>─ {now} ─</i>"
+                    )
                 else:
-                    err = (proc.stdout or proc.stderr or "unknown error").strip().split("\n")[0][:120]
+                    err = (
+                        (proc.stdout or proc.stderr or "unknown error").strip().split("\n")[0][:120]
+                    )
                     body = f"❌ <b>Could not switch to</b> <code>{html.escape(arg)}</code>\n<i>{html.escape(err)}</i>"
             except Exception as exc:
                 body = f"❌ <i>{html.escape(str(exc))}</i>"
-            keyboard = [[
-                {"text": "📦 App List", "callback_data": "slash:apps"},
-                {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
-            ]]
-            await TelegramCommandsMixin._send_monitor_card(self, chat_id, body, keyboard, message_id=message_id)
+            keyboard = [
+                [
+                    {"text": "📦 App List", "callback_data": "slash:apps"},
+                    {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
+                ]
+            ]
+            await TelegramCommandsMixin._send_monitor_card(
+                self, chat_id, body, keyboard, message_id=message_id
+            )
             return
 
         # No arg → show app list
-        await TelegramCommandsMixin._handle_apps_cmd(self, chat_id=chat_id, user_id=user_id, metadata=metadata, message_id=message_id, text=text)
+        await TelegramCommandsMixin._handle_apps_cmd(
+            self,
+            chat_id=chat_id,
+            user_id=user_id,
+            metadata=metadata,
+            message_id=message_id,
+            text=text,
+        )
 
     # -- /files  directory listing --------------------------------------------
 
@@ -8544,17 +8620,20 @@ class TelegramCommandsMixin:
         arg = ""
         for prefix in ("/files ", "/files"):
             if raw.lower().startswith(prefix):
-                arg = raw[len(prefix):].strip()
+                arg = raw[len(prefix) :].strip()
                 break
         target = arg or "~"
 
         try:
             from navig.config import get_config_manager
             from navig.remote import is_local_host
+
             cfg = get_config_manager()
-            host_name = cfg.get_active_host() or "localhost"
+            host_name = TelegramCommandsMixin._active_host_name(cfg)
             server_config = cfg.load_server_config(host_name)
             is_local = is_local_host(server_config)
+        except ActiveHostUnverifiable:
+            raise  # stop with an error, never run on this machine instead
         except Exception:
             host_name, is_local = "localhost", True
 
@@ -8569,16 +8648,20 @@ class TelegramCommandsMixin:
             except PermissionError:
                 entries_err = f"⛔ Permission denied: <code>{html.escape(str(resolved))}</code>"
                 await TelegramCommandsMixin._send_monitor_card(
-                    self, chat_id,
+                    self,
+                    chat_id,
                     f"{header}\n{entries_err}\n\n<i>─ {now} ─</i>",
-                    [[{"text": "🏠 Home", "callback_data": "slash:files"}]], message_id=message_id
+                    [[{"text": "🏠 Home", "callback_data": "slash:files"}]],
+                    message_id=message_id,
                 )
                 return
             except Exception as exc:
                 await TelegramCommandsMixin._send_monitor_card(
-                    self, chat_id,
+                    self,
+                    chat_id,
                     f"{header}\n❌ {html.escape(str(exc))}\n\n<i>─ {now} ─</i>",
-                    [[{"text": "🏠 Home", "callback_data": "slash:files"}]], message_id=message_id
+                    [[{"text": "🏠 Home", "callback_data": "slash:files"}]],
+                    message_id=message_id,
                 )
                 return
 
@@ -8589,7 +8672,16 @@ class TelegramCommandsMixin:
                     icon = "📂"
                 elif entry.suffix in (".log", ".txt"):
                     icon = "📄"
-                elif entry.suffix in (".py", ".js", ".ts", ".sh", ".yaml", ".yml", ".json", ".toml"):
+                elif entry.suffix in (
+                    ".py",
+                    ".js",
+                    ".ts",
+                    ".sh",
+                    ".yaml",
+                    ".yml",
+                    ".json",
+                    ".toml",
+                ):
                     icon = "🧩"
                 elif entry.suffix in (".zip", ".gz", ".tar", ".bz2"):
                     icon = "📦"
@@ -8597,7 +8689,11 @@ class TelegramCommandsMixin:
                     icon = "📎"
                 try:
                     size = entry.stat().st_size if entry.is_file() else None
-                    size_s = f"  <i>{TelegramCommandsMixin._fmt_size(size)}</i>" if size is not None else ""
+                    size_s = (
+                        f"  <i>{TelegramCommandsMixin._fmt_size(size)}</i>"
+                        if size is not None
+                        else ""
+                    )
                 except Exception:
                     size_s = ""
                 lines.append(f"  {icon} {html.escape(entry.name)}{size_s}")
@@ -8612,13 +8708,20 @@ class TelegramCommandsMixin:
                 proc = await asyncio.to_thread(  # blocking CLI call — never on the loop
                     subprocess.run,
                     [_sys.executable, "-m", "navig", "file", "list", target, "--plain"],
-                    capture_output=True, text=True, timeout=15,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
                 )
                 out = (proc.stdout or proc.stderr or "").strip()
             except Exception as exc:
                 out = str(exc)
-            lines = [header, f"  📂 <code>{html.escape(target)}</code>", "",
-                     f"<pre>{html.escape(out[:1500])}</pre>", f"\n<i>─ {now} ─</i>"]
+            lines = [
+                header,
+                f"  📂 <code>{html.escape(target)}</code>",
+                "",
+                f"<pre>{html.escape(out[:1500])}</pre>",
+                f"\n<i>─ {now} ─</i>",
+            ]
 
         parent = str(pathlib.Path(target).expanduser().parent) if is_local else "~"
         keyboard = [
@@ -8631,7 +8734,9 @@ class TelegramCommandsMixin:
                 {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
             ],
         ]
-        await TelegramCommandsMixin._send_monitor_card(self, chat_id, "\n".join(lines), keyboard, message_id=message_id)
+        await TelegramCommandsMixin._send_monitor_card(
+            self, chat_id, "\n".join(lines), keyboard, message_id=message_id
+        )
 
     # -- /cat  file viewer ----------------------------------------------------
 
@@ -8655,7 +8760,7 @@ class TelegramCommandsMixin:
         arg = ""
         for prefix in ("/cat ", "/cat"):
             if raw.lower().startswith(prefix):
-                arg = raw[len(prefix):].strip()
+                arg = raw[len(prefix) :].strip()
                 break
 
         if not arg:
@@ -8668,20 +8773,27 @@ class TelegramCommandsMixin:
                 f"    <code>/cat ~/.navig/config.yaml</code>\n"
                 f"    <code>/cat /var/log/nginx/error.log</code>"
             )
-            keyboard = [[
-                {"text": "📁 Browse Files", "callback_data": "slash:files"},
-                {"text": "❌ Close", "callback_data": "slash:close"},
-            ]]
-            await TelegramCommandsMixin._send_monitor_card(self, chat_id, usage, keyboard, message_id=message_id)
+            keyboard = [
+                [
+                    {"text": "📁 Browse Files", "callback_data": "slash:files"},
+                    {"text": "❌ Close", "callback_data": "slash:close"},
+                ]
+            ]
+            await TelegramCommandsMixin._send_monitor_card(
+                self, chat_id, usage, keyboard, message_id=message_id
+            )
             return
 
         try:
             from navig.config import get_config_manager
             from navig.remote import is_local_host
+
             cfg = get_config_manager()
-            host_name = cfg.get_active_host() or "localhost"
+            host_name = TelegramCommandsMixin._active_host_name(cfg)
             server_config = cfg.load_server_config(host_name)
             is_local = is_local_host(server_config)
+        except ActiveHostUnverifiable:
+            raise  # stop with an error, never run on this machine instead
         except Exception:
             host_name, is_local = "localhost", True
 
@@ -8705,18 +8817,24 @@ class TelegramCommandsMixin:
                 proc = await asyncio.to_thread(  # blocking CLI call — never on the loop
                     subprocess.run,
                     [_sys.executable, "-m", "navig", "file", "show", arg, "--plain"],
-                    capture_output=True, text=True, timeout=15,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
                 )
                 out = (proc.stdout or proc.stderr or "").strip()[:3000]
             except Exception as exc:
                 out = str(exc)
             body = f"{header}\n<pre>{html.escape(out)}</pre>\n\n<i>─ {now} ─</i>"
 
-        keyboard = [[
-            {"text": "📁 Browse", "callback_data": "slash:files"},
-            {"text": "🔄 Refresh", "callback_data": f"slash:cat:{html.escape(arg)}"},
-        ]]
-        await TelegramCommandsMixin._send_monitor_card(self, chat_id, body, keyboard, message_id=message_id)
+        keyboard = [
+            [
+                {"text": "📁 Browse", "callback_data": "slash:files"},
+                {"text": "🔄 Refresh", "callback_data": f"slash:cat:{html.escape(arg)}"},
+            ]
+        ]
+        await TelegramCommandsMixin._send_monitor_card(
+            self, chat_id, body, keyboard, message_id=message_id
+        )
 
     # -- /run  remote command runner ------------------------------------------
 
@@ -8739,7 +8857,7 @@ class TelegramCommandsMixin:
         arg = ""
         for prefix in ("/run ", "/run"):
             if raw.lower().startswith(prefix):
-                arg = raw[len(prefix):].strip()
+                arg = raw[len(prefix) :].strip()
                 break
 
         DIV = "━" * 26
@@ -8754,17 +8872,24 @@ class TelegramCommandsMixin:
                 f"    <code>/run tail -n 50 /var/log/syslog</code>\n\n"
                 f"  <i>Runs on the active host via navig CLI.</i>"
             )
-            keyboard = [[
-                {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
-                {"text": "❌ Close", "callback_data": "slash:close"},
-            ]]
-            await TelegramCommandsMixin._send_monitor_card(self, chat_id, usage, keyboard, message_id=message_id)
+            keyboard = [
+                [
+                    {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
+                    {"text": "❌ Close", "callback_data": "slash:close"},
+                ]
+            ]
+            await TelegramCommandsMixin._send_monitor_card(
+                self, chat_id, usage, keyboard, message_id=message_id
+            )
             return
 
         try:
             from navig.config import get_config_manager
+
             cfg = get_config_manager()
-            host_name = cfg.get_active_host() or "localhost"
+            host_name = TelegramCommandsMixin._active_host_name(cfg)
+        except ActiveHostUnverifiable:
+            raise  # stop with an error, never run on this machine instead
         except Exception:
             host_name = "localhost"
 
@@ -8784,7 +8909,9 @@ class TelegramCommandsMixin:
             proc = await asyncio.to_thread(  # blocking CLI call — never on the loop
                 subprocess.run,
                 [_sys.executable, "-m", "navig", "run", arg, "--plain"],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             out = (proc.stdout or "").strip() or (proc.stderr or "").strip()
             rc_icon = "✅" if proc.returncode == 0 else "❌"
@@ -8798,11 +8925,15 @@ class TelegramCommandsMixin:
             rc_line = f"\n<i>─ {now} ─</i>"
 
         body = f"{header}\n{out_block}{rc_line}"
-        keyboard = [[
-            {"text": "🔄 Re-run", "callback_data": f"slash:run:{html.escape(arg[:80])}"},
-            {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
-        ]]
-        await TelegramCommandsMixin._send_monitor_card(self, chat_id, body, keyboard, message_id=message_id)
+        keyboard = [
+            [
+                {"text": "🔄 Re-run", "callback_data": f"slash:run:{html.escape(arg[:80])}"},
+                {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
+            ]
+        ]
+        await TelegramCommandsMixin._send_monitor_card(
+            self, chat_id, body, keyboard, message_id=message_id
+        )
 
     # -- /backup  status card -------------------------------------------------
 
@@ -8823,8 +8954,11 @@ class TelegramCommandsMixin:
 
         try:
             from navig.config import get_config_manager
+
             cfg = get_config_manager()
-            host_name = cfg.get_active_host() or "localhost"
+            host_name = TelegramCommandsMixin._active_host_name(cfg)
+        except ActiveHostUnverifiable:
+            raise  # stop with an error, never run on this machine instead
         except Exception:
             host_name = "localhost"
 
@@ -8835,7 +8969,9 @@ class TelegramCommandsMixin:
             proc = await asyncio.to_thread(  # blocking CLI call — never on the loop
                 subprocess.run,
                 [_sys.executable, "-m", "navig", "backup", "show", "--plain"],
-                capture_output=True, text=True, timeout=15,
+                capture_output=True,
+                text=True,
+                timeout=15,
             )
             out = (proc.stdout or proc.stderr or "").strip()
         except Exception as exc:
@@ -8864,7 +9000,9 @@ class TelegramCommandsMixin:
                 {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
             ],
         ]
-        await TelegramCommandsMixin._send_monitor_card(self, chat_id, body, keyboard, message_id=message_id)
+        await TelegramCommandsMixin._send_monitor_card(
+            self, chat_id, body, keyboard, message_id=message_id
+        )
 
     @staticmethod
     def _fmt_size(n: int) -> str:
@@ -8898,6 +9036,21 @@ class TelegramCommandsMixin:
         return f"{line}\n{icon}  <b>{html.escape(title)}</b>{sub}\n{line}"
 
     @staticmethod
+    def _active_host_name(cfg) -> str:
+        """The active host, or ``"localhost"`` when none is configured at all.
+
+        Raises :class:`ActiveHostUnverifiable` when a host was named but could not be
+        verified — the fallback to this machine is only for "nothing was named".
+        """
+        host, source = cfg.get_active_host(return_source=True)
+        if source == "unresolvable":
+            raise ActiveHostUnverifiable(
+                "the active host could not be verified right now — refusing to run on this "
+                "machine instead. Retry in a moment, or check `navig host list`."
+            )
+        return host or "localhost"
+
+    @staticmethod
     def _mon_host_ctx() -> tuple:
         """Return (host_name, server_config_dict, is_local)."""
         try:
@@ -8905,10 +9058,12 @@ class TelegramCommandsMixin:
             from navig.remote import is_local_host
 
             cfg = get_config_manager()
-            host_name = cfg.get_active_host() or "localhost"
+            host_name = TelegramCommandsMixin._active_host_name(cfg)
             server_config = cfg.load_server_config(host_name)
             is_local = is_local_host(server_config)
             return host_name, server_config, is_local
+        except ActiveHostUnverifiable:
+            raise  # stop with an error, never run on this machine instead
         except Exception:
             return "localhost", {"is_local": True}, True
 
@@ -8920,28 +9075,62 @@ class TelegramCommandsMixin:
         message_id: int | None = None,
         command: str | None = None,
         ai_hint: str | None = None,
+        card=None,
     ) -> None:
         """Send monitoring card, editing in-place when message_id is provided.
 
         On a fresh send (no message_id) honors the per-command AI/Plain style
         when `command` is supplied. In-place refreshes stay plain so the edited
         card content doesn't drift between AI rewrites.
+
+        A handler that measures something structured passes *card*: the bubble
+        then carries the meter table and its own buttons, and *text_payload* is
+        only the degradation path. A refresh stays rich because the edit goes
+        through `card_transport.edit_card`.
         """
+        if card is not None:
+            if message_id:
+                try:
+                    from navig.telegram import card_transport
+
+                    if await card_transport.edit_card(self, chat_id, message_id, card):
+                        return
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Monitor card rich in-place edit failed: %s", exc)
+            send_rich = getattr(self, "send_rich_message", None)
+            if send_rich is not None:
+                try:
+                    sent = await send_rich(
+                        chat_id,
+                        html=card.rich_html(),
+                        fallback_html=text_payload,
+                    )
+                    # None means it never reached Telegram (no bot session, or rich
+                    # messages refused with no fallback body): keep the plain send
+                    # below instead of counting a lost card as delivered.
+                    if sent is not None:
+                        return
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Monitor card rich send failed: %s", exc)
         if message_id:
             try:
-                if await self.edit_message(
-                    chat_id,
-                    message_id,
-                    text_payload,
-                    parse_mode="HTML",
-                    keyboard=keyboard,
-                ) is not None:
+                if (
+                    await self.edit_message(
+                        chat_id,
+                        message_id,
+                        text_payload,
+                        parse_mode="HTML",
+                        keyboard=keyboard,
+                    )
+                    is not None
+                ):
                     return
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Monitor card in-place edit failed: %s", exc)
         if command:
             await self.send_command_output(
-                chat_id, text_payload,
+                chat_id,
+                text_payload,
                 command=command,
                 ai_hint=ai_hint,
                 parse_mode="HTML",
@@ -8965,6 +9154,10 @@ class TelegramCommandsMixin:
         """Rich disk usage card (/disk /df)."""
         host_name, _server_config, is_local = self._mon_host_ctx()
         lines: list = [self._mon_header("💽", "Disk Usage", host_name)]
+        try:  # the card kit ships with this branch; an older wheel keeps the text
+            from navig.telegram import monitor_card as _mc
+        except Exception:  # noqa: BLE001
+            _mc = None
 
         # Send ⏳ placeholder immediately on fresh requests; refresh edits in-place
         if message_id is None:
@@ -8974,6 +9167,8 @@ class TelegramCommandsMixin:
             message_id = (_ack or {}).get("message_id")
 
         if is_local:
+            meters: list = []
+            broken = ""
             try:
                 # NEVER psutil.disk_partitions() here: it blocks indefinitely on a
                 # cold/disconnected network drive and does not release the GIL —
@@ -8987,6 +9182,15 @@ class TelegramCommandsMixin:
                     pct = float(d["percent"])
                     icon = self._mon_status_icon(pct)
                     bar = self._mon_bar(pct)
+                    measurable = _mc is None or _mc.is_measurable(
+                        str(d["mountpoint"]), str(d.get("fstype") or "")
+                    )
+                    if measurable:
+                        # A squashfs snap is 100 % full by construction; counting it
+                        # would turn a healthy host red and bury the real volume.
+                        meters.append(
+                            (str(d["mountpoint"]), pct, float(d["used_gb"]), float(d["total_gb"]))
+                        )
                     lines.append(
                         f"\n{icon} <b>{html.escape(str(d['mountpoint']))}</b>  {pct:.0f}%\n"
                         f"<code>{bar}</code>\n"
@@ -8995,10 +9199,13 @@ class TelegramCommandsMixin:
                     shown += 1
                 if not shown:
                     lines.append("<i>No accessible partitions found</i>")
+                    broken = "No accessible partition answered."
             except ImportError:
                 lines.append("<i>psutil not available — install it with: pip install psutil</i>")
+                broken = "psutil is not installed, so no volume can be measured."
             except Exception as exc:
                 lines.append(f"<i>Disk info error: {html.escape(str(exc))}</i>")
+                broken = f"Disk info could not be read: {exc}"
         else:
             await self._handle_cli_command(
                 chat_id, user_id, metadata or {}, "host monitor show --disk"
@@ -9017,11 +9224,40 @@ class TelegramCommandsMixin:
                 {"text": "🔌 Ports", "callback_data": "slash:ports"},
             ],
         ]
+        fullest = max(meters, key=lambda m: m[1]) if meters else None
+        if fullest is not None and fullest[1] >= _mc.RED_PCT:
+            verdict = (
+                f"{fullest[0]} is {fullest[1]:.0f} % full — "
+                "that is the volume to clean before it starts refusing writes."
+            )
+        elif fullest is not None:
+            verdict = (
+                f"{len(meters)} volume{'s' if len(meters) != 1 else ''} measured; "
+                "nothing is close to full."
+            )
+        else:
+            verdict = broken
+        card = None
+        if _mc is not None:
+            card = _mc.meter_card(
+                "💽",
+                "Disk Usage",
+                meta=f"{host_name} · {now_str}",
+                meters=[
+                    _mc.Meter(label, pct, used, total) for label, pct, used, total in meters
+                ],
+                verdict=verdict,
+                footer="Refresh after a cleanup — this card edits itself.",
+                buttons=_mc.buttons_from_keyboard(keyboard),
+            )
         await self._send_monitor_card(
-            chat_id, "\n".join(lines), keyboard,
+            chat_id,
+            "\n".join(lines),
+            keyboard,
             message_id=message_id,
             command="disk",
             ai_hint="Disk usage. Preserve exact percentages and GB figures.",
+            card=card,
         )
 
     @rate_limited
@@ -9037,6 +9273,12 @@ class TelegramCommandsMixin:
         """Rich memory usage card (/memory)."""
         host_name, _server_config, is_local = self._mon_host_ctx()
         lines: list = [self._mon_header("🧠", "Memory Status", host_name)]
+        try:  # the card kit ships with this branch; an older wheel keeps the text
+            from navig.telegram import monitor_card as _mc
+        except Exception:  # noqa: BLE001
+            _mc = None
+        meters: list = []
+        broken = ""
 
         if is_local:
             try:
@@ -9048,9 +9290,10 @@ class TelegramCommandsMixin:
                 ram_pct = vm.percent
                 ram_icon = self._mon_status_icon(ram_pct)
                 ram_bar = self._mon_bar(ram_pct)
-                ram_used = vm.used / (1024 ** 3)
-                ram_total = vm.total / (1024 ** 3)
-                ram_avail = vm.available / (1024 ** 3)
+                ram_used = vm.used / (1024**3)
+                ram_total = vm.total / (1024**3)
+                ram_avail = vm.available / (1024**3)
+                meters.append(("RAM", ram_pct, ram_used, ram_total, f"{ram_avail:.1f} GB free"))
 
                 lines.append(
                     f"\n{ram_icon} <b>RAM</b>  {ram_pct:.0f}%\n"
@@ -9063,8 +9306,9 @@ class TelegramCommandsMixin:
                     sw_pct = sw.percent
                     sw_icon = self._mon_status_icon(sw_pct)
                     sw_bar = self._mon_bar(sw_pct)
-                    sw_used = sw.used / (1024 ** 3)
-                    sw_total = sw.total / (1024 ** 3)
+                    sw_used = sw.used / (1024**3)
+                    sw_total = sw.total / (1024**3)
+                    meters.append(("Swap", sw_pct, sw_used, sw_total, ""))
                     lines.append(
                         f"\n{sw_icon} <b>Swap</b>  {sw_pct:.0f}%\n"
                         f"<code>{sw_bar}</code>\n"
@@ -9074,12 +9318,12 @@ class TelegramCommandsMixin:
                     lines.append("\n<i>Swap: not configured</i>")
             except ImportError:
                 lines.append("<i>psutil not available — install it with: pip install psutil</i>")
+                broken = "psutil is not installed, so memory cannot be measured."
             except Exception as exc:
                 lines.append(f"<i>Memory info error: {html.escape(str(exc))}</i>")
+                broken = f"Memory could not be read: {exc}"
         else:
-            await self._handle_cli_command(
-                chat_id, user_id, metadata or {}, 'run "free -h"'
-            )
+            await self._handle_cli_command(chat_id, user_id, metadata or {}, 'run "free -h"')
             return
 
         now_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
@@ -9094,11 +9338,37 @@ class TelegramCommandsMixin:
                 {"text": "🕐 Uptime", "callback_data": "slash:uptime"},
             ],
         ]
+        ram = meters[0] if meters else None
+        low_ram = ram is not None and _mc is not None and ram[1] >= _mc.RED_PCT
+        if low_ram:
+            verdict = f"RAM is {ram[1]:.0f} % used — something is holding memory it should give back."
+        elif ram is not None:
+            swap = "in play" if len(meters) > 1 else "not configured"
+            verdict = f"RAM is {ram[1]:.0f} % used; swap is {swap}."
+        else:
+            verdict = broken
+        card = None
+        if _mc is not None:
+            card = _mc.meter_card(
+                "🧠",
+                "Memory Status",
+                meta=f"{host_name} · {now_str}",
+                meters=[
+                    _mc.Meter(label, pct, used, total, note=note)
+                    for label, pct, used, total, note in meters
+                ],
+                verdict=verdict,
+                footer="Refresh to re-measure — this card edits itself.",
+                buttons=_mc.buttons_from_keyboard(keyboard),
+            )
         await self._send_monitor_card(
-            chat_id, "\n".join(lines), keyboard,
+            chat_id,
+            "\n".join(lines),
+            keyboard,
             message_id=message_id,
             command="memory",
             ai_hint="RAM and swap status. Preserve exact percentages and GB.",
+            card=card,
         )
 
     @rate_limited
@@ -9114,6 +9384,14 @@ class TelegramCommandsMixin:
         """Rich CPU & load card (/cpu /top)."""
         host_name, _server_config, is_local = self._mon_host_ctx()
         lines: list = [self._mon_header("⚡", "CPU & Load", host_name)]
+        try:  # the card kit ships with this branch; an older wheel keeps the text
+            from navig.telegram import monitor_card as _mc
+        except Exception:  # noqa: BLE001
+            _mc = None
+        cpu_meter = None
+        sheet: list = []
+        top_rows: list = []
+        broken = ""
 
         if is_local:
             # Shared collector, off the loop. This card used to sample with
@@ -9128,11 +9406,14 @@ class TelegramCommandsMixin:
                 cpu_pct = float(cpu.get("overall_percent") or 0.0)
                 cpu_icon = self._mon_status_icon(cpu_pct)
                 cpu_bar = self._mon_bar(cpu_pct)
+                physical = cpu.get("physical_cores", 0)
+                logical = cpu.get("logical_cores", 0)
+                cpu_meter = (cpu_pct, f"{physical} physical / {logical} logical cores")
 
                 lines.append(
                     f"\n{cpu_icon} <b>CPU</b>  {cpu_pct:.0f}%\n"
                     f"<code>{cpu_bar}</code>\n"
-                    f"  {cpu.get('physical_cores', 0)} physical / {cpu.get('logical_cores', 0)} logical cores"
+                    f"  {physical} physical / {logical} logical cores"
                 )
 
                 # Per-core (up to 8)
@@ -9142,11 +9423,14 @@ class TelegramCommandsMixin:
                     for i, pct in enumerate(per_core[:8]):
                         c_icon = "🔴" if pct >= 80 else ("🟡" if pct >= 50 else "🟢")
                         core_strs.append(f"[{i}{c_icon}{pct:.0f}%]")
+                    sheet.append(("Cores", "  ".join(core_strs)))
                     lines.append(f"\n<b>Cores:</b> {'  '.join(core_strs)}")
 
                 freq = cpu.get("freq_mhz")
                 if freq:
                     freq_max = cpu.get("freq_max_mhz")
+                    text = f"{freq:.0f} MHz" + (f" (max {freq_max:.0f} MHz)" if freq_max else "")
+                    sheet.append(("Frequency", text))
                     lines.append(
                         f"\n<b>Freq:</b> {freq:.0f} MHz"
                         + (f"  (max {freq_max:.0f} MHz)" if freq_max else "")
@@ -9154,6 +9438,8 @@ class TelegramCommandsMixin:
 
                 load = cpu.get("load_avg")  # None on Windows
                 if load:
+                    text = f"{load[0]:.2f}  {load[1]:.2f}  {load[2]:.2f} (1m 5m 15m)"
+                    sheet.append(("Load average", f"<code>{text}</code>"))
                     lines.append(
                         f"\n<b>Load avg:</b> <code>{load[0]:.2f}  {load[1]:.2f}  {load[2]:.2f}</code>  (1m 5m 15m)"
                     )
@@ -9164,18 +9450,19 @@ class TelegramCommandsMixin:
                     for p in top:
                         pname = html.escape(str(p.get("name") or "?")[:20])
                         ppct = float(p.get("cpu_percent") or 0.0)
+                        top_rows.append((str(p.get("pid", "?")), pname, ppct))
                         lines.append(
                             f"  <code>{str(p.get('pid', '?')):>6}  {pname:<20}  {ppct:.1f}%</code>"
                         )
 
             except ImportError:
                 lines.append("<i>psutil not available — install it with: pip install psutil</i>")
+                broken = "psutil is not installed, so the CPU cannot be sampled."
             except Exception as exc:
                 lines.append(f"<i>CPU info error: {html.escape(str(exc))}</i>")
+                broken = f"CPU info could not be read: {exc}"
         else:
-            await self._handle_cli_command(
-                chat_id, user_id, metadata or {}, 'run "uptime"'
-            )
+            await self._handle_cli_command(chat_id, user_id, metadata or {}, 'run "uptime"')
             return
 
         now_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
@@ -9190,11 +9477,42 @@ class TelegramCommandsMixin:
                 {"text": "⚙️ Services", "callback_data": "slash:services"},
             ],
         ]
+        card = None
+        if _mc is not None:
+            extras: list = []
+            if top_rows:
+                extras.append(_mc.process_table(top_rows))
+            meters = (
+                [_mc.Meter("CPU", cpu_meter[0], note=cpu_meter[1])] if cpu_meter is not None else []
+            )
+            if cpu_meter is not None and cpu_meter[0] >= _mc.RED_PCT:
+                verdict = (
+                    f"CPU is {cpu_meter[0]:.0f} % busy — "
+                    "read the top processes before adding load."
+                )
+            elif cpu_meter is not None:
+                verdict = f"CPU is {cpu_meter[0]:.0f} % busy; the machine has room."
+            else:
+                verdict = broken
+            card = _mc.meter_card(
+                "⚡",
+                "CPU & Load",
+                meta=f"{host_name} · {now_str}",
+                meters=meters,
+                notes=[*sheet, ("Updated", f"<i>{now_str}</i>")],
+                extras=extras,
+                verdict=verdict,
+                footer="Refresh to re-sample — this card edits itself.",
+                buttons=_mc.buttons_from_keyboard(keyboard),
+            )
         await self._send_monitor_card(
-            chat_id, "\n".join(lines), keyboard,
+            chat_id,
+            "\n".join(lines),
+            keyboard,
             message_id=message_id,
             command="cpu",
             ai_hint="CPU load. Preserve exact percentage and load averages.",
+            card=card,
         )
 
     @rate_limited
@@ -9253,9 +9571,7 @@ class TelegramCommandsMixin:
             except Exception as exc:
                 lines.append(f"<i>Uptime error: {html.escape(str(exc))}</i>")
         else:
-            await self._handle_cli_command(
-                chat_id, user_id, metadata or {}, 'run "uptime -p"'
-            )
+            await self._handle_cli_command(chat_id, user_id, metadata or {}, 'run "uptime -p"')
             return
 
         now_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
@@ -9271,7 +9587,9 @@ class TelegramCommandsMixin:
             ],
         ]
         await self._send_monitor_card(
-            chat_id, "\n".join(lines), keyboard,
+            chat_id,
+            "\n".join(lines),
+            keyboard,
             message_id=message_id,
             command="uptime",
             ai_hint="Server uptime. Preserve the exact duration value.",
@@ -9404,6 +9722,7 @@ class TelegramCommandsMixin:
         user_id: int = 0,
         text: str = "",
         metadata: MessageMetadata | None = None,
+        message_id: int | None = None,
     ) -> None:
         """Kill processes by group or name. /kill <group> [--force] [--dry-run].
 
@@ -9411,29 +9730,24 @@ class TelegramCommandsMixin:
         windows-terminal, chrome, chrome-tabs, chrome-all-renderers.
 
         Any other token is treated as a process-name substring match.
-        Always shows a confirmation card with candidate count before killing.
+        Always shows a confirmation card with candidate count before killing, and the
+        rehearsal is the same card family with the Kill button still on it, so an
+        operator who dry-runs can carry straight on into the real thing.
         """
         from navig.commands import processes as _proc
+        from navig.telegram import card_transport, kill_card
 
         # Parse args
         args_raw = (
-            text[len("/kill"):].strip()
-            if text.lower().startswith("/kill")
-            else text.strip()
+            text[len("/kill") :].strip() if text.lower().startswith("/kill") else text.strip()
         )
         tokens = args_raw.split()
         flags = {t for t in tokens if t.startswith("--")}
         positional = [t for t in tokens if not t.startswith("--")]
 
         if not positional:
-            groups = ", ".join(_proc.list_known_groups())
-            msg = (
-                "🛑 <b>Kill processes</b>\n\n"
-                "Usage: <code>/kill &lt;group|name&gt; [--force] [--dry-run]</code>\n\n"
-                f"<b>Built-in groups:</b>\n<i>{html.escape(groups)}</i>\n\n"
-                "Example: <code>/kill chrome-tabs</code>"
-            )
-            await self.send_message(chat_id, msg, parse_mode="HTML")
+            card = kill_card.usage_card(groups=_proc.list_known_groups())
+            await card_transport.send_card(self, chat_id, card)
             return
 
         target = positional[0].lower()
@@ -9445,60 +9759,31 @@ class TelegramCommandsMixin:
         n = len(candidates)
 
         if n == 0:
-            await self.send_message(
-                chat_id,
-                f"🛑 <b>Kill: {html.escape(target)}</b>\n\n<i>No matching processes.</i>",
-                parse_mode="HTML",
-            )
+            card = kill_card.no_match_card(target)
+            await card_transport.send_card(self, chat_id, card)
             return
 
-        # Dry-run: list candidates and stop
+        # Dry-run: the whole list, the verdict that nothing was killed, and the way on.
         if dry_run:
-            lines = [
-                f"🔍 <b>Dry run — {html.escape(target)}</b>",
-                f"<i>{n} candidate{'s' if n != 1 else ''} would be killed:</i>",
-                "",
-            ]
-            for c in candidates[:20]:
-                lines.append(f"  <code>{c['pid']:>6}</code> {html.escape(c['name'])}")
-            if n > 20:
-                lines.append(f"  <i>… +{n - 20} more</i>")
-            await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
+            card = kill_card.dry_run_card(target, candidates, total=n, force=force)
+            if message_id and await card_transport.edit_card(self, chat_id, message_id, card):
+                return
+            await card_transport.send_card(self, chat_id, card)
             return
 
-        # Self-risky groups → extra warning in the confirmation card
+        # Self-risky groups carry a warning callout in the confirmation card.
         is_self_risky = target in _proc.SELF_RISKY_GROUPS
 
-        # Build confirmation card
-        lines = [
-            f"🛑 <b>Confirm kill — {html.escape(target)}</b>",
-            f"<i>{n} process{'es' if n != 1 else ''} match{'es' if n == 1 else ''}.</i>",
-        ]
-        if is_self_risky:
-            lines.append(
-                "\n⚠️ <b>Warning:</b> this may affect the NAVIG daemon "
-                "itself (Python) or your active shell sessions (PowerShell). "
-                "Self-protection will skip the daemon's own PID and parent."
-            )
-        lines.append("")
-        for c in candidates[:5]:
-            lines.append(f"  <code>{c['pid']:>6}</code> {html.escape(c['name'])}")
-        if n > 5:
-            lines.append(f"  <i>… +{n - 5} more</i>")
-        if force:
-            lines.append("\n<b>Mode:</b> <code>--force</code> (SIGKILL)")
-        else:
-            lines.append("\n<b>Mode:</b> graceful terminate (escalates after 3 s)")
-
-        kill_data = f"kill_confirm:{target}:{'force' if force else 'soft'}"
-        cancel_data = "kill_cancel"
-        keyboard = [
-            [
-                {"text": f"🛑 Kill {n}", "callback_data": kill_data},
-                {"text": "Cancel", "callback_data": cancel_data},
-            ],
-        ]
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+        card = kill_card.confirm_card(
+            target,
+            candidates[:5],
+            total=n,
+            force=force,
+            self_risky=is_self_risky,
+        )
+        if message_id and await card_transport.edit_card(self, chat_id, message_id, card):
+            return
+        await card_transport.send_card(self, chat_id, card)
 
     async def _handle_kill_confirm_callback(
         self, chat_id: int, user_id: int, callback_data: str, message_id: int | None = None
@@ -9515,129 +9800,131 @@ class TelegramCommandsMixin:
         force = parts[2] == "force"
 
         report = _proc.kill_group(target, force=force, exclude_self=True, dry_run=False)
-        k = len(report.get("killed", []))
-        s = len(report.get("skipped", []))
-        f = len(report.get("failed", []))
 
-        lines = [
-            f"✅ <b>Kill complete — {html.escape(target)}</b>",
-            "",
-            f"<b>Killed:</b> {k}",
-        ]
-        if s:
-            lines.append(f"<b>Skipped:</b> {s} (self-protected or already gone)")
-        if f:
-            lines.append(f"<b>Failed:</b> {f}")
-            for fl in report["failed"][:5]:
-                lines.append(
-                    f"  <code>{fl.get('pid')}</code> — {html.escape(str(fl.get('reason', '?')))}"
-                )
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
+        from navig.telegram import card_transport, kill_card
+
+        card = kill_card.result_card(
+            target,
+            killed=report.get("killed", []),
+            skipped=report.get("skipped", []),
+            failed=report.get("failed", []),
+            force=force,
+        )
+        # The confirming card becomes the record: one message per kill, and its
+        # Kill button is gone with it, so the chat cannot be "confirmed" twice.
+        if message_id and await card_transport.edit_card(self, chat_id, message_id, card):
+            return
+        await card_transport.send_card(self, chat_id, card)
 
     # -- Briefing / deck -------------------------------------------------------
 
     @rate_limited
     @error_handled
     @typing_context
-    async def _handle_briefing(self, chat_id: int, user_id: int, metadata: MessageMetadata) -> None:
-        """Live system-health briefing — infrastructure telemetry, no session data (/briefing)."""
+    async def _handle_briefing(
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata: MessageMetadata,
+        message_id: int | None = None,
+    ) -> None:
+        """Live infrastructure briefing as a card (/briefing).
+
+        The card is a monitor: a meter for the root disk, a sheet for the daemon,
+        the LLM bridge, the vault, the sessions and uptime, the recent commands as
+        a list, one verdict sentence, and the actions inside the bubble.  When a
+        button opens it, `message_id` is the message that was pressed, so a
+        refresh rewrites that message instead of posting a second one.
+        """
+        from navig.telegram import monitor_card
+
         now = datetime.now(timezone.utc)
         ts = now.strftime("%H:%M UTC, %d %b %Y")
-        # The briefing gathers LOCAL telemetry (daemon, bridge on 127.0.0.1, disk,
-        # uptime) — i.e. the machine the brain runs on. Name it so the reader knows
-        # which host these numbers describe.
+
         try:
             import platform as _pf
 
-            _brief_host = _pf.node() or "this machine"
-        except Exception:
-            _brief_host = "this machine"
-        lines: list = [
-            "📋 <b>System Briefing</b>",
-            f"<i>{ts}</i>",
-            "",
-            "<b>🔧 Infrastructure</b>",
-            f"  🖥️ Host: <code>{html.escape(_brief_host)}</code>",
-        ]
+            host = _pf.node() or "this machine"
+        except Exception:  # noqa: BLE001
+            host = "this machine"
 
-        # Daemon status. systemctl is Linux/systemd-only — on Windows/macOS it does
-        # not exist, so the old code fell through to "status unavailable" on every
-        # run of a perfectly healthy install. But this briefing is SERVED BY the
-        # daemon (we're running inside the gateway process), so reaching here means
-        # the daemon is up. Report that truthfully rather than a false "unavailable".
+        sheet: list[tuple[str, str]] = []
+
+        # Daemon. `systemctl` is Linux/systemd-only — on Windows and macOS it does
+        # not exist, so the old code reported "status unavailable" on a healthy
+        # install. This briefing is SERVED BY the daemon, so reaching this line
+        # means it is running: say that instead of inventing a gap.
         import shutil as _shutil
 
-        if _shutil.which("systemctl") is None:
-            lines.append("  🟢 Daemon: <code>running (this process)</code>")
-        else:
+        daemon_text = ""
+        if _shutil.which("systemctl") is not None:
+            for scope in ("--user", ""):
+                args = ["systemctl"]
+                if scope:
+                    args.append(scope)
+                args += [
+                    "show",
+                    *monitor_card.DAEMON_UNITS,
+                    "--property=Id,ActiveState,ActiveEnterTimestamp",
+                ]
+                try:
+                    proc = await asyncio.wait_for(
+                        asyncio.create_subprocess_exec(
+                            *args,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                        ),
+                        timeout=3.0,
+                    )
+                    stdout, _ = await proc.communicate()
+                except Exception:  # noqa: BLE001
+                    continue
+                found = monitor_card.daemon_fact(monitor_card.parse_units(stdout.decode()))
+                if found is not None:
+                    _, daemon_text = found
+                    break
+        if not daemon_text:
+            # No unit reported active, yet this process is answering the command:
+            # say both things rather than claiming a state we did not observe.
+            daemon_text = "running (this process; no system unit reported active)"
+        sheet.append(("Daemon", f"{monitor_card.check_icon(True)} {daemon_text}"))
+
+        try:
+            from navig.providers.bridge_grid_reader import get_llm_port
+
+            bridge_port = get_llm_port()
+        except Exception:  # noqa: BLE001
+            bridge_port = None
+
+        bridge_ok = False
+        if bridge_port is not None:
             try:
-                p = await asyncio.wait_for(
-                    asyncio.create_subprocess_exec(
-                        "systemctl",
-                        "show",
-                        "navig-daemon",
-                        "--property=ActiveState,ActiveEnterTimestamp",
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    ),
-                    timeout=3.0,
-                )
-                stdout, _ = await p.communicate()
-                state, since = "unknown", ""
-                for ln in stdout.decode().splitlines():
-                    if ln.startswith("ActiveState="):
-                        state = ln.split("=", 1)[1].strip()
-                    if ln.startswith("ActiveEnterTimestamp="):
-                        raw = ln.split("=", 1)[1].strip()
-                        if raw and raw != "n/a":
-                            since = f", since {raw.split()[-2]}"
-                icon = "🟢" if state == "active" else "🔴"
-                lines.append(f"  {icon} Daemon: <code>{state}{since}</code>")
-            except Exception:
-                # systemd present but the query failed — we're still inside the
-                # running daemon, so it's up; flag that the unit query didn't answer.
-                lines.append("  🟢 Daemon: <code>running (unit query failed)</code>")
-
-        try:
-            from navig.providers.bridge_grid_reader import (
-                BRIDGE_DEFAULT_PORT,
-                get_llm_port,
-            )
-
-            bridge_port = get_llm_port() or BRIDGE_DEFAULT_PORT
-        except Exception:
-            from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
-
-            bridge_port = BRIDGE_DEFAULT_PORT
-        try:
-            _s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            _s.settimeout(0.8)
-            bridge_ok = _s.connect_ex(("127.0.0.1", bridge_port)) == 0
-            _s.close()
-        except Exception:
-            bridge_ok = False
-        bridge_icon = "🟢" if bridge_ok else "🔴"
-        bridge_label = "online" if bridge_ok else "offline"
-        lines.append(f"  {bridge_icon} LLM Bridge: <code>{bridge_label}</code>")
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(0.8)
+                bridge_ok = sock.connect_ex(("127.0.0.1", int(bridge_port))) == 0
+                sock.close()
+            except Exception:  # noqa: BLE001
+                bridge_ok = False
+        sheet.append(("LLM bridge", monitor_card.bridge_fact(bridge_port, bridge_ok)))
 
         try:
             from navig.vault import get_vault
 
-            v = get_vault()
-            key_count = len(v.list()) if hasattr(v, "list") else "?"
-            lines.append(f"  🔑 Vault: <code>{key_count} keys</code>")
+            vault = get_vault()
+            key_count = len(vault.list()) if hasattr(vault, "list") else "?"
+            sheet.append(("Vault", f"{key_count} keys"))
         except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+            pass  # best-effort; the briefing stays useful without it
 
         if _HAS_SESSIONS:
             try:
-                sm = get_session_manager()
-                lines.append(f"  👥 Sessions: <code>{len(sm.sessions)} active</code>")
+                sheet.append(("Sessions", f"{len(get_session_manager().sessions)} active"))
             except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+                pass  # best-effort
 
+        uptime = ""
         try:
-            p = await asyncio.wait_for(
+            proc = await asyncio.wait_for(
                 asyncio.create_subprocess_exec(
                     "uptime",
                     "-p",
@@ -9646,28 +9933,26 @@ class TelegramCommandsMixin:
                 ),
                 timeout=_SHORT_CMD_TIMEOUT,
             )
-            stdout, _ = await p.communicate()
-            lines.append("\n<b>🖥️ Server</b>")
-            lines.append(f"  ⏱ Uptime: <code>{stdout.decode().strip()}</code>")
+            stdout, _ = await proc.communicate()
+            uptime = stdout.decode().strip()
         except Exception:  # noqa: BLE001
             # Fallback for Windows (no `uptime` command)
             try:
-                import platform as _pf
-
                 import psutil as _psutil
 
-                _bt = _psutil.boot_time()
-                _delta = datetime.now(timezone.utc) - datetime.fromtimestamp(_bt, tz=timezone.utc)
-                _d, _r = divmod(int(_delta.total_seconds()), 86400)
-                _h, _r = divmod(_r, 3600)
-                _m = _r // 60
-                lines.append("\n<b>🖥️ Server</b>")
-                lines.append(f"  ⏱ Uptime: <code>{_d}d {_h}h {_m}m ({_pf.system()})</code>")
+                booted = datetime.fromtimestamp(_psutil.boot_time(), tz=timezone.utc)
+                delta = now - booted
+                days, rest = divmod(int(delta.total_seconds()), 86400)
+                hours, rest = divmod(rest, 3600)
+                uptime = f"{days}d {hours}h {rest // 60}m"
             except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+                uptime = ""
+        if uptime:
+            sheet.append(("Uptime", uptime))
 
+        disk: monitor_card.Meter | None = None
         try:
-            p = await asyncio.wait_for(
+            proc = await asyncio.wait_for(
                 asyncio.create_subprocess_exec(
                     "df",
                     "-h",
@@ -9678,14 +9963,18 @@ class TelegramCommandsMixin:
                 ),
                 timeout=_SHORT_CMD_TIMEOUT,
             )
-            stdout, _ = await p.communicate()
-            dfl = stdout.decode().strip().splitlines()
-            if len(dfl) >= 2:
-                parts = dfl[1].split()
+            stdout, _ = await proc.communicate()
+            rows = stdout.decode().strip().splitlines()
+            if len(rows) >= 2:
+                parts = rows[1].split()
                 if len(parts) >= 3:
-                    _pct = int(parts[2].rstrip("%")) if parts[2].rstrip("%").isdigit() else 0
-                    _disk_icon = "🔴" if _pct >= 90 else ("🟡" if _pct >= 75 else "🟢")
-                    lines.append(f"  {_disk_icon} Disk: <code>{parts[0]} used · {parts[1]} free · {parts[2]}</code>")
+                    pct_text = parts[2].rstrip("%")
+                    if pct_text.isdigit():
+                        disk = monitor_card.Meter(
+                            "/",
+                            float(pct_text),
+                            note=f"{parts[0]} used · {parts[1]} free",
+                        )
         except Exception:  # noqa: BLE001
             # Fallback for Windows (no `df` command)
             try:
@@ -9694,62 +9983,96 @@ class TelegramCommandsMixin:
                 # what froze the daemon; see monitor.get_system_disk).
                 from navig.commands.monitor import get_system_disk
 
-                _rows = await asyncio.to_thread(get_system_disk)
-                for _d in _rows:
-                    _pct = float(_d["percent"])
-                    _disk_icon = "🔴" if _pct >= 90 else ("🟡" if _pct >= 75 else "🟢")
-                    lines.append(
-                        f"  {_disk_icon} Disk: <code>{_d['used_gb']:.1f} GB used · "
-                        f"{_d['free_gb']:.1f} GB free · {_pct:.0f}%</code>"
+                rows = await asyncio.to_thread(get_system_disk)
+                if rows:
+                    row = rows[0]
+                    disk = monitor_card.Meter(
+                        str(row.get("mount") or "/"),
+                        float(row["percent"]),
+                        float(row["used_gb"]),
+                        float(row["used_gb"]) + float(row["free_gb"]),
                     )
             except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+                disk = None
 
-        recent: list = []
+        recent: list[str] = []
         trace_file = msg_trace_path()
         if trace_file.exists():
             try:
-                with open(trace_file, encoding="utf-8") as _tf:
-                    for raw in _tf.readlines()[-20:]:
+                with open(trace_file, encoding="utf-8") as handle:
+                    for raw in handle.readlines()[-20:]:
                         try:
-                            e = json.loads(raw)
-                            role = e.get("role") or e.get("type", "")
-                            content = str(e.get("content") or e.get("text") or "")[:60]
+                            entry = json.loads(raw)
+                            role = entry.get("role") or entry.get("type", "")
+                            content = str(entry.get("content") or entry.get("text") or "")
                             if role in ("user", "human") and content.startswith("/"):
-                                recent.append(f"  - <code>{html.escape(content)}</code>")
+                                recent.append(f"<code>{html.escape(content[:60])}</code>")
                         except Exception:  # noqa: BLE001
-                            pass  # best-effort; failure is non-critical
+                            pass  # one unparsable trace line must not kill the card
             except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+                pass  # best-effort
 
-        if recent:
-            lines.append("")
-            lines.append("<b>📨 Recent Commands</b>")
-            lines.extend(recent[-5:])
+        # The verdict is the one sentence a reader acts on: say what is wrong, or
+        # say nothing is. Only a bridge that was CONFIGURED can be missing — an
+        # install served entirely by cloud providers has no local bridge to lose.
+        problems: list[str] = []
+        if bridge_port is not None and not bridge_ok:
+            problems.append(f"the LLM bridge is not answering on port {bridge_port}")
+        if disk is not None and disk.pct >= monitor_card.RED_PCT:
+            problems.append(f"the root disk is {disk.pct:.0f}% full")
+        if problems:
+            verdict = "Needs attention: " + "; ".join(problems) + "."
         else:
-            lines.append("")
-            lines.append("<b>📨 Recent Commands</b>")
-            lines.append("  <i>No command history yet.</i>")
+            verdict = "Everything answers — daemon, vault and disk. No action needed."
 
-        # NOTE: Spaces/progression data lives in /status — not repeated here
+        extras = []
+        recent_list = monitor_card.bullets(recent[-5:])
+        if recent_list is not None:
+            extras.append(recent_list)
+        else:
+            from navig.telegram.card_doc import Para
 
-        # System-health actions only. Deck-oriented buttons (Spaces, Switch AI,
-        # Home) were removed — they belong to the Deck/app surface, not the
-        # infrastructure briefing card.
-        keyboard = [
-            [
-                {"text": "🔄 Refresh", "callback_data": "nav:open:briefing"},
-                {"text": "📊 Status", "callback_data": "nav:open:status"},
-                {"text": "📋 Plans", "callback_data": "nav:cmd:/plans"},
-            ],
-        ]
+            extras.append(Para("No command history yet.", style="italic"))
+
+        card = monitor_card.meter_card(
+            "📋",
+            "System Briefing",
+            meta=f"{ts} · {host}",
+            meters=[disk] if disk is not None else (),
+            notes=sheet,
+            extras=extras,
+            verdict=verdict,
+            footer=f"Recent commands shown for {host}. Refresh rewrites this card in place.",
+            buttons=(
+                ("🔄 Refresh", "nav:open:briefing"),
+                ("📊 Status", "nav:open:status"),
+                ("🖥️ Meters", "nav:cmd:/disk"),
+                ("📋 Plans", "nav:cmd:/plans"),
+            ),
+        )
+        rows = card.keyboard()
+
+        from navig.telegram import card_transport, chat_tidy
+
         # Tagged `system`: the infrastructure briefing is day-bound (group sends
         # are never recorded — chat_tidy only ever covers private chats).
-        from navig.telegram import chat_tidy
-
+        result: dict | None = None
         with chat_tidy.routine("system"):
-            result = await self.send_message(
-                chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard
+            if message_id:
+                edited = await card_transport.edit_card(
+                    self, chat_id, message_id, card, keyboard=rows
+                )
+                if edited:
+                    # Pinned already, if this channel pins briefings: the message
+                    # did not move, so there is nothing to pin again.
+                    return
+            # One seam for every card: `send_card` owns the rich-first decision, the
+            # learned "this server refuses rich" flag, and the classic fallback.
+            # One anchored message per chat: a briefing that runs again edits the card it
+            # already sent instead of posting a second one (three arrived within 15 minutes
+            # on 2026-10-27, at 17:52, 18:01 and 18:07).
+            result = await card_transport.publish_card(
+                self, chat_id, card, surface="briefing", keyboard=rows
             )
 
         # Auto-pin briefing in group chats when enabled
@@ -9760,16 +10083,17 @@ class TelegramCommandsMixin:
     ) -> None:
         """Pin the just-sent briefing message in group chats (best-effort)."""
         await TelegramCommandsMixin._auto_pin_message(
-            self, chat_id, user_id, send_result,
+            self,
+            chat_id,
+            user_id,
+            send_result,
             config_key="auto_pin_briefings",
             metadata_key="pinned_briefing_msg_id",
             default_enabled=True,
             label="briefing",
         )
 
-    async def _auto_pin_plans(
-        self, chat_id: int, user_id: int, send_result: dict | None
-    ) -> None:
+    async def _auto_pin_plans(self, chat_id: int, user_id: int, send_result: dict | None) -> None:
         """Pin the just-sent plans message in group chats (best-effort).
 
         `telegram.auto_pin_plans` had a COMPLETE Deck toggle -- a switch in
@@ -9779,7 +10103,10 @@ class TelegramCommandsMixin:
         opts in.
         """
         await TelegramCommandsMixin._auto_pin_message(
-            self, chat_id, user_id, send_result,
+            self,
+            chat_id,
+            user_id,
+            send_result,
             config_key="auto_pin_plans",
             metadata_key="pinned_plans_msg_id",
             default_enabled=False,
@@ -9844,7 +10171,9 @@ class TelegramCommandsMixin:
             sm = get_session_manager()
             prev_id = sm.get_session_metadata(chat_id, 0, metadata_key, is_group=True)
             if prev_id:
-                await self._api_call("unpinChatMessage", {"chat_id": chat_id, "message_id": prev_id})
+                await self._api_call(
+                    "unpinChatMessage", {"chat_id": chat_id, "message_id": prev_id}
+                )
         except Exception:  # noqa: BLE001
             pass  # best-effort
 
@@ -9999,9 +10328,15 @@ class TelegramCommandsMixin:
                 else:
                     output_text = str(result.output or "")
 
-                header = f"<b>{html.escape(skill_name)}</b>" + (f" › <code>{html.escape(command)}</code>" if command else "")
+                header = f"<b>{html.escape(skill_name)}</b>" + (
+                    f" › <code>{html.escape(command)}</code>" if command else ""
+                )
                 safe_output = html.escape(output_text[:3800])
-                msg = f"{header}\n\n<pre>{safe_output}</pre>" if output_text else f"{header}\n✅ Done."
+                msg = (
+                    f"{header}\n\n<pre>{safe_output}</pre>"
+                    if output_text
+                    else f"{header}\n✅ Done."
+                )
                 await self.send_message(chat_id, msg)
             else:
                 await self.send_message(chat_id, f"- Skill error:\n{result.error}", parse_mode=None)
@@ -10038,7 +10373,9 @@ class TelegramCommandsMixin:
                 safety_icon = {"safe": "-", "elevated": "-", "destructive": "-"}.get(s.safety, "-")
                 lines.append(f"  {safety_icon} <code>{s.id}</code> - {s.name}")
 
-        lines.append("\n\nUsage: <code>/skill &lt;id&gt;</code> for info - <code>/skill &lt;id&gt; &lt;command&gt;</code> to run")
+        lines.append(
+            "\n\nUsage: <code>/skill &lt;id&gt;</code> for info - <code>/skill &lt;id&gt; &lt;command&gt;</code> to run"
+        )
         await self.send_message(chat_id, "\n".join(lines))
 
     # -- CLI command dispatch --------------------------------------------------
@@ -10129,14 +10466,23 @@ class TelegramCommandsMixin:
         user_id: int,
         metadata: MessageMetadata,
         navig_cmd: str,
+        message_id: int | None = None,
+        explain: bool = False,
     ) -> None:
         """Execute a navig CLI command with typing indicator and send output.
 
         Failure handling: if on_message() returns output containing a known SSH/
         connection error pattern the response is routed through the auto-heal
         pipeline (AutoHealMixin._heal_failure) instead of being printed raw.
+
+        The answer is one card: the command as the title, the outcome on the
+        subtitle (or the exit code as a callout), the output in a monospace block,
+        and buttons that re-run or explain it in the same message.
         """
         if self.on_message:
+            import time as _time
+
+            _t0 = _time.monotonic()
             try:
                 response = await self.on_message(
                     channel="telegram",
@@ -10147,6 +10493,7 @@ class TelegramCommandsMixin:
             except Exception as _exc:
                 # Unexpected exception from the routing layer - treat as UNKNOWN
                 response = f"Command exited with code: 255\n{_exc}"
+            _duration_ms = int((_time.monotonic() - _t0) * 1000)
 
             if response:
                 # -- Auto-Heal intercept -------------------------------------
@@ -10192,12 +10539,20 @@ class TelegramCommandsMixin:
                 # Skip NL for structured list/table commands and for errors —
                 # raw formatted output is more useful and twice as fast.
                 _LIST_CMDS = (
-                    "host list", "app list",
-                    "file list", "db list", "db tables",
-                    "backup show", "tunnel list", "flow list",
-                    "host test", "web vhosts", "plans status",
+                    "host list",
+                    "app list",
+                    "file list",
+                    "db list",
+                    "db tables",
+                    "backup show",
+                    "tunnel list",
+                    "flow list",
+                    "host test",
+                    "web vhosts",
+                    "plans status",
                 )
                 _is_list_cmd = any(navig_cmd.strip().startswith(c) for c in _LIST_CMDS)
+                _nl_summary = ""
                 _is_error = (
                     "Command exited with code" in response
                     or "Missing argument" in response
@@ -10205,7 +10560,7 @@ class TelegramCommandsMixin:
                     or "No such file" in response
                     or "Permission denied" in response
                 )
-                if not _is_list_cmd and not _is_error:
+                if explain or (not _is_list_cmd and not _is_error):
                     try:
                         prompt = (
                             f"I just executed the server command '{navig_cmd}' and got this raw output:\n"
@@ -10220,7 +10575,12 @@ class TelegramCommandsMixin:
                             metadata=metadata,
                         )
                         if nl_response and not nl_response.startswith("Command exited with code"):
-                            response = nl_response
+                            # "Explain" keeps the output visible and puts the words above
+                            # it; the default path replaces the output with the words.
+                            if explain:
+                                _nl_summary = nl_response
+                            else:
+                                response = nl_response
                     except Exception as _nl_err:
                         import logging as _log
 
@@ -10238,9 +10598,41 @@ class TelegramCommandsMixin:
                 from navig.gateway.channels.telegram_keyboards import strip_explore_marker
 
                 response = strip_explore_marker(response)
-                rendered_response = (
-                    self._md_to_html(response) if hasattr(self, "_md_to_html") else response
-                )
+                try:
+                    from navig.telegram import card_transport, cli_card
+
+                    _cli = cli_card.card(
+                        navig_cmd,
+                        response,
+                        duration_ms=_duration_ms,
+                        summary=_nl_summary,
+                        show_explain=not _is_list_cmd,
+                    )
+                    _rows = _cli.keyboard()
+                    if message_id and await card_transport.edit_card(
+                        self, chat_id, message_id, _cli, keyboard=_rows
+                    ):
+                        return
+                    _rich_send = getattr(self, "send_rich_message", None)
+                    if _rich_send is not None:
+                        try:
+                            _sent = await _rich_send(
+                                chat_id,
+                                html=_cli.rich_html(),
+                                fallback_html=_cli.classic_html(),
+                                keyboard=_rows,
+                            )
+                            # Only a delivered dict skips the classic floor below.
+                            if _sent is not None:
+                                return
+                        except Exception:  # noqa: BLE001 — the plain send below is the floor
+                            pass
+                    rendered_response = _cli.classic_html()
+                except Exception:  # noqa: BLE001 — a card must never cost the output
+                    logger.debug("cli card skipped for %s", navig_cmd, exc_info=True)
+                    rendered_response = (
+                        self._md_to_html(response) if hasattr(self, "_md_to_html") else response
+                    )
                 await self.send_message(chat_id, rendered_response, parse_mode="HTML")
             else:
                 await self.send_message(chat_id, "-no output.", parse_mode=None)
@@ -10262,6 +10654,19 @@ class TelegramCommandsMixin:
         deck_url = self._get_deck_url()
         if deck_url and not any(c.get("command") == "deck" for c in commands):
             commands.append({"command": "deck", "description": "Open the command deck"})
+        if len(commands) > MAX_BOT_COMMANDS:
+            keep = [c for c in commands if c.get("command") == "deck"]
+            rest = [c for c in commands if c.get("command") != "deck"]
+            room = max(0, MAX_BOT_COMMANDS - len(keep))
+            dropped = [c.get("command", "") for c in rest[room:]]
+            logger.warning(
+                "Telegram accepts at most %d bot commands; registering %d and leaving "
+                "these out: %s",
+                MAX_BOT_COMMANDS,
+                room + len(keep),
+                ", ".join(dropped),
+            )
+            commands = rest[:room] + keep
         result = await self._api_call("setMyCommands", {"commands": commands})
         if result is not None:
             logger.info("Registered %d bot commands with Telegram", len(commands))
@@ -10323,7 +10728,7 @@ class TelegramCommandsMixin:
         ]:
             if os.path.exists(cfg_path):
                 try:
-                    with open(cfg_path, encoding='utf-8') as f:
+                    with open(cfg_path, encoding="utf-8") as f:
                         cfg = yaml.safe_load(f) or {}
                     url = (cfg.get("telegram", {}) or {}).get("deck_url")
                     if url:
@@ -10371,7 +10776,9 @@ class TelegramCommandsMixin:
                 logger.warning("persona discovery failed during /auto_start: %s", exc)
                 available = []
             if role not in available:
-                listing = ", ".join(f"<code>{html.escape(n)}</code>" for n in available) or "none found"
+                listing = (
+                    ", ".join(f"<code>{html.escape(n)}</code>" for n in available) or "none found"
+                )
                 await self.send_message(
                     chat_id,
                     f"❌ No persona named <code>{html.escape(role)}</code>. Auto mode is still off.\n"
@@ -10474,7 +10881,8 @@ class TelegramCommandsMixin:
             if last_skip_reason:
                 cont += f", last_skip={last_skip_reason}"
             await self.send_message(
-                chat_id, f"✅ AI is currently <b>ACTIVE</b> in <code>{role}</code> mode.\nContinuation: <code>{cont}</code>"
+                chat_id,
+                f"✅ AI is currently <b>ACTIVE</b> in <code>{role}</code> mode.\nContinuation: <code>{cont}</code>",
             )
             return
 
@@ -10578,7 +10986,9 @@ class TelegramCommandsMixin:
                 persona=state.get("persona"),  # None keeps the stored persona
                 context=context,
             )
-            await self.send_message(chat_id, "⏸️ Continuation paused. Use <code>/continue</code> to resume.")
+            await self.send_message(
+                chat_id, "⏸️ Continuation paused. Use <code>/continue</code> to resume."
+            )
         except Exception as e:
             logger.error("Failed to pause continuation: %s", e)
             await self.send_message(chat_id, "❌ Failed to pause continuation.")
@@ -10873,7 +11283,9 @@ class TelegramCommandsMixin:
         )
         await self.send_message(chat_id, body, parse_mode="HTML")
 
-    async def _handle_myreminders(self, chat_id: int, user_id: int, metadata: MessageMetadata | None = None) -> None:
+    async def _handle_myreminders(
+        self, chat_id: int, user_id: int, metadata: MessageMetadata | None = None
+    ) -> None:
         """Every upcoming ping, grouped by day with its exact time — todo leads and
         one-off `/remindme`s together, each named by its task (`reminders_view`)."""
         from navig.telegram import reminders_view
@@ -10957,6 +11369,38 @@ class TelegramCommandsMixin:
         # and _reply_markup passes an already-built markup dict through unchanged.
         await self.send_message(chat_id, body, parse_mode="HTML", keyboard=keyboard)
 
+    async def _handle_menu(self, chat_id: int, user_id: int = 0, **_: Any) -> None:
+        """The hub: one card, then every surface opens in the same message (/menu).
+
+        Before this the bot had no way back. A card's buttons redrew that one card and
+        the only route to the tasks was to scroll up to wherever they were last sent —
+        so the phone filled with cards and the chat became the navigation.
+        """
+        from navig.telegram import menu_card
+
+        card, rows = menu_card.home_card(user_id or chat_id)
+        sent = None
+        send_rich = getattr(self, "send_rich_message", None)
+        if send_rich is not None:
+            try:
+                sent = await send_rich(
+                    chat_id,
+                    html=card.rich_html(),
+                    fallback_html=card.classic_html(),
+                    keyboard=rows,
+                )
+            except Exception as exc:  # noqa: BLE001 — fall through to classic
+                logger.debug("/menu rich send failed: %s", exc)
+        if not sent:
+            await self.send_command_output(
+                chat_id,
+                card.classic_html(),
+                command="menu",
+                ai_hint="A menu of the bot's surfaces. Keep the counts and the button labels.",
+                parse_mode="HTML",
+                keyboard=rows,
+            )
+
     async def _handle_habits(self, chat_id: int, user_id: int = 0, **_: Any) -> None:
         """Habit reminders, with a switch on each one (/habits).
 
@@ -11000,13 +11444,9 @@ class TelegramCommandsMixin:
         """
         from navig.spaces import body_metrics as bm
         from navig.telegram import body_actions as ba
+        from navig.telegram import health_card
 
-        lines: list[str] = []
         banner = ba.extension_banner()
-        if banner:
-            lines.append(banner)
-        lines.append("🏥 <b>Health</b>")
-        lines.append("")
 
         try:
             path = bm.resolve_target(chat_id)
@@ -11015,60 +11455,38 @@ class TelegramCommandsMixin:
             logger.warning("/health could not read the body record: %s", exc)
             summary = None
 
-        if summary is None:
-            # Could-not-read is NOT the same as nothing-recorded, and must never
-            # render as a confident zero.
-            lines.append("⚠️ <i>Could not read the body record.</i>")
-        elif summary["latest"] is None:
-            lines.append("<i>No weight recorded yet.</i>")
-            lines.append("<i>Send /weigh to start the record.</i>")
-        else:
-            kg = ba.t("unit.kg")
-            lines.append(
-                f"⚖️  Latest:      <b>{summary['latest']:g} {kg}</b>"
-                f"  <i>{summary['latest_date']}</i>"
-            )
-            if summary["average"] is not None:
-                change = (
-                    f"{summary['trend']:+.1f} {kg}"
-                    if summary["trend"] is not None
-                    else ba.t("week.no_prior")
-                )
-                lines.append(
-                    f"📉 7-day avg:   <b>{summary['average']:.1f} {kg}</b>  ({change})"
-                )
-            spark = summary.get("sparkline") or ""
-            if spark:
-                lines.append(f"<code>{spark}</code>")
-            lines.append(
-                f"📅 Logged:      <b>{summary['recorded']}/{summary['days']}</b> days"
-            )
-            fast = ba._clinician_line(summary.get("trend"))
-            if fast:
-                lines.append("")
-                lines.append(f"⚠️ <i>{html.escape(fast)}</i>")
-
         try:
             from navig.scheduler import habit_store
 
-            habit_count = sum(
+            habit_count: int | None = sum(
                 1 for j in habit_store.list_habit_jobs() if j.get("enabled", True)
             )
-            habit_line = f"💪 Active habits: <b>{habit_count}</b>"
         except Exception:  # noqa: BLE001
-            habit_line = "💪 Active habits: <i>unknown</i>"
+            habit_count = None
 
-        lines += ["", habit_line, "", "<i>/weigh — log now · /body — weekly card</i>"]
-
-        keyboard = [[
-            {"text": "⚖️ Weigh in", "callback_data": "slash:weigh"},
-            {"text": "📊 Weekly", "callback_data": "slash:body"},
-        ], [
-            {"text": "💪 Habits", "callback_data": "slash:habits"},
-        ]]
-        await self.send_message(
-            chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard
+        # A card, not column-padded text: the numbers become a sheet (which a phone
+        # can read), the sparkline stays preformatted, and the actions sit inside the
+        # card instead of in a keyboard that looked unrelated to them.
+        classic, rich, keyboard = health_card.build(
+            summary,
+            habits=habit_count,
+            banner=banner,
+            unit=ba.t("unit.kg"),
+            no_prior=ba.t("week.no_prior"),
+            warning=ba._clinician_line(summary.get("trend")) if summary else "",
         )
+        sent = False
+        if hasattr(self, "send_rich_message"):
+            sent = bool(
+                await self.send_rich_message(
+                    chat_id,
+                    html=rich,
+                    fallback_html=classic,
+                    keyboard=keyboard,
+                )
+            )
+        if not sent:
+            await self.send_message(chat_id, classic, parse_mode="HTML", keyboard=keyboard)
 
     async def _handle_weigh(self, chat_id: int, user_id: int = 0, text: str = "") -> None:
         """Log a weight now — either inline (/weigh 87.4) or by prompting for it."""
@@ -11130,14 +11548,11 @@ class TelegramCommandsMixin:
             logger.warning("/body could not build the card: %s", exc)
             await self.send_message(chat_id, "⚠️ Could not read the body record.")
             return
-        result = await self.send_message(
-            chat_id, text, parse_mode="HTML", keyboard=keyboard
-        )
+        result = await self.send_message(chat_id, text, parse_mode="HTML", keyboard=keyboard)
         # The card is answered by taps handled in THIS process, but resolve_target
         # still has to know which metrics.csv it belongs to.
         message_id = ((result or {}).get("result") or {}).get("message_id")
         bm.remember_target(chat_id, path, message_id=message_id, day=day)
-
 
     async def _handle_checkins(self, chat_id: int, user_id: int = 0) -> None:
         """Today's check-ins — pills, water and the weigh-in, with their state."""
@@ -11154,6 +11569,69 @@ class TelegramCommandsMixin:
             payload["reply_markup"] = markup
         await self._api_call("sendMessage", payload)
 
+    async def _handle_poll(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+        message_id: int | None = None,
+    ) -> None:
+        """Post a native Telegram poll: ``/poll Question? | A | B [--multi] [--public] [--quiz=N]``.
+
+        The channel has had ``send_poll`` since before this command existed and nothing ever
+        called it. Parsing and the Bot API's own limits live in
+        :mod:`navig.telegram.poll_card`; this handler only decides between the card that
+        explains the syntax (with the reason when something was refused) and the card that
+        records the poll it just posted.
+        """
+        from navig.telegram import card_transport, poll_card
+
+        parsed = poll_card.parse_poll(text)
+        if parsed.error:
+            card = poll_card.usage_card(note=parsed.error, buttons=poll_card.default_rows())
+            await card_transport.send_card(self, chat_id, card)
+            return
+
+        sent = await self.send_poll(
+            chat_id,
+            parsed.question,
+            list(parsed.options),
+            is_anonymous=parsed.anonymous,
+            poll_type="quiz" if parsed.is_quiz else "regular",
+            allows_multiple_answers=parsed.multi,
+            correct_option_id=parsed.quiz_index,
+        )
+        if not sent:
+            card = poll_card.usage_card(
+                note="Telegram refused that poll — nothing was posted.",
+                buttons=poll_card.default_rows(),
+            )
+            await card_transport.send_card(self, chat_id, card)
+            return
+
+        card = poll_card.created_card(parsed, buttons=poll_card.created_rows())
+        await card_transport.send_card(self, chat_id, card)
+
+    async def _handle_cards_index(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+        message_id: int | None = None,
+    ) -> None:
+        """The review index: every card family on a page, each one press away.
+
+        Added so the campaign's surfaces can be reviewed without remembering a command per
+        surface: every button is ``nav:cmd:<command>``, so the press runs exactly what typing
+        the command runs. `‹ Prev` / `Next ›` carry a page number and rewrite the message.
+        """
+        from navig.telegram import card_transport, review_card
+
+        card = review_card.review_card(review_card.parse_page(text))
+        if message_id and await card_transport.edit_card(self, chat_id, message_id, card):
+            return
+        await card_transport.send_card(self, chat_id, card)
+
     async def _handle_workout(self, chat_id: int, user_id: int, text: str) -> None:
         """Quick-add a workout reminder.
 
@@ -11165,7 +11643,7 @@ class TelegramCommandsMixin:
         from datetime import datetime as _dt
         from datetime import timedelta as _td
 
-        arg = text[len("/workout"):].strip()
+        arg = text[len("/workout") :].strip()
 
         if not arg:
             # Show current workout habit status
@@ -11193,13 +11671,17 @@ class TelegramCommandsMixin:
                     "habit:workout", schedule, command, timeout_seconds=30, replace=True
                 )
 
-                await self.send_message(
+                from navig.telegram import card_transport, workout_card  # noqa: PLC0415
+
+                await card_transport.send_card(
+                    self,
                     chat_id,
-                    f"💪 Daily workout reminder set for <b>{h:02d}:{m:02d}</b> on weekdays.\n\nManage with: <code>navig habit list</code>",
-                    parse_mode="HTML",
+                    workout_card.habit_card(when=f"{h:02d}:{m:02d}"),
                 )
             except Exception as exc:
-                await self.send_message(chat_id, f"⚠️ Could not create habit: {exc}", parse_mode=None)
+                await self.send_message(
+                    chat_id, f"⚠️ Could not create habit: {exc}", parse_mode=None
+                )
             return
 
         # "HH:MM" → one-time reminder today (or tomorrow if the time already passed)
@@ -11207,10 +11689,12 @@ class TelegramCommandsMixin:
         if time_match:
             h, m = int(time_match.group(1)), int(time_match.group(2))
             if h > 23 or m > 59:
-                await self.send_message(
+                from navig.telegram import card_transport, workout_card  # noqa: PLC0415
+
+                await card_transport.send_card(
+                    self,
                     chat_id,
-                    "Time must be 24h, e.g. <code>/workout 07:30</code>.",
-                    parse_mode="HTML",
+                    workout_card.usage_card(note="workout.card.bad_time_hint"),
                 )
                 return
             # Build the time in the server's LOCAL timezone, then store it as UTC. The reminder
@@ -11225,28 +11709,25 @@ class TelegramCommandsMixin:
             when_str = remind_local.strftime("%H:%M")  # show the LOCAL time the user entered
 
             from navig.store.runtime import get_runtime_store
+
             rid = get_runtime_store().create_reminder(
                 user_id=user_id,
                 chat_id=chat_id,
                 message="💪 Time to work out! Consistency beats intensity.",
                 remind_at=remind_local.astimezone(timezone.utc),
             )
-            await self.send_message(
+            from navig.telegram import card_transport, workout_card  # noqa: PLC0415
+
+            await card_transport.send_card(
+                self,
                 chat_id,
-                (
-                    f"⏰ Workout reminder set for <b>{when_str}</b> "
-                    f"{'tomorrow' if rolled else 'today'}. (ID: <code>{rid}</code>)\n\n"
-                    f"For recurring: <code>/workout daily {when_str}</code>"
-                ),
-                parse_mode="HTML",
+                workout_card.reminder_card(when=when_str, rolled=rolled, reminder_id=rid),
             )
             return
 
-        await self.send_message(
-            chat_id,
-            "Usage:\n/workout 07:30 — one-time reminder today\n/workout daily 07:30 — recurring weekday habit",
-            parse_mode=None,
-        )
+        from navig.telegram import card_transport, workout_card  # noqa: PLC0415
+
+        await card_transport.send_card(self, chat_id, workout_card.usage_card())
 
     async def _handle_stats_global(self, chat_id: int) -> None:
         await self.send_message(chat_id, "📊 Global chat statistics are gathering data...")
@@ -11274,7 +11755,9 @@ class TelegramCommandsMixin:
                 parse_mode="HTML",
             )
             return
-        await self.send_message(chat_id, f"🎲 I choose: <b>{html.escape(random.choice(choices))}</b>", parse_mode="HTML")
+        await self.send_message(
+            chat_id, f"🎲 I choose: <b>{html.escape(random.choice(choices))}</b>", parse_mode="HTML"
+        )
 
     async def _handle_kick(self, chat_id: int, text: str) -> None:
         target = text[len("/kick") :].strip()
@@ -11302,7 +11785,11 @@ class TelegramCommandsMixin:
 
     async def _handle_search(self, chat_id: int, text: str) -> None:
         query = text[len("/search") :].strip()
-        await self.send_message(chat_id, f"🔍 User search proxy offline for query: <code>{html.escape(query)}</code>", parse_mode="HTML")
+        await self.send_message(
+            chat_id,
+            f"🔍 User search proxy offline for query: <code>{html.escape(query)}</code>",
+            parse_mode="HTML",
+        )
 
 
 def _active_persona_name(user_id: int) -> str:
@@ -11310,3 +11797,4 @@ def _active_persona_name(user_id: int) -> str:
     from navig.personas.store import get_active_persona
 
     return get_active_persona(user_id)
+

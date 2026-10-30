@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import navig.scheduler.cron_service as cron_mod
 import navig.tasks.queue as tq_mod
@@ -119,3 +120,22 @@ def test_task_queue_warns_when_deep(monkeypatch):
 
     assert badge.status == "warn"
     assert "25 pending" in badge.detail
+
+
+def test_task_queue_reads_configured_gateway_storage_dir(monkeypatch, tmp_path):
+    """`gateway.storage_dir` moves the daemon's queue — the badge must follow it."""
+    import navig.config as cfg_mod
+
+    storage = tmp_path / "gw-storage"
+
+    class _Mgr:
+        global_config = {"gateway": {"storage_dir": str(storage)}}
+
+    monkeypatch.setattr(cfg_mod, "get_config_manager", lambda *a, **k: _Mgr())
+    _FakeQueue.size_val, _FakeQueue.total_val = 1, 1
+    monkeypatch.setattr(tq_mod, "TaskQueue", _FakeQueue)
+
+    badge = resolve_task_queue()
+
+    assert Path(_FakeQueue.last_persist_path) == storage / "task_queue.json"
+    assert "1 pending" in badge.detail

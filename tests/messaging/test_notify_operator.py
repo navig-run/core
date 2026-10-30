@@ -74,3 +74,53 @@ def test_notify_swallows_send_errors(monkeypatch):
 
 def test_notify_ignores_empty_text(monkeypatch):
     assert mod.notify_operator("   ", chat_id="1") is False
+
+
+def test_a_card_goes_out_rich_and_keeps_the_text_as_fallback(monkeypatch):
+    """The digest/échéances notices carry structure a plain string cannot."""
+    import navig.telegram.api as tg
+    from navig.telegram.card_doc import Card, Table
+
+    calls: list[tuple[str, dict]] = []
+
+    def fake_api(token, method, payload):  # noqa: ARG001
+        calls.append((method, payload))
+        return {"ok": True, "result": True}
+
+    monkeypatch.setattr(tg, "api_call", fake_api)
+    monkeypatch.setattr(tg, "load_telegram_token", lambda: "T")
+    card = Card("Échéances", glyph="🗓", blocks=[Table(header=["Q", "J"], rows=[["x", "1"]])])
+
+    assert mod.notify_operator("Échéances — text", chat_id="42", card=card) is True
+
+    method, payload = calls[-1]
+    assert method == "sendRichMessage"
+    assert "<h2>" in payload["rich_message"]["html"]
+    assert "<table" in payload["rich_message"]["html"]
+
+
+def test_a_refused_rich_send_falls_back_to_the_classic_body(monkeypatch):
+    import navig.telegram.api as tg
+    from navig.telegram.card_doc import Card
+
+    sent: dict = {}
+
+    def fake_api(token, method, payload):  # noqa: ARG001
+        if method == "sendRichMessage":
+            raise RuntimeError("Bad Request: unknown method")
+        sent.update(payload)
+        return {"ok": True, "result": True}
+
+    def fake_send(*, target, message, parse_mode="Markdown", resolve_only=False, host=""):
+        sent.update(target=target, message=message, parse_mode=parse_mode)
+        return int(target)
+
+    monkeypatch.setattr(tg, "api_call", fake_api)
+    monkeypatch.setattr(tg, "load_telegram_token", lambda: "T")
+    monkeypatch.setattr(tg, "telegram_send", fake_send)
+
+    assert mod.notify_operator("plain", chat_id="42", card=Card("Digest", glyph="📊")) is True
+
+    # The card's own plain projection, not the caller's text: it carries the title.
+    assert "Digest" in sent["message"]
+    assert sent["parse_mode"] == "HTML"

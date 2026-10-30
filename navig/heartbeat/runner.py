@@ -152,6 +152,43 @@ def _write_probe_day(day: str) -> None:
         logger.debug("probe-day marker not written: %s", exc)
 
 
+def _ai_declared(gateway) -> bool:
+    """Does this install have any AI worth probing? True also when we cannot tell.
+
+    Measured 2026-10-17 on a fresh Ubuntu server install (the `server` profile:
+    no brain, no keys): every canonical mode resolves to the SHIPPED default —
+    ``ollama`` — so the daily probe produced five "unreachable" rows and a
+    "Health check: 5 problems" alert on a machine where unreachable is simply
+    the truth. The operator declared no AI intent there; there is nothing to
+    alarm about. (Fallbacks were already excluded for exactly this reason —
+    this is the same split for the modes themselves.)
+
+    Intent = an explicit ``ai.default_provider`` / legacy ``ai.provider`` /
+    ``ai.ollama_host`` in config, OR provider detection finding something (a
+    stored key, a reachable ollama, the Copilot bridge). Detection matters:
+    ``navig connect`` stores keys without ever writing ``ai.default_provider``,
+    and a configured-but-temporarily-down provider must still be probed.
+
+    Fails OPEN: an unreadable config or a broken detection must never silence
+    a real dead-model alarm on a box that does use AI.
+    """
+    try:
+        cfg = (gateway.config_manager.global_config or {}).get("ai", {}) or {}
+        if cfg.get("default_provider") or cfg.get("provider") or cfg.get("ollama_host"):
+            return True
+        from navig.agent.ai_client import get_ai_client
+
+        client = get_ai_client()
+        if client.provider != "none":
+            return True
+        # The singleton detects once; a box configured after boot would sit at a
+        # cached "none". Re-detect so the first beat after `navig connect`
+        # probes the same day instead of tomorrow.
+        return client.re_detect_provider() != "none"
+    except Exception:  # noqa: BLE001 — unknown must become silence for NOBODY
+        return True
+
+
 class HeartbeatRunner:
     """
     Runs periodic health checks using the AI agent.
@@ -365,11 +402,16 @@ class HeartbeatRunner:
         """Once per day, probe every LLM routing mode's model with a 1-token call.
         A dead/EOL/unauthorised model is appended to the heartbeat's issues (and
         un-suppresses an otherwise-OK beat) so it flows through the normal
-        notification path. Gated by ``heartbeat.check_llm_modes`` (default on)."""
+        notification path. Gated by ``heartbeat.check_llm_modes`` (default on)
+        and skipped entirely when the install declares no AI at all
+        (``_ai_declared`` — a no-brain server box has nothing to probe)."""
         from datetime import date
 
         cfg = (self.gateway.config_manager.global_config or {}).get("heartbeat", {}) or {}
         if not cfg.get("check_llm_modes", True):
+            return
+        if not _ai_declared(self.gateway):
+            logger.debug("no AI configured on this install — LLM-mode probe skipped")
             return
         today = date.today()
         # The throttle below assumes the verdicts persist in model_health. When that

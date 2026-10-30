@@ -352,7 +352,7 @@ ROUTER_SPECS: dict[str, RouterSpec] = {
         kind=KIND_ACT,
         summary=(
             "Act in a NAVIG-launched debug browser: launch/new/navigate/click/type/key/scroll/"
-            "move/screenshot/switch, detach/stop, or evaluate/inject/login. State-changing and "
+            "move/screenshot/download/switch, detach/stop, or evaluate/inject/login. State-changing and "
             "high-risk; injected scripts persist until removed and login fills a real credential "
             "(never returned). Use navig_browser_debug to inspect and get refs first. Returns "
             "the dispatch result; re-snapshot to verify."
@@ -368,6 +368,7 @@ ROUTER_SPECS: dict[str, RouterSpec] = {
             ActionSpec("move", "cdp_move"),
             ActionSpec("switch", "cdp_switch"),
             ActionSpec("screenshot", "cdp_screenshot"),
+            ActionSpec("download", "cdp_download"),
             ActionSpec("detach", "cdp_detach"),
             ActionSpec("stop", "cdp_stop"),
             ActionSpec("launch", "cdp_launch"),

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import sys
 import types
+from pathlib import Path
 
 import pytest
 
@@ -227,6 +228,30 @@ class TestDownloadButton:
         ch = _Channel()
         await tiktok_actions._do_download(ch, 1, _SHORT)
         assert "of 30" in ch.text
+
+    async def test_a_failed_slide_keeps_the_others_numbered_and_is_reported(
+            self, real_ytdlp_shape, monkeypatch):
+        """Slide 1 of 2 fails: slide 2 must not be captioned 1/2, and the missing
+        slide must be named rather than passed off as the carousel cap."""
+        def _second_only(url, *, dest_dir, limit=10):
+            paths, _ = _write_slides(dest_dir, 2)
+            Path(paths[0]).unlink()
+            return [paths[1]], 2
+
+        monkeypatch.setattr(engine, "download_post_images", _second_only)
+        captions: list[str] = []
+
+        class _Captions(_Channel):
+            async def send_photo(self, chat_id, data, caption=None, **kw):
+                captions.append(caption or "")
+                return await super().send_photo(chat_id, data, caption=caption, **kw)
+
+        ch = _Captions()
+        await tiktok_actions._do_download(ch, 1, _SHORT)
+
+        assert captions == ["🖼 2/2 via NAVIG"], captions
+        assert "1 of 2 slides couldn't be downloaded" in ch.text
+        assert "Showing the first" not in ch.text
 
     async def test_unreadable_images_name_what_still_works(self, real_ytdlp_shape,
                                                            monkeypatch):
@@ -561,6 +586,22 @@ class TestAudioSendCarriesTheLabels:
         assert seen["filename"] == "GTMN - Veins of Sand.m4a"
         assert "Veins of Sand" in seen["caption"]
 
+    async def test_a_non_player_container_goes_as_a_document(self):
+        """sendAudio takes only MP3/M4A — a WebM fallback must not be rejected."""
+        seen: list = []
+
+        class _Ch:
+            async def send_audio(self, chat_id, data, **kw):
+                seen.append(("audio", kw["filename"]))
+                return {"message_id": 1}
+
+            async def send_document(self, chat_id, data, **kw):
+                seen.append(("document", kw["filename"]))
+                return {"message_id": 2}
+
+        await tiktok_actions._send_audio(_Ch(), 1, b"bytes", "765.webm", _TRACK_META)
+        assert seen == [("document", "GTMN - Veins of Sand.webm")]
+
 
 # ── 📄 the full caption ───────────────────────────────────────────────────────
 
@@ -811,6 +852,44 @@ class TestBriefingReadsAPhotoPost:
 
         assert "📝 from" not in ch.text
 
+    async def test_gated_comments_notice_does_not_say_description_only_when_words_were_read(
+            self, real_ytdlp_shape, monkeypatch):
+        """Comment gating plus a thin caption is the common path into the getter:
+        the notice must not then claim the briefing used the description alone."""
+        monkeypatch.setattr(tiktok_actions, "_ocr_slides", _slides("what the slides say"))
+
+        async def _fake_analyse(url, **kw):
+            t = await kw["get_transcript"]()
+            return {"meta": {"uploader": "x", "comments_blocked": True, "comment_count": 9},
+                    "brief": "b", "used_transcript": bool(t)}
+
+        monkeypatch.setattr(engine, "analyse", _fake_analyse)
+        ch = _Channel()
+
+        await tiktok_actions._do_analyse(ch, 1, _SHORT)
+
+        assert "gated" in ch.text
+        assert "description only" not in ch.text
+
+    async def test_an_empty_llm_brief_keeps_the_transcript_it_claims(
+            self, real_ytdlp_shape, monkeypatch):
+        """No model configured: the fallback brief must carry the words the header
+        says it came from, not drop them and keep the label."""
+        monkeypatch.setattr(tiktok_actions, "_ocr_slides", _slides("what the slides say"))
+
+        async def _fake_analyse(url, **kw):
+            t = await kw["get_transcript"]()
+            return {"meta": {"uploader": "x", "description": "#fyp"},
+                    "brief": "", "used_transcript": bool(t)}
+
+        monkeypatch.setattr(engine, "analyse", _fake_analyse)
+        ch = _Channel()
+
+        await tiktok_actions._do_analyse(ch, 1, _SHORT)
+
+        assert "from slide text" in ch.text
+        assert "what the slides say" in ch.text
+
     async def test_a_briefing_built_on_unreadable_slides_says_so(
             self, real_ytdlp_shape, monkeypatch):
         """OCR missing means the briefing is about to summarise the SONG. The
@@ -866,6 +945,33 @@ class TestBriefingReadsAPhotoPost:
 # 30-slide post read 10 and said so nowhere, and 🔍 briefed off a third of it.
 
 
+class TestInaccessibleSlidesAreNotEmptySlides:
+    async def test_unretrievable_slides_are_not_reported_as_no_text(
+            self, real_ytdlp_shape, monkeypatch):
+        """A gated page or failed signed downloads return no paths without raising.
+        That is "nothing was looked at", not "the slides carry no text"."""
+        monkeypatch.setattr(engine, "download_post_images",
+                            lambda url, *, dest_dir, limit=10: ([], 3))
+        monkeypatch.setattr(tiktok_actions, "_spoken_text", _async_returning(None))
+        monkeypatch.setattr("navig.core.ocr.ocr_unavailable_reason", lambda: None)
+        monkeypatch.setattr("navig.core.ocr.ocr_language_gap", lambda: None)
+        monkeypatch.setattr("navig.agent.voice_input.stt_unavailable_reason", lambda: None)
+        ch = _Channel()
+
+        await tiktok_actions._do_transcript_photo(ch, 1, _SHORT)
+
+        assert "couldn't be fetched" in ch.text, ch.text
+        assert "no text detected in the slides" not in ch.text
+
+    async def test_the_briefing_still_treats_them_as_nothing_read(
+            self, real_ytdlp_shape, monkeypatch):
+        monkeypatch.setattr(engine, "download_post_images",
+                            lambda url, *, dest_dir, limit=10: ([], 3))
+        monkeypatch.setattr(tiktok_actions, "_spoken_text", _async_returning(None))
+
+        assert await tiktok_actions._post_text(_SHORT) is None
+
+
 class TestSlideCapIsReported:
     @staticmethod
     def _capped(monkeypatch, *, read=10, total=30):
@@ -917,6 +1023,69 @@ class TestSlideCapIsReported:
         await tiktok_actions._do_analyse(ch, 1, _SHORT)
 
         assert "10 of 30" in ch.text
+
+
+
+class TestTheFeatureLanguageReachesOcr:
+    """Regression: `telegram.tiktok_cards.language` reached only speech transcription;
+    slide OCR and its caveat still followed `user.language` (auto → English)."""
+
+    @staticmethod
+    def _russian_feature_auto_global(monkeypatch, *packs):
+        import navig.core.ocr as ocr_mod
+
+        monkeypatch.setattr(tiktok_actions, "_language", lambda: "Russian")
+        # `user.language` resolves to nothing: only the feature key is pinned.
+        monkeypatch.setattr("navig.core.Config", lambda *a, **k: types.SimpleNamespace(
+            get=lambda *a, **k: ""))
+        monkeypatch.setattr(ocr_mod, "installed_ocr_languages", lambda: frozenset(packs))
+        monkeypatch.setattr(ocr_mod, "ocr_unavailable_reason", lambda: None)
+        return ocr_mod
+
+    async def test_slide_ocr_reads_in_the_feature_language(self, real_ytdlp_shape, monkeypatch):
+        ocr_mod = self._russian_feature_auto_global(monkeypatch, "rus", "eng")
+        monkeypatch.setattr(
+            engine, "download_post_images",
+            lambda url, *, dest_dir, limit=10: (_write_slides(dest_dir, 2)[0], 2))
+        langs: list[str | None] = []
+
+        def _read(data):
+            langs.append(ocr_mod.ocr_language())  # what the real reader would request
+            return "slide words"
+
+        monkeypatch.setattr(ocr_mod, "extract_ocr_text_from_image_bytes", _read)
+
+        slides = await tiktok_actions._ocr_slides(_SHORT)
+
+        assert slides is not None and slides.read == 2
+        assert langs == ["rus+eng", "rus+eng"]
+
+    async def test_video_frame_ocr_reads_in_the_feature_language(
+            self, real_ytdlp_shape, monkeypatch):
+        ocr_mod = self._russian_feature_auto_global(monkeypatch, "rus", "eng")
+        TestVideoTranscript._as_video(monkeypatch, spoken="said", on_screen=None)
+        langs: list[str | None] = []
+
+        async def _analyze(path, language=None, max_ocr_frames=1):
+            langs.append(ocr_mod.ocr_language())  # what frame OCR would request
+            return "said", "captions", None
+
+        monkeypatch.setitem(
+            sys.modules, "navig.gateway.channels.telegram_catalog_analyzer",
+            types.SimpleNamespace(analyze_video_file=_analyze),
+        )
+        _no_stt(monkeypatch)
+
+        await tiktok_actions._do_transcript(_Channel(), 1, _VIDEO)
+
+        assert langs == ["rus+eng"]
+
+    def test_the_caveat_judges_the_feature_language(self, monkeypatch):
+        self._russian_feature_auto_global(monkeypatch, "eng")
+
+        caveat = tiktok_actions._ocr_caveat("Slide text")
+
+        assert "rus" in caveat, caveat
 
 
 # ── every entry point is de-duplicated, not just the buttons ──────────────────
@@ -1209,6 +1378,22 @@ class TestVideoTranscript:
 
         assert "Nothing to read" in ch.text
         assert "faster-whisper" not in ch.text
+
+    async def test_a_video_reader_without_navig_audio_says_it_could_not_listen(
+            self, real_ytdlp_shape, monkeypatch):
+        """The video reader transcribes through navig-audio, not voice_input. With
+        navig-audio absent it hears nothing while voice_input still finds a
+        backend — the old check stayed silent and called the clip speechless."""
+        self._as_video(monkeypatch, spoken=None, on_screen=None)
+        _stt_fine(monkeypatch)
+        monkeypatch.setitem(sys.modules, "navig.voice.stt", None)  # import → ImportError
+        monkeypatch.setattr("navig.core.ocr.ocr_unavailable_reason", lambda: None)
+        monkeypatch.setattr("navig.core.ocr.ocr_language_gap", lambda: None)
+        ch = _Channel()
+
+        await tiktok_actions._do_transcript(ch, 1, _VIDEO)
+
+        assert "navig-audio" in ch.text, ch.text
 
     async def test_ffmpeg_absence_still_wins_and_says_only_that(
             self, real_ytdlp_shape, monkeypatch):

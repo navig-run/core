@@ -1340,7 +1340,7 @@ class BoardStore(BaseStore):
         self._log_history(card_id, "done", stage)
         return self.get_todo(card_id)
 
-    def delete_todo(self, card_id: str) -> bool:
+    def delete_todo(self, card_id: str, *, dismiss: bool = True) -> bool:
         """Remove a todo. Returns whether it existed.
 
         Scoped by `kind` so a stray id can never delete a BOARD card through the PIM's
@@ -1351,12 +1351,15 @@ class BoardStore(BaseStore):
         record behind. Without it, deleting a suggestion deletes the only evidence it
         was ever offered, and the next scan proposes the identical line again — which
         teaches the operator that dismissing does nothing.
+
+        ``dismiss=False`` is a rollback, not a dismissal: the suggestion never reached
+        the operator, so the next delivery of the same source must offer it again.
         """
         todo = self.get_todo(card_id)
         if todo is None:
             return False
         origin_ref = todo.get("origin_ref")
-        if origin_ref:
+        if origin_ref and dismiss:
             self._write(
                 "INSERT OR REPLACE INTO board_todo_dismissed(origin_ref, title, dismissed_at)"
                 " VALUES(?, ?, ?)",

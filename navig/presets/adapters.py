@@ -30,6 +30,11 @@ _QUALITY: dict[str, dict[str, str]] = {
     "openai_dalle3": {"low": "standard", "medium": "standard", "standard": "standard", "high": "hd", "hd": "hd"},
     "openai_gpt_image": {"low": "low", "medium": "medium", "standard": "medium", "high": "high", "hd": "high"},
 }
+# The coarse quality words every navig_generate image path understands
+# (ImageQuality in navig_generate.tools.image_generation: standard/hd are the
+# older aliases of medium/high). Portable, so one preset spelling works
+# whichever provider ends up serving the request.
+_PORTABLE_QUALITY = {"low", "medium", "high", "standard", "hd"}
 _STYLE = {"openai", "openai_dalle3"}  # vivid / natural
 
 
@@ -73,11 +78,20 @@ def translate_image(provider: str, prompt: str, params: dict[str, Any], negative
             req.notes.append(f"aspect {aspect} not sent: unknown provider {prov!r}")
     quality = params.get("quality")
     if quality:
-        mapped = _QUALITY.get(prov, {}).get(quality)
-        if mapped:
-            req.quality = mapped
+        if not prov and quality in _PORTABLE_QUALITY:
+            # The provider is resolved AFTER presets (it may come from config or
+            # be the only key installed), so no per-provider map applies yet.
+            # Dropping the word here is how a quality preset silently did
+            # nothing when the caller omitted --provider; pass it through and
+            # let the resolving provider's own mapping translate it.
+            req.quality = quality
+            req.notes.append(f"quality {quality!r} passed through; the resolved provider maps it")
         else:
-            req.notes.append(f"quality {quality!r} not supported by {prov or 'the default provider'}; dropped")
+            mapped = _QUALITY.get(prov, {}).get(quality)
+            if mapped:
+                req.quality = mapped
+            else:
+                req.notes.append(f"quality {quality!r} not supported by {prov or 'the default provider'}; dropped")
     style = params.get("style")
     if style:
         if prov in _STYLE:

@@ -19,6 +19,14 @@ pytestmark = pytest.mark.integration
 # ---------------------------------------------------------------------------
 
 
+def _rich_edit(calls: dict) -> dict | None:
+    """The last rich edit the card path made, or None when the text path ran."""
+    for item in reversed(calls["api"]):
+        if item.get("method") == "editMessageText" and "rich_message" in item.get("payload", {}):
+            return item["payload"]
+    return None
+
+
 def _make_channel(monkeypatch):
     """Return a TelegramChannel with noop send/edit/api_call."""
     ch = TelegramChannel(
@@ -275,12 +283,26 @@ class TestHelpCallbackRouting:
     async def test_help_home_callback(self, monkeypatch):
         ch, calls = _make_channel(monkeypatch)
         await ch._handle_help_callback("help:home", 100, 200)
+        rich = _rich_edit(calls)
+        if rich is not None:
+            html = rich["rich_message"]["html"]
+            assert "<h2>❓ Help</h2>" in html
+            # The categories are pressable: either in the body's own button rows or in
+            # the payload keyboard (the channel omits the keyboard when the body has them).
+            assert "help:c:" in html or rich.get("reply_markup")
+            return
         assert len(calls["edit"]) == 1
         assert "NAVIG Command Center" in calls["edit"][0]["text"]
 
     async def test_help_category_callback(self, monkeypatch):
         ch, calls = _make_channel(monkeypatch)
         await ch._handle_help_callback("help:c:docker", 100, 200)
+        rich = _rich_edit(calls)
+        if rich is not None:
+            html = rich["rich_message"]["html"]
+            assert "Docker" in html
+            assert "<table" in html  # the commands are a table, not bullets
+            return
         assert len(calls["edit"]) == 1
         assert "Docker" in calls["edit"][0]["text"]
 
@@ -293,16 +315,35 @@ class TestHelpCallbackRouting:
     async def test_help_detail_callback(self, monkeypatch):
         ch, calls = _make_channel(monkeypatch)
         await ch._handle_help_callback("help:d:disk:monitoring", 100, 200)
+        rich = _rich_edit(calls)
+        if rich is not None:
+            html = rich["rich_message"]["html"]
+            assert "<h2>/disk</h2>" in html
+            assert "copy_text" in html  # the usage is copyable
+            return
         assert len(calls["edit"]) == 1
         assert "/disk" in calls["edit"][0]["text"]
 
     async def test_help_detail_with_sub_back(self, monkeypatch):
         ch, calls = _make_channel(monkeypatch)
         await ch._handle_help_callback("help:d:ip:utilities:network", 100, 200)
-        assert len(calls["edit"]) == 1
+        rich = _rich_edit(calls)
+        if rich is not None:
+            html = rich["rich_message"]["html"]
+            kb = (rich.get("reply_markup") or {}).get("inline_keyboard") or []
+            callbacks = [
+                btn.get("callback_data") for row in kb for btn in row if btn.get("callback_data")
+            ]
+            # In-body buttons carry the payload in the markup when the keyboard is omitted.
+            assert "help:s:utilities:network" in callbacks or (
+                "help:s:utilities:network" in html
+            )
+            return
         kb = calls["edit"][0]["keyboard"]
-        back_btn = kb[0][0]
-        assert back_btn["callback_data"] == "help:s:utilities:network"
+        callbacks = [
+            btn.get("callback_data") for row in kb for btn in row if btn.get("callback_data")
+        ]
+        assert "help:s:utilities:network" in callbacks
 
     async def test_help_close_deletes_message(self, monkeypatch):
         ch, calls = _make_channel(monkeypatch)

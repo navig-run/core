@@ -156,7 +156,14 @@ def result_digest(result: Any) -> str | None:
     """
     if result is None:
         return None
-    blob = json.dumps(result, sort_keys=True, separators=(",", ":"), default=str)
+    try:
+        blob = json.dumps(result, sort_keys=True, separators=(",", ":"), default=str)
+    except (TypeError, ValueError, RecursionError) as exc:
+        # Mixed-type keys (sort_keys) or a circular container cannot be canonicalised.
+        # Best-effort: the mission is already terminal when this runs, so raising here
+        # would leave it with no receipt at all — record one without a digest instead.
+        logger.debug("result_digest: result is not canonicalisable (%s)", type(exc).__name__)
+        return None
     return "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 

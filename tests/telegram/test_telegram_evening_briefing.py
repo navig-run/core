@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _run(coro):
     return asyncio.run(coro)
 
@@ -23,6 +24,7 @@ def _make_handler():
 
     ch = MagicMock()
     ch.send_message = AsyncMock(return_value={"message_id": 99})
+    ch.edit_rich_message = AsyncMock(return_value={"message_id": 99})
     handler = CallbackHandler.__new__(CallbackHandler)
     handler.channel = ch
     handler._answer = AsyncMock()
@@ -31,11 +33,15 @@ def _make_handler():
 
 
 def _eve_cb(handler, action: str, *, chat_id: int = 1, msg_id: int = 0, user_id: int = 42):
-    return _run(handler._handle_evening_callback("cb_id", f"eve:{action}", chat_id, msg_id, user_id))
+    return _run(
+        handler._handle_evening_callback("cb_id", f"eve:{action}", chat_id, msg_id, user_id)
+    )
 
 
 def _morn_cb(handler, action: str, *, chat_id: int = 1, msg_id: int = 0, user_id: int = 42):
-    return _run(handler._handle_morning_callback("cb_id", f"morn:{action}", chat_id, msg_id, user_id))
+    return _run(
+        handler._handle_morning_callback("cb_id", f"morn:{action}", chat_id, msg_id, user_id)
+    )
 
 
 def _flat_buttons(send_mock) -> list[dict]:
@@ -56,6 +62,7 @@ def _last_text(send_mock) -> str:
 # ---------------------------------------------------------------------------
 # Eve-log unit tests
 # ---------------------------------------------------------------------------
+
 
 class _IsolatedConfigDir:
     """setup/teardown that swap ``NAVIG_CONFIG_DIR`` and put back what was there.
@@ -91,6 +98,7 @@ class _IsolatedConfigDir:
 class TestEveLog(_IsolatedConfigDir):
     def test_save_and_get_shipped(self):
         from navig.agent.proactive.eve_log import get_today, save_shipped
+
         save_shipped("Fixed login bug · Deployed v2.3")
         entry = get_today()
         assert entry["shipped"] == "Fixed login bug · Deployed v2.3"
@@ -98,6 +106,7 @@ class TestEveLog(_IsolatedConfigDir):
 
     def test_save_and_get_priority(self):
         from navig.agent.proactive.eve_log import get_today, save_priority
+
         save_priority("Ship the auth refactor")
         entry = get_today()
         assert entry["priority"] == "Ship the auth refactor"
@@ -107,6 +116,7 @@ class TestEveLog(_IsolatedConfigDir):
         from datetime import datetime, timedelta
 
         from navig.agent.proactive.eve_log import _load, _save, get_yesterday
+
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
         data = _load()
         data[yesterday] = {"shipped": "old stuff", "shipped_at": "ts"}
@@ -116,10 +126,12 @@ class TestEveLog(_IsolatedConfigDir):
 
     def test_empty_dict_for_new_day(self):
         from navig.agent.proactive.eve_log import get_today
+
         assert get_today() == {}
 
     def test_trim_to_max_days(self):
         from navig.agent.proactive.eve_log import _MAX_DAYS, _load, _save
+
         data = {f"2023-01-{i:02d}": {"shipped": "x"} for i in range(1, _MAX_DAYS + 10)}
         _save(data)
         loaded = _load()
@@ -129,6 +141,7 @@ class TestEveLog(_IsolatedConfigDir):
 # ---------------------------------------------------------------------------
 # DND on / off
 # ---------------------------------------------------------------------------
+
 
 class TestDNDCallbacks:
     def test_dnd_on_arms_dnd_preference(self):
@@ -182,60 +195,197 @@ class TestDNDCallbacks:
 
 
 # ---------------------------------------------------------------------------
-# eve:log_shipped and eve:plan_tomorrow — set eve_pending
+# eve:log_shipped and eve:plan_tomorrow — the picker, drawn in place on the card
 # ---------------------------------------------------------------------------
 
-class TestEvePrompts:
-    def _store(self) -> MagicMock:
-        store = MagicMock()
-        store.get_ai_state.return_value = {"context": {}}
-        store.set_ai_state = MagicMock()
-        return store
 
-    def _pending(self, store: MagicMock) -> dict:
-        ctx = store.set_ai_state.call_args.kwargs.get("context") or {}
-        return ctx.get("eve_pending", {})
+class _FakeAIState:
+    """Round-trips the ai_state blob so a picker can write and a tap can read it."""
 
-    def test_log_shipped_sets_eve_pending_active_shipped(self):
+    def __init__(self) -> None:
+        self.state: dict = {"mode": "active", "persona": None, "context": {}}
+        self.writes: list[dict] = []
+
+    def get_ai_state(self, user_id):
+        return self.state
+
+    def set_ai_state(self, **kwargs):
+        self.writes.append(kwargs)
+        self.state = {
+            "mode": kwargs.get("mode"),
+            "persona": kwargs.get("persona"),
+            "context": kwargs.get("context") or {},
+        }
+
+
+def _edit_buttons(edit_mock) -> list[dict]:
+    call = edit_mock.call_args
+    if call is None:
+        return []
+    kb = call.kwargs.get("keyboard") or []
+    return [btn for row in kb for btn in row]
+
+
+class TestEveningPicker:
+    """Pressing a button on the evening card redraws THAT message.
+
+    The old behaviour replied with a sentence asking the operator to type what he
+    shipped — a question where he expected an answer, at the end of the day, on a
+    phone. The card is now the screen: the picker is the same message, the choices
+    are what he already logged, and Cancel puts the card back.
+    """
+
+    def _handler(self):
         handler = _make_handler()
-        store = self._store()
+        return handler
+
+    def test_a_tap_redraws_the_card_in_place(self):
+        handler = self._handler()
+        store = _FakeAIState()
         with patch("navig.store.runtime.get_runtime_store", return_value=store):
+            _eve_cb(handler, "log_shipped", msg_id=77)
+        handler.channel.edit_rich_message.assert_awaited_once()
+        args = handler.channel.edit_rich_message.call_args.args
+        assert args[0] == 1 and args[1] == 77
+        handler.channel.send_message.assert_not_called()
+
+    def test_a_tap_on_an_old_card_still_lands(self):
+        handler = self._handler()
+        with patch("navig.store.runtime.get_runtime_store", return_value=_FakeAIState()):
+            _eve_cb(handler, "plan_tomorrow", msg_id=404)
+        assert handler.channel.edit_rich_message.call_args.args[1] == 404
+
+    def test_every_candidate_gets_its_own_one_tap_button(self):
+        handler = self._handler()
+        with (
+            patch("navig.store.runtime.get_runtime_store", return_value=_FakeAIState()),
+            patch(
+                "navig.telegram.briefing_cards.recent_shipped",
+                return_value=["Ship the auth refactor", "Fix login bug"],
+            ),
+        ):
             _eve_cb(handler, "log_shipped")
-        store.set_ai_state.assert_called_once()
-        p = self._pending(store)
-        assert p["active"] is True and p["type"] == "shipped"
+        datas = [b.get("callback_data") for b in _edit_buttons(handler.channel.edit_rich_message)]
+        assert datas[:2] == ["eve:set:shipped:0", "eve:set:shipped:1"]
+        assert "eve:type:shipped" in datas and "eve:cancel" in datas
 
-    def test_plan_tomorrow_sets_eve_pending_active_priority(self):
-        handler = _make_handler()
-        store = self._store()
-        with patch("navig.store.runtime.get_runtime_store", return_value=store):
-            _eve_cb(handler, "plan_tomorrow")
-        store.set_ai_state.assert_called_once()
-        p = self._pending(store)
-        assert p["active"] is True and p["type"] == "priority"
-
-    def test_log_shipped_sends_prompt_message(self):
-        handler = _make_handler()
-        store = self._store()
-        with patch("navig.store.runtime.get_runtime_store", return_value=store):
+    def test_the_picker_never_puts_a_candidate_in_a_callback_payload(self):
+        """A callback payload is capped at 64 bytes — the words must not ride in it."""
+        handler = self._handler()
+        long_item = "Refactored the notification router and shipped the dedupe guard " * 2
+        with (
+            patch("navig.store.runtime.get_runtime_store", return_value=_FakeAIState()),
+            patch("navig.telegram.briefing_cards.recent_shipped", return_value=[long_item]),
+        ):
             _eve_cb(handler, "log_shipped")
-        text = _last_text(handler.channel.send_message)
-        assert text and ("shipped" in text.lower() or "What" in text)
+        for btn in _edit_buttons(handler.channel.edit_rich_message):
+            assert len(btn.get("callback_data", "").encode()) <= 64
 
-    def test_plan_tomorrow_sends_prompt_message(self):
-        handler = _make_handler()
-        store = self._store()
+    def test_a_tapped_candidate_is_logged_exactly_as_written(self):
+        handler = self._handler()
+        store = _FakeAIState()
+        with (
+            patch("navig.store.runtime.get_runtime_store", return_value=store),
+            patch(
+                "navig.telegram.briefing_cards.recent_shipped",
+                return_value=["Ship the auth refactor", "Fix login bug"],
+            ),
+            patch("navig.agent.proactive.eve_log.save_shipped") as save,
+            patch("navig.agent.proactive.eve_log.get_today", return_value={}),
+        ):
+            _eve_cb(handler, "log_shipped")
+            _eve_cb(handler, "set:shipped:1")
+        save.assert_called_once_with("Fix login bug")
+        assert handler.channel.edit_rich_message.await_count == 2  # picker, then the card
+
+    def test_a_tapped_one_is_confirmed_with_a_toast(self):
+        from navig.core.i18n import t as _t
+
+        handler = self._handler()
+        with (
+            patch("navig.store.runtime.get_runtime_store", return_value=_FakeAIState()),
+            patch(
+                "navig.telegram.briefing_cards.recent_shipped",
+                return_value=["Ship the auth refactor"],
+            ),
+            patch("navig.agent.proactive.eve_log.save_shipped"),
+            patch("navig.agent.proactive.eve_log.get_today", return_value={}),
+        ):
+            _eve_cb(handler, "log_shipped")
+            _eve_cb(handler, "set:shipped:0")
+        assert handler._answer.call_args.args[1] == _t("briefing.toast.picked")
+
+    def test_a_stale_tap_never_logs_a_guess(self):
+        from navig.core.i18n import t as _t
+
+        handler = self._handler()
+        with (
+            patch("navig.store.runtime.get_runtime_store", return_value=_FakeAIState()),
+            patch("navig.agent.proactive.eve_log.save_shipped") as save,
+        ):
+            _eve_cb(handler, "set:shipped:0")
+        save.assert_not_called()
+        assert handler._answer.call_args.args[1] == _t("briefing.toast.pick_stale")
+
+    def test_a_stale_tap_reopens_the_list_instead_of_dead_ending(self):
+        handler = self._handler()
+        with patch("navig.store.runtime.get_runtime_store", return_value=_FakeAIState()):
+            _eve_cb(handler, "set:priority:3")
+        # The empty store writes an empty list, so the card is redrawn as a picker.
+        handler.channel.edit_rich_message.assert_awaited_once()
+
+    def test_cancel_puts_the_evening_card_back(self):
+        handler = self._handler()
+        with (
+            patch("navig.store.runtime.get_runtime_store", return_value=_FakeAIState()),
+            patch("navig.agent.proactive.eve_log.save_shipped") as save,
+            patch("navig.agent.proactive.eve_log.get_today", return_value={}),
+        ):
+            _eve_cb(handler, "cancel", msg_id=88)
+        assert handler.channel.edit_rich_message.call_args.args[1] == 88
+        save.assert_not_called()
+
+    def test_typing_still_arms_the_reply_capture(self):
+        handler = self._handler()
+        store = _FakeAIState()
         with patch("navig.store.runtime.get_runtime_store", return_value=store):
-            _eve_cb(handler, "plan_tomorrow")
-        text = _last_text(handler.channel.send_message)
-        assert text and (
-            "tomorrow" in text.lower() or "priority" in text.lower() or "anchor" in text.lower()
+            _eve_cb(handler, "type:shipped")
+        pending = (store.state.get("context") or {}).get("eve_pending") or {}
+        assert pending.get("active") is True and pending.get("type") == "shipped"
+        # The prompt is a new message; the picker message goes back to being a card.
+        handler.channel.send_message.assert_awaited_once()
+
+    def test_the_free_text_prompt_is_sent_once_and_the_card_restored(self):
+        from navig.telegram import briefing_cards
+
+        handler = self._handler()
+        with (
+            patch("navig.store.runtime.get_runtime_store", return_value=_FakeAIState()),
+            patch("navig.agent.proactive.eve_log.get_today", return_value={}),
+        ):
+            _eve_cb(handler, "type:priority")
+        assert handler.channel.send_message.await_count == 1
+        assert handler.channel.send_message.call_args.args[1] == briefing_cards.prompt_html(
+            "priority"
         )
+        handler.channel.edit_rich_message.assert_awaited_once()  # picker → evening card
+
+    def test_nothing_logged_yet_offers_the_keyboard_and_no_dead_choice(self):
+        handler = self._handler()
+        with (
+            patch("navig.store.runtime.get_runtime_store", return_value=_FakeAIState()),
+            patch("navig.telegram.briefing_cards.recent_shipped", return_value=[]),
+        ):
+            _eve_cb(handler, "log_shipped")
+        datas = [b.get("callback_data") for b in _edit_buttons(handler.channel.edit_rich_message)]
+        assert "eve:type:shipped" in datas and "eve:cancel" in datas
+        assert not [d for d in datas if d.startswith("eve:set:")]
 
 
 # ---------------------------------------------------------------------------
 # _handle_eve_pending_reply — reply capture
 # ---------------------------------------------------------------------------
+
 
 class TestEvePendingReply(_IsolatedConfigDir):
     def _call(self, text: str, pending_type: str | None, active: bool = True):
@@ -259,6 +409,7 @@ class TestEvePendingReply(_IsolatedConfigDir):
 
     def test_capture_shipped_persists(self):
         from navig.agent.proactive.eve_log import get_today
+
         self._call("Fixed bug · Deployed v2", "shipped")
         assert get_today().get("shipped") == "Fixed bug · Deployed v2"
 
@@ -268,6 +419,7 @@ class TestEvePendingReply(_IsolatedConfigDir):
 
     def test_capture_priority_persists(self):
         from navig.agent.proactive.eve_log import get_today
+
         self._call("Ship auth refactor", "priority")
         assert get_today().get("priority") == "Ship auth refactor"
 
@@ -279,6 +431,7 @@ class TestEvePendingReply(_IsolatedConfigDir):
 
     def test_cancel_no_persist(self):
         from navig.agent.proactive.eve_log import get_today
+
         self._call("cancel", "shipped")
         assert get_today() == {}
 
@@ -303,6 +456,7 @@ class TestEvePendingReply(_IsolatedConfigDir):
 # ---------------------------------------------------------------------------
 # Backup check
 # ---------------------------------------------------------------------------
+
 
 class TestBackupCallback:
     def _fake_result(self, stdout: str = "", stderr: str = ""):
@@ -342,6 +496,7 @@ class TestBackupCallback:
 # Unknown action
 # ---------------------------------------------------------------------------
 
+
 class TestUnknownAction:
     def test_no_message_sent(self):
         handler = _make_handler()
@@ -357,6 +512,7 @@ class TestUnknownAction:
 # ---------------------------------------------------------------------------
 # Morning callback
 # ---------------------------------------------------------------------------
+
 
 class TestMorningCallback:
     def test_anchor_ok_sends_locked_message(self):
@@ -386,9 +542,11 @@ class TestMorningCallback:
 # Notification briefings — morning / evening
 # ---------------------------------------------------------------------------
 
+
 class TestNotificationBriefings(_IsolatedConfigDir):
     def _mgr(self):
         from navig.gateway.notifications import TelegramNotifier
+
         return object.__new__(TelegramNotifier)
 
     # Morning
@@ -401,6 +559,7 @@ class TestNotificationBriefings(_IsolatedConfigDir):
         from datetime import datetime, timedelta
 
         from navig.agent.proactive.eve_log import _load, _save
+
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
         data = _load()
         data[yesterday] = {"priority": "Ship the auth refactor", "priority_at": "ts"}
@@ -430,12 +589,14 @@ class TestNotificationBriefings(_IsolatedConfigDir):
 
     def test_evening_shows_shipped_when_logged(self):
         from navig.agent.proactive.eve_log import save_shipped
+
         save_shipped("Deployed v2 · Fixed AUTH")
         n = _run(self._mgr()._evening_summary())
         assert "Deployed v2 · Fixed AUTH" in n.message
 
     def test_evening_hides_log_shipped_button_when_done(self):
         from navig.agent.proactive.eve_log import save_shipped
+
         save_shipped("Already logged")
         n = _run(self._mgr()._evening_summary())
         flat = [b for row in (n.keyboard or []) for b in row]
@@ -443,12 +604,14 @@ class TestNotificationBriefings(_IsolatedConfigDir):
 
     def test_evening_shows_priority_when_logged(self):
         from navig.agent.proactive.eve_log import save_priority
+
         save_priority("Auth refactor anchor")
         n = _run(self._mgr()._evening_summary())
         assert "Auth refactor anchor" in n.message
 
     def test_evening_hides_plan_tomorrow_button_when_done(self):
         from navig.agent.proactive.eve_log import save_priority
+
         save_priority("Already set")
         n = _run(self._mgr()._evening_summary())
         flat = [b for row in (n.keyboard or []) for b in row]

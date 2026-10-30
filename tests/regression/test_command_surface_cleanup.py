@@ -25,12 +25,15 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import click
 import pytest
 from typer.main import get_command
 from typer.testing import CliRunner
 
 from navig.cli.registration import _ALIAS_COMMANDS, _NOT_PUBLISHED, _RETIRED_COMMANDS
+from navig.core.click_compat import click_module, is_group, is_option
+
+# The click TYPER runs on; a separately installed copy is a different class hierarchy.
+click = click_module()
 from navig.cli.superseded import SUPERSEDED
 
 pytestmark = pytest.mark.integration
@@ -76,9 +79,9 @@ def _resolve(root: click.Group, cmdline: str) -> str | None:
     tokens = cmdline.split()
     assert tokens[0] == "navig", cmdline
     cmd: click.Command = root
-    ctx = click.Context(root, info_name="navig")
+    ctx = click_module().Context(root, info_name="navig")
     i = 1
-    while i < len(tokens) and isinstance(cmd, click.Group):
+    while i < len(tokens) and is_group(cmd):
         tok = tokens[i]
         if tok.startswith("-") or tok.startswith("<"):
             break
@@ -91,7 +94,7 @@ def _resolve(root: click.Group, cmdline: str) -> str | None:
     params = cmd.get_params(ctx)  # NOT .params: --help is appended at parse time
     takes_value = {}
     for p in params:
-        if isinstance(p, click.Option):
+        if is_option(p):
             for opt in [*p.opts, *p.secondary_opts]:
                 takes_value[opt] = not (p.is_flag or p.count)
     rest = tokens[i:]

@@ -199,6 +199,51 @@ def test_leftover_from_a_crashed_sweep_is_not_lost(tidy):
     assert api.calls == [("deleteMessages", {"chat_id": OPERATOR, "message_ids": [7]})]
 
 
+def test_an_append_that_lands_in_the_taken_file_is_not_lost(tidy, monkeypatch):
+    """POSIX: a send that opened the ledger just before the sweep renamed it writes
+    into the renamed `.sweeping` file AFTER the sweep read it. Unlinking that file
+    used to delete the message id, so the message was never tidied."""
+    _seed(_msg(10, NOW - timedelta(hours=14)))
+    real_take = chat_tidy._take
+    late = {"c": OPERATOR, "m": 30, "t": int((NOW - timedelta(minutes=5)).timestamp()), "k": "notice"}
+
+    def take_then_late_append():
+        got = real_take()
+        with open(chat_tidy.ledger_path().with_suffix(".sweeping"), "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(late) + "\n")
+        return got
+
+    monkeypatch.setattr(chat_tidy, "_take", take_then_late_append)
+    asyncio.run(chat_tidy.sweep(FakeApi(), now=NOW))
+    assert _ledger_ids() == [30]
+    assert not chat_tidy.ledger_path().with_suffix(".sweeping").exists()
+
+
+def test_an_unanswered_approval_card_is_protected_until_it_expires(tidy):
+    """An approval card sent before midnight (or with a long timeout) still has live
+    buttons the next morning; deleting it left request_approval() waiting on a
+    prompt the operator could no longer tap."""
+    import time
+
+    from navig.approval import journal
+
+    tidy["system_enabled"] = True
+    yesterday = NOW - timedelta(hours=14)
+    with chat_tidy.routine("system"):
+        chat_tidy.note(_msg(10, yesterday))  # the approval card, still waiting
+        chat_tidy.note(_msg(11, yesterday))  # another system card
+    journal.record_pending("req-1", command="x", channel="mission", user_id="system",
+                           level="CONFIRM", expires_at=time.time() + 900)
+    journal.note_card("req-1", OPERATOR, 10)
+
+    res = asyncio.run(chat_tidy.sweep(FakeApi(), now=NOW, dry_run=True))
+    assert (res.protected, res.deleted) == (1, 1)
+
+    journal.clear_pending("req-1")  # answered → swept like any other card
+    res = asyncio.run(chat_tidy.sweep(FakeApi(), now=NOW, dry_run=True))
+    assert (res.protected, res.deleted) == (0, 2)
+
+
 # ── the once-a-day trigger ──────────────────────────────────────────────────
 
 
@@ -424,6 +469,31 @@ def test_system_settings_default_to_on_in_a_fresh_config(tmp_path, monkeypatch):
     assert cfg["enabled"] is False
 
 
+def test_unreadable_config_turns_both_cleanups_off(tmp_path, monkeypatch):
+    """Default-on is for a config that was READ with no key. An unreadable one may
+    hold the operator's explicit off — sweeping then deletes cards they kept."""
+    import navig.config
+
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(chat_tidy, "_settings_cache", None)
+    monkeypatch.setattr(chat_tidy, "_last_attempt", 0.0)
+
+    def _boom():
+        raise OSError("config unreadable")
+
+    monkeypatch.setattr(navig.config, "get_config_manager", _boom)
+    cfg = chat_tidy.settings(fresh=True)
+    assert cfg["system_enabled"] is False and cfg["enabled"] is False
+    path = chat_tidy.ledger_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"c": OPERATOR, "m": 1, "t": int((NOW - timedelta(hours=14)).timestamp()),
+                                "k": "system"}) + "\n", encoding="utf-8")
+    api = FakeApi()
+    assert asyncio.run(chat_tidy.maybe_sweep(api, now=NOW)) is None
+    assert api.calls == []
+    monkeypatch.setattr(chat_tidy, "_settings_cache", None)
+
+
 def test_system_cards_record_even_with_the_routine_tidy_off(tidy):
     tidy["enabled"] = False
     tidy["system_enabled"] = True
@@ -492,30 +562,74 @@ def test_the_system_kind_exists_and_is_named():
     assert "System NAVIG cards" in chat_tidy.KINDS["system"]
 
 
-def test_the_sweep_waits_for_the_latest_enabled_hour(tidy):
-    """Regression: with BOTH switches on and different hours, the earlier one
-    must not silently override the later one. Live config has daily_clean at
-    06:00; an OR gate would have swept its routine cards at 04:00 the moment
-    system_cleanup (default 04:00) went live."""
-    tidy["enabled"] = True
-    tidy["hour"] = 6
-    tidy["system_enabled"] = True
-    tidy["system_hour"] = 4
-    yesterday = NOW - timedelta(hours=14)
+def _seed_both(yesterday):
     with chat_tidy.routine("system"):
         chat_tidy.note(_msg(10, yesterday))
     with chat_tidy.routine("greeting"):
         chat_tidy.note(_msg(11, yesterday))
+
+
+def test_each_schedule_sweeps_its_own_kinds_at_its_own_hour(tidy):
+    """Regression: with BOTH switches on and different hours, each schedule sweeps
+    only its own kinds at its own hour. The old OR gate swept routine cards at the
+    system hour; the max() gate that replaced it held system cards until the
+    routine hour (hours 23/4 → system cards waited 19 h, past the delete window)."""
+    tidy["enabled"] = True
+    tidy["hour"] = 6
+    tidy["system_enabled"] = True
+    tidy["system_hour"] = 4
+    _seed_both(NOW - timedelta(hours=14))
     api = FakeApi()
 
-    # 05:00 — system hour passed, daily's 06:00 has not → nothing due.
-    assert asyncio.run(chat_tidy.maybe_sweep(api, now=NOW.replace(hour=5))) is None
-    assert api.calls == []
+    # 05:00 — the system hour passed, daily's 06:00 has not → only system cards go.
+    res = asyncio.run(chat_tidy.maybe_sweep(api, now=NOW.replace(hour=5)))
+    assert res is not None and res.deleted == 1
+    assert api.calls == [("deleteMessages", {"chat_id": OPERATOR, "message_ids": [10]})]
+    assert _ledger_ids() == [11]
+    # …and the system schedule does not fire twice the same day.
+    assert asyncio.run(chat_tidy.maybe_sweep(api, now=NOW.replace(hour=5, minute=30))) is None
 
-    # 06:00 — every enabled hour passed → one sweep covers both kinds.
+    # 06:00 — the routine hour → the routine card goes, in its own sweep.
     res = asyncio.run(chat_tidy.maybe_sweep(api, now=NOW.replace(hour=6)))
-    assert res is not None and res.deleted == 2
-    assert api.calls == [("deleteMessages", {"chat_id": OPERATOR, "message_ids": [10, 11]})]
+    assert res is not None and res.deleted == 1
+    assert api.calls[1:] == [("deleteMessages", {"chat_id": OPERATOR, "message_ids": [11]})]
+    assert _ledger_ids() == []
+
+
+def test_a_late_routine_hour_never_delays_system_cards(tidy):
+    tidy["enabled"] = True
+    tidy["hour"] = 23
+    tidy["system_enabled"] = True
+    tidy["system_hour"] = 4
+    _seed_both(NOW - timedelta(hours=14))
+    api = FakeApi()
+    asyncio.run(chat_tidy.maybe_sweep(api, now=NOW.replace(hour=5)))
+    assert api.calls == [("deleteMessages", {"chat_id": OPERATOR, "message_ids": [10]})]
+    assert _ledger_ids() == [11]
+
+
+def test_a_routine_sweep_leaves_cards_of_a_switched_off_system_cleanup(tidy):
+    """Cards recorded while system cleanup was on are not the routine tidy's to delete
+    once the operator switches system cleanup off."""
+    tidy["system_enabled"] = True
+    _seed_both(NOW - timedelta(hours=14))
+    tidy["system_enabled"] = False
+    api = FakeApi()
+    res = asyncio.run(chat_tidy.maybe_sweep(api, now=NOW))
+    assert res is not None and res.deleted == 1
+    assert api.calls == [("deleteMessages", {"chat_id": OPERATOR, "message_ids": [11]})]
+    assert _ledger_ids() == [10]
+
+
+def test_a_legacy_state_file_counts_for_both_schedules(tidy):
+    chat_tidy._state_path().parent.mkdir(parents=True, exist_ok=True)
+    chat_tidy._state_path().write_text(json.dumps({"last_day": "2026-10-03"}), encoding="utf-8")
+    assert chat_tidy.last_sweep_day("routine") == "2026-10-03"
+    assert chat_tidy.last_sweep_day("system") == "2026-10-03"
+    chat_tidy.mark_swept("2026-10-04", ("system",))
+    assert chat_tidy.last_sweep_day("routine") == "2026-10-03"
+    assert chat_tidy.last_sweep_day("system") == "2026-10-04"
+    assert chat_tidy.last_sweep_day() == "2026-10-04"
 
 
 def test_no_enabled_switch_means_no_sweep(tidy):

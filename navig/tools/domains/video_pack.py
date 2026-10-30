@@ -49,7 +49,15 @@ def _safe_seed_image(image_url: str) -> str:
         roots.append(Path(resolve_refs_root()))
     except Exception:  # noqa: BLE001 — no active space → media home only
         pass
-    if any(p.is_relative_to(root) for root in roots):
+    # `p` is resolved through symlinks/junctions, so resolve each root the same way: a refs
+    # dir configured through a `.media` junction would otherwise never contain its seeds.
+    resolved_roots: list[Path] = []
+    for root in roots:
+        try:
+            resolved_roots.append(root.resolve(strict=False))
+        except OSError:
+            resolved_roots.append(root)
+    if any(p.is_relative_to(root) for root in resolved_roots):
         return str(p)
     allowed = " · ".join(str(r) for r in roots) or "none available"
     raise ValueError(

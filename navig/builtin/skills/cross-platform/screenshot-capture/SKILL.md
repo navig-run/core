@@ -19,6 +19,9 @@ examples:
   - "Screenshot the top-left 800x600 region"
   - "What monitors do I have?"
   - "Save a screenshot to C:\\temp\\snap.png"
+# Written against a planned command surface that is not implemented yet
+# (KNOWN_MISSING in tests/quality/test_content_command_refs_resolve.py).
+activatable: false
 ---
 
 # Screenshot Capture

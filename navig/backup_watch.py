@@ -71,3 +71,19 @@ def latch(verdict: Verdict, state_file: Path) -> str | None:
     if not was_ok and verdict.ok:
         return "recovered"
     return None
+
+
+def unlatch(verdict: Verdict, state_file: Path) -> None:
+    """Undo the edge ``latch()`` just recorded, so the next run reports it again.
+
+    Used when the edge's alert reached no channel: consuming the edge anyway would
+    leave a stale backup silent until it recovers.
+    """
+    from navig.core.json_io import atomic_write_json, load_json_for_update
+
+    state = load_json_for_update(state_file, default={})
+    entry = state.get(verdict.name)
+    if not isinstance(entry, dict):
+        return
+    entry["ok"] = not verdict.ok
+    atomic_write_json(state, state_file, indent=1)

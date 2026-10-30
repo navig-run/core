@@ -3,6 +3,26 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+
+
+def _fake_loop(**overrides) -> SimpleNamespace:
+    """A loop stub with the APIs the worker actually calls.
+
+    ``_run()`` installs the loop-noise filter, which reads ``get_exception_handler()`` and
+    calls ``set_exception_handler()`` — a stub carrying only ``add_signal_handler`` died with
+    ``AttributeError: 'types.SimpleNamespace' object has no attribute 'get_exception_handler'``
+    (2026-10-30, outpost).
+    """
+    loop = SimpleNamespace(
+        add_signal_handler=lambda *_a, **_k: None,
+        remove_signal_handler=lambda *_a, **_k: None,
+        get_exception_handler=lambda: None,
+        set_exception_handler=lambda _handler: None,
+    )
+    for key, value in overrides.items():
+        setattr(loop, key, value)
+    return loop
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -24,7 +44,7 @@ async def test_run_requires_token(monkeypatch, navig_log_capture):
     monkeypatch.setattr(tw, "_load_env", lambda: None)
     monkeypatch.setattr(tw, "_telegram_config", lambda: {"bot_token": ""})
     monkeypatch.setattr(tw.asyncio, "Event", _PreSetEvent)
-    fake_loop = SimpleNamespace(add_signal_handler=lambda *_args, **_kwargs: None)
+    fake_loop = _fake_loop()
     monkeypatch.setattr(tw.asyncio, "get_running_loop", lambda: fake_loop)
     monkeypatch.setattr(tw, "_start_gateway_http", AsyncMock())
     monkeypatch.setattr(tw, "_stop_gateway_http", AsyncMock())
@@ -54,7 +74,7 @@ async def test_run_fails_when_channel_init_returns_none(monkeypatch, navig_log_c
         config=SimpleNamespace(port=8789), channels={}, mcp_client_manager=None
     )
 
-    fake_loop = SimpleNamespace(add_signal_handler=lambda *_args, **_kwargs: None)
+    fake_loop = _fake_loop()
     monkeypatch.setattr(tw.asyncio, "Event", _PreSetEvent)
     monkeypatch.setattr(tw.asyncio, "get_running_loop", lambda: fake_loop)
 
@@ -83,7 +103,7 @@ async def test_run_fails_when_channel_init_returns_none(monkeypatch, navig_log_c
 async def test_run_starts_and_stops_gateway_and_channel(monkeypatch):
     from navig.daemon import telegram_worker as tw
 
-    fake_loop = SimpleNamespace(add_signal_handler=lambda *_args, **_kwargs: None)
+    fake_loop = _fake_loop()
     gateway = SimpleNamespace(config=SimpleNamespace(port=8789), channels={})
     channel = SimpleNamespace(start=AsyncMock(), stop=AsyncMock())
     start_http = AsyncMock()

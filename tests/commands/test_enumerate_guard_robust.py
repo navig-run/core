@@ -78,6 +78,44 @@ def test_inspect_json_mode_includes_unreadable_marker(tmp_path: Path, capsys):
     assert "_unreadable" in out  # honest machine-readable signal, not a crash
 
 
+def test_safe_archive_yaml_flags_invalid_utf8(tmp_path: Path):
+    """UnicodeDecodeError is a ValueError, not OSError/YAMLError — it escaped the guard."""
+    f = tmp_path / "bad.yaml"
+    f.write_bytes(b"host: \xff\xfe\n")
+    assert _safe_archive_yaml(f) == {"_unreadable": True}
+
+
+def _make_export_with_apps(tmp_path: Path, host_bytes: dict, app_yaml: dict) -> Path:
+    stage = tmp_path / "navig-config"
+    (stage / "hosts").mkdir(parents=True)
+    (stage / "apps" / "web").mkdir(parents=True)
+    (stage / "manifest.json").write_text('{"version": "1.0"}', encoding="utf-8")
+    for name, content in host_bytes.items():
+        (stage / "hosts" / f"{name}.yaml").write_bytes(content)
+    for name, content in app_yaml.items():
+        (stage / "apps" / "web" / f"{name}.yaml").write_text(content, encoding="utf-8")
+    archive = tmp_path / "export.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(stage, arcname="navig-config")
+    return archive
+
+
+def test_inspect_survives_an_invalid_utf8_host_and_flags_a_corrupt_app(
+    tmp_path: Path, capsys
+):
+    archive = _make_export_with_apps(
+        tmp_path,
+        {"web": b"host: 10.0.0.1\nuser: deploy\n", "mangled": b"host: \xff\xfe\n"},
+        {"shop": "name: shop\n", "broken": "name: [unterminated\n : : :"},
+    )
+    inspect_export({"file": str(archive)})  # must NOT raise
+    lines = capsys.readouterr().out.splitlines()
+    assert any("deploy@10.0.0.1" in ln for ln in lines)
+    assert any("mangled" in ln and "unreadable" in ln for ln in lines)
+    assert any("web/broken" in ln and "unreadable" in ln for ln in lines)
+    assert any("web/shop" in ln and "unreadable" not in ln for ln in lines)
+
+
 # ── memory knowledge list: per-row JSON tags parse ──────────────────────────
 
 

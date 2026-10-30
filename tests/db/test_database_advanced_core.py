@@ -85,6 +85,21 @@ def test_list_users_query_failure_exits_nonzero(monkeypatch, dba):
     assert exc.value.exit_code == 1
 
 
+def test_list_users_missing_mysql_client_exits_nonzero(monkeypatch, dba):
+    """No `mysql` binary raised FileNotFoundError, which was printed and swallowed —
+    `navig db show --users` then exited 0 for a listing that never ran."""
+
+    def _missing(*_a, **_k):
+        raise FileNotFoundError("mysql")
+
+    monkeypatch.setattr(dba.subprocess, "run", _missing)
+
+    with pytest.raises(typer.Exit) as exc:
+        dba.list_users_cmd({"quiet": True})
+
+    assert exc.value.exit_code == 1
+
+
 def test_list_users_empty_result_is_not_a_failure(monkeypatch, dba):
     """Anti-vacuity, and a real product rule: no users is EMPTY, not broken. It warns
     and exits 0 — turning that into a non-zero exit would be the opposite bug."""

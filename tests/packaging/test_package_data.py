@@ -21,11 +21,17 @@ wheel build and cannot drift from what setuptools actually does.
 
 from __future__ import annotations
 
+import fnmatch
 import glob as globlib
+import os
 from pathlib import Path
 
 import pytest
-import tomllib
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover — tomllib is 3.11+; core supports 3.10
+    import tomli as tomllib
 
 REPO = Path(__file__).resolve().parents[3]
 
@@ -58,8 +64,25 @@ def _glob(pattern: str, root: Path) -> list[str]:
     would make this guard report phantom gaps."""
     try:
         return globlib.glob(pattern, root_dir=root, recursive=True, include_hidden=True)
-    except TypeError:  # pragma: no cover — include_hidden is 3.11+
-        return globlib.glob(pattern, root_dir=root, recursive=True)
+    except TypeError:  # include_hidden is 3.11+ — match the dotfiles ourselves
+        hits = set(globlib.glob(pattern, root_dir=root, recursive=True))
+        parts = pattern.replace("\\", "/").split("/")
+        for dirpath, dirnames, filenames in os.walk(root):
+            rel = Path(dirpath).relative_to(root).parts
+            for name in (*dirnames, *filenames):
+                if _segments_match(parts, [*rel, name]):
+                    hits.add(os.path.join(*rel, name))
+        return sorted(hits)
+
+
+def _segments_match(pattern: list[str], path: list[str]) -> bool:
+    """`glob` recursive semantics per path segment, without its leading-dot exclusion."""
+    if not pattern:
+        return not path
+    head, rest = pattern[0], pattern[1:]
+    if head == "**":
+        return any(_segments_match(rest, path[i:]) for i in range(len(path) + 1))
+    return bool(path) and fnmatch.fnmatch(path[0], head) and _segments_match(rest, path[1:])
 
 
 def _matched(pkg_dir: Path, pkg_name: str, spec: dict[str, list[str]]) -> set[str]:
@@ -138,3 +161,27 @@ def test_no_bytecode_is_declared_as_package_data() -> None:
     assert any("__pycache__" in p for p in pats), "exclude-package-data must drop __pycache__"
     assert any(p.endswith(".pyc") for p in pats), "exclude-package-data must drop *.pyc"
     assert pkg.is_dir()
+
+
+def test_glob_fallback_keeps_dotfiles_without_include_hidden(tmp_path: Path, monkeypatch) -> None:
+    """Python 3.10 has no `include_hidden`: the fallback must still see `.gitkeep`."""
+    (tmp_path / "a" / "b").mkdir(parents=True)
+    (tmp_path / "a" / "b" / ".gitkeep").write_text("", encoding="utf-8")
+    (tmp_path / "a" / "x.json").write_text("{}", encoding="utf-8")
+    (tmp_path / ".hidden").mkdir()
+    (tmp_path / ".hidden" / "y.md").write_text("", encoding="utf-8")
+    real_glob = globlib.glob
+
+    def no_include_hidden(*args, **kwargs):
+        if "include_hidden" in kwargs:
+            raise TypeError("glob() got an unexpected keyword argument 'include_hidden'")
+        return real_glob(*args, **kwargs)
+
+    monkeypatch.setattr(globlib, "glob", no_include_hidden)
+
+    def files(pattern: str) -> set[str]:
+        return {Path(m).as_posix() for m in _glob(pattern, tmp_path) if (tmp_path / m).is_file()}
+
+    assert files("**/*") == {"a/b/.gitkeep", "a/x.json", ".hidden/y.md"}
+    assert files("a/**/*.json") == {"a/x.json"}
+    assert files("*") == set()

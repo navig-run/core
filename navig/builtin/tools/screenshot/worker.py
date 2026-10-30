@@ -1,6 +1,8 @@
 """
 screenshot worker — cross-platform screen capture.
-Windows: PIL/mss, macOS: screencapture, Linux: scrot/gnome-screenshot.
+Windows: PIL/mss in-process. macOS: screencapture. Linux: the tool that this SESSION has
+(grim/gnome-screenshot/spectacle on Wayland, scrot/import/… on X11) — see
+``navig.platform.capture`` for why the choice is made there and not here.
 CLI path: sys screenshot take | monitors
 """
 
@@ -12,6 +14,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "_lib"))
 from common import Timer, current_os, emit, err, find_on_path, ok, run
+
+from navig.platform import capture
 
 TOOL = "screenshot"
 
@@ -52,36 +56,38 @@ def _take_windows(output: str, monitor: int) -> tuple[bool, str]:
 
 
 def _take_mac(output: str, monitor: int) -> tuple[bool, str]:
-    cmd = ["screencapture", "-x"]
-    if monitor > 0:
-        cmd.extend(["-D", str(monitor)])
-    cmd.append(output)
+    backend = capture.choose("macos")
+    if backend is None:  # unreachable on a real mac; keeps the message honest
+        return False, capture.install_hint("macos")
+    return _take_argv(backend, output, monitor)
+
+
+def _take_argv(backend: capture.CaptureBackend, output: str, monitor: int) -> tuple[bool, str]:
+    """Run one seam backend and report the OS tool's own words when it fails."""
     import subprocess
 
-    r = subprocess.run(cmd, capture_output=True)
-    return r.returncode == 0, r.stderr.decode().strip()
+    argv = backend.argv(output, monitor=monitor)
+    if argv is None:
+        return False, f"{backend.name} is not a command-line capture backend"
+    r = subprocess.run(argv, capture_output=True)
+    if r.returncode == 0:
+        return True, ""
+    detail = (r.stderr or r.stdout or b"").decode("utf-8", "replace").strip()
+    return False, detail or f"{backend.name} exited {r.returncode}"
 
 
-def _take_linux(output: str) -> tuple[bool, str]:
-    for tool in ["scrot", "gnome-screenshot", "import"]:
-        p = find_on_path(tool)
-        if p:
-            if tool == "scrot":
-                import subprocess
+def _take_linux(output: str, monitor: int) -> tuple[bool, str]:
+    """Capture with a backend that exists in THIS Linux session (Wayland or X11).
 
-                r = subprocess.run([str(p), output], capture_output=True)
-            elif tool == "gnome-screenshot":
-                import subprocess
-
-                r = subprocess.run([str(p), "-f", output], capture_output=True)
-            else:
-                import subprocess
-
-                r = subprocess.run(
-                    [str(p), "-window", "root", output], capture_output=True
-                )
-            return r.returncode == 0, r.stderr.decode().strip()
-    return False, "No screenshot tool found. Install scrot: sudo apt install scrot"
+    The previous list (scrot → gnome-screenshot → import) was X11-only, so a Wayland
+    desktop failed every time and the advice named `scrot`, which cannot capture
+    Wayland even when installed. The session decides now, in one place.
+    """
+    current = capture.session()
+    backend = capture.choose(current)
+    if backend is None:
+        return False, capture.install_hint(current)
+    return _take_argv(backend, output, monitor)
 
 
 def cmd_take(args: dict) -> dict:
@@ -103,7 +109,7 @@ def cmd_take(args: dict) -> dict:
         elif os_key == "mac":
             success, msg = _take_mac(output, monitor)
         else:
-            success, msg = _take_linux(output)
+            success, msg = _take_linux(output, monitor)
         if not success:
             return err(TOOL, "take", [msg or "Screenshot failed"], ms=t.ms())
         size = Path(output).stat().st_size if Path(output).exists() else 0
@@ -139,6 +145,23 @@ def cmd_monitors(args: dict) -> dict:
         elif os_key == "mac":
             rc, out, _ = run(["system_profiler", "SPDisplaysDataType"])
             monitors.append({"raw": out[:500]})
+        elif capture.session() == "wayland":
+            # xrandr reads the X11 root window; Wayland compositors do not have one that
+            # describes their outputs. wlr-randr answers on wlroots compositors, and the
+            # honest answer elsewhere is the session, not an empty list.
+            p = find_on_path("wlr-randr")
+            if p:
+                rc, out, _ = run([p])
+                for line in out.splitlines():
+                    if line and not line.startswith(" "):
+                        monitors.append({"raw": line.strip()})
+            else:
+                monitors.append(
+                    {
+                        "note": "monitor enumeration needs wlr-randr on Wayland",
+                        "session": "wayland",
+                    }
+                )
         else:
             p = find_on_path("xrandr")
             if p:

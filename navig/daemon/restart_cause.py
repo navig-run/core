@@ -37,6 +37,10 @@ INTENT_MAX_AGE_S = 300
 
 _INTENT = "restart_intent.json"
 _CLEAN = "clean_exit.json"
+# Left when a previous daemon is known to have ended WITHOUT an orderly shutdown —
+# its stale pid file was reaped (a status check or the next boot's running-guard
+# deletes that file BEFORE the boot line can see it). Consumed by the next boot.
+_DIED = "previous_died.json"
 
 
 def _dir() -> Path:
@@ -91,6 +95,18 @@ def record(source: str, **detail: Any) -> None:
         pass
 
 
+def mark_previous_died(pid: int, reason: str) -> None:
+    """Note that daemon *pid* ended with no clean shutdown. Never raises."""
+    try:
+        d = _dir()
+        d.mkdir(parents=True, exist_ok=True)
+        (d / _DIED).write_text(
+            json.dumps({"at": time.time(), "pid": pid, "reason": reason}), encoding="utf-8"
+        )
+    except Exception:  # noqa: BLE001 — a diagnostic must never block a status check
+        pass
+
+
 def mark_clean_exit() -> None:
     """Called by the supervisor's orderly shutdown. Never raises."""
     try:
@@ -120,11 +136,12 @@ def boot_cause(*, had_previous_pid: bool) -> str:
     """One line naming why this boot happened. Consumes the intent + clean-exit marker."""
     intent = _consume(_INTENT)
     clean = _consume(_CLEAN)
+    died = _consume(_DIED)
     if intent and time.time() - float(intent.get("at", 0)) <= INTENT_MAX_AGE_S:
         return "requested: " + " → ".join(_hop_text(h) for h in intent.get("chain") or [])
-    if clean:
+    if clean and not died:
         return "no restart requested; previous daemon stopped cleanly (logon task, service start, or manual)"
-    if had_previous_pid:
+    if had_previous_pid or died:
         return (
             "UNEXPLAINED — previous daemon ended with no clean shutdown and no navig "
             "restart request (killed from outside navig, or crashed)"

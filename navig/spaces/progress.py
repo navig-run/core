@@ -42,7 +42,14 @@ def read_space_progress(space_name: str, space_path: Path, scope: str) -> SpaceP
     # rather than a guess at where it might be.
     current_phase = plan_file(space_path, "CURRENT_PHASE.md")
     vision_text = read_plan(space_path, "VISION.md")
-    phase_text = read_plan(space_path, "CURRENT_PHASE.md")
+    # Read the file just found rather than discovering it again: the text and the
+    # mtime below must describe the same file.
+    phase_text = ""
+    if current_phase is not None:
+        try:
+            phase_text = current_phase.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            phase_text = ""
 
     vision_fm = _parse_frontmatter_map(vision_text)
     phase_fm = _parse_frontmatter_map(phase_text)

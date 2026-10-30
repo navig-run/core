@@ -136,18 +136,14 @@ def _config_shows_prior_key(get) -> bool:
 
       * ``telegram.webhook_url`` is literally ``<edge>/tg/sha256(deck.api_key)`` — it
         cannot exist without a prior key.
-      * lighthouse mode / ``cloud.lighthouse_url`` requires the uplink the key
-        authenticates.
 
     ``telegram.allowed_users`` is deliberately NOT used: it can be set during onboarding
     BEFORE the gateway's first mint, so it would false-positive on a real first run.
+    Neither are ``cloud.mode = lighthouse`` / ``cloud.lighthouse_url``: the first
+    ``navig lighthouse deploy`` saves both BEFORE the webhook step mints the first key.
     """
     try:
         if str(get("telegram.webhook_url") or "").strip():
-            return True
-        if str(get("cloud.mode") or "").strip().lower() == "lighthouse":
-            return True
-        if str(get("cloud.lighthouse_url") or "").strip():
             return True
     except Exception:  # noqa: BLE001 — an observation must never break a boot
         return False
@@ -175,7 +171,7 @@ def note_generated(get, *, source: str) -> None:
 
         incidents.record(incidents.DECK_KEY_REIDENTIFIED, source=source)
         logger.warning(
-            "Minted a NEW deck.api_key, but config still holds a webhook/lighthouse URL "
+            "Minted a NEW deck.api_key, but config still holds a webhook URL "
             "derived from an OLD one — this install was RE-IDENTIFIED (its Lighthouse "
             "tenant moved). The vault recovery mirror was NOT available to restore the "
             "real key. The webhook self-heals to the new key on channel start, but the "

@@ -147,7 +147,11 @@ def body_log(
 
     # A weight logged here answers the morning's Telegram question too. Leaving
     # that prompt pending keeps its force_reply box re-arming in the client.
-    cleared = _dismiss_pending_weigh(path, when) if "weight_kg" in values else 0
+    cleared = (
+        _dismiss_pending_weigh(path, when, float(values["weight_kg"]))
+        if "weight_kg" in values
+        else 0
+    )
 
     if as_json:
         ch.emit_json(
@@ -171,11 +175,17 @@ def body_log(
     ch.dim(f"  {path}")
 
 
-def _dismiss_pending_weigh(path: Path, day: str) -> int:
+def _dismiss_pending_weigh(path: Path, day: str, value: float) -> int:
     """Clear (and delete in Telegram) any weigh prompt for *day* that writes into *path*.
 
     Best-effort and never raises: the weight is already recorded, and a failure
     here must not turn that into an error. Returns how many prompts were cleared.
+
+    Mirrors the ``/weigh`` handler: delete first (the only thing that disarms the
+    ``force_reply`` box), and when Telegram refuses — a prompt older than 48 h, a
+    transient API failure — rewrite it in place instead. A prompt that could be
+    neither deleted nor rewritten is put back as pending (so a later answer or run
+    can still settle it) and is not counted as cleared.
     """
     try:
         taken = [
@@ -187,18 +197,47 @@ def _dismiss_pending_weigh(path: Path, day: str) -> int:
         return 0
     if not taken:
         return 0
+
+    def _restore(chat: int, prompt_day: str, message_id: int) -> None:
+        try:
+            bm.set_prompt(chat, "weigh", prompt_day, message_id)
+        except Exception:  # noqa: BLE001 — best-effort, the weight is recorded
+            pass
+
     try:
         from navig.telegram.api import _api_call, _load_telegram_token
 
         token = _load_telegram_token()
-    except Exception:  # noqa: BLE001 — no token: state is cleared, the message stays
-        return len(taken)
-    for chat, (_day, message_id) in taken:
+    except Exception:  # noqa: BLE001 — no token: nothing was dismissed, keep the state
+        for chat, (prompt_day, message_id) in taken:
+            _restore(chat, prompt_day, message_id)
+        return 0
+    cleared = 0
+    for chat, (prompt_day, message_id) in taken:
         try:
             _api_call(token, "deleteMessage", {"chat_id": chat, "message_id": message_id})
-        except Exception:  # noqa: BLE001 — older than 48 h, or already gone
+            cleared += 1
+            continue
+        except Exception:  # noqa: BLE001 — older than 48 h, or a transient failure
             pass
-    return len(taken)
+        try:
+            from navig.telegram import body_actions as ba
+
+            _api_call(
+                token,
+                "editMessageText",
+                {
+                    "chat_id": chat,
+                    "message_id": message_id,
+                    "text": ba.settled_text(path, day, value),
+                    "parse_mode": "HTML",
+                    "reply_markup": {"inline_keyboard": []},
+                },
+            )
+            cleared += 1
+        except Exception:  # noqa: BLE001 — neither delete nor edit landed
+            _restore(chat, prompt_day, message_id)
+    return cleared
 
 
 @body_app.command("today")
@@ -375,6 +414,10 @@ def body_export(
         + (
             f"**{summary['trend']:+g} kg**"
             if summary["trend"] is not None
+            # `trend` is None when EITHER window is empty — say which one, so an
+            # empty current window is not reported as a missing earlier one.
+            else "— *(no readings in this window to compare)*"
+            if summary["average"] is None
             else "— *(no earlier window to compare against)*"
         ),
         "",

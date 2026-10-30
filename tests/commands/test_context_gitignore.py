@@ -85,3 +85,28 @@ def test_ensure_gitignored_none_when_not_in_a_repo(monkeypatch, tmp_path):
     monkeypatch.setattr("navig.commands.context._git_toplevel", lambda _p: None)
     assert _ensure_navig_gitignored(tmp_path) is None
     assert not (tmp_path / ".gitignore").exists()
+
+
+def test_ensure_gitignored_an_anchored_root_rule_does_not_cover_a_subdir(tmp_path):
+    """`/.navig/` ignores only the ROOT .navig — init from svc/api must still add `.navig/`."""
+    _git_init(tmp_path)
+    (tmp_path / ".gitignore").write_text("/.navig/\n", encoding="utf-8")
+    sub = tmp_path / "svc" / "api"
+    sub.mkdir(parents=True)
+
+    written = _ensure_navig_gitignored(sub)
+
+    assert written is not None
+    assert "\n.navig/\n" in written.read_text(encoding="utf-8")
+    r = subprocess.run(
+        ["git", "-C", str(sub), "check-ignore", "-q", ".navig/"],
+        capture_output=True, text=True, timeout=10,
+    )
+    assert r.returncode == 0, "svc/api/.navig/ is still trackable"
+
+
+def test_ensure_gitignored_a_commented_mention_is_not_a_rule(tmp_path):
+    _git_init(tmp_path)
+    (tmp_path / ".gitignore").write_text("# .navig is generated\n", encoding="utf-8")
+
+    assert _ensure_navig_gitignored(tmp_path) is not None

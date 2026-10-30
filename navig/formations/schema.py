@@ -8,6 +8,7 @@ Uses jsonschema library with fallback to manual validation.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -131,7 +132,9 @@ FORMATION_SCHEMA: dict[str, Any] = {
         "description": {"type": "string", "minLength": 1},
         "agents": {
             "type": "array",
-            "items": {"type": "string"},
+            # An agent id becomes a FILENAME (`formation sync` writes
+            # .navig/agents/<id>.md), so `../` must never validate.
+            "items": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
             "minItems": 1,
         },
         "default_agent": {"type": "string"},
@@ -242,6 +245,13 @@ def _validate_manually(data: dict[str, Any], schema: dict[str, Any]) -> list[str
                 min_items = prop_schema.get("minItems", 0)
                 if len(value) < min_items:
                     errors.append(f"Field '{key}' must have at least {min_items} items")
+                item_pattern = (prop_schema.get("items") or {}).get("pattern")
+                if item_pattern:
+                    for item in value:
+                        if not isinstance(item, str) or not re.match(item_pattern, item):
+                            errors.append(
+                                f"Field '{key}' item {item!r} does not match '{item_pattern}'"
+                            )
 
     return errors
 

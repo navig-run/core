@@ -114,3 +114,46 @@ def test_the_recorder_reports_unknown_rather_than_guessing(monkeypatch):
     monkeypatch.setattr("navig.config.get_config_manager", _boom)
 
     assert sup._resolved_log_file() is None
+
+
+def test_a_child_running_from_another_cwd_makes_the_log_unknown(monkeypatch, tmp_path):
+    """The legacy ``bot_script`` child runs from the script's folder and resolves its
+    own base_dir there: the supervisor's path is not the child's, so the state must
+    not name it — and the doctor row must say why it cannot."""
+    from navig.daemon import supervisor as sup
+
+    monkeypatch.setattr(sup, "PID_FILE", tmp_path / "supervisor.pid")
+    monkeypatch.setattr(sup, "STATE_FILE", tmp_path / "state.json")
+    project = tmp_path / "project"
+    (project / ".navig").mkdir(parents=True)
+    script = project / "bot.py"
+    script.write_text("pass\n", encoding="utf-8")
+
+    d = sup.NavigDaemon(health_port=0)
+    d.add_telegram_bot(bot_script=script)
+    d._write_state()
+    import json
+
+    state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert state["log_file"] is None, "never the supervisor's path for another cwd's child"
+    assert "telegram-bot" in state["log_file_unknown"]
+
+    monkeypatch.setattr(sup.NavigDaemon, "is_running", staticmethod(lambda: True))
+    monkeypatch.setattr(sup.NavigDaemon, "read_state", staticmethod(lambda: state))
+    row = _row(doctor.check_daemon_log_location())
+    assert row[1] is False and row[0] == doctor._WARN
+    assert "telegram-bot" in row.detail
+
+
+def test_children_in_the_supervisor_cwd_keep_the_recorded_path(monkeypatch, tmp_path):
+    from navig.daemon import supervisor as sup
+
+    monkeypatch.setattr(sup, "PID_FILE", tmp_path / "supervisor.pid")
+    monkeypatch.setattr(sup, "STATE_FILE", tmp_path / "state.json")
+    d = sup.NavigDaemon(health_port=0)
+    d.add_telegram_bot()  # module child: no cwd override
+    d._write_state()
+    import json
+
+    state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert "log_file_unknown" not in state

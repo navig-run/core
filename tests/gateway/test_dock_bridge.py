@@ -294,3 +294,99 @@ async def test_no_dock_connected_is_a_clear_error(isolated_config):
         _, body = await _call(client, "tabs")
         assert body["ok"] is False and body["error"]["category"] == "unavailable"
         assert "Let AI agents use this browser" in body["error"]["message"]
+
+
+# ── Phase E — hardening: rejections, caps, handshake, ids ─────────────────────
+
+
+async def test_unknown_or_invalid_tool_is_refused_without_a_dock(isolated_config):
+    """Validation runs before the connected check: a bad call never waits on the socket."""
+    async with TestClient(TestServer(_app())) as client:
+        res = await client.post("/dock/call", json={"tool": "does_not_exist"}, headers=BEARER)
+        body = (await res.json())["data"]
+        assert body["ok"] is False and body["error"]["category"] == "invalid"
+        res = await client.post("/dock/call", json={"tool": "act", "args": {"tab_id": 1}},
+                                headers=BEARER)
+        body = (await res.json())["data"]
+        assert body["ok"] is False and body["error"]["category"] == "invalid"
+
+
+async def test_status_without_a_dock_reports_disconnected(isolated_config):
+    async with TestClient(TestServer(_app())) as client:
+        res = await client.get("/dock/status", headers=BEARER)
+        data = (await res.json())["data"]
+        assert data["connected"] is False and data["in_flight"] == 0
+
+
+async def test_in_flight_cap_answers_busy_then_recovers(isolated_config):
+    """More concurrent calls than the hub accepts fail fast as `busy`; closing the socket
+    releases the pending ones with `disconnected` and the hub is reusable afterwards."""
+    async with TestClient(TestServer(_app())) as client:
+        token = await _paired(client)
+        ws = await _connect(client, token)
+        await ws.receive(timeout=5)
+        dock = FakeDock(ws, {})  # never answers
+        posts = [
+            client.post("/dock/call", json={"tool": "tabs", "deadline_ms": 5000}, headers=BEARER)
+            for _ in range(33)
+        ]
+        responses = await asyncio.gather(*posts)
+        bodies = [(await r.json())["data"] for r in responses]
+        assert len(bodies) == 33
+        busy = [b for b in bodies if b["ok"] is False and b["error"]["category"] == "busy"]
+        assert busy, "the 33rd concurrent call must be refused as busy"
+        await ws.close()
+        await asyncio.sleep(0.2)
+        res = await client.get("/dock/status", headers=BEARER)
+        assert (await res.json())["data"]["in_flight"] == 0, "closing releases every pending call"
+        dock.task.cancel()
+
+
+async def test_unpaired_extension_is_refused_before_the_socket_opens(isolated_config):
+    """An extension that is not the paired Dock is refused at the deck middleware with
+    HTTP 401 — the socket (and its token check) is never reached. Defence in depth: the
+    handshake still rejects a paired extension with a wrong token (close 4003, tested
+    above), so both halves of the binding are enforced."""
+    from aiohttp.client_exceptions import WSServerHandshakeError
+
+    async with TestClient(TestServer(_app())) as client:
+        token = await _paired(client)
+        with pytest.raises(WSServerHandshakeError) as exc:
+            await _connect(client, token, ext=EXT_B)
+        assert exc.value.status == 401
+
+
+async def test_wrong_protocol_version_is_refused(isolated_config):
+    async with TestClient(TestServer(_app())) as client:
+        await _paired(client)
+        ws = await client.ws_connect("/api/deck/dock/bridge", headers=_origin(EXT_A))
+        await ws.send_str(json.dumps({"t": "hello", "proto": 99, "token": "x"}))
+        msg = await ws.receive(timeout=5)
+        assert msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSED, WSMsgType.CLOSING)
+        assert ws.close_code == 4001
+
+
+async def test_caller_supplied_call_ids_never_collide(isolated_config):
+    """Two calls with the SAME caller id both run: a colliding id is re-minted, so no
+    result is ever delivered to the wrong caller."""
+    async with TestClient(TestServer(_app())) as client:
+        token = await _paired(client)
+        ws = await _connect(client, token)
+        await ws.receive(timeout=5)
+        dock = FakeDock(ws, {"status": lambda a: {"ok": True, "data": {"state": "connected"}}})
+        cid = "0123456789abcdef"
+        res1, res2 = await asyncio.gather(
+            client.post("/dock/call", json={"tool": "status", "id": cid}, headers=BEARER),
+            client.post("/dock/call", json={"tool": "status", "id": cid}, headers=BEARER),
+        )
+        b1, b2 = (await res1.json())["data"], (await res2.json())["data"]
+        assert b1["ok"] and b2["ok"]
+        await ws.close()
+        dock.task.cancel()
+
+
+async def test_cancel_of_an_unknown_call_reports_false(isolated_config):
+    async with TestClient(TestServer(_app())) as client:
+        res = await client.post("/dock/cancel", json={"id": "deadbeefdeadbeef"}, headers=BEARER)
+        assert (await res.json())["data"]["cancelled"] is False
+        assert (await client.post("/dock/call", json={"tool": "tabs"})).status == 401, "bearer still required"

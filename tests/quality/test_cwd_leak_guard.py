@@ -91,3 +91,23 @@ def test_the_guard_is_autouse_and_ordered_after_isolation() -> None:
     src = inspect.getsource(ct)
     i = src.index("def _no_cwd_leaks")
     assert "@pytest.fixture(autouse=True)" in src[i - 80 : i], "the cwd guard must be autouse"
+
+
+def test_a_cwd_already_deleted_at_setup_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When the worker is ALREADY inside a deleted directory as the test starts, there is
+    nothing to restore -- the guard once returned silently, masking the broken worker. It
+    must fail by name and move the worker to a directory that exists."""
+    start = os.getcwd()
+
+    def _gone() -> str:
+        raise FileNotFoundError("cwd deleted")
+
+    try:
+        with monkeypatch.context() as mp:
+            mp.setattr(ct.os, "getcwd", _gone)
+            gen = _driver()
+            with pytest.raises(AssertionError, match="already a deleted directory"):
+                next(gen)
+        assert Path(os.getcwd()).is_dir()
+    finally:
+        os.chdir(start)

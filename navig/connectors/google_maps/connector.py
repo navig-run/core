@@ -255,7 +255,7 @@ class GoogleMapsConnector(BaseConnector):
 
     # ── Fetch: Place Details by place_id ────────────────────────────────────
 
-    async def fetch(self, resource_id: str, **kwargs: Any) -> Resource | None:
+    async def fetch(self, resource_id: str | None = None, **kwargs: Any) -> Resource | None:
         """Fetch detailed information for a Google Maps place_id.
 
         Args:
@@ -263,8 +263,12 @@ class GoogleMapsConnector(BaseConnector):
         """
         # `resource_id` is the base-class parameter name (BaseConnector.fetch);
         # 9 of 12 connectors already use it. Bound to the domain name here so the
-        # body, its log lines and its `metadata` keys stay unchanged.
-        place_id = resource_id
+        # body, its log lines and its `metadata` keys stay unchanged. The legacy
+        # `place_id=` keyword is still accepted so keyword callers keep working.
+        legacy = kwargs.pop("place_id", None)
+        place_id = resource_id if resource_id is not None else legacy
+        if place_id is None:
+            raise TypeError("fetch() missing required argument: 'resource_id'")
         self._require_connected()
         fields = kwargs.get(
             "fields",

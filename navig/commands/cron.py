@@ -279,9 +279,19 @@ def cron_run(
     """Run a job immediately."""
     ch.info(f"Running job {job_id}...")
 
-    # 300s, not the short API timeout: this waits for the job itself to finish.
+    # Not the short API timeout: this waits for the job itself to finish, so wait for
+    # the job's OWN limit (`cron add --timeout` allows up to 86400s) plus headroom for
+    # the response — a fixed 300s reported a long legitimate job as a gateway failure.
+    job = _cron_api("GET", f"/cron/jobs/{job_id}", action=f"read job {job_id}")
+    try:
+        job_timeout = int(job.get("timeout_seconds") or 300)
+    except (TypeError, ValueError):
+        job_timeout = 300
     result = _cron_api(
-        "POST", f"/cron/jobs/{job_id}/run", action=f"run job {job_id}", timeout=300
+        "POST",
+        f"/cron/jobs/{job_id}/run",
+        action=f"run job {job_id}",
+        timeout=max(300, job_timeout + 30),
     )
     if not result.get("success"):
         # The CALL succeeded; the JOB failed. `navig cron run x && <next>` must not
@@ -326,7 +336,14 @@ def cron_disable(
 def cron_status():
     """Show cron service status."""
     data = _cron_api("GET", "/status", action="get cron status")
-    cron = data.get("cron", {})
+    # `or {}`: the gateway answers `"cron": null` while its HTTP listener is up but
+    # `_start_cron()` has not finished — `.get("cron", {})` returned that None.
+    cron = data.get("cron") or {}
+
+    if data.get("status") == "running" and not data.get("cron"):
+        ch.warning("Cron service is not initialized yet")
+        ch.info("The gateway is up but its scheduler has not started — retry shortly")
+        return
 
     if data.get("status") != "running":
         # A status query that successfully reports "not running" SUCCEEDED — the

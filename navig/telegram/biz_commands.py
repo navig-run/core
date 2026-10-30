@@ -93,7 +93,7 @@ async def _delete(channel: Any, chat_id: int | None, bcid: str | None, message_i
         if bcid:
             from navig.telegram.deletions import note_own_deletion  # noqa: PLC0415
 
-            note_own_deletion(bcid, [message_id])  # our trigger — keep it out of the digest
+            note_own_deletion(bcid, [message_id], chat_id=chat_id)  # our trigger — keep it out of the digest
             # Business chats require deleteBusinessMessages (deleteMessage +
             # business_connection_id fails "message to delete not found").
             await channel._api_call(
@@ -243,15 +243,103 @@ async def _cmd_smart_convert(channel, chat_id, bcid, arg, **_):
     await _send(channel, chat_id, bcid, await biz_lookups.smart_convert(amount, parts[1], parts[2]))
 
 
+async def _card_or_text(channel, chat_id, bcid, card, text: str) -> None:
+    """Send *card* in a Business chat, or *text* when the card cannot be delivered.
+
+    Only copy/url buttons are allowed on a Business card: the contact's callback presses
+    never reach the bot, so a callback button there would work for one person out of two.
+    """
+    from navig.telegram import card_transport
+
+    try:
+        sent = await card_transport.send_card(
+            channel, chat_id, card, business_connection_id=bcid
+        )
+        if sent:
+            return
+    except Exception:  # noqa: BLE001 — fall back to the text form
+        logger.debug("biz card send failed, falling back to text", exc_info=True)
+    await _send(channel, chat_id, bcid, text)
+
+
 async def _cmd_whois(channel, chat_id, bcid, arg, **_):
-    from navig.telegram import biz_lookups
+    from navig.telegram import biz_card, biz_lookups
 
-    await _send(channel, chat_id, bcid, await biz_lookups.whois(arg))
+    facts = await biz_lookups.lookup_domain(arg)
+    fields = {
+        "registrar": facts.get("registrar") or "",
+        "created": facts.get("created") or "",
+        "expires": facts.get("expires") or "",
+        "updated": facts.get("updated") or "",
+        "status": facts.get("status") or "",
+        "nameservers": facts.get("nameservers") or "",
+    }
+    card = biz_card.whois_card(domain=facts.get("domain") or (arg or "").strip(), fields=fields)
+    await _card_or_text(channel, chat_id, bcid, card, await biz_lookups.whois(arg))
 
 
-async def _cmd_timer(channel, chat_id, bcid, arg, **_):
+async def _cmd_dns(channel, chat_id, bcid, arg, **_):
+    import html
+
+    from navig.telegram import biz_card, biz_lookups
+
+    host = (arg or "").strip().split()[0] if (arg or "").strip() else ""
+    records = await biz_lookups.dns_records(host) if host else []
+    text = "🌐 <b>DNS</b> " + html.escape(host) + "\n\n" + (
+        "\n".join(f"<code>{k}</code> — <code>{html.escape(v)}</code>" for k, v in records)
+        if records
+        else "<i>No records answered for that name.</i>"
+    )
+    await _card_or_text(channel, chat_id, bcid, biz_card.dns_card(domain=host, records=records), text)
+
+
+async def _cmd_ssl(channel, chat_id, bcid, arg, **_):
+    import html
+
+    from navig.telegram import biz_card, biz_lookups
+
+    host = (arg or "").strip().split()[0] if (arg or "").strip() else ""
+    facts = await biz_lookups.ssl_info(host) if host else {"outcome": "invalid"}
+    card = biz_card.ssl_card(host=host, facts=facts)
+    if facts.get("outcome") == "ok":
+        text = (
+            f"🔒 <b>Certificate</b> {html.escape(host)}\n"
+            f"Issuer: {html.escape(str(facts.get('issuer') or '—'))}\n"
+            f"Expires: {html.escape(str(facts.get('not_after') or '—'))}"
+        )
+    else:
+        text = f"🔒 <b>Certificate</b> {html.escape(host)}\n<i>{html.escape(str(facts.get('outcome')))}</i>"
+    await _card_or_text(channel, chat_id, bcid, card, text)
+
+
+async def _cmd_http(channel, chat_id, bcid, arg, **_):
+    import html
+
+    from navig.telegram import biz_card, biz_lookups
+
+    url = (arg or "").strip().split()[0] if (arg or "").strip() else ""
+    facts = await biz_lookups.http_info(url) if url else {"outcome": "invalid"}
+    card = biz_card.http_card(url=url, facts=facts)
+    text = (
+        f"🔗 <b>URL</b> {html.escape(url)}\n"
+        f"Status: {html.escape(str(facts.get('status') or facts.get('outcome') or '—'))}"
+    )
+    await _card_or_text(channel, chat_id, bcid, card, text)
+
+
+#: The countdown's own words, in the language of the word that started it ("таймер").
+_TIMER_TEXT = {
+    "en": {"up": "⏰ Time's up!", "cancelled": "⏹ Timer cancelled.", "none": "No timer running."},
+    "ru": {"up": "⏰ Время вышло!", "cancelled": "⏹ Таймер отменён.", "none": "Таймер не запущен."},
+    "fr": {"up": "⏰ C'est l'heure !", "cancelled": "⏹ Minuteur annulé.",
+           "none": "Aucun minuteur en cours."},
+}
+
+
+async def _cmd_timer(channel, chat_id, bcid, arg, *, word: str = "", **_):
+    lang = _lang_of(word)
     if (arg or "").strip().lower() in ("cancel", "stop", "off"):
-        await _cmd_timer_cancel(channel, chat_id, bcid, "")
+        await _cmd_timer_cancel(channel, chat_id, bcid, "", word=word)
         return
     secs = parse_duration(arg)
     if secs <= 0:
@@ -263,14 +351,16 @@ async def _cmd_timer(channel, chat_id, bcid, arg, **_):
     mid = await _send(channel, chat_id, bcid, f"⏳ {_fmt(secs)}")
     if mid is None:
         return
-    _TIMERS[chat_id] = asyncio.create_task(_run_countdown(channel, chat_id, bcid, mid, secs))
+    _TIMERS[chat_id] = asyncio.create_task(
+        _run_countdown(channel, chat_id, bcid, mid, secs, lang=lang))
 
 
-async def _cmd_timer_cancel(channel, chat_id, bcid, arg, **_):
+async def _cmd_timer_cancel(channel, chat_id, bcid, arg, *, word: str = "", **_):
+    words = _TIMER_TEXT[_lang_of(word)]
     if await _cancel_task(chat_id):
-        await _send(channel, chat_id, bcid, "⏹ Timer cancelled.")
+        await _send(channel, chat_id, bcid, words["cancelled"])
     else:
-        await _send(channel, chat_id, bcid, "No timer running.")
+        await _send(channel, chat_id, bcid, words["none"])
 
 
 async def _cancel_task(chat_id: int) -> bool:
@@ -281,8 +371,10 @@ async def _cancel_task(chat_id: int) -> bool:
     return False
 
 
-async def _run_countdown(channel, chat_id, bcid, message_id: int, total: int) -> None:
+async def _run_countdown(channel, chat_id, bcid, message_id: int, total: int,
+                         *, lang: str = "en") -> None:
     """Edit ``message_id`` in place every few seconds until the timer elapses."""
+    words = _TIMER_TEXT.get(lang, _TIMER_TEXT["en"])
     try:
         remaining = total
         while remaining > 0:
@@ -292,9 +384,9 @@ async def _run_countdown(channel, chat_id, bcid, message_id: int, total: int) ->
             await asyncio.sleep(step)
             remaining -= step
             await _edit(channel, chat_id, bcid, message_id, f"⏳ {_fmt(remaining)}")
-        await _edit(channel, chat_id, bcid, message_id, "⏰ Time's up!")
+        await _edit(channel, chat_id, bcid, message_id, words["up"])
     except asyncio.CancelledError:
-        await _edit(channel, chat_id, bcid, message_id, "⏹ Timer cancelled.")
+        await _edit(channel, chat_id, bcid, message_id, words["cancelled"])
     finally:
         _TIMERS.pop(chat_id, None)
 
@@ -425,6 +517,15 @@ _COMMANDS: dict[str, dict[str, Any]] = {
     "currency": {"perm": "all", "fn": _cmd_currency, "typing": True},
     "convert": {"perm": "all", "fn": _cmd_currency, "typing": True},
     "whois": {"perm": "all", "fn": _cmd_whois, "typing": True},
+    # The names an operator reaches for after whois: where does this domain actually
+    # point, and why is mail from it failing. DNS-over-HTTPS, so no resolver config.
+    "dns": {"perm": "all", "fn": _cmd_dns, "typing": True},
+    "nslookup": {"perm": "all", "fn": _cmd_dns, "typing": True},
+    # The two questions a customer-facing chat actually asks about a link.
+    "ssl": {"perm": "all", "fn": _cmd_ssl, "typing": True},
+    "cert": {"perm": "all", "fn": _cmd_ssl, "typing": True},
+    "http": {"perm": "all", "fn": _cmd_http, "typing": True},
+    "status_url": {"perm": "all", "fn": _cmd_http, "typing": True},
     # A reminder set in the chat comes back INTO the chat (asked 2026-09-30, after
     # "Напомнить через 16 часов про схему" and "remember in 15 hours schema" did
     # nothing). Every spelling the two people in that chat reached for.

@@ -23,7 +23,23 @@ import sys
 
 import pytest
 
-_HAVE_PLAYWRIGHT = importlib.util.find_spec("playwright") is not None
+
+def _playwright_installed() -> bool:
+    """Whether a REAL playwright is installed.
+
+    When playwright is absent and the polluter was collected first, `sys.modules` holds
+    its synthetic `types.ModuleType("playwright")` stub, whose `__spec__` is None — and
+    `find_spec` then raises ValueError instead of answering, which used to be a collection
+    error in exactly the no-playwright environment the stub exists for. A spec-less module
+    is that stub, so it means "not installed".
+    """
+    try:
+        return importlib.util.find_spec("playwright") is not None
+    except ValueError:
+        return False
+
+
+_HAVE_PLAYWRIGHT = _playwright_installed()
 
 
 _POLLUTER = "tests.browser.test_browser_controller_maintenance_docker_cli"
@@ -66,3 +82,11 @@ def test_camoufox_still_imports_after_the_stub_module_is_loaded() -> None:
         pytest.skip("camoufox not installed")
 
     importlib.import_module("camoufox")  # must not raise ImportError
+
+
+def test_a_spec_less_stub_reads_as_not_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression: a spec-less stub in sys.modules made `find_spec` raise at import time."""
+    import types
+
+    monkeypatch.setitem(sys.modules, "playwright", types.ModuleType("playwright"))
+    assert _playwright_installed() is False

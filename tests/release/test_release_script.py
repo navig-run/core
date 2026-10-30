@@ -137,7 +137,7 @@ def test_an_unknown_option_is_refused_not_ignored(release_repo: Path) -> None:
 def test_build_and_verify_come_before_the_tag_and_the_notes_before_both(src: str) -> None:
     cmds = "\n".join(_commands(src))
     notes = cmds.index('changelog_assemble.py --release-notes "$VERSION"')
-    build = cmds.index("python -m build\n")
+    build = cmds.index('"$PYTHON" -m build\n')
     wheel_check = cmds.index('dist/navig-"$VERSION"-*.whl')
     verify = cmds.index("verify-install.mjs")
     tag = cmds.index('git tag -a "$TAG"')

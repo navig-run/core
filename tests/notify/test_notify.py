@@ -137,7 +137,7 @@ async def test_router_reports_channel_rejection_not_phantom_success(notify, monk
 
     # A channel that accepts the send is reported as sent.
     channel.send_alert = AsyncMock(return_value=True)
-    r2 = await router.dispatch("reminder", "loud", "now", priority="critical")
+    r2 = await router.dispatch("reminder", "loud", "now, again", priority="critical")
     tg2 = next(c for c in r2["channels"] if c["channel"] == "telegram")
     assert tg2["ok"] is True
     assert tg2["detail"] == "sent"

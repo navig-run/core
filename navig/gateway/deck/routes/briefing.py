@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 try:
     from aiohttp import web
@@ -67,9 +67,13 @@ def _is_stale(briefing: dict | None) -> bool:
         made = datetime.fromisoformat(str(raw))
     except ValueError:
         return True
-    now = datetime.now()
-    if made.tzinfo is not None:  # naive on write, but be tolerant of old files
-        made = made.replace(tzinfo=None)
+    # Compare in the house's own calendar: the briefing is "today's", and a UTC
+    # instant read as local time is an hour early here — which made a briefing built
+    # just after midnight look like it came from yesterday and rebuild forever.
+    now = datetime.now().astimezone()
+    if made.tzinfo is None:  # old caches were written naive-local
+        made = made.replace(tzinfo=now.tzinfo)
+    made = made.astimezone(now.tzinfo)
     return made.date() != now.date() or (now - made) > _MAX_AGE
 
 
@@ -310,7 +314,7 @@ def _build(gw) -> dict:
     sections = _gather(gw)
     headline, polished = _polish(sections)
     briefing = {
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "greeting": _greeting(),
         "headline": headline,
         "sections": sections,

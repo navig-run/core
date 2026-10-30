@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -202,15 +204,25 @@ class TestServicePlan:
 
 class TestServiceInstalled:
     def test_returns_false_on_exception(self) -> None:
-        import navig.installer.modules.service as m
-        with patch("subprocess.run", side_effect=Exception("no sc")):
-            result = m._service_installed()
-        assert result is False
+        """A probe that raises answers "not installed" instead of crashing the planner.
 
+        Patching ``subprocess.run`` alone proved nothing off Windows: ``_service_installed``
+        asks ``service_is_installed()`` FIRST, and on any machine where the daemon really is
+        registered (this one runs ``navig-agent.service``) that answers True before the
+        subprocess branch is reached.
+        """
+        import navig.installer.modules.service as m
+        with patch("navig.daemon.launch.service_is_installed", side_effect=Exception("boom")):
+            assert m._service_installed() is False
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="the `sc query` fallback is Windows-only")
     def test_returns_false_nonzero_returncode(self) -> None:
+        """An nssm-method install that `sc` does not know about is not installed."""
         import navig.installer.modules.service as m
         proc = MagicMock()
         proc.returncode = 1
-        with patch("subprocess.run", return_value=proc):
-            result = m._service_installed()
-        assert result is False
+        with (
+            patch("navig.daemon.launch.service_is_installed", return_value=False),
+            patch("subprocess.run", return_value=proc),
+        ):
+            assert m._service_installed() is False

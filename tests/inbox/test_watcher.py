@@ -126,3 +126,60 @@ def test_callback_error_does_not_stop_the_scan(tmp_path):
 
     watcher._PollingBackend([d], cb)._scan()  # must not raise
     assert set(attempted) == {"a.txt", "b.txt"}  # both attempted despite each raising
+
+
+# ── one callback per file per scan (review F0535) ────────────────────────────
+
+def test_a_dir_listed_twice_fires_once_per_scan(tmp_path):
+    d = tmp_path / "inbox"
+    d.mkdir()
+    (d / "a.txt").write_text("x")
+    calls: list[Path] = []
+    watcher._PollingBackend([d, d], calls.append)._scan()
+    assert calls == [d / "a.txt"]
+
+
+def test_inbox_watcher_dedupes_repeated_dirs(tmp_path, monkeypatch):
+    d = tmp_path / "inbox"
+    monkeypatch.setattr(watcher, "_global_inbox_dir", lambda: d)
+    w = watcher.InboxWatcher(lambda _p: None, extra_dirs=[d, tmp_path / "inbox"])
+    assert w._dirs == [d]
+
+
+# ── an inconclusive scan keeps what it had seen (review F0534) ───────────────
+
+def test_unreadable_dir_for_one_scan_does_not_refire_existing_files(tmp_path, monkeypatch):
+    d = tmp_path / "inbox"
+    d.mkdir()
+    (d / "a.txt").write_text("x")
+    calls: list[Path] = []
+    be = watcher._PollingBackend([d], calls.append)
+    be._scan()
+    assert len(calls) == 1
+
+    real_iterdir = Path.iterdir
+
+    def denied(self):
+        raise PermissionError(13, "denied", str(self))
+
+    monkeypatch.setattr(Path, "iterdir", denied)
+    be._scan()  # transient permission error — the existing file's key must survive
+    monkeypatch.setattr(Path, "iterdir", real_iterdir)
+    be._scan()
+    assert len(calls) == 1  # NOT reprocessed once access returns
+
+
+def test_unstatable_file_for_one_scan_does_not_refire(tmp_path, monkeypatch):
+    d = tmp_path / "inbox"
+    d.mkdir()
+    (d / "a.txt").write_text("x")
+    calls: list[Path] = []
+    be = watcher._PollingBackend([d], calls.append)
+    be._scan()
+
+    real_key = watcher._mtime_key
+    monkeypatch.setattr(watcher, "_mtime_key", lambda p: None)
+    be._scan()
+    monkeypatch.setattr(watcher, "_mtime_key", real_key)
+    be._scan()
+    assert len(calls) == 1

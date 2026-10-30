@@ -122,6 +122,68 @@ def test_forgotten_ideas_are_unbuilt_unrejected_and_oldest_first(bank) -> None:
     assert [r.id for r in recs] == ["rk-old", "rk-new"]
 
 
+# ── resurrect: the ranked digest ──────────────────────────────
+
+
+def _seed_resurrect(st: RecallStore) -> None:
+    """Three eligible ideas with deliberately far-apart scores, plus two that must not rank."""
+    st.upsert_record(Record(
+        id="rk-owner", type="idea", title="The owner's own idea", project="alpha",
+        status="proposed", impl="not_found", updated="2026-09-15", created="2026-09-15",
+        evidence=[Evidence("cc:11111111-0000-0000-0000-000000000000", "m1", "user_typed",
+                           "we should ship this", "2026-09-15T10:00:00Z")]))
+    st.upsert_record(Record(
+        id="rk-audit", type="idea", title="Recovered from the audit", project="alpha",
+        status="proposed", impl="unknown", updated="2026-09-20", created="2026-09-20",
+        tags=["recovered-idea", "audit"], attrs={"rank": 2},
+        evidence=[Evidence("cc:22222222-0000-0000-0000-000000000000", "m2", "assistant",
+                           "an alternative we weighed", "2026-09-20T10:00:00Z")]))
+    st.upsert_record(Record(
+        id="rk-quiet", type="idea", title="Mentioned once", project="alpha",
+        status="proposed", impl="unknown", updated="2026-10-20", created="2026-10-20"))
+    st.upsert_record(Record(id="rk-rej", type="idea", title="Rejected", project="alpha",
+                            status="rejected", impl="not_found", updated="2026-08-01"))
+    st.upsert_record(Record(id="rk-built", type="idea", title="Already built", project="alpha",
+                            status="proposed", impl="verified", updated="2026-08-01"))
+
+
+def test_resurrect_ranks_owner_evidence_first_and_never_ranks_rejected(bank) -> None:
+    _seed_resurrect(bank.store)
+    rows = query.resurrect(limit=10, scope=query.scope_for("alpha"))
+    assert [r["id"] for r in rows] == ["rk-owner", "rk-audit", "rk-quiet"]
+    top, second = rows[0], rows[1]
+    assert top["owner"] is True and top["score"] > second["score"]
+    assert any("your own words" in reason for reason in top["reasons"])
+    assert second["audit_rank"] == 2 and any("rank 2" in reason for reason in second["reasons"])
+    assert all(reason for reason in top["reasons"])  # every score component explains itself
+    assert rows[2]["owner"] is False and rows[2]["score"] < second["score"]
+
+
+def test_resurrect_digest_dispatches_and_json_reports_it(bank, monkeypatch) -> None:
+    _seed_resurrect(bank.store)
+    monkeypatch.setattr("navig.commands.recall._enabled", lambda: True)
+    sent: dict[str, Any] = {}
+
+    async def _fake_dispatch(type_key: str, title: str, body: str = "", **kwargs: Any) -> dict[str, Any]:
+        sent.update(type_key=type_key, title=title, body=body, kwargs=kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr("navig.notify.dispatch", _fake_dispatch)
+    from typer.testing import CliRunner
+
+    from navig.commands.recall import recall_app
+
+    res = CliRunner().invoke(recall_app, ["resurrect", "--telegram", "--json", "-n", "3"])
+    assert res.exit_code == 0, res.output
+    data = json.loads(res.output)
+    assert data["notified"] is True and data["count"] == 3
+    assert sent["type_key"] == "recall_digest" and "worth reviving" in sent["title"]
+    assert "navig recall show rk-owner" in sent["body"]
+    assert sent["kwargs"].get("data", {}).get("source") == "recall_resurrect"
+    # the digest must fit Telegram's ~4096-char message body
+    assert len(sent["body"]) <= 4096
+
+
 def test_unknown_view_is_refused() -> None:
     with pytest.raises(ValueError, match="unknown view"):
         query.view("everything")
@@ -232,10 +294,10 @@ def _call(server, name: str, **args: Any) -> Any:
     return server._tool_handlers[name](server, args)
 
 
-def test_bundle_registers_eleven_classified_tools() -> None:
+def test_bundle_registers_twelve_classified_tools() -> None:
     s = _server()
     assert set(s.tools) == set(s._tool_handlers) == set(s._tool_safety)
-    assert len(s.tools) == 11
+    assert len(s.tools) == 12
     assert s._tool_safety["recall_ingest"] == "moderate"
     assert {v for k, v in s._tool_safety.items() if k != "recall_ingest"} == {"safe"}
     for name, spec in s.tools.items():
@@ -253,6 +315,18 @@ def test_mcp_tools_default_to_the_callers_project(bank, resolver, monkeypatch) -
     assert wide["scope"] == {"projects": "all"} and "alpha" in {t["project"] for t in wide["turns"]}
     named = _call(s, "recall_decisions", project="alpha")
     assert named["records"] and all(r["status_basis"] == "user" for r in named["records"])
+
+
+def test_mcp_resurrect_ranks_within_the_scoped_projects(bank, resolver, monkeypatch) -> None:
+    monkeypatch.setattr("navig.platform.paths.invocation_cwd", lambda: Path(ALPHA))
+    _seed_resurrect(bank.store)
+    s = _server()
+    out = _call(s, "recall_resurrect", limit=5)
+    assert out.get("scope", {}).get("projects") == ["alpha", "shared"], out  # payload shows WHY
+    assert [r["id"] for r in out["ideas"]] == ["rk-owner", "rk-audit", "rk-quiet"]
+    assert "score" in out["ideas"][0] and out["count"] == 3
+    outside = _call(s, "recall_resurrect", project="beta")
+    assert outside["ideas"] == [] and "hint" in outside
 
 
 def test_mcp_get_timeline_related_excerpt(bank, resolver, monkeypatch) -> None:

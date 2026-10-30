@@ -60,8 +60,24 @@ def coerce_int(value: Any, default: int, *, minimum: int | None = None) -> int:
     if isinstance(value, bool):  # bool is an int subclass; almost never intended here
         return default
     try:
-        out = int(str(value).strip())
-    except (TypeError, ValueError, AttributeError):
+        if isinstance(value, int):
+            out = value
+        elif isinstance(value, float):
+            # YAML/JSON hand back `600.0` as a float; `int("600.0")` would reject it
+            # and silently substitute the default for a valid override.
+            if not value.is_integer():
+                return default
+            out = int(value)
+        else:
+            text = str(value).strip()
+            try:
+                out = int(text)
+            except ValueError:
+                number = float(text)  # "600.0" as stored by `navig config set`
+                if not number.is_integer():
+                    return default
+                out = int(number)
+    except (TypeError, ValueError, AttributeError, OverflowError):
         return default
     if minimum is not None and out < minimum:
         return default

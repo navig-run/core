@@ -38,6 +38,10 @@ _SSH_TIMEOUT = _resolve_ssh_timeout_seconds()
 # Keyed by (host, port, user); a bool value is a completed probe result.
 _WIN_PROBE_CACHE: dict[tuple[Any, ...], bool] = {}
 
+# Per-host OS memo for callers that need the target's OS, not just "is it Windows".
+# Keyed the same way; values are ``windows``, ``macos``, ``linux`` or ``unknown``.
+_TARGET_OS_CACHE: dict[tuple[Any, ...], str] = {}
+
 
 def _require_server_identity(server_config: dict[str, Any]) -> tuple[str, str]:
     """Return validated ``(user, host)`` identity for SSH/SCP operations."""
@@ -302,6 +306,50 @@ class RemoteOperations:
             windows = False
         _WIN_PROBE_CACHE[key] = windows
         return windows
+
+    def target_platform(self, server_config: dict[str, Any]) -> str:
+        """Return the remote host's OS family: ``windows``, ``macos``, ``linux`` or ``unknown``.
+
+        Callers that pick a command per OS (service logs, service restarts) cannot assume
+        Linux: a macOS host answers ``launchctl`` and ``log show``, and a Windows host
+        answers PowerShell — none of them have ``journalctl``. The probe is one SSH round
+        trip, cached per host like :meth:`is_windows_target`.
+
+        A local host is answered without a probe, from the OS this process runs on.
+        """
+        if is_local_host(server_config):
+            from navig.platform import capabilities  # noqa: PLC0415
+
+            name = capabilities.os_name()
+            return "windows" if name == "windows" else ("macos" if name == "macos" else "linux")
+
+        key = (
+            server_config.get("host"),
+            server_config.get("port", 22),
+            server_config.get("user"),
+        )
+        cached = _TARGET_OS_CACHE.get(key)
+        if cached is not None:
+            return cached
+
+        platform_name = "unknown"
+        try:
+            probe = self.execute_command("uname -s", server_config)
+            if probe.returncode == 0:
+                kernel = (probe.stdout or "").strip().lower()
+                if kernel.startswith("darwin"):
+                    platform_name = "macos"
+                elif kernel.startswith("linux"):
+                    platform_name = "linux"
+                elif kernel:
+                    platform_name = "unknown"
+            elif self.is_windows_target(server_config):
+                platform_name = "windows"
+        except Exception:  # noqa: BLE001 — unreachable host: say so instead of guessing Linux
+            platform_name = "unknown"
+
+        _TARGET_OS_CACHE[key] = platform_name
+        return platform_name
 
     @staticmethod
     def _ps_quote(path: str) -> str:

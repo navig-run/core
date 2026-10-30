@@ -6,11 +6,10 @@ Both built ``{base}/sessions/{key}`` — but the gateway only ever registered th
 * ``gateway session show <key>``  -> 404 -> **"Session not found"** for every real session
 * ``gateway session clear <key>`` -> 404 -> **"Failed to clear session: 404"**, always
 
-The routes that actually serve a single session live under the memory namespace and had the
-right semantics all along:
-
-* ``GET    /memory/history/{session_key}``  -> ``json_ok({...messages...})``
-* ``DELETE /memory/sessions/{session_key}`` -> ``json_ok({"deleted": true})`` or 404
+The first repair pointed them at ``/memory/history/{key}`` and ``DELETE /memory/sessions/{key}``
+— but those read the SQLite ConversationStore, while ``list`` reads the gateway
+SessionManager, so a listed session showed empty and ``clear`` 404'd. ``GET`` and ``DELETE
+/sessions/{session_key}`` now exist, backed by the same SessionManager as the list.
 
 Same family as the DOA gateway MCP routes (#706) and the envelope sweep (#713/#714/#719/#721):
 a surface nothing exercised, so a permanently-404ing command looked like an empty result.
@@ -92,27 +91,23 @@ class TestSessionUrlsResolve(unittest.TestCase):
             unmatched, [], f"CLI builds URLs with no registered route: {unmatched}"
         )
 
-    def test_the_dead_path_is_really_absent(self):
-        """Pins WHY this broke — so nobody 'restores' the old URL."""
+    def test_show_and_clear_have_routes_on_the_listed_store(self):
+        """`/sessions/{key}` now exists, backed by the SAME SessionManager `GET /sessions`
+        lists. The /memory/* routes this command used meanwhile read the unrelated
+        ConversationStore: a listed session showed empty and `clear` 404'd."""
         routes = _registered_routes()
-        self.assertNotIn(("GET", "/sessions/{session_key}"), routes)
-        self.assertNotIn(("DELETE", "/sessions/{session_key}"), routes)
+        self.assertIn(("GET", "/sessions/{session_key}"), routes)
+        self.assertIn(("DELETE", "/sessions/{session_key}"), routes)
         self.assertIn(("GET", "/sessions"), routes)
 
-    def test_the_replacement_routes_exist_with_the_right_methods(self):
-        routes = _registered_routes()
-        self.assertIn(("GET", "/memory/history/{session_key}"), routes)
-        self.assertIn(("DELETE", "/memory/sessions/{session_key}"), routes)
-
-    def test_show_and_clear_target_the_memory_namespace(self):
+    def test_show_and_clear_target_the_sessions_namespace(self):
         urls = _session_urls()
         gets = [p for m, p in urls if m == "GET"]
         deletes = [p for m, p in urls if m == "DELETE"]
-        # Two GETs: the /sessions collection (list) and /memory/history/… (show).
-        # dict() used to collapse them, hiding whichever came second.
-        self.assertTrue(gets, f"no GET extracted from {urls}")
-        self.assertTrue(all(p.startswith(("/sessions", "/memory/history")) for p in gets), gets)
-        self.assertTrue(deletes and all(p.startswith("/memory/sessions") for p in deletes), deletes)
+        # Two GETs: the /sessions collection (list) and /sessions/{key} (show).
+        self.assertEqual(sorted(gets), ["/sessions", "/sessions/SOMEKEY"], urls)
+        self.assertEqual(deletes, ["/sessions/SOMEKEY"], urls)
+        self.assertFalse(any(p.startswith("/memory/") for _m, p in urls), urls)
 
     def test_show_unwraps_the_envelope(self):
         """Both memory routes answer json_ok(...), so the payload is under ["data"].

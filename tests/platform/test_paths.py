@@ -352,9 +352,12 @@ class TestBuiltinStoreShips:
         globs were (correctly) generalised to `**/*`, which covers strictly more. Assert the
         outcome, never the spelling.
         """
-        import glob as globlib
-
-        import tomllib
+        # Python 3.10 is supported: tomllib is 3.11+ (tomli is the declared backport) and
+        # glob's include_hidden is 3.11+, so walk with pathlib, which matches dotfiles.
+        try:
+            import tomllib
+        except ModuleNotFoundError:  # pragma: no cover - Python 3.10
+            import tomli as tomllib
 
         import navig
         from navig.platform.paths import builtin_store_dir
@@ -366,9 +369,9 @@ class TestBuiltinStoreShips:
 
         shipped: set[str] = set()
         for pat in patterns:
-            for m in globlib.glob(pat, root_dir=pkg, recursive=True, include_hidden=True):
-                if (pkg / m).is_file():
-                    shipped.add((pkg / m).relative_to(pkg).as_posix())
+            for m in pkg.glob(pat):
+                if m.is_file():
+                    shipped.add(m.relative_to(pkg).as_posix())
 
         content = [
             f.relative_to(pkg).as_posix()
@@ -409,14 +412,21 @@ class TestRuntimeAssetsResolveInsidePackage:
 
     def test_builtin_skills_are_found_via_the_packaged_store(self) -> None:
         from navig.commands.skills import _resolve_skills_dirs
-        from navig.platform.paths import builtin_store_dir
+        from navig.platform.paths import builtin_store_dir, store_dir
 
         dirs = [d.resolve() for d in _resolve_skills_dirs(None)]
         assert (builtin_store_dir() / "skills").resolve() in dirs, (
             "the canonical builtin skills store is not among the resolved skill dirs"
         )
+        # `_resolve_skills_dirs` also offers the USER store when it exists. In a
+        # whole-suite run an earlier test writes a skill into the session's isolated data
+        # dir, so that entry appears there and is legitimately outside the package
+        # (measured 2026-10-30). What must hold is that no BUILTIN entry escapes it.
+        user_store = (store_dir() / "skills").resolve()
         for d in dirs:
-            assert d.is_relative_to(self._pkg_root()), f"{d} escapes the navig package"
+            assert d.is_relative_to(self._pkg_root()) or d == user_store, (
+                f"{d} escapes the navig package and is not the user store"
+            )
 
     def test_ahk_templates_resolve_inside_the_package(self) -> None:
         from navig.platform.paths import builtin_store_dir
@@ -434,16 +444,32 @@ class TestRuntimeAssetsResolveInsidePackage:
         behind, a bare `import common` or `import worker` anywhere later in this xdist worker
         would resolve there — and those names are generic enough to shadow something real.
         Found by auditing process globals across a full suite run.
+
+        Restoring `sys.path` alone is not enough: the worker's `from common import …` also
+        caches the packaged `_lib/common.py` as `sys.modules["common"]`, and a later bare
+        `import common` returns that cached module without consulting the search path. The
+        entry is put back exactly as it was before the load.
         """
         from navig.commands.net import _backend
         from navig.platform.paths import builtin_store_dir
 
         monkeypatch.setattr(sys, "path", list(sys.path))
+        missing = object()
+        prev_common = sys.modules.get("common", missing)
 
         worker = (builtin_store_dir() / "tools" / "speedtest" / "worker.py").resolve()
         assert worker.is_relative_to(self._pkg_root())
-        mod = _backend()
+        try:
+            mod = _backend()
+        finally:
+            if prev_common is missing:
+                sys.modules.pop("common", None)
+            else:
+                sys.modules["common"] = prev_common
         assert hasattr(mod, "run_speedtest_cli"), "speedtest worker loaded but has no entrypoint"
+        assert sys.modules.get("common", missing) is prev_common, (
+            "loading the speedtest worker left its `common` helper cached in sys.modules"
+        )
 
     def test_builtin_templates_resolve_inside_the_package(self) -> None:
         from navig.template_manager import TemplateManager

@@ -190,7 +190,13 @@ def screenshot_dir() -> Path:
     that moved its config got screenshots in the real home while config lived elsewhere.
     Worse, ``BrowserController``/``StealthBrowser``/``DesktopController`` ``mkdir`` this in
     ``__init__``, so constructing one wrote into the operator's home from the test suite.
+
+    A system service resolves it under :func:`data_dir` instead: the shipped unit makes
+    ``/etc/navig`` read-only (``ProtectSystem=strict``), and that ``mkdir`` then failed the
+    gateway's startup before browser automation was even enabled.
     """
+    if _is_system_service():
+        return data_dir() / "screenshots"
     return config_dir() / "screenshots"
 
 
@@ -580,11 +586,14 @@ def stack_dir() -> Path:
     if env:
         return Path(env)
     if _is_system_service():
-        return Path("/opt/navig")
-    opt_navig = Path("/opt/navig")
-    if is_unix() and opt_navig.is_dir():
-        return opt_navig
+        return _OPT_NAVIG
+    if is_unix() and _OPT_NAVIG.is_dir():
+        return _OPT_NAVIG
     return config_dir() / "stack"
+
+
+# The machine-global stack root. Module-level so a test can point it elsewhere.
+_OPT_NAVIG = Path("/opt/navig")
 
 
 # ── App-root discovery ────────────────────────────────────────────────────────

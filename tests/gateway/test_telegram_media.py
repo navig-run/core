@@ -170,3 +170,32 @@ async def test_no_session_returns_none():
     ch._session = None
     ch.base_url = "https://api.telegram.org/botTEST"
     assert await ch.send_photo(1, b"i", caption="x") is None
+
+
+class _FormSession(_FakeSession):
+    """Keeps the raw FormData so a part's Content-Type can be read."""
+
+    def __init__(self, *payloads):
+        super().__init__(*payloads)
+        self.forms: list = []
+
+    def post(self, url, data=None):
+        self.forms.append(data)
+        return super().post(url, data=data)
+
+
+def _part_content_type(form, name: str) -> str | None:
+    for type_options, headers, _value in form._fields:
+        if type_options.get("name") == name:
+            return headers.get("Content-Type")
+    return None
+
+
+async def test_send_audio_labels_the_mime_by_extension():
+    """An .m4a sent as audio/mpeg is a mislabelled upload sendAudio may reject."""
+    ch, _ = _channel()
+    ch._session = session = _FormSession()
+    await ch.send_audio(1, b"aac", filename="track.m4a")
+    await ch.send_audio(1, b"mp3", filename="track.mp3")
+    assert _part_content_type(session.forms[0], "audio") == "audio/mp4"
+    assert _part_content_type(session.forms[1], "audio") == "audio/mpeg"

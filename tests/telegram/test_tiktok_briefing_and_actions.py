@@ -476,6 +476,29 @@ class TestTranscriptLanguage:
         assert seen["language"] is None, "auto must reach the provider as detect"
 
 
+class TestBriefingSpeechLanguage:
+    async def test_the_briefing_transcript_auto_detects_the_spoken_language(
+        self, monkeypatch, audio_file
+    ):
+        """The briefing's output language is not the clip's spoken language: pinning
+        it sent a name like "Russian" to STT and mis-heard an English clip."""
+        seen: dict = {}
+        _patch_audio_fetch(monkeypatch, audio_file)
+
+        def _transcribe(p, language="unset"):
+            seen["language"] = language
+            return _async_value("words")
+
+        monkeypatch.setattr("navig.agent.voice_input.transcribe_audio", _transcribe)
+        monkeypatch.setattr(
+            "navig.core.Config",
+            lambda: type("C", (), {"get": lambda s, k, d=None: "Russian"})(),
+        )
+
+        assert await tiktok_actions._spoken_text(_URL) == "words"
+        assert seen["language"] is None, "STT must auto-detect the clip's language"
+
+
 class TestTranscriptOcrDepth:
     async def test_the_button_asks_for_more_than_one_frame(
         self, monkeypatch, audio_file

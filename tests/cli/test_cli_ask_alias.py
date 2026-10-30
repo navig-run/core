@@ -197,7 +197,7 @@ def test_brain_subapp_is_reachable(capsys):
 
 def test_explain_command_is_removed(capsys):
     """navig explain must no longer be registered (all sub-commands were stubs)."""
-    import click
+    from navig.core.click_compat import click_submodule
 
     # In standalone_mode=False, unknown commands raise UsageError rather than
     # printing to stderr and calling sys.exit().
@@ -205,5 +205,5 @@ def test_explain_command_is_removed(capsys):
         code, out, err = _invoke_cli(["explain", "command", "test"], capsys)
         combined = (out + err).lower()
         assert "no such command" in combined
-    except click.exceptions.UsageError as exc:
+    except click_submodule("exceptions").UsageError as exc:
         assert "no such command" in str(exc).lower()

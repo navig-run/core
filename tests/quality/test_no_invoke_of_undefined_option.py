@@ -46,7 +46,22 @@ own surface. Widening then produced 8 "findings" in ``navig-mobile`` for ``--gon
 ``--count``, which ARE declared: the plugin resolved to a **stale non-editable copy in
 site-packages** predating its ``ui`` sub-app, so the guard was judging this repo's tests
 against another tree's code. ``_prefer_repo_sources()`` and the out-of-tree refusal in
-``_declared_options`` fix that at the root; resolution went 8-false to 431/431 clean.
+``_introspect`` fix that at the root; resolution went 8-false to 431/431 clean.
+
+⚠⚠ The third correction is this guard's own PREMISE, measured 2026-10-27 on Click 8.4.
+A finding reads "Typer exits 2 on a usage error, so the assertions after the call are
+dead" — true only when nothing swallows the token. A passthrough command
+(``ignore_unknown_options`` **and** something to hold the leftovers: ``allow_extra_args``
+or a variadic argument) forwards an undeclared option and exits 0, so its test runs in
+full and the assertions after it are alive. Measured both shapes before trusting the
+split: ignore-only + two fixed arguments still exits 2 (``Try 'pt2 --help' for help``),
+ignore + extras or ignore + variadic exits 0 with the tokens in hand. So the scan now
+resolves which command an invocation SELECTS and exempts only that one — a typo on any
+other command of the same app is still a finding, and an ignore-only command of fixed
+arguments is still a finding. Exempting on the flag alone would have silenced the very
+class this guard exists to catch, one command shape over. The two ``navig-mobile``
+passthrough tests (``fastboot --slot``, ``instruments --recursive``) found it: both
+reported as dead, both green when run.
 """
 
 from __future__ import annotations
@@ -56,10 +71,51 @@ import importlib
 import sys
 from pathlib import Path
 
-import click
 import typer
 
+from navig.core.click_compat import click_module, is_group
+
+# ⚠ The click TYPER runs on, never a bare `import click`. Typer 0.27 vendors click as
+# `typer._click` and installs none; where a separate click happens to be installed it is a
+# DIFFERENT class hierarchy, so `isinstance(get_command(app), click.Group)` is False and the
+# walk below sees an EMPTY tree — every literal option then reads as undefined (measured
+# 2026-10-27: 1,453 findings across the suite, and `test_the_forward_exempt_…` got `set()`
+# for every passthrough). ``navig.core.click_compat`` resolves the right one on both.
+click = click_module()
+
 REPO = Path(__file__).resolve().parents[3]
+
+
+def _tree_roots() -> tuple[Path, ...]:
+    """`REPO`, plus every checkout linked to it.
+
+    The gate venv installs the first-party plugins editable from the MAIN checkout, so
+    inside `.dev/worktrees/<slug>` an import legitimately resolves to a path that is not
+    under `REPO`. Calling that "outside the repo" made the guard skip the app, and the
+    invoking test reported "the app must resolve before its shape means anything" — only
+    in a worker where some earlier test imported the main-checkout copy first (measured
+    2026-10-30, four whole-suite runs). A linked worktree is the same repository, so both
+    roots count.
+    """
+    import subprocess
+
+    roots = [REPO]
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(REPO), "worktree", "list", "--porcelain"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):  # noqa: BLE001 — a bare tree still works
+        return tuple(roots)
+    for line in out.stdout.splitlines():
+        if line.startswith("worktree "):
+            candidate = Path(line.split(" ", 1)[1].strip()).resolve()
+            if candidate not in roots:
+                roots.append(candidate)
+    return tuple(roots)
+
+
+_TREE_ROOTS = _tree_roots()
 # The surface is every pytest suite that drives a Typer app, NOT `core/tests`. Measured
 # before widening: plugins hold 158 invoke() calls across 19 files, ~95 passing a literal
 # option — a core-only scan would have shipped blind to all of them.
@@ -103,7 +159,15 @@ MIN_RESOLUTION_RATE = 0.95
 # floor passes while the walk covers a fraction of the tree.
 MIN_PLUGIN_FILES = 100
 
-_flag_cache: dict[tuple[str, str], set[str] | None] = {}
+# One import answers three questions per app: which options it declares anywhere in its
+# tree, which command paths that tree has, and which of those paths forward an unknown
+# option instead of failing on it. Cached together so the walk runs exactly once.
+_Introspected = tuple[set[str] | None, set[tuple[str, ...]], set[tuple[str, ...]]]
+_introspect_cache: dict[tuple[str, str], _Introspected] = {}
+
+#: Why a key could not be introspected, so the assertion below names the real cause
+#: instead of only "the app must resolve".
+_INTROSPECT_FAILURE: dict[tuple[str, str], str] = {}
 # Apps whose module resolved OUTSIDE this tree (a stale or non-editable install).
 # Tracked separately from an introspection failure: it is an environment condition
 # `navig doctor` -> Plugin Sources now reports, not a break in this scan — and it is
@@ -112,44 +176,137 @@ _flag_cache: dict[tuple[str, str], set[str] | None] = {}
 _OUT_OF_TREE: set[tuple[str, str]] = set()
 
 
-def _declared_options(module: str, attr: str) -> set[str] | None:
-    """Every option name declared anywhere in the app's command tree."""
+def _forwards_instead_of_failing(cmd) -> bool:
+    """Would this command hand an unknown option to its own arguments instead of exit 2?
+
+    Both halves are required, measured on Click 8.4 before this split was trusted:
+
+    * ``ignore_unknown_options`` + a holder for the leftovers (``allow_extra_args``, or
+      an argument declared ``nargs=-1``) → exit 0, tokens intact: a passthrough such as
+      ``navig mobile android fastboot -w --slot other``.
+    * ``ignore_unknown_options`` alone on a command of fixed arguments → still exit 2
+      (``Try 'pt2 --help' for help``), so a test behind it CAN be dead and must stay
+      reported — ``navig notify route set`` is that shape.
+
+    Keying the exemption on the flag alone would blind the guard to exactly its own
+    class, one command shape over, which is why the exemption is per selected command
+    and never per app.
+    """
+    settings = getattr(cmd, "context_settings", None) or {}
+    if not (
+        settings.get("ignore_unknown_options") or getattr(cmd, "ignore_unknown_options", False)
+    ):
+        return False
+    if settings.get("allow_extra_args") or getattr(cmd, "allow_extra_args", False):
+        return True
+    return any(getattr(param, "nargs", 1) == -1 for param in getattr(cmd, "params", []))
+
+
+def _cached_but_unreal(module: str) -> bool:
+    """True when `sys.modules[module]` is a sentinel another test left behind.
+
+    `tests/plugins/test_core_standalone.py` installs raising shims and `ModuleType`
+    placeholders to simulate a no-plugins install. A placeholder has no `__file__`, which
+    is exactly what `_introspect` reads to decide whether the app under test lives in this
+    tree — so a leftover shim made it return "resolved outside the repo" and the caller
+    assert "the app must resolve" (measured in the whole-suite run of 2026-10-30).
+    """
+    mod = sys.modules.get(module)
+    if mod is None:
+        return False
+    return getattr(mod, "__file__", None) is None
+
+
+def _import_app(module: str):
+    """Import the plugin app, shedding a cache another test poisoned.
+
+    Retried once with the package's `sys.modules` entries dropped, because the whole
+    suite runs this file in a worker that has already simulated a no-plugins install. A
+    genuinely unimportable app fails both times; the retry cannot hide a defect.
+    """
+    if _cached_but_unreal(module):
+        _shed_package(module)
+    try:
+        return importlib.import_module(module)
+    except Exception as first:  # noqa: BLE001 — the retry below is the point
+        _shed_package(module)
+        try:
+            return importlib.import_module(module)
+        except Exception:  # noqa: BLE001 — report the FIRST failure, it names the cause
+            raise first
+
+
+def _shed_package(module: str) -> None:
+    package = module.split(".")[0]
+    for name in [n for n in list(sys.modules) if n == package or n.startswith(package + ".")]:
+        sys.modules.pop(name, None)
+
+
+def _introspect(module: str, attr: str) -> _Introspected:
+    """(options declared anywhere in the tree, every command path, passthrough paths).
+
+    Passthrough paths are collected here rather than as a suppression list: an
+    invocation selecting one does not produce the exit 2 a finding is founded on, so
+    reporting it would be a false claim about a test that runs. They are never guessed
+    from the app as a whole — see ``_forwards_instead_of_failing``.
+    """
     key = (module, attr)
-    if key in _flag_cache:
-        return _flag_cache[key]
+    if key in _introspect_cache:
+        return _introspect_cache[key]
 
     names: set[str] | None = set()
+    paths: set[tuple[str, ...]] = set()
+    passthrough: set[tuple[str, ...]] = set()
     try:
-        mod = importlib.import_module(module)
+        mod = _import_app(module)
         app = getattr(mod, attr)
         if key == ("navig.cli", "app"):
             # The root app mounts its subcommands lazily; without this every option of
             # every external group reads as undefined. See the warning above.
-            mod._register_external_commands()
+            #
+            # ⚠ `register_all=True` is REQUIRED, not a belt-and-braces. The bare call
+            # dispatches on `sys.argv`: under pytest that is `pytest tests/quality/…`,
+            # which selects the "skip external imports entirely" branch, so every
+            # plugin-provided group (`vault`, `cred`, …) stayed unmounted and its options
+            # read as undefined — 29 findings against `navig vault add --key` alone
+            # (measured 2026-10-27). The three sibling guards already register this way.
+            mod._register_external_commands(register_all=True)
         origin = getattr(mod, "__file__", None)
-        if origin is None or not Path(origin).resolve().is_relative_to(REPO):
+        resolved_origin = Path(origin).resolve() if origin else None
+        if resolved_origin is None or not any(
+            resolved_origin.is_relative_to(root) for root in _TREE_ROOTS
+        ):
             # Resolved outside this tree (a stale or non-editable install). Report
             # nothing rather than a finding about code that is not under test — the
             # resolution floor below is what surfaces it if this becomes widespread.
             _OUT_OF_TREE.add(key)
-            _flag_cache[key] = None
-            return None
+            _introspect_cache[key] = (None, set(), set())
+            return None, set(), set()
         command = typer.main.get_command(app)
 
-        def walk(cmd: click.Command) -> None:
+        def walk(cmd, path: tuple[str, ...]) -> None:
+            paths.add(path)
             for param in cmd.get_params(click.Context(cmd)):
                 names.update(getattr(param, "opts", None) or [])
                 names.update(getattr(param, "secondary_opts", None) or [])
-            if isinstance(cmd, click.Group):
-                for sub in cmd.commands.values():
-                    walk(sub)
+            if _forwards_instead_of_failing(cmd):
+                passthrough.add(path)
+            if is_group(cmd):
+                for name, sub in cmd.commands.items():
+                    walk(sub, path + (name,))
 
-        walk(command)
-    except Exception:  # noqa: BLE001 - an unimportable app is counted, not guessed at
-        names = None
+        walk(command, ())
+    except Exception as exc:  # noqa: BLE001 - an unimportable app is counted, not guessed at
+        # Deliberately NOT cached: a whole-suite run reached this with the plugin import
+        # broken by an earlier test's `sys.modules`/`sys.argv` state, and the cached None
+        # then made every later caller in the process assert "the app must resolve"
+        # (measured 2026-10-30). The out-of-tree verdict above stays cached — that one is
+        # a property of the install, not of the moment.
+        _INTROSPECT_FAILURE[key] = f"{type(exc).__name__}: {exc}"
+        return None, set(), set()
 
-    _flag_cache[key] = names
-    return names
+    _introspect_cache[key] = (names, paths, passthrough)
+    return names, paths, passthrough
 
 
 def _literal_options(arglist: ast.List) -> list[str]:
@@ -161,6 +318,31 @@ def _literal_options(arglist: ast.List) -> list[str]:
         and el.value.startswith("--")
         and el.value != "--"
     ]
+
+
+def _leaf_path(arglist: ast.List, paths: set[tuple[str, ...]]) -> tuple[str, ...]:
+    """Which command an invocation selects: the deepest leading run of subcommand names.
+
+    The idiom under test puts the command path first and options after it, so the run
+    stops at the first ``-`` token. Tokens that are not commands — the leaf's own
+    arguments, as in ``["ios", "instruments", "ls", ...]`` — drop out, because only a
+    prefix that IS a path counts. Nothing leading selects the root: an invocation the
+    scan cannot pin to a subcommand is exempted only if the app root itself forwards.
+    """
+    tokens: list[str] = []
+    for el in arglist.elts:
+        if not isinstance(el, ast.Constant) or not isinstance(el.value, str):
+            break
+        if el.value.startswith("-"):
+            break
+        tokens.append(el.value)
+
+    leaf: tuple[str, ...] = ()
+    for i in range(1, len(tokens) + 1):
+        prefix = tuple(tokens[:i])
+        if prefix in paths:
+            leaf = prefix
+    return leaf
 
 
 def _test_files() -> list[Path]:
@@ -220,12 +402,17 @@ def _scan() -> tuple[int, int, int, list[str], int]:
                 continue
 
             invocations += 1
-            declared = _declared_options(*imported[target.id])
+            declared, paths, passthrough = _introspect(*imported[target.id])
             if declared is None:
                 if imported[target.id] in _OUT_OF_TREE:
                     skipped_out_of_tree += 1
                 continue
             resolved += 1
+            if _leaf_path(arglist, paths) in passthrough:
+                # The command this call selects forwards the token instead of failing on
+                # it (measured, see `_forwards_instead_of_failing`): no usage error, so
+                # the assertions after the call are not dead and there is no finding.
+                continue
             for option in options:
                 bare = option.split("=")[0]
                 if bare not in declared:
@@ -252,6 +439,38 @@ def test_no_test_invokes_an_option_its_app_does_not_define() -> None:
         "`exit_code == 0`) or vacuous (`exit_code in (0, 2)` accepts the usage error "
         "itself). Use the option the command actually declares."
     )
+
+
+def test_the_forward_exempt_command_is_the_one_the_invocation_selects() -> None:
+    """The forward-exempt is per selected command — never a blanket for its app.
+
+    Without this, `test_no_test_invokes_an_option_its_app_does_not_define` passing only
+    says "no findings", which a broad exemption would also produce. These assertions pin
+    the exemption to a command measured to exit 0 with the token forwarded, and hold it
+    away from a command of the SAME app that still answers an unknown option with a
+    usage error — so the guard cannot be satisfied by widening.
+    """
+    module, attr = "navig_mobile.commands.mobile", "mobile_app"
+    declared, paths, passthrough = _introspect(module, attr)
+    assert declared is not None, (
+        "the app must resolve before its shape means anything — "
+        f"{_INTROSPECT_FAILURE.get((module, attr), 'import produced no app')}"
+    )
+    assert "--undefined-in-this-app" not in declared  # the probe flag is genuinely undefined
+
+    def selects(*argv: str) -> tuple[str, ...]:
+        arglist = ast.List(elts=[ast.Constant(v) for v in argv], ctx=ast.Load())
+        return _leaf_path(arglist, paths)
+
+    # Both passthroughs the scan used to report: selected, and exempt because they forward.
+    assert selects("android", "fastboot", "--undefined-in-this-app") in passthrough
+    assert selects("ios", "instruments", "ls", "--undefined-in-this-app") in passthrough
+    # A command of the same app that does NOT forward: `ios recovery enter` takes fixed
+    # arguments and ignore-only still exits 2, so a test behind it can still be dead.
+    assert selects("ios", "recovery", "enter", "--undefined-in-this-app") not in passthrough
+    # An invocation that starts with an option is pinned to no subcommand, so it gains
+    # no exemption it did not earn (the root is not a passthrough).
+    assert selects("--undefined-in-this-app", "status") not in passthrough
 
 
 def test_the_scan_still_sees_the_suite_it_polices() -> None:

@@ -71,6 +71,7 @@ def test_it_ignores_pytest_s_own_bookkeeping() -> None:
     next(gen, None)  # must not raise
 
 
+@pytest.mark.skipif(os.name != "nt", reason="the CLI sets the encoding vars only on Windows")
 def test_it_tolerates_the_cli_s_one_time_encoding_setdefault() -> None:
     """`navig.cli` sets PYTHONIOENCODING/PYTHONUTF8 once via setdefault on Windows.
 
@@ -107,3 +108,40 @@ def test_but_changing_a_product_owned_var_is_still_a_leak() -> None:
             os.environ.pop(key, None)
         else:
             os.environ[key] = had
+
+
+def _added_is_reported(key: str, value: str, *, os_name: str) -> bool:
+    """Step the guard around `key` APPEARING with `value` while `os.name` reads `os_name`."""
+    had = os.environ.pop(key, None)
+    real_name = os.name
+    try:
+        gen = _driver()
+        os.name = os_name  # type: ignore[misc]  # the guard decides its exemption at setup
+        try:
+            next(gen)
+        finally:
+            os.name = real_name  # type: ignore[misc]
+        os.environ[key] = value
+        try:
+            next(gen, None)
+        except AssertionError:
+            return True
+        return False
+    finally:
+        os.environ.pop(key, None)
+        if had is not None:
+            os.environ[key] = had
+
+
+def test_the_encoding_exemption_does_not_apply_off_windows() -> None:
+    """`_force_utf8_stdio` returns early on POSIX, so a test that adds PYTHONUTF8 there is
+    the test's own leak -- the exemption once applied on every platform."""
+    assert _added_is_reported("PYTHONUTF8", "1", os_name="posix")
+
+
+def test_the_encoding_exemption_covers_only_the_cli_s_values() -> None:
+    """On Windows only the exact `utf-8` / `1` the CLI writes are tolerated; any other
+    value alters later subprocesses' encoding and is reported."""
+    assert _added_is_reported("PYTHONIOENCODING", "latin-1", os_name="nt")
+    assert _added_is_reported("PYTHONUTF8", "0", os_name="nt")
+    assert not _added_is_reported("PYTHONUTF8", "1", os_name="nt")

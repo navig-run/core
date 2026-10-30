@@ -113,7 +113,11 @@ _MEDIA_SEND = {
     "video_note": ("sendVideoNote", "video_note", False), "sticker": ("sendSticker", "sticker", False),
 }
 _SNIPPET_MAX = 500
-_LINES_MAX = 40      # the notify sink truncates at Telegram's 4096 anyway; this keeps it readable
+_LINES_MAX = 40      # keeps a whole-chat clear readable; _BODY_MAX keeps it ONE message
+#: Telegram's message limit in UTF-16 units. The summary goes out through a raw
+#: sendMessage that does not split, so a longer body was refused outright.
+_BODY_MAX = 4096
+_MEDIA_MAX = 10      # files re-sent after one summary; the rest are only counted
 _CAPTION_MAX = 1024  # Bot API limit
 
 
@@ -394,6 +398,10 @@ class BusinessSender:
         kw.setdefault("business_connection_id", self.bcid)
         return await self._ch.send_audio(chat_id, audio_data, *args, **kw)
 
+    async def send_media_group(self, chat_id, photos, *args, **kw):
+        kw.setdefault("business_connection_id", self.bcid)
+        return await self._ch.send_media_group(chat_id, photos, *args, **kw)
+
     async def send_document(self, chat_id, document_data, *args, **kw):
         kw.setdefault("business_connection_id", self.bcid)
         return await self._ch.send_document(chat_id, document_data, *args, **kw)
@@ -668,6 +676,10 @@ async def handle_business_message(channel, msg: dict, *, edited: bool = False) -
             # caption-less edit or a re-delivered update would erase text the
             # deletion alert is the last reader of. NULL preserves it.
             text=text or None,
+            # What this message answers. Telegram nests only ONE level, so a later
+            # reply to this message carries no trace of it; a role rewrite that has
+            # to resend it looks the thread up here.
+            reply_to=(msg.get("reply_to_message") or {}).get("message_id"),
             kind="business",
             media_ref=media_id,
             # A real timestamp — `edited_at` is a time everywhere else in this
@@ -813,10 +825,26 @@ async def render_deletion_detail(
                 cap += f"\n{text}"
             media_to_resend.append((media, cap))
 
-    if len(lines) > _LINES_MAX:   # a whole-chat clear: keep the message readable
-        lines = lines[:_LINES_MAX] + [f"• … and {len(lines) - _LINES_MAX} more"]
+    from navig.gateway.channels.base import utf16_len  # noqa: PLC0415
+
     header = "🗑 Message deleted" if len(ids) == 1 else f"🗑 {len(ids)} messages deleted"
-    body = f"{header}\nIn {chat_label}:\n" + "\n".join(lines)
+    head = f"{header}\nIn {chat_label}:\n"
+    extra: list[str] = []
+    if len(media_to_resend) > _MEDIA_MAX:   # a bulk clear must not flood the DM
+        extra.append(f"📎 {len(media_to_resend) - _MEDIA_MAX} more file(s) not re-sent")
+        media_to_resend = media_to_resend[:_MEDIA_MAX]
+    total = len(lines)
+
+    def _compose(n: int) -> str:
+        shown = lines[:n] + ([f"• … and {total - n} more"] if n < total else [])
+        return head + "\n".join(shown + extra)
+
+    # A whole-chat clear: keep the list readable, and the body inside ONE message.
+    keep = min(total, _LINES_MAX)
+    body = _compose(keep)
+    while keep and utf16_len(body) > _BODY_MAX:
+        keep -= 1
+        body = _compose(keep)
     return body, media_to_resend
 
 
@@ -856,15 +884,15 @@ async def deliver_deletion_detail(
     # announced trains the operator to distrust the ones that work.
     if failed and target is not None and channel is not None:
         kinds = ", ".join(sorted({(m.get("kind") or "media") for m, _ in media_to_resend}))
+        from navig.core import i18n  # noqa: PLC0415
         from navig.telegram import chat_tidy  # noqa: PLC0415
 
         try:
             with chat_tidy.routine("deletion"):
                 note = await channel._api_call("sendMessage", {
                     "chat_id": target,
-                    "text": (f"⚠️ Couldn't re-send {failed} of {len(media_to_resend)} deleted "
-                             f"file(s) ({kinds}) — Telegram no longer serves that file id. "
-                             f"The summary above is all that survives."),
+                    "text": i18n.t("deletions.resend_failed", failed=failed,
+                                   total=len(media_to_resend), kinds=kinds),
                 })
             deletions._collect(sent, note)
         except Exception:  # noqa: BLE001
@@ -899,7 +927,7 @@ async def handle_deleted_business_messages(channel, payload: dict) -> None:
     # Deletions NAVIG made itself — the owner's `tyler`/`translate` trigger words —
     # are not news, and must not reach the record or the digest.
     bcid = payload.get("business_connection_id")
-    ids = [m for m in ids if not deletions.is_own_deletion(bcid, m)]
+    ids = [m for m in ids if not deletions.is_own_deletion(bcid, m, chat_id=chat_id)]
     if chat_id is None or not ids:
         return
     if not deletions.record_enabled():
@@ -915,6 +943,18 @@ async def handle_deleted_business_messages(channel, payload: dict) -> None:
             store.mark_message_deleted(chat_id, mid, reason=reasons.get(mid))
         except Exception:  # noqa: BLE001
             logger.debug("mark_message_deleted failed for %s/%s", chat_id, mid, exc_info=True)
+    # An open deleted-messages view reloads only on this event; without it the
+    # deletion just recorded stayed invisible until a manual refresh.
+    try:
+        from navig.gateway.system_events import get_system_events  # noqa: PLC0415
+
+        queue = get_system_events()
+        if queue is not None:
+            await queue.emit(
+                "telegram_catalog_update", {"chat_id": chat_id, "source": "business_delete"}
+            )
+    except Exception:  # noqa: BLE001 — events are optional
+        logger.debug("business deletion: catalog event not emitted", exc_info=True)
 
     # Auto-delete timers and whole-chat clears stay in the record and out of the
     # alerts — on a chat with a timer they were most of every digest.

@@ -188,7 +188,13 @@ def _runner(monkeypatch):
     # perf store the storm above was written to.
     watch.reset_for_tests()
     gateway = SimpleNamespace(
-        config_manager=SimpleNamespace(global_config={"heartbeat": {"check_llm_modes": True}}),
+        config_manager=SimpleNamespace(
+            global_config={
+                "heartbeat": {"check_llm_modes": True},
+                # AI intent — keeps this harness past the heartbeat's no-AI gate.
+                "ai": {"default_provider": "nvidia"},
+            }
+        ),
         event_queue=None,
     )
     runner = HeartbeatRunner(gateway, HeartbeatConfig())

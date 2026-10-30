@@ -79,3 +79,57 @@ def test_the_renderer_says_setup_when_credentials_are_genuinely_absent(monkeypat
     out = capsys.readouterr().out
     assert "navig telegram setup" in out
     assert "navig-vault" not in out
+
+
+def _stub_bot_side(monkeypatch, token):
+    import navig.config as navig_config
+    from navig.messaging import secrets
+
+    class _CM:
+        def _load_global_config(self):
+            return {"telegram": {}}
+
+    monkeypatch.setattr(navig_config, "get_config_manager", lambda *a, **k: _CM())
+    monkeypatch.setattr(secrets, "resolve_telegram_bot_token", lambda cfg=None: token)
+    monkeypatch.setattr(secrets, "resolve_telegram_uid", lambda cfg=None: None)
+
+
+_LOGGED_IN = {
+    "telethon": True, "vault_error": None, "credentials": True,
+    "logged_in": True, "me": None, "authorized": None,
+}
+
+
+def test_status_renders_the_user_account_even_without_a_bot_token(monkeypatch):
+    """A missing bot token used to return before the MTProto section rendered."""
+    from typer.testing import CliRunner
+
+    _stub_bot_side(monkeypatch, "")
+    monkeypatch.setattr(tgstatus, "collect", lambda: dict(_LOGGED_IN))
+    monkeypatch.setattr(tgstatus, "probe_account",
+                        lambda: {"id": 42, "username": "someone"})
+    result = CliRunner().invoke(tgcmd.telegram_app, ["status"])
+    assert "Bot token missing" in result.output
+    assert "User Account (MTProto)" in result.output
+    assert "someone" in result.output
+    assert result.exit_code == 0
+
+
+def test_an_unauthorized_session_makes_status_exit_nonzero(monkeypatch):
+    """A broken session must not read as healthy to a script."""
+    from typer.testing import CliRunner
+
+    _stub_bot_side(monkeypatch, "123456:ABCDEFGHIJKLMNOP")
+    monkeypatch.setattr(tgstatus, "collect", lambda: dict(_LOGGED_IN))
+    monkeypatch.setattr(tgstatus, "probe_account", lambda: None)
+    result = CliRunner().invoke(tgcmd.telegram_app, ["status"])
+    assert "NOT authorized" in result.output
+    assert result.exit_code == 1
+
+
+def test_renderer_reports_health(monkeypatch):
+    monkeypatch.setattr(tgstatus, "collect", lambda: dict(_LOGGED_IN))
+    monkeypatch.setattr(tgstatus, "probe_account", lambda: None)
+    assert tgcmd._render_user_account_status() is False
+    monkeypatch.setattr(tgstatus, "probe_account", lambda: {"id": 1, "name": "x"})
+    assert tgcmd._render_user_account_status() is True

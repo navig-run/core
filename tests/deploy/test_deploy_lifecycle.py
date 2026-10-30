@@ -393,10 +393,10 @@ class TestRollbackManager:
         # This used to assert `rm -rf <target> && mv <snapshot> <target>` — i.e. it
         # pinned a restore that deletes the deployment before knowing it can be
         # replaced, and that consumes the snapshot so a second rollback has nothing.
-        # The snapshot is now COPIED into place after the current deployment has been
-        # staged aside. See tests/deploy/test_rollback_restore_safety.py.
-        assert "cp -a /var/backups/myapp/20260317_142233 /var/www/myapp" in call_args
-        assert "mv /var/www/myapp /var/www/myapp.navig-rollback-tmp" in call_args
+        # The snapshot is now COPIED into a private staging dir first and swapped in
+        # with renames. See tests/deploy/test_rollback_restore_safety.py.
+        assert 'cp -a /var/backups/myapp/20260317_142233 "$st/new"' in call_args
+        assert 'mv /var/www/myapp "$st/old"' in call_args
         assert "mv /var/backups/myapp/20260317_142233 /var/www/myapp" not in call_args
 
     def test_restore_snapshot_no_snapshot_returns_false(self, tmp_path):

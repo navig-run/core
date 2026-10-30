@@ -156,6 +156,14 @@ def test_a_noted_deletion_is_recognised_once(own):
     assert d.is_own_deletion("bc2", 90) is False, "scoped by connection"
 
 
+def test_a_note_is_scoped_by_chat(own):
+    """A message id is unique only within a chat; one connection spans many chats.
+    A real deletion of the same id elsewhere must not consume — or hide behind — ours."""
+    d.note_own_deletion("bc1", [5], chat_id=111)
+    assert d.is_own_deletion("bc1", 5, chat_id=222) is False, "another chat's id 5 is real"
+    assert d.is_own_deletion("bc1", 5, chat_id=111) is True, "our note was not consumed"
+
+
 def test_an_old_note_does_not_hide_a_real_deletion(own):
     d.note_own_deletion("bc1", [90], now=1000.0)
     assert d.is_own_deletion("bc1", 90, now=1000.0 + d.OWN_DELETION_TTL_SEC + 1) is False
@@ -167,7 +175,7 @@ async def test_the_role_trigger_is_noted_before_it_is_deleted(own):
     ch = MagicMock()
 
     async def api(method, data=None):
-        order.append(("api", method, d.is_own_deletion("bc1", 90)))
+        order.append(("api", method, d.is_own_deletion("bc1", 90, chat_id=555)))
         return True
 
     ch._api_call = AsyncMock(side_effect=api)
@@ -180,8 +188,8 @@ async def test_a_reply_keyword_trigger_is_noted_too(own):
 
     ch = MagicMock()
     ch._api_call = AsyncMock(return_value=True)
-    await reply_actions._delete_business_trigger(ch, "bc1", 91)
-    assert d.is_own_deletion("bc1", 91)
+    await reply_actions._delete_business_trigger(ch, "bc1", 91, chat_id=555)
+    assert d.is_own_deletion("bc1", 91, chat_id=555)
 
 
 async def test_a_chat_command_trigger_is_noted_too(own):
@@ -190,7 +198,7 @@ async def test_a_chat_command_trigger_is_noted_too(own):
     ch = MagicMock()
     ch._api_call = AsyncMock(return_value=True)
     await biz_commands._delete(ch, 555, "bc1", 92)
-    assert d.is_own_deletion("bc1", 92)
+    assert d.is_own_deletion("bc1", 92, chat_id=555)
 
 
 # ── the role run always ends in something the owner can see ──────────────────

@@ -12,6 +12,9 @@ examples:
   - "Is there a new NVIDIA driver?"
   - "Check my GPU driver version"
   - "Should I update my drivers?"
+# Written against a planned command surface that is not implemented yet
+# (KNOWN_MISSING in tests/quality/test_content_command_refs_resolve.py).
+activatable: false
 ---
 
 # NVIDIA Driver Update Check

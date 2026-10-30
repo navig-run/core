@@ -144,6 +144,25 @@ KNOWN_UNWIRED: dict[str, str] = {
     "_run_navig": "tray helper for launching a CLI command; no menu item calls it",
     "_deep_merge": "template merge helper with no caller",
     "_write_script": "BaseStore multi-statement helper; every store uses _write/_execute",
+    # ── masked by a same-named method on another class (per-family references) ──
+    # Keyed `Class._name` so the exemption covers this one definition, not the live
+    # same-named methods that hid it.
+    "NavigGateway._handle_message": (
+        "superseded POST /message handler; routes/core.py registers _message(gateway)"
+    ),
+    "PlanExtractor._extract_plan": (
+        "wrapper around extract() with no caller; the legacy agent has its own _extract_plan"
+    ),
+    # Surfaced by the family-scoping above: the value-only cache reader lost its last
+    # caller when resolve_detail switched to _cached_entry (it needs the entry's version
+    # metadata too), and what kept it alive until now was navig_voice's same-named FIELD
+    # (`self._cached` in resolve.py) counted under the bare-name tally — a field, not a
+    # reference to this method. Kept as the value-only counterpart of _store_cache;
+    # listed rather than deleted because no caller is planned and none is dynamic.
+    "FederationClient._cached": (
+        "value-only wrapper over _cached_entry; resolve_detail switched to the entry for "
+        "its version metadata and no other caller exists"
+    ),
 }
 
 
@@ -176,9 +195,131 @@ def _display_path(path: Path) -> str:
         return path.name
 
 
+def _base_name(node: ast.AST) -> str | None:
+    """``Base`` / ``mod.Base`` / ``Base[T]`` -> ``"Base"``."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    if isinstance(node, ast.Subscript):
+        return _base_name(node.value)
+    return None
+
+
+def _is_self_receiver(node: ast.AST) -> bool:
+    """``self._x`` / ``cls._x`` / ``super()._x`` -- a reference whose class we know."""
+    if isinstance(node, ast.Name) and node.id in ("self", "cls"):
+        return True
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "super"
+    )
+
+
+def _grafted_classes(tree: ast.Module) -> set[str]:
+    """Module classes that a module-level ``setattr(Cls, ...)`` grafts methods onto.
+
+    ``TelegramChannel`` gets its mixins' methods this way (``_MIXIN_BINDINGS`` in
+    telegram.py), not through its bases, so a ``self._x`` in a mixin really does reach
+    a method the channel defines.
+    """
+    local = {n.name for n in tree.body if isinstance(n, ast.ClassDef)}
+    return {
+        node.args[0].id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "setattr"
+        and node.args
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id in local
+    }
+
+
 @lru_cache(maxsize=1)
+def _references() -> tuple[Counter, dict[str, set[str]], dict[str, str]]:
+    """(global counts, name -> classes that self-reference it, class -> family id).
+
+    ⚠ A bare-name tally let ANY class's ``self._handle_message`` keep EVERY
+    ``_handle_message`` alive: ``NavigGateway._handle_message`` had no caller, masked by
+    ``ChannelRouter``'s and ``ears.py``'s own same-named methods. A reference through
+    ``self`` / ``cls`` / ``super()`` now counts only inside the referencing class's
+    FAMILY -- the classes joined to it by an in-tree base, or by a module-level
+    ``setattr`` graft. Joining is by bare class name, so two same-named classes share a
+    family: that can only hide a finding, never invent one. Any other receiver
+    (``obj._x``) and every string literal stay global, as before.
+    """
+    counts: Counter = Counter()
+    scoped: dict[str, set[str]] = {}
+    edges: dict[str, set[str]] = {}
+
+    def join(a: str, b: str) -> None:
+        edges.setdefault(a, set()).add(b)
+        edges.setdefault(b, set()).add(a)
+
+    for path in _scanned_files():
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
+        except SyntaxError:  # pragma: no cover
+            continue
+        grafted = _grafted_classes(tree)
+        if grafted:
+            imported = {a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
+                        for a in n.names}
+            for target in grafted:
+                for name in imported:
+                    join(target, name)
+        owner: dict[int, str] = {}
+        for cls in ast.walk(tree):
+            if not isinstance(cls, ast.ClassDef):
+                continue
+            for base in cls.bases:
+                name = _base_name(base)
+                if name:
+                    join(cls.name, name)
+            for node in ast.walk(cls):
+                owner[id(node)] = cls.name  # a nested class walks later and wins
+        docstrings = set()
+        for node in ast.walk(tree):
+            body = getattr(node, "body", None)
+            if isinstance(body, list) and body and isinstance(body[0], ast.Expr):
+                value = body[0].value
+                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    docstrings.add(id(value))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute):
+                cls_name = owner.get(id(node))
+                if cls_name is not None and _is_self_receiver(node.value):
+                    scoped.setdefault(node.attr, set()).add(cls_name)  # self._foo
+                else:
+                    counts[node.attr] += 1               # Cls._foo / obj._foo
+            elif (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and id(node) not in docstrings
+                and WORD.fullmatch(node.value)
+            ):
+                counts[node.value] += 1                  # handler="_handle_start"
+
+    family: dict[str, str] = {}
+    for start in edges:
+        if start in family:
+            continue
+        family[start] = start
+        stack = [start]
+        while stack:
+            for nxt in edges[stack.pop()]:
+                if nxt not in family:
+                    family[nxt] = start
+                    stack.append(nxt)
+    return counts, scoped, family
+
+
 def _identifier_counts() -> Counter:
-    """Every identifier the live package actually REFERENCES, counted once.
+    """Every identifier the live package REFERENCES other than through ``self``/``cls``/
+    ``super()`` (those are scoped to a class family -- see ``_references``, which
+    computes both in one parse of the tree).
 
     ⚠ This walks the AST rather than the text, and the difference is the whole guard.
     A first version tallied words with a regex, so a name mentioned in a COMMENT counted
@@ -190,30 +331,7 @@ def _identifier_counts() -> Counter:
     registry entry (`handler="_handle_start"`) is a real reference — the one form a
     call-only scan would miss.
     """
-    counts: Counter = Counter()
-    for path in _scanned_files():
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
-        except SyntaxError:  # pragma: no cover
-            continue
-        docstrings = set()
-        for node in ast.walk(tree):
-            body = getattr(node, "body", None)
-            if isinstance(body, list) and body and isinstance(body[0], ast.Expr):
-                value = body[0].value
-                if isinstance(value, ast.Constant) and isinstance(value.value, str):
-                    docstrings.add(id(value))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Attribute):          # self._foo / Cls._foo
-                counts[node.attr] += 1
-            elif (
-                isinstance(node, ast.Constant)
-                and isinstance(node.value, str)
-                and id(node) not in docstrings
-                and WORD.fullmatch(node.value)
-            ):
-                counts[node.value] += 1                  # handler="_handle_start"
-    return counts
+    return _references()[0]
 
 
 @lru_cache(maxsize=1)
@@ -251,11 +369,24 @@ def _unreferenced() -> list[tuple[str, int, str, str, bool]]:
     button handlers in `tui/screens/`. Every one is live, and calling them dead would have
     made this guard useless outside the gateway — the packages it most needed to cover.
     """
-    counts = _identifier_counts()
+    counts, scoped, family = _references()
+
+    def reached_by_its_family(cls: str, name: str) -> bool:
+        mine = family.get(cls, cls)
+        return any(family.get(c, c) == mine for c in scoped.get(name, ()))
+
     return [
         row for row in _private_methods()
-        if counts[row[3]] == 0 and not CONSTRUCTED.match(row[3]) and not row[4]
+        if counts[row[3]] == 0
+        and not reached_by_its_family(row[2], row[3])
+        and not CONSTRUCTED.match(row[3])
+        and not row[4]
     ]
+
+
+def _exempt(cls: str, name: str) -> bool:
+    """A KNOWN_UNWIRED key is a bare name, or ``Class._name`` for one definition only."""
+    return name in KNOWN_UNWIRED or f"{cls}.{name}" in KNOWN_UNWIRED
 
 
 def test_the_scanner_actually_reads_the_package():
@@ -308,7 +439,7 @@ def test_a_wired_handler_is_not_flagged():
 
 
 def test_every_private_channel_method_is_reachable_or_listed():
-    surprises = [row for row in _unreferenced() if row[3] not in KNOWN_UNWIRED]
+    surprises = [row for row in _unreferenced() if not _exempt(row[2], row[3])]
     # Unpacks FIVE — rows carry the is-decorated flag since the decorator rule landed.
     # This line only runs when there IS a finding, so it never executed and crashed with
     # "too many values to unpack" the first time the guard actually caught something: it
@@ -325,10 +456,62 @@ def test_every_private_channel_method_is_reachable_or_listed():
 def test_no_stale_exemptions():
     """An entry that is now wired (or gone) is a note describing a world that moved on."""
     unreferenced = {row[3] for row in _unreferenced()}
+    unreferenced |= {f"{row[2]}.{row[3]}" for row in _unreferenced()}
     defined = {row[3] for row in _private_methods()}
+    defined |= {f"{row[2]}.{row[3]}" for row in _private_methods()}
     for name, reason in KNOWN_UNWIRED.items():
         assert name in defined, f"KNOWN_UNWIRED lists '{name}', which no longer exists — drop it"
         assert name in unreferenced, (
             f"KNOWN_UNWIRED lists '{name}', but something references it now — drop the entry"
         )
         assert len(reason) > 15, f"KNOWN_UNWIRED['{name}'] needs a real reason"
+
+
+def test_a_same_named_method_on_another_class_does_not_keep_one_alive(tmp_path, monkeypatch):
+    """Teeth for per-family references, on a fixture corpus.
+
+    ``Router`` calls its own ``_handle``; ``Gateway._handle`` has no caller. A bare-name
+    tally counted Router's call for both. The graft case pins the other direction: a
+    mixin's ``self._ping`` reaches the method the channel it is grafted onto defines.
+    """
+    import sys
+
+    module = sys.modules[__name__]
+    (tmp_path / "router.py").write_text(
+        "class Router:\n"
+        "    def run(self):\n"
+        "        return self._handle()\n"
+        "    def _handle(self):\n"
+        "        return 1\n"
+        "class Gateway:\n"
+        "    def _handle(self):\n"
+        "        return 2\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "mixin.py").write_text(
+        "class PingMixin:\n"
+        "    def go(self):\n"
+        "        return self._ping()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "channel.py").write_text(
+        "from mixin import PingMixin\n"
+        "class Channel:\n"
+        "    def _ping(self):\n"
+        "        return 3\n"
+        "setattr(Channel, 'go', PingMixin.go)\n",
+        encoding="utf-8",
+    )
+    files = sorted(tmp_path.glob("*.py"))
+    caches = (_references, _private_methods)
+    monkeypatch.setattr(module, "_scanned_files", lambda: files)
+    for cached in caches:
+        cached.cache_clear()
+    try:
+        flagged = {(row[2], row[3]) for row in _unreferenced()}
+    finally:
+        for cached in caches:
+            cached.cache_clear()
+    assert ("Gateway", "_handle") in flagged, "a same-named call on another class hid it"
+    assert ("Router", "_handle") not in flagged
+    assert ("Channel", "_ping") not in flagged, "a grafted mixin's self-call was not followed"

@@ -198,14 +198,15 @@ def apply_manage(task_id: str, text: str) -> str:
             secs = _parse_duration(arg)
             if secs is None:
                 return "That snooze length didn't read. Try <code>snooze 30m</code>, <code>snooze 2h</code> or <code>snooze 1d</code>."
-            due = from_utc_iso(item.get("due_at"))
-            if due is None:
-                # Never moved before: start counting from now.
-                from navig.pim.clock import to_utc_iso
+            from navig.pim.clock import to_utc_iso
 
-                due = to_utc_iso(local_now())
-                due = from_utc_iso(due)
-            new_due = due + timedelta(seconds=secs)  # type: ignore[operator]
+            due = from_utc_iso(item.get("due_at"))
+            now_utc = from_utc_iso(to_utc_iso(local_now()))
+            # Count from now when the task was never dated OR is already overdue:
+            # snoozing a 09:00 task at 10:30 by 1h must land at 11:30, not 10:00
+            # (a past time the rescheduler skips, behind a "Moved to" receipt).
+            base = now_utc if due is None or due < now_utc else due  # type: ignore[operator]
+            new_due = base + timedelta(seconds=secs)  # type: ignore[operator]
             service.update(task_id, {"due_at": new_due})
             return f"⏰ Moved to <b>{html.escape(format_local(to_local(new_due), local_now()))}</b> — {title}"
     except Exception as exc:  # noqa: BLE001
@@ -259,7 +260,13 @@ async def handle_channel_post(channel: Any, post: dict[str, Any]) -> bool:
     # task — "done" must not be stored as a to-do called "done". A reply to something
     # we do not recognise, typed as a management verb, gets an explanation instead of
     # becoming a junk task.
-    reply_to = int(post.get("reply_to_message_id") or 0)
+    # The Bot API nests the replied-to message (``reply_to_message.message_id``); a
+    # top-level ``reply_to_message_id`` only exists on what we SEND.
+    reply_to = int(
+        (post.get("reply_to_message") or {}).get("message_id")
+        or post.get("reply_to_message_id")
+        or 0
+    )
     if reply_to:
         task_id = await asyncio.to_thread(_target_task, chat_id, reply_to)
         if task_id is not None:

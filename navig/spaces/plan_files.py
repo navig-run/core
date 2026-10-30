@@ -94,6 +94,9 @@ def plans_dir(space_path: Path) -> Path:
     """
     for folder in PLAN_DIRS:
         base = (space_path / folder) if folder else space_path
-        if any((base / name).is_file() for name in PLAN_FILES):
-            return base
+        try:
+            if any((base / name).is_file() for name in PLAN_FILES):
+                return base
+        except OSError:  # same rule as plan_file: one unreadable folder is not fatal
+            logger.debug("plan folder probe failed for %s", base)
     return space_path / ".navig" / "plans"

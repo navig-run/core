@@ -356,7 +356,7 @@ def _print_plan(actions, profile: str, manifest: dict | None, dry_run: bool) -> 
     try:
         from navig import console_helper as ch
 
-        label = "[dry-run] " if dry_run else ""
+        label = "DRY RUN: " if dry_run else ""
         ch.header(f"{label}NAVIG Installer — profile: {profile}")
         for a in actions:
             ch.dim(f"  • {a.description}")

@@ -383,9 +383,11 @@ class ToolRegistry:
     def to_markdown_summary(
         self,
         domain: ToolDomain | None = None,
+        *,
+        available_only: bool = False,
     ) -> str:
         """Return a Markdown table summarising registered tools."""
-        tools = self.list_tools(domain=domain)
+        tools = self.list_tools(available_only=available_only, domain=domain)
         if not tools:
             return "No tools registered."
         lines = [
@@ -454,6 +456,10 @@ def _drive_awaitable_to_completion(canonical: str, awaitable: Any) -> Any:
     close = getattr(awaitable, "close", None)
     if callable(close):
         close()
+    elif isinstance(awaitable, asyncio.Future):
+        # A Task/Future is already scheduled and has no close(): cancel it, or the tool
+        # keeps running while we report ERROR and the caller retries a side effect.
+        awaitable.cancel()
     raise _AsyncHandlerNeedsEventLoop(
         f"Tool '{canonical}' has an async handler and execute() was called from a "
         "running event loop, which it cannot block. Use async_execute() instead."

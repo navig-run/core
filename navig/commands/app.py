@@ -296,8 +296,10 @@ def use_app(options: dict[str, Any]) -> None:
                 ch.info("Commands will now use global active app")
         except FileNotFoundError as e:
             ch.error("Cannot clear local active app", str(e))
+            raise typer.Exit(1) from e
         except Exception as e:
             ch.error("Failed to clear local active app", str(e))
+            raise typer.Exit(1) from e
         return
 
     app_name = options.get("app_name")
@@ -335,10 +337,13 @@ def use_app(options: dict[str, Any]) -> None:
                 ch.info("This affects all directories without local active app")
     except FileNotFoundError as e:
         ch.error("Cannot set local active app", str(e))
+        raise typer.Exit(1) from e
     except ValueError as e:
         ch.error("Invalid app", str(e))
+        raise typer.Exit(2) from e
     except Exception as e:
         ch.error("Failed to set active app", str(e))
+        raise typer.Exit(1) from e
 
 
 def current_app(options: dict[str, Any]) -> None:
@@ -514,6 +519,7 @@ def add_app(options: dict[str, Any]) -> None:
             ch.success(f"✓ Active app set to: {app_name}")
     except Exception as e:
         ch.error("Error saving app configuration", str(e))
+        raise typer.Exit(1) from e
 
 
 def remove_app(options: dict[str, Any]) -> None:
@@ -562,7 +568,14 @@ def remove_app(options: dict[str, Any]) -> None:
         # to a non-existent app (its cache read is guarded by app_exists when an active host is
         # set), so checking afterwards would leave the stale active_app.txt pointer — then a
         # re-added same-name app silently becomes active again. Mirrors remove_host/remove_server.
-        was_active = config_manager.get_active_app() == app_name
+        # Compare against the CACHE FILE itself, not the resolved active app: when the active
+        # app comes from NAVIG_ACTIVE_APP or a project config, the cache may hold a different,
+        # still-valid app that removing this one must not forget.
+        try:
+            cached_app = config_manager.active_app_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            cached_app = None
+        was_active = cached_app == app_name
 
         config_manager.delete_app_config(host_name, app_name)
 
@@ -595,6 +608,10 @@ def show_app(options: dict[str, Any]) -> None:
     # Load app configuration
     try:
         app_config = config_manager.load_app_config(host_name, app_name)
+    except FileNotFoundError as e:
+        # Not found -> 2, like every other app handler; unreadable/invalid stays 1 below.
+        ch.error("App configuration not found", str(e))
+        raise typer.Exit(2) from e
     except Exception as e:
         ch.error("Error loading app configuration", str(e))
         raise typer.Exit(1) from e
@@ -704,8 +721,10 @@ def edit_app(options: dict[str, Any]) -> None:
         ch.dim("Changes will take effect immediately.")
     except subprocess.CalledProcessError as e:
         ch.error("Error opening editor", str(e))
+        raise typer.Exit(1) from e
     except Exception as e:
         ch.error("Unexpected error", str(e))
+        raise typer.Exit(1) from e
 
 
 def clone_app(options: dict[str, Any]) -> None:
@@ -789,6 +808,7 @@ def clone_app(options: dict[str, Any]) -> None:
         ch.console.print("[green]3. Deploy application to the new paths[/green]")
     except Exception as e:
         ch.error("Error saving cloned app configuration", str(e))
+        raise typer.Exit(1) from e
 
 
 def info_app(options: dict[str, Any]) -> None:

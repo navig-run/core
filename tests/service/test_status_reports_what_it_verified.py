@@ -86,7 +86,7 @@ def test_a_child_whose_pid_is_live_reads_alive(monkeypatch):
 
 
 def test_an_unverifiable_pid_is_not_printed_as_plain_alive(monkeypatch):
-    monkeypatch.setattr(sm, "_child_is_live", lambda pid: None)
+    monkeypatch.setattr(sm, "_child_is_live", lambda pid, create_time=None: None)
     _fake_daemon(monkeypatch, [{"name": "gateway", "alive": True, "pid": 77, "restart_count": 0}])
 
     _, detail = sm.status()
@@ -167,6 +167,33 @@ def test_child_is_live_on_a_dead_pid_is_false():
 
 def test_child_is_live_on_our_own_pid_is_true():
     assert sm._child_is_live(os.getpid()) is True
+
+
+def test_child_is_live_rejects_a_recycled_pid():
+    """A dead child's pid reused by another process is still "running"; only the
+    creation time recorded at spawn tells the two apart."""
+    psutil = pytest.importorskip("psutil")
+    own = psutil.Process(os.getpid()).create_time()
+    assert sm._child_is_live(os.getpid(), own) is True
+    assert sm._child_is_live(os.getpid(), own - 3600) is False
+
+
+def test_a_child_records_its_creation_time_in_the_state(tmp_path, monkeypatch):
+    pytest.importorskip("psutil")
+    monkeypatch.setattr(sup, "_resolve_log_dir", lambda: tmp_path)
+    child = sup.ChildProcess("probe", [sys.executable, "-c", "import time; time.sleep(30)"])
+    import logging
+
+    assert child.start(logging.getLogger("test"))
+    try:
+        d = child.to_dict()
+        assert d["pid"] == child.process.pid
+        assert isinstance(d["create_time"], float)
+        assert sm._child_is_live(d["pid"], d["create_time"]) is True
+    finally:
+        child.process.kill()
+        child.process.wait(timeout=10)
+        child._close_log()
 
 
 @pytest.mark.parametrize("pid", [None, "", "x", 0, -1])

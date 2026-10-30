@@ -1178,7 +1178,10 @@ async def handle_deck_space_register(request: "web.Request") -> "web.Response":
         return _err("not a space (needs a .navig/ directory)", 400)
     manifest = load_space_manifest(target)
     sid = normalize_space_name(manifest.resolved_id or target.name)
-    entry = _registry.register(target, id=sid, name=manifest.resolved_name or target.name, source="external", enabled=True)
+    try:
+        entry = _registry.register(target, id=sid, name=manifest.resolved_name or target.name, source="external", enabled=True)
+    except _registry.RegistryUnavailable as exc:
+        return _err(str(exc), 503)
     return web.json_response({"ok": True, "data": entry}, status=201)
 
 

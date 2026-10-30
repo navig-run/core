@@ -42,8 +42,12 @@ def _get_matrix_features_config() -> dict[str, Any]:
     try:
         from navig.config import get_config_manager
 
-        cfg = get_config_manager().get_global_config()
-        return cfg.get("comms", {}).get("matrix", {}).get("features", {})
+        node: Any = get_config_manager().get_global_config()
+        # Each level may hold a scalar (`navig config set comms.matrix.features false`
+        # stores the string "false"); a non-mapping block reads as "nothing set".
+        for key in ("comms", "matrix", "features"):
+            node = node.get(key) if isinstance(node, dict) else None
+        return node if isinstance(node, dict) else {}
     except Exception:
         return {}
 

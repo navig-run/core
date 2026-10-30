@@ -1,6 +1,6 @@
 # NAVIG Command Reference
 
-_Generated 2026-10-22T08:16:35.983782+00:00_
+_Generated 2026-10-28T05:09:35.250748+00:00_
 
 ## `navig action add`
 **Status:** `stable` · **Since:** 
@@ -700,7 +700,7 @@ navig ahk notify
 
 ## `navig ahk ocr`
 **Status:** `stable` · **Since:** 
-Extract text from screen or image (requires pytesseract).
+Extract text from screen or image (requires navig[ocr] and the Tesseract binary).
 **Examples:**
 ```sh
 navig ahk ocr
@@ -5056,6 +5056,14 @@ Show the stored design tokens (colors, type scale, spacing, radii).
 navig design tokens show
 ```
 
+## `navig desktop`
+**Status:** `stable` · **Since:** 
+Run navig desktop
+**Examples:**
+```sh
+navig desktop
+```
+
 ## `navig desktop ahk`
 **Status:** `stable` · **Since:** 
 Execute an AutoHotkey v2 script via AutoHotkey.exe.
@@ -5496,54 +5504,6 @@ List active conversation threads.
 navig dispatch threads
 ```
 
-## `navig display`
-**Status:** `stable` · **Since:** 
-Show every monitor and its current brightness.
-**Examples:**
-```sh
-navig display
-```
-
-## `navig display bright`
-**Status:** `stable` · **Since:** 
-Make monitors brighter — an exact level, a step, or the default 20-point step.
-**Examples:**
-```sh
-navig display bright
-```
-
-## `navig display dim`
-**Status:** `stable` · **Since:** 
-Make monitors darker — an exact level, a step, or the default 20-point step.
-**Examples:**
-```sh
-navig display dim
-```
-
-## `navig display list`
-**Status:** `stable` · **Since:** 
-List connected monitors and their brightness.
-**Examples:**
-```sh
-navig display list
-```
-
-## `navig display restore`
-**Status:** `stable` · **Since:** 
-Put back the brightness saved before the first change.
-**Examples:**
-```sh
-navig display restore
-```
-
-## `navig display set`
-**Status:** `stable` · **Since:** 
-Set every selected monitor to an exact brightness.
-**Examples:**
-```sh
-navig display set
-```
-
 ## `navig distribution adapters`
 **Status:** `stable` · **Since:** 
 Reviewed form maps on disk and whether each one is usable.
@@ -5746,7 +5706,7 @@ navig distribution publish reject
 
 ## `navig distribution publish run`
 **Status:** `stable` · **Since:** 
-Execute the publication: manual package, delegated Social post, or a refusal.
+Execute the publication: manual package, delegated Social post, reviewed form, or a refusal.
 **Examples:**
 ```sh
 navig distribution publish run
@@ -6038,6 +5998,14 @@ Migrate legacy ~/.navig/packs content into the plugin format (idempotent).
 **Examples:**
 ```sh
 navig doctor migrate-packs
+```
+
+## `navig doctor remote-dev`
+**Status:** `stable` · **Since:** 
+Report whether NAVIG can develop, test, build and publish with this workstation off.
+**Examples:**
+```sh
+navig doctor remote-dev
 ```
 
 ## `navig download analyse`
@@ -6376,6 +6344,46 @@ Draft follow-ups in the space's style for ledger threads (opt-in model; drafts o
 navig email followup
 ```
 
+## `navig email graph connect`
+**Status:** `stable` · **Since:** 
+Sign in with a device code and store the refresh token in the vault.
+**Examples:**
+```sh
+navig email graph connect
+```
+
+## `navig email graph disconnect`
+**Status:** `stable` · **Since:** 
+Forget the stored Graph refresh token (the Entra app registration stays).
+**Examples:**
+```sh
+navig email graph disconnect
+```
+
+## `navig email graph setup`
+**Status:** `stable` · **Since:** 
+How to register the Entra app, and save its client id when given.
+**Examples:**
+```sh
+navig email graph setup
+```
+
+## `navig email graph status`
+**Status:** `stable` · **Since:** 
+Whether a Graph account is connected, and with which app/tenant.
+**Examples:**
+```sh
+navig email graph status
+```
+
+## `navig email identities`
+**Status:** `stable` · **Since:** 
+Which address belongs to which identity (mailroom.identities in the space config).
+**Examples:**
+```sh
+navig email identities
+```
+
 ## `navig email imap connect`
 **Status:** `stable` · **Since:** 
 Sign in to Gmail over IMAP with an app password, and keep it in the encrypted vault.
@@ -6386,7 +6394,7 @@ navig email imap connect
 
 ## `navig email imap disconnect`
 **Status:** `stable` · **Since:** 
-Forget the stored app password.
+Forget one stored app password (the mailbox itself is untouched).
 **Examples:**
 ```sh
 navig email imap disconnect
@@ -6394,10 +6402,18 @@ navig email imap disconnect
 
 ## `navig email imap status`
 **Status:** `stable` · **Since:** 
-Whether an app password is stored, and where it comes from (never shows it).
+Every mailbox connected over IMAP, the default, and where each lives (never a password).
 **Examples:**
 ```sh
 navig email imap status
+```
+
+## `navig email imap use`
+**Status:** `stable` · **Since:** 
+Make one connected mailbox the default (no --account needed).
+**Examples:**
+```sh
+navig email imap use
 ```
 
 ## `navig email labels ensure`
@@ -6462,6 +6478,126 @@ Undo an apply: take off the labels it added, delete the filters it created.
 **Examples:**
 ```sh
 navig email organize rollback
+```
+
+## `navig email otp accept`
+**Status:** `stable` · **Since:** 
+Use a held code: fill it and submit — the terminal twin of the card's “Use it”.
+**Examples:**
+```sh
+navig email otp accept
+```
+
+## `navig email otp code`
+**Status:** `stable` · **Since:** 
+Show the code a flow is holding; --reveal consumes it.
+**Examples:**
+```sh
+navig email otp code
+```
+
+## `navig email otp corpus harvest`
+**Status:** `stable` · **Since:** 
+Fetch real OTP and non-OTP mail into the corpus (IMAP, bodies stay local).
+**Examples:**
+```sh
+navig email otp corpus harvest
+```
+
+## `navig email otp corpus label`
+**Status:** `stable` · **Since:** 
+Record ground truth for one message (codes are stored as hashes only).
+**Examples:**
+```sh
+navig email otp corpus label
+```
+
+## `navig email otp corpus review`
+**Status:** `stable` · **Since:** 
+Unlabeled messages, with what the extractor currently thinks (masked).
+**Examples:**
+```sh
+navig email otp corpus review
+```
+
+## `navig email otp corpus score`
+**Status:** `stable` · **Since:** 
+Score the extractor against the labels; exits 1 when the Phase 0 bar is missed.
+**Examples:**
+```sh
+navig email otp corpus score
+```
+
+## `navig email otp corpus stats`
+**Status:** `stable` · **Since:** 
+How big the corpus is and how much of it is labeled.
+**Examples:**
+```sh
+navig email otp corpus stats
+```
+
+## `navig email otp fill`
+**Status:** `stable` · **Since:** 
+Type the held code into the page, verify it, submit — the last metre.
+**Examples:**
+```sh
+navig email otp fill
+```
+
+## `navig email otp flows`
+**Status:** `stable` · **Since:** 
+Open and recent flows, with the code each holds (masked).
+**Examples:**
+```sh
+navig email otp flows
+```
+
+## `navig email otp learn`
+**Status:** `stable` · **Since:** 
+Teach the extractor a sender's template from a confirmed flow (opt-in).
+**Examples:**
+```sh
+navig email otp learn
+```
+
+## `navig email otp open`
+**Status:** `stable` · **Since:** 
+Mint an alias and open a correlated window for one login/signup.
+**Examples:**
+```sh
+navig email otp open
+```
+
+## `navig email otp reject`
+**Status:** `stable` · **Since:** 
+Discard a flow and the code it holds — the twin of the card's “Ignore”.
+**Examples:**
+```sh
+navig email otp reject
+```
+
+## `navig email otp sms`
+**Status:** `stable` · **Since:** 
+📱 Relay codes by SMS — status, or one proof send.
+**Examples:**
+```sh
+navig email otp sms
+```
+
+## `navig email otp status`
+**Status:** `stable` · **Since:** 
+Whether the pipeline is on, and what it has resolved.
+**Examples:**
+```sh
+navig email otp status
+```
+
+## `navig email otp templates`
+**Status:** `stable` · **Since:** 
+Sender templates the extractor knows: shipped seeds plus learned ones.
+**Examples:**
+```sh
+navig email otp templates
 ```
 
 ## `navig email outbox approve`
@@ -10763,6 +10899,46 @@ Show service or container logs.
 navig logs show
 ```
 
+## `navig mailroom deploy`
+**Status:** `stable` · **Since:** 
+Install the Worker's dependencies and deploy it (wrangler does the auth).
+**Examples:**
+```sh
+navig mailroom deploy
+```
+
+## `navig mailroom init`
+**Status:** `stable` · **Since:** 
+Write the Worker template into a directory you own, with your domain filled in.
+**Examples:**
+```sh
+navig mailroom init
+```
+
+## `navig mailroom rules`
+**Status:** `stable` · **Since:** 
+Point a domain's catch-all at a mailbox, or one address at the Worker.
+**Examples:**
+```sh
+navig mailroom rules
+```
+
+## `navig mailroom secrets`
+**Status:** `stable` · **Since:** 
+Upload the Worker's secrets from the vault (Telegram, /events read key).
+**Examples:**
+```sh
+navig mailroom secrets
+```
+
+## `navig mailroom status`
+**Status:** `stable` · **Since:** 
+Read the Worker's own /health report.
+**Examples:**
+```sh
+navig mailroom status
+```
+
 ## `navig matrix`
 **Status:** `stable` · **Since:** 
 Run navig matrix
@@ -11659,6 +11835,14 @@ Show the deployed deck version vs the version in this navig release.
 navig miniapp version
 ```
 
+## `navig missions work`
+**Status:** `stable` · **Since:** 
+Claim a queued mission for this node, run it, and finish it with a receipt.
+**Examples:**
+```sh
+navig missions work
+```
+
 ## `navig mobile android connect`
 **Status:** `stable` · **Since:** 
 adb connect over TCP/IP.
@@ -12069,7 +12253,7 @@ navig mobile ui press
 
 ## `navig mobile ui record`
 **Status:** `stable` · **Since:** 
-Record your manual flow into a replayable .ad script (interactive).
+Open a session that records a replayable .ad script — saved on `ui close`.
 **Examples:**
 ```sh
 navig mobile ui record
@@ -14995,6 +15179,14 @@ Rebuild the search index from the archive and the vault (both are left untouched
 navig recall reindex
 ```
 
+## `navig recall resurrect`
+**Status:** `stable` · **Since:** 
+The ideas worth reviving — ranked by a deterministic score, each with its reasons.
+**Examples:**
+```sh
+navig recall resurrect
+```
+
 ## `navig recall review`
 **Status:** `stable` · **Since:** 
 Items that need a human: possible duplicates and model items without a verifiable quote.
@@ -15691,46 +15883,6 @@ Sign a sample event and POST it to the local gateway to prove the round-trip.
 navig signals test
 ```
 
-## `navig signing guide`
-**Status:** `stable` · **Since:** 
-Where the project's enrollment guide lives, and the checklist.
-**Examples:**
-```sh
-navig signing guide
-```
-
-## `navig signing readiness`
-**Status:** `stable` · **Since:** 
-Run the project's signing-readiness report (enrollment, tools, certificate).
-**Examples:**
-```sh
-navig signing readiness
-```
-
-## `navig signing sign`
-**Status:** `stable` · **Since:** 
-Sign one artifact using the project's own policy-enforcing signer.
-**Examples:**
-```sh
-navig signing sign
-```
-
-## `navig signing status`
-**Status:** `stable` · **Since:** 
-Policy summary for a project: domain, enforcement, publisher, latest artifact.
-**Examples:**
-```sh
-navig signing status
-```
-
-## `navig signing verify`
-**Status:** `stable` · **Since:** 
-Read-only signature verification through the project's verifier.
-**Examples:**
-```sh
-navig signing verify
-```
-
 ## `navig skill`
 **Status:** `stable` · **Since:** 
 Skills management - run without subcommand for help.
@@ -15989,7 +16141,7 @@ navig social relay cancel
 
 ## `navig social relay drain`
 **Status:** `stable` · **Since:** 
-Send everything that is due now, without waiting for the next cron tick.
+Run one drain tick now (the relay caps it: 25 posts, 5 per channel) instead of waiting for cron.
 **Examples:**
 ```sh
 navig social relay drain
@@ -19113,6 +19265,70 @@ List virtual hosts (enabled and available).
 **Examples:**
 ```sh
 navig web vhosts
+```
+
+## `navig webflow delete`
+**Status:** `stable` · **Since:** 
+Delete a webflow and every revision of it.
+**Examples:**
+```sh
+navig webflow delete
+```
+
+## `navig webflow export`
+**Status:** `stable` · **Since:** 
+Export the sanitized navig.webflow/1 JSON (what import accepts).
+**Examples:**
+```sh
+navig webflow export
+```
+
+## `navig webflow import`
+**Status:** `stable` · **Since:** 
+Import a webflow as a new flow (validated and sanitized first).
+**Examples:**
+```sh
+navig webflow import
+```
+
+## `navig webflow list`
+**Status:** `stable` · **Since:** 
+List saved webflows (newest first).
+**Examples:**
+```sh
+navig webflow list
+```
+
+## `navig webflow rollback`
+**Status:** `stable` · **Since:** 
+Restore an older revision as a new one — append-only, so nothing is lost.
+**Examples:**
+```sh
+navig webflow rollback
+```
+
+## `navig webflow run`
+**Status:** `stable` · **Since:** 
+Replay a webflow headless; exit 0 only when a check verified the outcome, not merely ran.
+**Examples:**
+```sh
+navig webflow run
+```
+
+## `navig webflow runs`
+**Status:** `stable` · **Since:** 
+List saved run checkpoints: what paused, what finished, what may resume.
+**Examples:**
+```sh
+navig webflow runs
+```
+
+## `navig webflow show`
+**Status:** `stable` · **Since:** 
+Show a webflow: its sites, parameters and steps.
+**Examples:**
+```sh
+navig webflow show
 ```
 
 ## `navig whoami`

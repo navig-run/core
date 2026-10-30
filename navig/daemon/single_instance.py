@@ -131,18 +131,53 @@ def config_dir_of(pid: int) -> Path | None:
     try:
         import psutil  # type: ignore[import-untyped]
 
-        env = psutil.Process(pid).environ()
+        proc = psutil.Process(pid)
+        env = proc.environ()
     except Exception:  # noqa: BLE001 — NoSuchProcess / AccessDenied / no psutil
         return None
     raw = env.get("NAVIG_CONFIG_DIR")
     try:
         if raw:
             return Path(raw).expanduser().resolve()
-        from navig.platform.paths import config_dir  # default for a process with no override
-
-        return config_dir().resolve()
+        # No override: the TARGET's platform default, derived from the target's own
+        # environment. Never `paths.config_dir()` — that reads the CALLER's env, so a
+        # CLI run with NAVIG_CONFIG_DIR=/tmp/smoke took a default-config brain for its
+        # own and force-killed it.
+        default = _default_config_dir_of(proc, env)
+        return default.resolve() if default is not None else None
     except Exception:  # noqa: BLE001
         return None
+
+
+def _default_config_dir_of(proc: object, env: dict[str, str]) -> Path | None:
+    """``paths.config_dir()``'s no-override default, evaluated for another process.
+
+    Mirrors ``paths._is_system_service`` + ``home_dir()/.navig`` using the target's
+    environment and uid. None when the home cannot be derived — the caller then leaves
+    the process alone.
+    """
+    if env.get("NAVIG_SYSTEM_SERVICE") == "1":
+        return Path("/etc/navig")
+    if sys.platform == "win32":
+        home = env.get("USERPROFILE")
+        if not home and env.get("HOMEDRIVE") and env.get("HOMEPATH"):
+            home = env["HOMEDRIVE"] + env["HOMEPATH"]
+        return Path(home) / ".navig" if home else None
+    pw_dir: str | None = None
+    try:
+        import pwd
+
+        uid = proc.uids().real  # type: ignore[attr-defined]
+        entry = pwd.getpwuid(uid)
+        pw_dir = entry.pw_dir
+        if entry.pw_name == "navig" and (uid < 1000 or not entry.pw_dir.startswith("/home/")):
+            return Path("/etc/navig")
+        if env.get("INVOCATION_ID") and uid == 0:
+            return Path("/etc/navig")
+    except Exception:  # noqa: BLE001 — no pwd / unreadable uid: fall back to HOME
+        pass
+    home = env.get("HOME") or pw_dir
+    return Path(home) / ".navig" if home else None
 
 
 # A process writes its pidfile just AFTER it starts, so a genuine owner's create_time is at or
@@ -164,28 +199,50 @@ def pid_from_pidfile(path: Path, *, cmdline_contains: str | None = None) -> int 
     so its ``create_time`` is at or before the file's mtime — while a process that recycled the
     number necessarily started *after* the file was written. That is both necessary and
     sufficient, because only the owner held that number at the moment it wrote the file.
-    *cmdline_contains* is optional defence in depth for callers that know a stable marker.
+    *cmdline_contains* is optional defence in depth for callers that know a stable marker; the
+    command line is read ONLY when one is given — an elevated daemon answers ``create_time``
+    to a non-elevated caller but refuses ``cmdline``, and reading it unasked made a live
+    elevated daemon look absent.
 
     Returns ``None`` for missing, unparseable, dead, unreadable, or recycled — every one of which
     means "not running", which is the safe answer: a caller that gets ``None`` reports nothing
-    running and kills nothing, whereas a wrong PID gets a live process killed.
+    running and kills nothing, whereas a wrong PID gets a live process killed. A caller that is
+    about to DELETE the file must ask :func:`pid_status` instead — "unreadable" is not "dead".
+    """
+    status, pid = pid_status(path, cmdline_contains=cmdline_contains)
+    return pid if status == "alive" else None
+
+
+def pid_status(path: Path, *, cmdline_contains: str | None = None) -> tuple[str, int | None]:
+    """``(status, pid)`` for the process *path* names — the destructive caller's answer.
+
+    * ``"missing"`` — no file, or it does not hold a positive integer (pid ``None``).
+    * ``"dead"`` — the process is gone, recycled, or fails the *cmdline_contains* marker.
+      Only this one proves the file outlived its owner and may be reaped.
+    * ``"unknown"`` — the process exists but could not be inspected (``AccessDenied``,
+      no psutil): a non-elevated status check against an elevated daemon. The file may
+      name a LIVE daemon, so it must be left alone.
+    * ``"alive"`` — still the process that wrote the file.
     """
     try:
         pid = int(path.read_text(encoding="utf-8").strip())
         recorded_at = path.stat().st_mtime
     except (OSError, ValueError):
-        return None
+        return "missing", None
     if pid <= 0:
-        return None
+        return "missing", None
 
     try:
         import psutil  # type: ignore[import-untyped]
-
+    except ImportError:
+        return "unknown", pid
+    try:
         proc = psutil.Process(pid)
         created = proc.create_time()
-        cmdline = " ".join(proc.cmdline() or [])
-    except Exception:  # noqa: BLE001 — NoSuchProcess / AccessDenied / no psutil: not ours
-        return None
+    except psutil.NoSuchProcess:
+        return "dead", pid
+    except Exception:  # noqa: BLE001 — AccessDenied / anything else: cannot tell
+        return "unknown", pid
 
     if created > recorded_at + _PIDFILE_SKEW_SECONDS:
         logger.warning(
@@ -193,16 +250,23 @@ def pid_from_pidfile(path: Path, *, cmdline_contains: str | None = None) -> int 
             "written) — treating as not running rather than acting on a stranger",
             pid, path.name, int(created - recorded_at),
         )
-        return None
+        return "dead", pid
 
-    if cmdline_contains and cmdline_contains.lower() not in cmdline.lower():
-        logger.warning(
-            "single-instance: pid %d no longer looks like %s — treating as not running",
-            pid, cmdline_contains,
-        )
-        return None
+    if cmdline_contains:
+        try:
+            cmdline = " ".join(proc.cmdline() or [])
+        except psutil.NoSuchProcess:
+            return "dead", pid
+        except Exception:  # noqa: BLE001 — AccessDenied: the marker cannot be checked
+            return "unknown", pid
+        if cmdline_contains.lower() not in cmdline.lower():
+            logger.warning(
+                "single-instance: pid %d no longer looks like %s — treating as not running",
+                pid, cmdline_contains,
+            )
+            return "dead", pid
 
-    return pid
+    return "alive", pid
 
 
 def kill_other_instances(

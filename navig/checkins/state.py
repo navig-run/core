@@ -327,5 +327,12 @@ def forget(item: str) -> None:
         for per_chat in (data.get("water") or {}).values():
             if isinstance(per_chat, dict):
                 per_chat.pop(item, None)
+        # asked / nudged marks are keyed `item` or `item:slot` (see _mark_key) — a stale
+        # one would make a re-added item with the same id skip today's first prompt.
+        for marks_key in ("asked", "nudged"):
+            for marks in (data.get(marks_key) or {}).values():
+                if isinstance(marks, dict):
+                    for key in [k for k in marks if k == item or k.startswith(f"{item}:")]:
+                        marks.pop(key)
 
     _update(fn)

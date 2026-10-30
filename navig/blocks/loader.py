@@ -287,6 +287,12 @@ def parse_block_file(path: Path) -> Block | None:
     inputs = [_parse_input(i) for i in (fm.get("inputs") or []) if isinstance(i, dict)]
     steps = [_parse_step(s, i) for i, s in enumerate(fm.get("steps") or []) if isinstance(s, dict)]
 
+    # Check the RAW shape: coercing first turned `requires: []` into {} (passing the
+    # lint) and made `requires: [adb]` raise a bare ValueError instead of a BlockError.
+    raw_requires = fm.get("requires")
+    if raw_requires is not None and not isinstance(raw_requires, dict):
+        raise BlockError(f"{path}: requires: must be a mapping (tools / plugins / detect)")
+
     block = Block(
         id=bid,
         name=str(fm.get("name") or path.parent.name),
@@ -295,7 +301,7 @@ def parse_block_file(path: Path) -> Block | None:
         license=str(fm.get("license", "unspecified")),
         spec_version=spec_v,
         inputs=inputs,
-        requires=dict(fm.get("requires") or {}),
+        requires=dict(raw_requires or {}),
         steps=steps,
         verify=_parse_verify(fm.get("verify")),
         outputs=list(fm.get("outputs") or []),
@@ -546,27 +552,29 @@ def _validate_requires(requires) -> list[str]:
 
 
 def get_block_dirs() -> list[Path]:
-    """Return block roots to scan: builtin store, user store, project-local, and
-    any `blocks/` dir shipped by an installed plugin (so a plugin can own its
-    blocks — e.g. navig-mobile's `app-ui-verify`)."""
+    """Return block roots to scan, lowest precedence first: builtin store, any
+    `blocks/` dir shipped by an installed plugin (so a plugin can own its blocks —
+    e.g. navig-mobile's `app-ui-verify`), user store, project-local.
+
+    :func:`blocks_by_id` keeps the LAST duplicate, so the operator's own user and
+    project blocks override a plugin's block of the same id."""
     candidates: list[Path] = []
     try:
         from navig.platform.paths import builtin_store_dir, find_app_root, store_dir
-
-        for fn in (builtin_store_dir, store_dir):
-            try:
-                d = fn() / "blocks"
-                if d.exists():
-                    candidates.append(d)
-            except Exception:  # noqa: BLE001
-                pass
-        root = find_app_root()
-        if root is not None:
-            local = root / ".navig" / "blocks"
-            if local.exists():
-                candidates.append(local)
     except ImportError:  # pragma: no cover
-        pass
+        builtin_store_dir = find_app_root = store_dir = None  # type: ignore[assignment]
+
+    def _store(fn) -> None:
+        if fn is None:
+            return
+        try:
+            d = fn() / "blocks"
+            if d.exists():
+                candidates.append(d)
+        except Exception:  # noqa: BLE001
+            pass
+
+    _store(builtin_store_dir)
 
     # Installed plugins that ship a `blocks/` dir (both install shapes) — mirrors
     # how skills are discovered from plugins (see skills.loader.get_skill_dirs), so
@@ -579,6 +587,14 @@ def get_block_dirs() -> list[Path]:
         candidates.extend(plugin_capability_dirs("blocks"))
     except Exception:  # noqa: BLE001 — plugin host optional; never block discovery
         pass
+
+    _store(store_dir)
+    if find_app_root is not None:
+        root = find_app_root()
+        if root is not None:
+            local = root / ".navig" / "blocks"
+            if local.exists():
+                candidates.append(local)
 
     seen: set[Path] = set()
     unique: list[Path] = []

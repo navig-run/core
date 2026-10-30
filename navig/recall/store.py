@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any, TypeVar
@@ -20,6 +21,10 @@ from navig.recall.model import Evidence, Record, Turn
 from navig.store.base import BaseStore, _utcnow
 
 logger = logging.getLogger(__name__)
+
+#: Backoff between attempts when ANOTHER process holds index.db (see ``_retry_locked``):
+#: immediate, then 1 s, 2 s, 4 s — ~7 s beyond each attempt's ``busy_timeout`` wait.
+_LOCK_RETRY_DELAYS = (0.0, 1.0, 2.0, 4.0)
 T = TypeVar("T")
 
 
@@ -43,7 +48,11 @@ _SOURCE_COLS = (
 
 class RecallStore(BaseStore):
     SCHEMA_VERSION = 3  # v3: records.lifecycle, evidence.locator, commits (git metadata cache)
-    PRAGMAS = {"cache_size": -8000}
+    # busy_timeout: another process (the recall_ingest monitor, a second extraction run)
+    # holds the write lock while it commits; 5 s (the default) expired mid-backfill and a
+    # 2.5 h run died on BEGIN IMMEDIATE (crash-20261016-211129). 30 s waits it out, and
+    # _retry_locked covers anything longer.
+    PRAGMAS = {"cache_size": -8000, "busy_timeout": 30000}
 
     def __init__(self, db_path: Path | None = None):
         if db_path is None:
@@ -259,25 +268,62 @@ class RecallStore(BaseStore):
             ) is not None
         return self._fts
 
+    @staticmethod
+    def _is_lock_error(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        return isinstance(exc, sqlite3.OperationalError) and ("locked" in msg or "busy" in msg)
+
+    def _retry_locked(self, op: Callable[[], T]) -> T:
+        """Run *op*, retrying while ANOTHER PROCESS holds the database (4 attempts, 0/1/2/4 s).
+
+        A write here shares ``index.db`` with the daemon's ``recall_ingest`` monitor and with
+        any second Recall command, so a transient SQLITE_BUSY must wait, never crash the run.
+        Everything this wraps is transactional (rollback on failure), so a retry re-runs
+        against unchanged state.
+        """
+        for i, delay in enumerate(_LOCK_RETRY_DELAYS):
+            if delay:
+                time.sleep(delay)
+            try:
+                return op()
+            except sqlite3.OperationalError as exc:
+                if not self._is_lock_error(exc) or i >= len(_LOCK_RETRY_DELAYS) - 1:
+                    raise
+                logger.warning("recall: index.db held by another process — retry %d/%d: %s",
+                               i + 1, len(_LOCK_RETRY_DELAYS), type(exc).__name__)
+        raise AssertionError("unreachable")  # pragma: no cover — the loop always returns or raises
+
     def _tx(self, fn: Callable[[sqlite3.Connection], T]) -> T:
         """Run *fn* inside one BEGIN IMMEDIATE transaction under the store's write lock."""
         with self._lock:
-            conn = self._get_conn()
-            old = conn.isolation_level
+            return self._retry_locked(lambda: self._tx_once(fn))
+
+    def _tx_once(self, fn: Callable[[sqlite3.Connection], T]) -> T:
+        conn = self._get_conn()
+        old = conn.isolation_level
+        try:
+            conn.isolation_level = None
+            conn.execute("BEGIN IMMEDIATE")
+            out = fn(conn)
+            conn.execute("COMMIT")
+            return out
+        except Exception:
             try:
-                conn.isolation_level = None
-                conn.execute("BEGIN IMMEDIATE")
-                out = fn(conn)
-                conn.execute("COMMIT")
-                return out
-            except Exception:
-                try:
-                    conn.execute("ROLLBACK")
-                except sqlite3.Error:
-                    pass  # the original error is the one worth raising
-                raise
-            finally:
-                conn.isolation_level = old
+                conn.execute("ROLLBACK")
+            except sqlite3.Error:
+                pass  # the original error is the one worth raising
+            raise
+        finally:
+            conn.isolation_level = old
+
+    def _write(self, sql: str, params: tuple | None = None) -> sqlite3.Cursor:
+        # BaseStore's single attempt on BEGIN IMMEDIATE raises the same lock error this
+        # store now survives; recall writes (sources, runs, review, links) all come through
+        # here. Two-arg super(): zero-arg super() has no __class__ cell inside a lambda.
+        return self._retry_locked(lambda: super(RecallStore, self)._write(sql, params))
+
+    def _write_many(self, sql: str, seq_of_params: list[tuple]) -> int:
+        return self._retry_locked(lambda: super(RecallStore, self)._write_many(sql, seq_of_params))
 
     def reset(self) -> None:
         """Drop every indexed row (the archive and vault are untouched)."""
@@ -569,6 +615,23 @@ class RecallStore(BaseStore):
                 f"SELECT DISTINCT record_id, source_id FROM evidence WHERE record_id IN "
                 f"({', '.join('?' for _ in chunk)})", tuple(chunk)):
                 out[r[0]].add(r[1])
+        return out
+
+    def evidence_stats(self, record_ids: Iterable[str]) -> dict[str, tuple[int, set[str]]]:
+        """``record id → (evidence count, distinct speakers)`` (one query, for scoring)."""
+        ids = list(dict.fromkeys(record_ids))
+        out: dict[str, tuple[int, set[str]]] = {i: (0, set()) for i in ids}
+        counts: dict[str, int] = {}
+        speakers: dict[str, set[str]] = {}
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            for r in self._read_all(
+                f"SELECT record_id, COUNT(*), GROUP_CONCAT(DISTINCT speaker) FROM evidence WHERE "
+                f"record_id IN ({', '.join('?' for _ in chunk)}) GROUP BY record_id", tuple(chunk)):
+                counts[r[0]] = int(r[1])
+                speakers[r[0]] = {s for s in str(r[2] or "").split(",") if s}
+        for rid in ids:
+            out[rid] = (counts.get(rid, 0), speakers.get(rid, set()))
         return out
 
     def project_counts(self) -> dict[str, int]:

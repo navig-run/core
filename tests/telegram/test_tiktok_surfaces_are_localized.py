@@ -115,6 +115,27 @@ def test_no_english_literal_reaches_a_button(tree: ast.Module, docstrings) -> No
     )
 
 
+def test_no_worker_sends_the_import_time_english_hints(tree: ast.Module) -> None:
+    """`_UNREADABLE_HINT` / `_LOGIN_HINT` are English constants evaluated at import.
+    The literal scan above cannot see them (a Name, not a Constant), so a worker that
+    sends one reads English to a Russian operator; `_unreadable_hint()` /
+    `_login_hint()` resolve the operator's language at send time."""
+    offenders = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = node.func.attr if isinstance(node.func, ast.Attribute) else ""
+        if not any(s in name for s in SEND):
+            continue
+        for arg in [*node.args, *(k.value for k in node.keywords)]:
+            if isinstance(arg, ast.Name) and arg.id in {"_UNREADABLE_HINT", "_LOGIN_HINT"}:
+                offenders.append((node.lineno, arg.id))
+    assert not offenders, (
+        "these sends pass an English import-time hint — call the localized helper:\n"
+        + "\n".join(f"  L{ln}: {n}" for ln, n in offenders)
+    )
+
+
 def test_the_scan_actually_reads_the_module(tree: ast.Module) -> None:
     """Anti-vacuity. Both assertions above pass trivially over an empty walk, and a
     renamed helper or a moved keyboard would produce exactly that."""

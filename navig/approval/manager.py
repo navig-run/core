@@ -89,6 +89,9 @@ class ApprovalManager:
         #: Ids the turn has already given up on. Without this, a human who answers late is
         #: reported as "request not found" and their tap does nothing, silently.
         self._recently_resolved = _RecentlyResolved()
+        # Set by stop(): a request cancelled by shutdown was never answered, so its durable
+        # records must survive for the restarted daemon to resolve.
+        self._stopping = False
 
         # Cleanup task
         self._cleanup_task: asyncio.Task | None = None
@@ -160,6 +163,7 @@ class ApprovalManager:
 
     async def start(self):
         """Start the approval manager."""
+        self._stopping = False
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
         logger.info("ApprovalManager started")
 
@@ -173,6 +177,7 @@ class ApprovalManager:
                 pass  # task cancelled; expected during shutdown
 
         # Cancel all pending futures
+        self._stopping = True
         for future in self._futures.values():
             if not future.done():
                 future.cancel()
@@ -193,6 +198,7 @@ class ApprovalManager:
         user_id: str = "anonymous",
         description: str | None = None,
         on_created: Callable[[str], None] | None = None,
+        resumable: bool = False,
     ) -> bool:
         """
         Request approval for a command.
@@ -204,6 +210,11 @@ class ApprovalManager:
         pending (never for a short-circuit decision) — so a caller that cannot hold
         a connection open for the whole wait (the deck) can answer "pending" with
         that id while this coroutine keeps waiting in the background.
+
+        *resumable* marks an agent-tool request: only then is a late Approve allowed to
+        re-enter a turn (`approval.resume`). Missions, gateway policy checks and the generic
+        approval API hold their own continuation, which is gone once they stop waiting — a
+        resume record for them would start an unrelated agent turn, not the approved work.
         """
         if not self.policy.enabled:
             return True
@@ -266,13 +277,14 @@ class ApprovalManager:
         )
         # Enough to RE-ENTER a turn if this is answered after we stop waiting. Recorded
         # up-front because the answer may arrive when this frame is long gone.
-        _resume.record(
-            request_id,
-            session_key=session_key,
-            channel=channel,
-            user_id=user_id,
-            tool_name=command,
-        )
+        if resumable:
+            _resume.record(
+                request_id,
+                session_key=session_key,
+                channel=channel,
+                user_id=user_id,
+                tool_name=command,
+            )
 
         # Operator-side narrator: approval requests are high-signal moments
         # (a human needs to look at this). Show a styled block with command +
@@ -313,6 +325,8 @@ class ApprovalManager:
             except Exception as e:  # noqa: BLE001 — the wait below still decides
                 logger.error("Approval on_created callback error: %s", e)
 
+        # True when a timeout auto-approved: the caller proceeds with the action itself.
+        auto_approved = False
         try:
             # Wait for response or timeout
             result = await asyncio.wait_for(future, timeout=self.policy.timeout_seconds)
@@ -339,6 +353,7 @@ class ApprovalManager:
                 # packet — EVERY level denies on timeout, whatever
                 # default_action says.
                 default_approve = False
+            auto_approved = default_approve
 
             logger.info(
                 "Approval timeout for %s: %s",
@@ -368,7 +383,11 @@ class ApprovalManager:
             return default_approve
 
         except asyncio.CancelledError:
-            request.status = ApprovalStatus.DENIED
+            # A shutdown is not a denial: nobody answered, and the restarted daemon must
+            # still find the durable records when the operator does.
+            request.status = (
+                ApprovalStatus.EXPIRED if self._stopping else ApprovalStatus.DENIED
+            )
             try:
                 from navig.core import narrator
                 narrator.verdict(f"Approval {request_id}: CANCELLED", icon="cross")
@@ -382,15 +401,21 @@ class ApprovalManager:
             # does not resurrect a request nobody is waiting on any more.
             pending = self._pending.pop(request_id, None)
             self._futures.pop(request_id, None)
-            outcome = getattr(getattr(pending, "status", None), "name", "resolved")
+            # `pending` is None when stop() already cleared the map — the request object
+            # still carries the status this frame set.
+            outcome = getattr(
+                getattr(pending or request, "status", None), "name", "resolved"
+            )
             self._recently_resolved.remember(
                 request_id, outcome=outcome, command=command
             )
-            _journal.clear_pending(request_id)
+            if not self._stopping:
+                _journal.clear_pending(request_id)
             # The resume record exists for the case where nobody answered in time. A turn
             # that reached a decision has already acted on it, so keeping the record would
-            # let a stray late tap run the tool a SECOND time.
-            if outcome != "EXPIRED":
+            # let a stray late tap run the tool a SECOND time — and so would a timeout
+            # that auto-approved, since the caller proceeded with the action.
+            if outcome != "EXPIRED" or auto_approved:
                 _resume.discard(request_id)
 
     def _answer_arrived_late(
@@ -401,8 +426,12 @@ class ApprovalManager:
         command: str,
         already: str,
         note: str,
-    ) -> None:
+    ) -> bool:
         """An answer arrived for a request nothing is waiting on any more.
+
+        Returns True when the answer was ACCEPTED — an approval that started the resume, or
+        a denial that consumed a durable record — so the caller can tell the operator their
+        tap took effect rather than "not found" (which invites re-issuing a running action).
 
         Two ways in, one behaviour: the turn timed out while the daemon stayed up
         (`_recently_resolved`), or the daemon restarted and only the on-disk record is left.
@@ -421,8 +450,12 @@ class ApprovalManager:
             answered="approved" if approved else "denied",
         )
         if not approved:
+            had_record = _resume.peek(request_id) is not None
             _resume.discard(request_id)
-            return
+            return had_record
+        if _resume.peek(request_id) is None:
+            # Not an agent-tool request (or already consumed): nothing can be re-entered.
+            return False
         # Re-enter in the background: `respond` is called from a channel callback (a
         # Telegram tap), and a turn can take minutes. `spawn` is the GC-safe
         # fire-and-forget helper — a bare create_task can be collected mid-flight.
@@ -432,6 +465,8 @@ class ApprovalManager:
             spawn(_resume.resume_after_approval(request_id))
         except Exception:  # noqa: BLE001 — never break the callback
             logger.exception("Approval %s: could not start resume", request_id)
+            return False
+        return True
 
     async def respond(self, request_id: str, approved: bool, reason: str | None = None) -> bool:
         """
@@ -443,7 +478,9 @@ class ApprovalManager:
             reason: Optional human note (e.g. a denial reason from the deck);
                 recorded in the audit log but does not change the boolean result.
 
-        Returns True if request was found and responded to.
+        Returns True if request was found and responded to — including a late or
+        post-restart answer that was accepted from the durable record (an approval that
+        re-enters the turn, or a denial that consumed it). False means nothing took effect.
         """
         request = self._pending.get(request_id)
         if not request:
@@ -451,7 +488,7 @@ class ApprovalManager:
             # human whose tap did nothing; saying so is the whole point.
             late = self._recently_resolved.get(request_id)
             if late is not None:
-                self._answer_arrived_late(
+                return self._answer_arrived_late(
                     request_id,
                     approved,
                     command=str(late.get("command", "")),
@@ -469,7 +506,7 @@ class ApprovalManager:
                 # Approve after a restart and gets "request not found".
                 durable = _resume.peek(request_id)
                 if durable is not None:
-                    self._answer_arrived_late(
+                    return self._answer_arrived_late(
                         request_id,
                         approved,
                         command=str(durable.get("tool_name", "")),

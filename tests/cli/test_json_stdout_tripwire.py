@@ -70,6 +70,24 @@ _BANNED_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     ),
 )
 
+_DUMPS_BINDING = re.compile(r"(?<![\w.])(\w+)\s*=\s*\w*json\w*\.dumps\(")
+
+
+def _rich_printed_dumps(src: str) -> str | None:
+    """The first `.print(<name>)` whose <name> was bound to a json.dumps(...) result.
+
+    `payload = json.dumps(d); ch.console.print(payload)` is the banned Rich path one
+    variable removed: the direct `.print(json.dumps` pattern misses it, and the bare
+    `json.dumps(` approved alternative then passes it. Builtin `print(payload)` /
+    `typer.echo(payload)` carry no leading dot and stay allowed.
+    """
+    for name in dict.fromkeys(_DUMPS_BINDING.findall(src)):
+        match = re.search(rf"\.print\(\s*{re.escape(name)}\s*[,)]", src)
+        if match:
+            return match.group(0)
+    return None
+
+
 #: Emitters that keep stdout parseable. ``\w*json\w*`` covers the alias zoo:
 #: ``json``, ``_json``, ``jsonlib``, ``json_module``, ``json_mod``.
 _APPROVED_PATTERN = re.compile(
@@ -219,6 +237,12 @@ def analysis() -> _Analysis:
             match = pattern.search(src)
             if match:
                 banned.append(f"{paths[0]} ({key[0]}.{key[1]}): {match.group(0)!r} — {why}")
+        indirect = _rich_printed_dumps(src)
+        if indirect:
+            banned.append(
+                f"{paths[0]} ({key[0]}.{key[1]}): {indirect!r} — a json.dumps result printed "
+                "through the Rich console hard-wraps at the console width when piped"
+            )
         if not _APPROVED_PATTERN.search(src):
             gap_keys.add(key)
 
@@ -233,6 +257,18 @@ def test_schema_enumerates_a_healthy_population_of_json_verbs(analysis: _Analysi
         f"only {len(analysis.handlers)} --json handlers enumerated — the schema walk "
         "(navig.registry.manifest) or option extraction has regressed"
     )
+
+
+def test_rich_print_of_a_dumps_variable_is_caught():
+    """Anti-vacuity for the variable-indirection form of the banned Rich emitter."""
+    assert _rich_printed_dumps(
+        "payload = json.dumps(data, indent=2)\nch.console.print(payload)"
+    ) == ".print(payload)"
+    assert _rich_printed_dumps("out = _json.dumps(d)\nconsole.print(out, soft_wrap=True)")
+    # Pure emitters of the same variable stay allowed.
+    assert _rich_printed_dumps("payload = json.dumps(d)\nprint(payload)") is None
+    assert _rich_printed_dumps("payload = json.dumps(d)\ntyper.echo(payload)") is None
+    assert _rich_printed_dumps("payload = json.dumps(d)\nch.console.print(payload_table)") is None
 
 
 def test_no_json_verb_routes_through_a_corrupting_rich_emitter(analysis: _Analysis):

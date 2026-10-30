@@ -42,6 +42,7 @@ import time
 from datetime import datetime, timezone
 from itertools import combinations
 from pathlib import Path
+from typing import Literal, overload
 
 import typer
 
@@ -301,17 +302,25 @@ def _display_path(path: Path | str, root: Path) -> str:
         return str(p)
 
 
-def list_worktrees(root: Path) -> list[dict]:
+@overload
+def list_worktrees(root: Path, *, strict: Literal[False] = False) -> list[dict]: ...
+@overload
+def list_worktrees(root: Path, *, strict: Literal[True]) -> list[dict] | None: ...
+def list_worktrees(root: Path, *, strict: bool = False) -> list[dict] | None:
     """All worktrees of the repo, parsed from ``git worktree list --porcelain``.
 
     Each entry: ``path`` (Path), ``head`` (sha), ``branch`` (short name or
     None when detached), ``is_primary`` (the main checkout), ``is_sibling``
     (lives outside the primary checkout — forbidden by house rules), ``locked``
     (the lock reason — ``""`` for a lock with no reason — or None when unlocked).
+
+    A failed listing (timeout 124, start failure 125, any non-zero exit) returns ``[]``
+    — or ``None`` with *strict*, for callers where "absent" must not be inferred from
+    "could not ask" (a removal deciding whether git unregistered a worktree).
     """
     res = _git(["worktree", "list", "--porcelain"], root)
     if res.returncode != 0:
-        return []
+        return None if strict else []
     worktrees: list[dict] = []
     current: dict = {}
     for line in res.stdout.splitlines():
@@ -600,18 +609,25 @@ def branch_never_committed(root: Path, name: str) -> tuple[bool, float | None]:
     worktree had zero reflog entries.
     """
     res = _git(
-        ["reflog", "show", "--date=unix", "--format=%gd|%gs|%cd", f"refs/heads/{name}"], root
+        ["reflog", "show", "--date=unix", "--format=%gd|%gs", f"refs/heads/{name}"], root
     )
     if res.returncode != 0:
         return False, None
     entries = [ln for ln in (res.stdout or "").splitlines() if ln.strip()]
     if len(entries) != 1:
         return False, None
-    _sel, subject, date = (entries[0].split("|", 2) + ["", ""])[:3]
+    sel, subject = (entries[0].split("|", 1) + [""])[:2]
     if not subject.startswith("branch: Created"):
         return False, None
+    # The creation time is the reflog ENTRY's own time, carried in the dated selector
+    # (``feat/x@{<unix>}`` under --date=unix). ``%cd`` is the committer date of the commit
+    # the branch was cut from — weeks old in a quiet repo, which made a minutes-old
+    # worktree look abandoned to `repo sweep`.
+    sel = sel.strip()
+    if not (sel.endswith("}") and "@{" in sel):
+        return True, None
     try:
-        return True, float(date.strip())
+        return True, float(sel[sel.rindex("@{") + 2 : -1])
     except ValueError:
         return True, None
 
@@ -633,14 +649,19 @@ def worktree_last_moved(path: Path) -> float | None:
         return None
 
 
-def _idle_verdict(path: Path, what: str) -> str | None:
+def _idle_verdict(path: Path, what: str, not_before: float | None = None) -> str | None:
     """``None`` (removable) once the worktree's HEAD has not moved for ``LOCK_TTL_MINUTES``,
     else why it is kept. Used where the behind-count caution does not apply — the worktree
     is provably not fresh — but a live session may still be sitting in it.
+
+    *not_before* starts the idle window no earlier than an event git's reflog cannot see —
+    a PR merged on GitHub just now over a commit made hours ago is not hours idle.
     """
     moved = worktree_last_moved(path)
     if moved is None:
         return f"{what}; cannot tell when it was last used — remove by hand if finished"
+    if not_before is not None:
+        moved = max(moved, not_before)
     idle_min = (time.time() - moved) / 60
     if idle_min < LOCK_TTL_MINUTES:
         return (
@@ -1420,8 +1441,20 @@ def prune_cmd(
     deletes anything outside ``.dev/worktrees/``.
     """
     root = _require_root(repo)
-    _git(["worktree", "prune"], root)  # drop dangling metadata first (safe, idempotent)
     base = (root / WORKTREES_RELDIR).resolve()
+    # A symlinked/junctioned .dev or .dev/worktrees makes its EXTERNAL target the
+    # "approved" parent below, so its children would read as orphans and be deleted —
+    # data outside the repository. Refuse before enumerating anything.
+    if os.path.normcase(str(base)) != os.path.normcase(str(root.resolve() / WORKTREES_RELDIR)):
+        from navig import console_helper as ch
+
+        ch.error(
+            f"{WORKTREES_RELDIR.as_posix()} is a link to {base} — refusing to prune outside "
+            "the repository.",
+            "Replace the link with a real directory, or clean its target by hand.",
+        )
+        raise typer.Exit(1)
+    _git(["worktree", "prune"], root)  # drop dangling metadata first (safe, idempotent)
     orphans = orphan_worktree_dirs(root)
     for od in orphans:
         od["live"] = _orphan_live_worktree(Path(od["path"]))  # dict when live, else None
@@ -1587,7 +1620,7 @@ def _gh_pr_rows(
                 "--limit",
                 str(limit),
                 "--json",
-                "headRefName,number,state,headRefOid",
+                "headRefName,number,state,headRefOid,baseRefName,mergedAt",
             ],
             cwd=str(root),
             capture_output=True,
@@ -1606,8 +1639,19 @@ def _gh_pr_rows(
         return None, "gh returned unreadable JSON"
 
 
+def _iso_to_unix(value: object) -> float | None:
+    """GitHub's ``2026-10-25T12:00:00Z`` as unix time, or ``None`` when absent/unreadable."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
 def _github_pr_index(root: Path) -> tuple[dict[str, dict], str | None]:
-    """``branch -> {number, state, head}`` — EVERY merged PR, plus recent open ones — or
+    """``branch -> {number, state, head}`` — EVERY PR merged into the default branch, plus
+    recent open ones — or
     ``({}, why)`` when unavailable.
 
     Newest first, so a branch reused across several PRs is judged by its latest.
@@ -1629,7 +1673,13 @@ def _github_pr_index(root: Path) -> tuple[dict[str, dict], str | None]:
     if merged is None:
         return {}, why
     open_rows, _why_open = _gh_pr_rows(gh, root, "open", _PR_OPEN_LIMIT)
-    rows = list(merged) + list(open_rows or [])  # merged first: the proof wins over annotation
+    # A merged PR is a proof only when it merged INTO the default branch: a PR merged into
+    # `develop` or a release branch at this exact tip says nothing about origin/<default>,
+    # and treating it as proof let `sweep`/`land` force-delete work main never received.
+    # A row that does not name its base cannot be checked, so it is not a proof either.
+    default = default_branch(root)
+    merged_to_default = [row for row in merged if row.get("baseRefName") == default]
+    rows = merged_to_default + list(open_rows or [])  # merged first: proof beats annotation
     index: dict[str, dict] = {}
     for row in rows:
         head = row.get("headRefName")
@@ -1638,6 +1688,7 @@ def _github_pr_index(root: Path) -> tuple[dict[str, dict], str | None]:
                 "number": row.get("number"),
                 "state": row.get("state"),
                 "head": row.get("headRefOid"),
+                "merged_at": _iso_to_unix(row.get("mergedAt")),
             }
     note = None
     if len(merged) >= _PR_INDEX_LIMIT:
@@ -1673,7 +1724,9 @@ def _prove_merged(
     return None
 
 
-def delete_proven_branch(root: Path, name: str, proof: str, base: str) -> tuple[bool, str | None]:
+def delete_proven_branch(
+    root: Path, name: str, proof: str, base: str, expected_sha: str | None = None
+) -> tuple[bool, str | None]:
     """Delete a local branch the sweep has PROVEN is already on *base*.
 
     ``-d`` for a proven ancestor keeps git's own refusal as a second net; the other proofs
@@ -1692,11 +1745,24 @@ def delete_proven_branch(root: Path, name: str, proof: str, base: str) -> tuple[
     after which this is called with the branch that worktree held. Refused here, at the
     one remover every caller shares, rather than at each call site.
 
+    *expected_sha* is the full tip the proof was computed for. The callers classify every
+    branch before deleting any, and in a repo other sessions use concurrently a branch can
+    advance in between — ``-D`` by name would then remove a tip no proof ever covered. So
+    the tip is re-read immediately before the delete and a moved branch is KEPT.
+
     Returns ``(deleted, error)``.
     """
     default = default_branch(root)
     if name == default:
         return False, f"refusing to delete the default branch '{default}'"
+    if expected_sha:
+        now = _git(["rev-parse", "--verify", "--quiet", f"refs/heads/{name}"], root)
+        current = (now.stdout or "").strip() if now.returncode == 0 else ""
+        if current != expected_sha:
+            return False, (
+                f"kept: {name} moved since it was classified "
+                f"(was {expected_sha[:9]}, now {current[:9] or 'gone'}) — re-run to re-judge it"
+            )
     flag = "-d" if proof == "ancestor" else "-D"
     res = _git(["branch", flag, name], root)
     if res.returncode == 0:
@@ -1769,14 +1835,13 @@ def collect_sweep(root: Path, *, github: bool = True, fetch: bool = True) -> dic
         pr = pr_index.get(name)
         pr_label = f"#{pr['number']} {pr['state']}" if pr else None
 
-        if _git(["merge-base", "--is-ancestor", name, base], root).returncode == 0:
-            redundant.append({"name": name, "sha": short, "proof": "ancestor", "pr": pr_label})
-            continue
-        if base_tree and _git(["rev-parse", f"{name}^{{tree}}"], root).stdout.strip() == base_tree:
-            redundant.append({"name": name, "sha": short, "proof": "tree", "pr": pr_label})
-            continue
-        if pr and pr.get("state") == "MERGED" and pr.get("head") == sha:
-            redundant.append({"name": name, "sha": short, "proof": "merged-pr", "pr": pr_label})
+        # Judge the SHA, not the name: the delete is pinned to this exact tip, so the
+        # proof must be about it too (the branch can move between the two).
+        proof = _prove_merged(root, sha, sha, base, base_tree, pr) if sha else None
+        if proof:
+            redundant.append(
+                {"name": name, "sha": short, "sha_full": sha, "proof": proof, "pr": pr_label}
+            )
             continue
 
         ahead = _git(["rev-list", "--count", f"{base}..{name}"], root)
@@ -1800,6 +1865,7 @@ def collect_sweep(root: Path, *, github: bool = True, fetch: bool = True) -> dic
     # and forgotten. The same three proofs decide; a dirty tree is reported, never
     # removed (uncommitted work on top of a merged branch is still uncommitted work).
     finished: list[dict] = []
+    base_sha = _git(["rev-parse", base], root).stdout.strip()
     for wt in list_worktrees(root):
         if wt["is_primary"] or not wt.get("branch"):
             continue
@@ -1851,12 +1917,27 @@ def collect_sweep(root: Path, *, github: bool = True, fetch: bool = True) -> dic
         # each one wait for 50 more merges. Same idle gate: the session that just merged may
         # still be in it. Without the GitHub index this never fires, so it can only keep more.
         merged_pr_tip = bool(pr and pr.get("state") == "MERGED" and pr.get("head") == sha)
+        if merged_pr_tip and sha == base_sha:
+            # ...except at the base tip itself. A fast-forward merge makes the PR head the
+            # base tip, so a branch deleted and recreated under the same name from that
+            # base has the same name AND sha as the merged PR — a sha does not identify a
+            # branch incarnation. Only a branch whose own reflog shows it moved past its
+            # creation can be the one that was merged; a lone "Created" entry (or none,
+            # which is unknown) falls through to the fresh-worktree rules below.
+            moves = _git(["reflog", "show", "--format=%gd", f"refs/heads/{name}"], root)
+            entries = [ln for ln in (moves.stdout or "").splitlines() if ln.strip()]
+            if moves.returncode != 0 or len(entries) < 2:
+                merged_pr_tip = False
         if is_dirty:
             why_kept = "uncommitted changes — inspect, then: navig repo remove <slug> --force"
         elif holds_default:
             why_kept = _idle_verdict(Path(wt["path"]), f"holds {name}")
         elif merged_pr_tip:
-            why_kept = _idle_verdict(Path(wt["path"]), f"merged as {pr_label}")
+            # The idle window starts at the MERGE, not at the last local commit: the
+            # session that just merged may still be in a worktree whose HEAD is hours old.
+            why_kept = _idle_verdict(
+                Path(wt["path"]), f"merged as {pr_label}", not_before=pr.get("merged_at")
+            )
         elif behind is None:
             why_kept = "cannot tell how far behind it is"
         elif behind >= WORKTREE_BEHIND_WARN:
@@ -1880,6 +1961,7 @@ def collect_sweep(root: Path, *, github: bool = True, fetch: bool = True) -> dic
                 "slug": Path(wt["path"]).name,
                 "branch": name,
                 "sha": sha[:9],
+                "sha_full": sha,
                 "proof": proof,
                 "pr": pr_label,
                 "dirty": is_dirty,
@@ -1915,6 +1997,27 @@ _REMOTE_DELETE_BATCH = 40
 def _chunks(items: list, size: int):
     for i in range(0, len(items), size):
         yield items[i : i + size]
+
+
+def _lease_delete_args(refs: list[dict], *, atomic: bool = False) -> list[str]:
+    """``git push`` args that delete each ``origin/<name>`` ONLY if it is still at its
+    classified ``sha_full``.
+
+    The proof was computed for that sha. A ref that advanced afterwards (another session
+    pushed, or ``--no-fetch`` judged a stale tracking ref) carries work no proof covered,
+    and an unconditional ``--delete`` removed it. ``--force-with-lease=<ref>:<expect>``
+    makes the remote refuse the update unless the ref still holds *expect*; ``--atomic``
+    makes a batch all-or-nothing, so the one-by-one retry attributes every refusal.
+    """
+    leases = [f"--force-with-lease=refs/heads/{br['name']}:{br['sha_full']}" for br in refs]
+    return [
+        "push",
+        *(["--atomic"] if atomic else []),
+        *leases,
+        "origin",
+        "--delete",
+        *[br["name"] for br in refs],
+    ]
 
 
 def collect_remote_sweep(root: Path, *, github: bool = True, fetch: bool = True) -> dict:
@@ -1978,14 +2081,11 @@ def collect_remote_sweep(root: Path, *, github: bool = True, fetch: bool = True)
         pr = pr_index.get(name)
         pr_label = f"#{pr['number']} {pr['state']}" if pr else None
 
-        if _git(["merge-base", "--is-ancestor", ref, base], root).returncode == 0:
-            redundant.append({"name": name, "sha": short, "proof": "ancestor", "pr": pr_label})
-            continue
-        if base_tree and _git(["rev-parse", f"{ref}^{{tree}}"], root).stdout.strip() == base_tree:
-            redundant.append({"name": name, "sha": short, "proof": "tree", "pr": pr_label})
-            continue
-        if pr and pr.get("state") == "MERGED" and pr.get("head") == sha:
-            redundant.append({"name": name, "sha": short, "proof": "merged-pr", "pr": pr_label})
+        proof = _prove_merged(root, sha, sha, base, base_tree, pr)
+        if proof:
+            redundant.append(
+                {"name": name, "sha": short, "sha_full": sha, "proof": proof, "pr": pr_label}
+            )
             continue
 
         ahead = _git(["rev-list", "--count", f"{base}..{ref}"], root)
@@ -2068,7 +2168,9 @@ def sweep_cmd(
     wt_failed: list[dict] = []
     if yes:
         for br in data["redundant"]:
-            ok_del, err = delete_proven_branch(root, br["name"], br["proof"], data["base_ref"])
+            ok_del, err = delete_proven_branch(
+                root, br["name"], br["proof"], data["base_ref"], br.get("sha_full")
+            )
             (deleted if ok_del else failed).append({**br, "error": err})
         if remote_data:
             # ONE push per batch, not one per branch. The first complete index found 194
@@ -2077,14 +2179,14 @@ def sweep_cmd(
             # each still starts a process). `git push --delete a b c …` takes them all in a
             # single ref-update; a batch that fails is retried one by one so a single bad
             # ref (raced away by another session's merge) cannot hide the rest.
+            # Each delete is LEASED to the sha the proof covered (see _lease_delete_args).
             for chunk in _chunks(remote_data["redundant"], _REMOTE_DELETE_BATCH):
-                names = [br["name"] for br in chunk]
-                res = _git(["push", "origin", "--delete", *names], root, timeout=180)
+                res = _git(_lease_delete_args(chunk, atomic=True), root, timeout=180)
                 if res.returncode == 0:
                     remote_deleted.extend({**br, "error": None} for br in chunk)
                     continue
                 for br in chunk:  # fall back to one at a time to attribute the failure
-                    one = _git(["push", "origin", "--delete", br["name"]], root, timeout=60)
+                    one = _git(_lease_delete_args([br]), root, timeout=60)
                     (remote_deleted if one.returncode == 0 else remote_failed).append(
                         {**br, "error": None if one.returncode == 0 else one.stderr.strip()}
                     )
@@ -2101,7 +2203,7 @@ def sweep_cmd(
                 wt_removed.append({**wt, "branch_deleted": False, "error": None})
             elif out["removed"]:
                 ok_del, err = delete_proven_branch(
-                    root, wt["branch"], wt["proof"], data["base_ref"]
+                    root, wt["branch"], wt["proof"], data["base_ref"], wt.get("sha_full")
                 )
                 wt_removed.append({**wt, "branch_deleted": ok_del, "error": err})
             else:
@@ -2516,7 +2618,19 @@ def remove_worktree(root: Path, wt_dir: Path, *, force: bool = False) -> dict:
         root,
         timeout=_GIT_DELETE_TIMEOUT,
     )
-    reg_after = {os.path.normcase(str(Path(w["path"]).resolve())) for w in list_worktrees(root)}
+    listed_after = list_worktrees(root, strict=True)
+    if listed_after is None and res.returncode != 0:
+        # git refused (or never ran) AND the check of whether it unregistered the worktree
+        # failed: absence from a listing we could not get proves nothing. Deleting here
+        # would bypass git's dirty-worktree guard and destroy uncommitted work.
+        return {
+            "removed": False,
+            "refused": ("could not verify the worktree was unregistered "
+                        f"(git worktree remove exited {res.returncode}; listing it failed)"),
+            "leftover_error": None,
+            "hint": "Nothing was deleted. Re-run once git responds: git worktree list",
+        }
+    reg_after = {os.path.normcase(str(Path(w["path"]).resolve())) for w in listed_after or []}
     if key in reg_after:  # still registered → git refused
         why = (res.stderr or res.stdout).strip()[:300]
         hint = (
@@ -2575,7 +2689,27 @@ def remove_cmd(
     from navig import console_helper as ch
 
     root = _require_root(repo)
-    wt_dir = root / WORKTREES_RELDIR / slug
+    # The slug names ONE direct child of .dev/worktrees/. An absolute path makes Path drop
+    # the base, and `..`/separators walk out of it — either way a registered SIBLING
+    # worktree passed the membership check and was removed (with --force, its work too).
+    # Not _SLUG_RE: worktrees made by other tools may carry names `new` would not mint.
+    base = root / WORKTREES_RELDIR
+    wt_dir = base / slug
+    if (
+        not slug
+        or slug in (".", "..")
+        # Shape checks on the token as typed — never Path(slug): that is an
+        # unresolved path (typed-path invariant), and here only the shape matters.
+        or os.path.isabs(slug)
+        or os.path.splitdrive(slug)[0]
+        or any(sep in slug for sep in ("/", "\\"))
+        or os.path.normcase(str(wt_dir.resolve().parent)) != os.path.normcase(str(base.resolve()))
+    ):
+        ch.error(
+            f"Invalid worktree slug: {slug!r}",
+            f"Name a folder directly under {WORKTREES_RELDIR.as_posix()}/ (see navig repo stale).",
+        )
+        raise typer.Exit(1)
     out = remove_worktree(root, wt_dir, force=force)
     if out["refused"]:
         ch.error(f"{slug}: {out['refused']}.", out["hint"] or "")
@@ -2638,11 +2772,27 @@ def collect_land(root: Path, branch: str, *, github: bool = True, fetch: bool = 
         index, github_note = _github_pr_index(root)
         pr = index.get(branch)
 
-    proof = _prove_merged(root, branch, sha, base, base_tree, pr) if exists else None
-    remote_exists = (
-        _git(["rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}"], root).returncode
-        == 0
-    )
+    proof = _prove_merged(root, sha, sha, base, base_tree, pr) if exists and sha else None
+    remote_ref = f"refs/remotes/origin/{branch}"
+    if fetch and _git(["rev-parse", "--verify", "--quiet", remote_ref], root).returncode == 0:
+        # The fetch above brought only the default branch. origin/<branch> may have gained
+        # commits since the last fetch, and it is deleted on ITS OWN proof below, so read
+        # its current tip. Best effort: a failure leaves the cached ref, and the lease on
+        # the delete still refuses a tip that moved.
+        _git(["fetch", "origin", f"+refs/heads/{branch}:{remote_ref}"], root, timeout=60)
+    remote_probe = _git(["rev-parse", "--verify", "--quiet", remote_ref], root)
+    remote_exists = remote_probe.returncode == 0
+    remote_sha = (remote_probe.stdout or "").strip() if remote_exists else ""
+    # The local proof says nothing about origin/<branch>: someone may have pushed work to
+    # it after the merge. Its tip is deleted only when it is the proven local tip or holds
+    # a proof of its own; otherwise the remote ref is KEPT.
+    remote_proof = None
+    if remote_sha:
+        remote_proof = (
+            "same tip"
+            if remote_sha == sha and proof
+            else _prove_merged(root, remote_sha, remote_sha, base, base_tree, pr)
+        )
     wt = _worktree_for_branch(root, branch)
     # Uncommitted work on top of a MERGED branch is still uncommitted work — merge, then
     # start the next thing in the same folder, is an ordinary sequence. land used to remove
@@ -2661,9 +2811,13 @@ def collect_land(root: Path, branch: str, *, github: bool = True, fetch: bool = 
         "fetched": fetched,
         "exists": exists,
         "sha": sha[:9],
+        "sha_full": sha,
         "proof": proof,
         "pr": (f"#{pr['number']} {pr['state']}" if pr else None),
         "remote_exists": remote_exists,
+        "remote_sha": remote_sha[:9] or None,
+        "remote_sha_full": remote_sha or None,
+        "remote_proof": remote_proof,
         "worktree": str(wt) if wt else None,
         "worktree_dirty": worktree_dirty,
         "ahead":(int(ahead.stdout.strip() or 0) if ahead and ahead.returncode == 0 else None),
@@ -2745,8 +2899,19 @@ def land_cmd(
 
     if yes and plan["exists"] and plan["proof"]:
         # 1. Remote ref (the step that leaks). refs/pull/N/head keeps it recoverable.
-        if plan["remote_exists"]:
-            res = _git(["push", "origin", "--delete", branch], root, timeout=60)
+        #    Only a PROVEN remote tip, and leased to it: a push after the plan was read
+        #    makes the remote refuse the delete instead of losing that work.
+        if plan["remote_exists"] and not plan["remote_proof"]:
+            failed["remote"] = (
+                f"kept: origin/{branch} is at {plan['remote_sha']}, which is not proven on "
+                f"{plan['base_ref']} — inspect it, then delete it by hand if it is finished"
+            )
+        elif plan["remote_exists"]:
+            res = _git(
+                _lease_delete_args([{"name": branch, "sha_full": plan["remote_sha_full"]}]),
+                root,
+                timeout=60,
+            )
             (done if res.returncode == 0 else failed)["remote"] = (
                 "deleted" if res.returncode == 0 else (res.stderr or res.stdout).strip()[:200]
             )
@@ -2765,7 +2930,9 @@ def land_cmd(
         #    land is finishing. delete_proven_branch re-verifies ancestry and falls back to
         #    -D on that refusal only. Land used raw -d here and would have leaked the local
         #    branch on the very case it exists to clean up.
-        ok_del, del_err = delete_proven_branch(root, branch, plan["proof"], plan["base_ref"])
+        ok_del, del_err = delete_proven_branch(
+            root, branch, plan["proof"], plan["base_ref"], plan.get("sha_full")
+        )
         (done if ok_del else failed)["local"] = (
             f"deleted (was {plan['sha']})"
             if ok_del
@@ -2798,8 +2965,13 @@ def land_cmd(
         raise typer.Exit(1)
 
     targets = []
-    if plan["remote_exists"]:
+    if plan["remote_exists"] and plan["remote_proof"]:
         targets.append("origin ref")
+    elif plan["remote_exists"]:
+        ch.warning(
+            f"origin/{branch} ({plan['remote_sha']}) is not proven on {plan['base_ref']} — "
+            "it will be KEPT."
+        )
     if plan["worktree"]:
         targets.append(f"worktree ({_display_path(plan['worktree'], root)})")
     targets.append(f"local branch (was {plan['sha']})")
@@ -3479,7 +3651,11 @@ _GUARD_SETTINGS_SUBDIR = Path(".claude") / "settings.json"
 # Claude Code expands this in hook commands to the project root — it is what makes
 # .claude/settings.json portable, and therefore committable.
 _GUARD_PROJECT_DIR = "${CLAUDE_PROJECT_DIR}"
-_GUARD_MATCHER = "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell"
+# EVERY tool, not only the mutating ones: the hook's heartbeat is what keeps the holder's
+# lock fresh, and a session that spends the TTL in Read/Grep/Glob is still at work — with
+# an edit/shell-only matcher it went stale after LOCK_TTL_MINUTES and another session took
+# the main checkout over. The script exempts non-edit, non-shell tools and only refreshes.
+_GUARD_MATCHER = "*"
 
 
 def _guard_interpreter() -> str:
@@ -3684,6 +3860,17 @@ def guard_install_cmd(
             continue
         hooks_cfg.setdefault(event, []).append(entry)
         wired_now.append(event)
+    # Upgrade an existing install's PreToolUse wiring to the all-tools matcher; an older
+    # one matched only edit/shell tools, so a reading session's lock went stale.
+    for existing in hooks_cfg.get("PreToolUse", []) or []:
+        ours = any(
+            _GUARD_MARKERS["PreToolUse"] in str(h.get("command", ""))
+            for h in existing.get("hooks", []) or []
+        )
+        if ours and existing.get("matcher") != _GUARD_MATCHER:
+            existing["matcher"] = _GUARD_MATCHER
+            if "PreToolUse" not in wired_now:
+                wired_now.append("PreToolUse")
     if wired_now:
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")

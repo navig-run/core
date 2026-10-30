@@ -207,3 +207,25 @@ def test_finance_section_uses_the_snapshot_currency(monkeypatch):
     text = " ".join(section["items"])
     assert "EUR" in text
     assert "$" not in text
+
+
+def test_a_utc_instant_is_not_read_as_local_time():
+    """`generated_at` is UTC now; reading it as local made an hour of drift.
+
+    The wrong comparison is invisible while the drift is smaller than _MAX_AGE and
+    turns into a rebuild loop for a briefing built just after local midnight.
+    """
+    # 23:40 UTC yesterday == 00:40 local in Paris — still "today" for the operator.
+    late = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
+    assert br._is_stale({"generated_at": late}) is False
+
+    # And an genuinely old UTC instant is stale, not "future" by the hour offset.
+    old = (datetime.now(timezone.utc) - timedelta(hours=br._MAX_AGE.total_seconds() / 3600 + 1)).isoformat()
+    assert br._is_stale({"generated_at": old}) is True
+
+
+def test_generated_at_is_written_as_an_aware_utc_instant():
+    built = br._build(gw=None)
+    made = datetime.fromisoformat(str(built["generated_at"]))
+    assert made.tzinfo is not None
+    assert made.utcoffset() == timedelta(0)

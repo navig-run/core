@@ -29,9 +29,18 @@ def _run_cli(*args: str, home: Path) -> subprocess.CompletedProcess:
     # on non-UTF-8 Windows console encodings (e.g. cp1251).
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
+    # Run from `home`, never `cwd=REPO_ROOT`: conftest's app-root suppression is an
+    # in-process patch a fresh interpreter does not inherit, so from core/ the child's
+    # real `find_app_root` finds the tracked `core/.navig` and uses source-tree state.
+    # `home/.navig` is the child's NAVIG_CONFIG_DIR, which ends that walk at the global
+    # dir. PYTHONPATH keeps `-m navig` importing this checkout from the new cwd.
+    (home / ".navig").mkdir(parents=True, exist_ok=True)
+    env["PYTHONPATH"] = os.pathsep.join(
+        p for p in (str(REPO_ROOT), env.get("PYTHONPATH", "")) if p
+    )
     return subprocess.run(
         [sys.executable, "-m", "navig", *args],
-        cwd=REPO_ROOT,
+        cwd=home,
         capture_output=True,
         text=True,
         encoding="utf-8",

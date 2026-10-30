@@ -242,6 +242,32 @@ class MissionExecutor:
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
+    def _cancel_if_live(self, mission: Mission, reason: str) -> bool:
+        """Cancel a mission that is still live; return False when it already finished.
+
+        The executor is not the only actor that can end a mission: `advance_mission`
+        (the deck/CLI `navig mission …` route) drives the same state machine from
+        outside. On 2026-10-28 three brain readiness missions were marked succeeded
+        while their approval prompts were still pending; the timeout then called
+        `mission.cancel()` on a SUCCEEDED mission and the executor crashed with
+        ``Invalid transition 'succeeded' → 'cancelled'`` (four times, 07:12–07:13),
+        stranding the approval path after the deny. A terminal state is final, so
+        there is nothing left to cancel — the receipt and the event already exist.
+        """
+        if mission.is_terminal:
+            logger.info(
+                "Mission %s finished (%s) while the executor was waiting; leaving it alone "
+                "instead of cancelling for %r",
+                mission.mission_id[:8],
+                mission.status.value,
+                reason,
+            )
+            return False
+        mission.cancel(reason)
+        self.store.record_receipt_from_mission(mission)
+        self.store.flush()
+        return True
+
     async def _execute(self, mission: Mission) -> Mission:
         try:
             autonomy = self._resolve_autonomy(mission)
@@ -251,10 +277,8 @@ class MissionExecutor:
             if autonomy == Autonomy.APPROVAL:
                 approved = await self._request_approval(mission)
                 if not approved:
-                    mission.cancel("approval denied or timed out")
-                    self.store.record_receipt_from_mission(mission)
-                    self.store.flush()
-                    await self._emit(mission)  # cancelled
+                    if self._cancel_if_live(mission, "approval denied or timed out"):
+                        await self._emit(mission)  # cancelled
                     return mission
 
             # Provable trust: AUTO missions have no human in the loop, so a cheap
@@ -264,11 +288,11 @@ class MissionExecutor:
             if autonomy == Autonomy.AUTO:
                 verdict = await self._verify_mission(mission)
                 if verdict is not None and not verdict.safe:
-                    mission.cancel(f"verification failed: {verdict.reason}")
+                    # The verdict is recorded even when the mission finished while the
+                    # verifier ran — the audit keeps the reason either way.
                     mission.metadata["verification"] = verdict.to_dict()
-                    self.store.record_receipt_from_mission(mission)
-                    self.store.flush()
-                    await self._emit(mission)  # cancelled
+                    if self._cancel_if_live(mission, f"verification failed: {verdict.reason}"):
+                        await self._emit(mission)  # cancelled
                     return mission
                 if verdict is not None:
                     mission.metadata["verification"] = verdict.to_dict()

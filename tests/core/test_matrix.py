@@ -114,8 +114,13 @@ class TestMatrixFeatures:
             assert dummy_func() == "ok"
 
     def test_require_feature_decorator_blocks(self):
-        """Decorated function should raise Exit when feature is disabled."""
-        from click.exceptions import Exit
+        """Decorated function raises the Exit the product raises: ``typer.Exit``.
+
+        It used to import ``click.exceptions.Exit`` and expect that class. Typer 0.27
+        vendors its own click, so a separately installed click (present on this box) has a
+        DIFFERENT Exit class and the guard failed for a correct implementation.
+        """
+        import typer
 
         from navig.comms.matrix_features import require_feature
 
@@ -124,7 +129,7 @@ class TestMatrixFeatures:
             return "ok"
 
         with patch("navig.comms.matrix_features.is_feature_enabled", return_value=False):
-            with pytest.raises(Exit):
+            with pytest.raises(typer.Exit):
                 dummy_func()
 
 

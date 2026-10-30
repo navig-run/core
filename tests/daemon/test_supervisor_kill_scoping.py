@@ -143,3 +143,46 @@ def test_self_and_exclude_pid_are_skipped():
     assert out == [202], "must never kill self or the explicitly-excluded pid"
     assert 999 not in out
     assert me not in out
+
+
+def test_a_custom_config_sweep_spares_a_default_config_brain(monkeypatch, tmp_path):
+    """With the REAL reader: a peer with no NAVIG_CONFIG_DIR is on ITS default
+    (its own home), never the sweeping process's custom dir — so a custom-config
+    `service stop` must not force-kill a directly launched default-config gateway."""
+    import sys
+    import types
+
+    smoke = tmp_path / "smoke"
+    operator_home = tmp_path / "operator"
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(smoke))
+
+    class _Proc:
+        def __init__(self, pid):
+            self.pid = pid
+
+        def environ(self):
+            return {"USERPROFILE": str(operator_home), "HOME": str(operator_home)}
+
+    monkeypatch.setitem(sys.modules, "psutil", types.SimpleNamespace(Process=_Proc))
+    killed: list[int] = []
+    out = NavigDaemon._kill_orphan_daemons(
+        config_dir=smoke, pids=[4242], killer=killed.append, keep=set()
+    )
+    assert out == [] and killed == [], "a default-config brain was swept as our own"
+
+
+def test_an_unisolated_test_never_sweeps_the_operators_brain(monkeypatch, tmp_path):
+    """Under pytest with NAVIG_CONFIG_DIR cleared, the pid file moves to a temp dir but
+    the sweep used to stay scoped to `paths.config_dir()` — the operator's real
+    ~/.navig — so the LIVE daemon read as a same-brain orphan and was force-killed."""
+    from navig.daemon import supervisor as sup
+
+    real = tmp_path / "operator" / ".navig"
+    monkeypatch.delenv("NAVIG_CONFIG_DIR", raising=False)
+    monkeypatch.setattr(sup.paths, "config_dir", lambda: real)
+    killed: list[int] = []
+    out = NavigDaemon._kill_orphan_daemons(
+        pids=[4242], config_dir_reader=lambda pid: real, killer=killed.append, keep=set()
+    )
+    assert out == [] and killed == [], "a test swept the operator's live daemon"
+    assert sup._sweep_brain(None) == sup._pytest_state_dir().resolve()

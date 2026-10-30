@@ -7,8 +7,10 @@ token or the web password; connecting to the server's launch socket IS the crede
 from __future__ import annotations
 
 import os
+import shutil
 import socket
 import sys
+import tempfile
 import threading
 from pathlib import Path
 
@@ -86,27 +88,41 @@ class TestImportsNothingElseFromNavig:
         assert {m for m in imported if m.split(".")[0] == "navig"} == set()
 
 
-@unix_only
+@pytest.fixture
+def sock() -> Path:
+    """A socket path short enough for ``AF_UNIX``.
+
+    ``sockaddr_un.sun_path`` holds ~108 bytes on Linux; pytest's ``tmp_path`` embeds the
+    whole test name, and the longer names in this class pushed the joined path past it, so
+    ``bind`` failed before the behaviour under test ran (2026-10-30, outpost).
+    """
+    d = Path(tempfile.mkdtemp(prefix="ngh"))
+    try:
+        yield d / "s"
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 class TestMintOverASocket:
-    def test_reads_the_code_the_server_hands_out(self, tmp_path: Path) -> None:
-        path = str(tmp_path / "launch.sock")
+    def test_reads_the_code_the_server_hands_out(self, sock: Path) -> None:
+        path = str(sock)
         t = _serve_once(path, f"{CODE}\n".encode())
         assert launch.mint_code(path) == CODE
         t.join(2)
 
-    def test_garbage_is_not_a_code(self, tmp_path: Path) -> None:
-        path = str(tmp_path / "launch.sock")
+    def test_garbage_is_not_a_code(self, sock: Path) -> None:
+        path = str(sock)
         _serve_once(path, b"<html>not a code</html>")
         with pytest.raises(launch.LaunchError, match="not a launch code"):
             launch.mint_code(path)
 
-    def test_no_socket_says_the_server_is_not_running(self, tmp_path: Path) -> None:
+    def test_no_socket_says_the_server_is_not_running(self, sock: Path) -> None:
         with pytest.raises(launch.LaunchError, match="not running"):
-            launch.mint_code(str(tmp_path / "absent.sock"))
+            launch.mint_code(str(sock.parent / "absent.sock"))
 
     @pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="root ignores modes")
-    def test_a_socket_this_account_may_not_open_names_the_group(self, tmp_path: Path) -> None:
-        path = str(tmp_path / "launch.sock")
+    def test_a_socket_this_account_may_not_open_names_the_group(self, sock: Path) -> None:
+        path = str(sock)
         srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         srv.bind(path)
         srv.listen(1)
@@ -120,7 +136,7 @@ class TestMintOverASocket:
     def test_main_print_url_prints_one_working_url(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str],
     ) -> None:
-        path = str(tmp_path / "launch.sock")
+        path = str(sock)
         _serve_once(path, f"{CODE}\n".encode())
         assert launch.main(["--print-url", "--socket", path, "--port", "9123"]) == 0
         assert capsys.readouterr().out.strip() == f"http://127.0.0.1:9123/launch#c={CODE}"

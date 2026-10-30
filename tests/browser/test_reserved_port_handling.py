@@ -157,6 +157,19 @@ def test_port_is_bindable_is_false_while_a_listener_holds_it():
         assert t.port_is_bindable(port) is False
 
 
+def test_port_is_bindable_is_false_while_a_reuseaddr_listener_holds_it():
+    """On Windows SO_REUSEADDR lets a second socket bind a port whose holder also set it,
+    so a probe that set it reported such a held port as free. The probe must refuse."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as held:
+        held.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        held.bind(("127.0.0.1", 0))
+        held.listen(1)
+        port = held.getsockname()[1]
+        assert t.port_is_bindable(port) is False
+
+
 def test_find_free_port_still_skips_reserved_ports(reserved):
     """Both allocators must share the behaviour — that is the point of the shared helper."""
     reserved.update(range(9222, 9232))
@@ -265,3 +278,21 @@ def test_profile_open_reports_clearly_when_the_repair_cannot_be_saved(
     res = cdp_actions.profile_open("epic", context="script")
     assert res["ok"] is False
     assert "excludedportrange" in res["error"], "the operator needs the command that shows it"
+
+
+def test_the_port_reallocation_incident_renders_its_profile_and_ports():
+    """Doctor and the push used to show the raw id and drop which profile moved where."""
+    from navig.core import incidents
+
+    assert incidents.PROFILE_PORT_REALLOCATED in incidents.DESCRIPTIONS
+    text = incidents.summarize(
+        incidents.PROFILE_PORT_REALLOCATED,
+        {"profile": "epic", "old_port": 9280, "new_port": 9281},
+    )
+    assert text.startswith(incidents.DESCRIPTIONS[incidents.PROFILE_PORT_REALLOCATED])
+    assert "epic" in text and "9280" in text and "9281" in text
+    # entries already logged under the literal id render the same way
+    assert incidents.describe(
+        {"ts": 0, "event": "PROFILE_PORT_REALLOCATED",
+         "data": {"profile": "epic", "old_port": 9280, "new_port": 9281}}
+    ).endswith(text)

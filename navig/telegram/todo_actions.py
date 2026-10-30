@@ -30,11 +30,14 @@ from navig.pim.clock import local_now, to_utc_iso
 from navig.pim.dates import LEAD_TIMES, RECURRENCES, describe_lead, split_due, split_recurrence
 from navig.pim.render import (
     _proposed_origins,
+    agenda_card,
+    category_card,
     category_label,
-    render_agenda,
-    render_category_summary,
+    detail_card,
     render_detail,
 )
+from navig.telegram.card_doc import Card
+from navig.telegram.card_nav import chip, close_row, menu_rows, step
 
 logger = logging.getLogger(__name__)
 
@@ -320,56 +323,101 @@ def build_detail_keyboard(todo: dict[str, Any]) -> dict[str, Any]:
 
 # ── views ────────────────────────────────────────────────────────────────────
 
-def build_view(view: str, *, now: datetime | None = None) -> tuple[str, dict[str, Any]]:
-    """Render one of the four top-level views. Pure apart from the store read."""
-    now = now or local_now()
+def _view_card(view: str, now: datetime) -> tuple[Card, dict[str, Any], str]:
+    """One view as structure: (card, keyboard, banner). Both renders project this.
+
+    The selection rules (which rows belong to which view, which title, which empty
+    hint) live here once — a rich render that re-derived them would be the classic
+    drift this refactor exists to remove.
+    """
     store = _store()
 
     if view == "cats":
         categories = store.todo_categories()
-        return render_category_summary(categories, now), build_category_keyboard(categories)
+        return (
+            category_card(categories, now),
+            build_category_keyboard(categories),
+            extension_banner().strip(),
+        )
 
     todos = store.list_todos()
     if view == "inbox":
         todos = [t for t in todos if not t.get("due_at")]
-        text = render_agenda(
-            todos, now,
-            title=f"📥 {_t('pim.title.inbox') or 'INBOX'}",
-            empty_hint=_t("pim.empty.inbox")
-            or "The inbox is empty. Send /todo &lt;something&gt; to capture one.",
-        )
+        title = f"📥 {_t('pim.title.inbox') or 'INBOX'}"
+        empty_hint = _t("pim.empty.inbox") or "The inbox is empty. Send /todo &lt;something&gt; to capture one."
     elif view == "today":
         from navig.pim.render import bucket_of  # noqa: PLC0415
 
         todos = [t for t in todos if bucket_of(t, now) in ("overdue", "today")]
-        text = render_agenda(
-            todos, now,
-            title=f"📅 {_t('pim.title.today') or 'TODAY'}",
-            empty_hint=_t("pim.empty.today") or "Nothing due today. 🎉",
-        )
+        title = f"📅 {_t('pim.title.today') or 'TODAY'}"
+        empty_hint = _t("pim.empty.today") or "Nothing due today. 🎉"
     else:
-        view = "all"
-        text = render_agenda(todos, now)
+        view, title, empty_hint = "all", None, None
 
-    return extension_banner() + text, build_list_keyboard(todos, view=view)
+    card = agenda_card(todos, now, title=title, empty_hint=empty_hint)
+    return card, build_list_keyboard(todos, view=view), extension_banner().strip()
+
+
+def view_card(view: str, *, now: datetime | None = None) -> tuple[Card, dict[str, Any]]:
+    """One view as structure — :mod:`navig.telegram.card_transport` picks the render.
+
+    The extension banner rides as the card footer here instead of being prepended
+    to the text: on a rich card a "switched off" notice belongs under the content,
+    not above the heading where it reads like part of the title.
+    """
+    now = now or local_now()
+    card, keyboard, banner = _view_card(view, now)
+    if banner:
+        card.footer = banner
+    return card, keyboard
+
+
+def build_view(view: str, *, now: datetime | None = None) -> tuple[str, dict[str, Any]]:
+    """Render one of the four top-level views. Pure apart from the store read."""
+    now = now or local_now()
+    card, keyboard, banner = _view_card(view, now)
+    return (banner + card.classic_html() if banner else card.classic_html()), keyboard
+
+
+def build_view_rich(view: str, *, now: datetime | None = None) -> tuple[str, dict[str, Any]]:
+    """The same view as a rich message — headings and a real list."""
+    card, keyboard = view_card(view, now=now)
+    return card.rich_html(), keyboard
+
+
+def _category_card(index: int, now: datetime) -> tuple[Card, dict[str, Any], str]:
+    """One category as structure: (card, keyboard, banner). See :func:`_view_card`."""
+    store = _store()
+    categories = store.todo_categories()
+    if not 0 <= index < len(categories):
+        return _view_card("cats", now)
+
+    name = str(categories[index].get("name") or "")
+    todos = store.list_todos(category=name)
+    label = category_label(name)
+    card = agenda_card(
+        todos, now, title=f"🗂 {label.upper()}",
+        empty_hint=_t("pim.empty.category", name=label) or f"Nothing in {label} yet.",
+    )
+    return card, build_list_keyboard(todos, view="cats"), extension_banner().strip()
 
 
 def build_category_view(index: int, *, now: datetime | None = None) -> tuple[str, dict[str, Any]]:
     """One category's tasks, addressed by ordinal (see `build_category_keyboard`)."""
     now = now or local_now()
-    store = _store()
-    categories = store.todo_categories()
-    if not 0 <= index < len(categories):
-        return build_view("cats", now=now)
+    card, keyboard, banner = _category_card(index, now)
+    return (banner + card.classic_html() if banner else card.classic_html()), keyboard
 
-    name = str(categories[index].get("name") or "")
-    todos = store.list_todos(category=name)
-    label = category_label(name)
-    text = render_agenda(
-        todos, now, title=f"🗂 {label.upper()}",
-        empty_hint=_t("pim.empty.category", name=label) or f"Nothing in {label} yet.",
-    )
-    return extension_banner() + text, build_list_keyboard(todos, view="cats")
+
+def build_category_view_rich(
+    index: int, *, now: datetime | None = None
+) -> tuple[str, dict[str, Any]]:
+    """One category's tasks as a rich message."""
+    now = now or local_now()
+    card, keyboard, banner = _category_card(index, now)
+    if banner:
+        card.footer = banner
+    return card.rich_html(), keyboard
 
 
 def build_detail(card_id: str, *, now: datetime | None = None) -> tuple[str, dict[str, Any]] | None:
@@ -378,6 +426,81 @@ def build_detail(card_id: str, *, now: datetime | None = None) -> tuple[str, dic
     if todo is None:
         return None
     return extension_banner() + render_detail(todo, now), build_detail_keyboard(todo)
+
+
+def build_detail_rich(
+    card_id: str, *, now: datetime | None = None
+) -> tuple[str, dict[str, Any]] | None:
+    """One task as a rich sheet: a key/value table plus foldable notes."""
+    now = now or local_now()
+    todo = _store().get_todo(card_id)
+    if todo is None:
+        return None
+    card = detail_card(todo, now)
+    banner = extension_banner().strip()
+    if banner:
+        card.footer = banner
+    return card.rich_html(), build_detail_keyboard(todo)
+
+
+def open_ids(store: Any | None = None) -> list[str]:
+    """The open tasks in the order the list shows them — the sequence the pager walks.
+
+    Derived from the store on every press rather than frozen into the keyboard: a task
+    completed on another screen must not leave the arrows pointing at a row that is no
+    longer there.
+    """
+    store = store if store is not None else _store()
+    return [t["id"] for t in store.list_todos() if not t.get("completed_at")]
+
+
+def _detail_pager(ids: list[str], card_id: str) -> list[dict[str, Any]]:
+    """``◀  3 / 12  ▶`` for the task currently on screen, or no row at all.
+
+    The arrows carry the card id they were drawn for, so a press always resolves
+    against that exact neighbour even if three tasks were finished in between.
+    """
+    if len(ids) <= 1 or card_id not in ids:
+        return []
+    index = ids.index(card_id)
+    return [
+        step("◀", f"td:b:{card_id}", enabled=index > 0),
+        chip(f"{index + 1} / {len(ids)}"),
+        step("▶", f"td:n:{card_id}", enabled=index < len(ids) - 1),
+    ]
+
+
+def detail_view(card_id: str, *, now: datetime | None = None) -> tuple[Card, dict[str, Any]] | None:
+    """One task as structure, with the pager on top and one way out at the bottom.
+
+    The pager is the first row because it is the row that turns a list into a
+    sequence: from here the operator walks the tasks without going back to the
+    list first, and ``✕`` settles the card instead of leaving its buttons live.
+    """
+    now = now or local_now()
+    store = _store()
+    todo = store.get_todo(card_id)
+    if todo is None:
+        return None
+    card = detail_card(todo, now)
+    banner = extension_banner().strip()
+    if banner:
+        card.footer = banner
+    rows = menu_rows(
+        _detail_pager(open_ids(store), card_id),
+        *build_detail_keyboard(todo)["inline_keyboard"],
+        close_row("td"),
+    )
+    return card, {"inline_keyboard": rows}
+
+
+def _neighbour(ids: list[str], card_id: str, delta: int) -> str | None:
+    """The id ``delta`` places away, clamped to the ends. None if nothing moves."""
+    if card_id not in ids:
+        return None
+    index = ids.index(card_id)
+    target = max(0, min(index + delta, len(ids) - 1))
+    return ids[target] if target != index else None
 
 
 # ── capture ──────────────────────────────────────────────────────────────────
@@ -474,21 +597,41 @@ async def handle_callback(
 
         if action == "v" and len(parts) >= 2:
             view = parts[1] if parts[1] in _VIEWS else "all"
-            text, keyboard = build_view(view, now=now)
-            await _edit(channel, chat_id, message_id, text, keyboard)
+            card, keyboard, _banner = _view_card(view, now)
+            await _edit_card(channel, chat_id, message_id, card, keyboard)
             return ""
 
         if action == "c" and len(parts) >= 2:
             index = int(parts[1]) if parts[1].isdigit() else 0
-            text, keyboard = build_category_view(index, now=now)
-            await _edit(channel, chat_id, message_id, text, keyboard)
+            card, keyboard, _banner = _category_card(index, now)
+            await _edit_card(channel, chat_id, message_id, card, keyboard)
             return ""
 
         if action == "o" and len(parts) >= 2:
-            rendered = build_detail(parts[1], now=now)
+            rendered = detail_view(parts[1], now=now)
             if rendered is None:
                 return _t("pim.toast.gone") or "That task is gone"
-            await _edit(channel, chat_id, message_id, *rendered)
+            await _edit_card(channel, chat_id, message_id, *rendered)
+            return ""
+
+        if action in ("n", "b") and len(parts) >= 2:
+            # Walk the open tasks without going back to the list: the pager is the
+            # row that makes the card a sequence instead of a dead end.
+            moved = _neighbour(open_ids(store), parts[1], 1 if action == "n" else -1)
+            if moved is None:
+                return ""
+            rendered = detail_view(moved, now=now)
+            if rendered is None:
+                return _t("pim.toast.gone") or "That task is gone"
+            await _edit_card(channel, chat_id, message_id, *rendered)
+            return ""
+
+        if action == "z":
+            from navig.telegram import card_nav  # noqa: PLC0415
+
+            todo = store.get_todo(parts[1]) if len(parts) >= 2 else None
+            title = (todo or {}).get("title") or (_t("pim.title.todo") or "Tasks")
+            await card_nav.settle(channel, chat_id, message_id, title=title)
             return ""
 
         if action in ("d", "u") and len(parts) >= 2:
@@ -551,9 +694,9 @@ async def handle_callback(
             if todo is None:
                 return _t("pim.toast.gone") or "That task is gone"
             _resync_reminders(store, todo, user_id=user_id, chat_id=chat_id, now=now)
-            rendered = build_detail(card_id, now=now)
+            rendered = detail_view(card_id, now=now)
             if rendered:
-                await _edit(channel, chat_id, message_id, *rendered)
+                await _edit_card(channel, chat_id, message_id, *rendered)
             if when is None:
                 return _t("pim.toast.to_inbox") or "Back in the inbox"
             due = _short_date(todo.get("due_at"), now)
@@ -569,9 +712,9 @@ async def handle_callback(
             leads = [*leads, token] if on else [x for x in leads if x != token]
             todo = store.update_todo(card_id, {"remind_before": leads})
             _resync_reminders(store, todo, user_id=user_id, chat_id=chat_id, now=now)
-            rendered = build_detail(card_id, now=now)
+            rendered = detail_view(card_id, now=now)
             if rendered:
-                await _edit(channel, chat_id, message_id, *rendered)
+                await _edit_card(channel, chat_id, message_id, *rendered)
             lead = describe_lead(token)
             key = "pim.toast.lead_on" if on else "pim.toast.lead_off"
             return _t(key, lead=lead) or f"{'On' if on else 'Off'}: {lead}"
@@ -582,9 +725,9 @@ async def handle_callback(
             todo = store.update_todo(card_id, {"recur": recur})
             if todo is None:
                 return _t("pim.toast.gone") or "That task is gone"
-            rendered = build_detail(card_id, now=now)
+            rendered = detail_view(card_id, now=now)
             if rendered:
-                await _edit(channel, chat_id, message_id, *rendered)
+                await _edit_card(channel, chat_id, message_id, *rendered)
             if recur is None:
                 return _t("pim.toast.repeat_off") or "Repeat off"
             word = _t(f"pim.recur.{recur}") or recur
@@ -644,8 +787,8 @@ def _resync_reminders(
 
 
 async def _rerender_list(channel: Any, chat_id: int, message_id: int, now: datetime) -> None:
-    text, keyboard = build_view("all", now=now)
-    await _edit(channel, chat_id, message_id, text, keyboard)
+    card, keyboard, _banner = _view_card("all", now)
+    await _edit_card(channel, chat_id, message_id, card, keyboard)
 
 
 async def _edit(
@@ -661,3 +804,33 @@ async def _edit(
             "reply_markup": keyboard or {"inline_keyboard": []},
         },
     )
+
+
+async def _edit_card(
+    channel: Any,
+    chat_id: int,
+    message_id: int,
+    card: Card,
+    keyboard: dict[str, Any] | None,
+) -> None:
+    """Re-render the card in place, keeping its rich body when the chat renders one.
+
+    ``editMessageText`` accepts a ``rich_message`` (Bot API 10.1), so a press no longer
+    has to degrade the card: without this, every task edit silently swapped a heading
+    and a key/value sheet for their plain-text projection.
+    """
+    from navig.telegram import card_transport  # noqa: PLC0415
+
+    rich_edit = getattr(channel, "edit_rich_message", None)
+    if rich_edit is not None and card_transport.rich_available(channel):
+        await rich_edit(
+            chat_id,
+            message_id,
+            html=card.rich_html(),
+            fallback_html=card.classic_html(),
+            keyboard=keyboard,
+        )
+        return
+    body = card.classic_html()
+    banner = (card.footer or "").strip()
+    await _edit(channel, chat_id, message_id, f"{banner}\n{body}" if banner else body, keyboard)
