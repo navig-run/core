@@ -58,17 +58,29 @@ MANIFEST_KEYS = ("version", "channel", "pypi", "download_url", "changelog_url", 
 
 
 def _asset_exists(url: str, timeout: float = 5.0) -> bool:
-    """HEAD the GitHub Release asset. False on 404, timeout, or offline - a URL that
-    could not be verified is not emitted (a link that 404s is worse than none)."""
+    """Probe the GitHub Release asset. False on 404, timeout, or offline — a URL that
+    could not be verified is not emitted (a link that 404s is worse than none).
+
+    A byte of a ranged GET, not a HEAD: github.com answers a HEAD with a 302 to a SIGNED
+    blob URL that only honours GET, so the probe saw 403 and every real asset read as
+    absent — measured on v3.33.0, which was published and downloadable while latest.json
+    said `download_url: null`. `416` counts as present too: a Range the stored object
+    refuses still proves the object exists."""
     if os.environ.get("NAVIG_VERSION_SYNC_OFFLINE"):
         return False
+    import urllib.error  # noqa: PLC0415
     import urllib.request  # noqa: PLC0415
 
-    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "navig-version-sync"})
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "navig-version-sync", "Range": "bytes=0-0"},
+    )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - fixed https host
             return 200 <= resp.status < 400
-    except Exception:  # noqa: BLE001 - any failure means "not verifiable", never "exists"
+    except urllib.error.HTTPError as exc:  # noqa: PERF203 - one status decides it
+        return exc.code == 416
+    except Exception:  # noqa: BLE001 - any other failure means "not verifiable", never "exists"
         return False
 
 

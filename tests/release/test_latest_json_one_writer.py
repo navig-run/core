@@ -73,6 +73,73 @@ def test_the_verifier_treats_every_failure_as_absent(tool, monkeypatch) -> None:
     assert tool._asset_exists("https://example.invalid/x.tar.gz") is False
 
 
+def test_the_probe_asks_for_a_byte_so_a_head_refusing_host_still_verifies() -> None:
+    """github.com redirects HEAD to a SIGNED blob URL that only honours GET — a HEAD probe
+    read every published asset as absent (v3.33.0 was downloadable while latest.json said
+    null). The probe must use a ranged GET, and treat 416 as proof the object exists."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    seen: list[tuple[str, str]] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def _refuse_head(self) -> None:
+            seen.append((self.command, self.headers.get("Range", "")))
+            if self.command == "HEAD":
+                self.send_error(403)          # the signed blob refuses HEAD
+                return
+            self.send_response(206)           # a ranged GET is served
+            self.send_header("Content-Range", "bytes 0-0/1")
+            self.send_header("Content-Length", "1")
+            self.end_headers()
+            self.wfile.write(b"x")
+
+        do_HEAD = _refuse_head
+        do_GET = _refuse_head
+
+        def log_message(self, *args) -> None:  # keep the test output clean
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("_version_sync_probe", TOOL)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        url = f"http://127.0.0.1:{server.server_port}/navig-9.9.9.tar.gz"
+        assert mod._asset_exists(url) is True
+        assert seen and seen[0][0] == "GET", f"the probe used {seen[0][0]}, not a GET"
+        assert seen[0][1].startswith("bytes="), "the probe fetched the whole asset"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_404_from_the_ranged_get_is_absent(tool) -> None:
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_error(404)
+
+        do_HEAD = do_GET
+
+        def log_message(self, *args) -> None:
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        assert tool._asset_exists(f"http://127.0.0.1:{server.server_port}/x.tar.gz") is False
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_the_offline_switch_never_touches_the_network(tool, monkeypatch) -> None:
     import urllib.request
 
